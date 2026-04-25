@@ -1,0 +1,53 @@
+services:
+  - type: web
+    name: cujasa-api
+    env: node
+    plan: starter
+    rootDir: .
+    buildCommand: npm install --prefix server
+    startCommand: npm start --prefix server
+    healthCheckPath: /api/health
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD_HASH
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: IP_HASH_SALT
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      - key: CLIENT_BASE_URL
+        sync: false
+      - key: COUPANG_ACCESS_KEY
+        sync: false
+      - key: COUPANG_SECRET_KEY
+        sync: false
+      - key: COUPANG_PARTNER_ID
+        sync: false
+      - key: COUPANG_TRACKING_CODE
+        sync: false
+      - key: MOCK_UPLOAD
+        value: "true"
+      - key: TRACKING_RATE_LIMIT_WINDOW_MS
+        value: "60000"
+      - key: TRACKING_RATE_LIMIT_MAX
+        value: "120"
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: SLACK_WEBHOOK_URL
+        sync: false
