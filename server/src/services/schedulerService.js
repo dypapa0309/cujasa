@@ -34,7 +34,14 @@ export async function createDailyQueue(accountId) {
     error.status = 409;
     throw error;
   }
-  const drafts = (await dbList('posts', { account_id: accountId })).filter((p) => ['draft', 'ready'].includes(p.status));
+  const allDrafts = (await dbList('posts', { account_id: accountId })).filter((p) => ['draft', 'ready'].includes(p.status));
+  const topicIds = [...new Set(allDrafts.map((p) => p.topic_id))];
+  const productsPerTopic = new Set();
+  for (const tid of topicIds) {
+    const pp = await dbList('post_products', { topic_id: tid });
+    if (pp.length > 0) productsPerTopic.add(tid);
+  }
+  const drafts = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
   const times = createDailySchedule(account);
   const queued = [];
   for (const [index, post] of drafts.slice(0, times.length).entries()) {
