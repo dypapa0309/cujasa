@@ -29,6 +29,7 @@ create table if not exists accounts (
   link_post_ratio numeric not null default 0.3,
   no_link_post_ratio numeric not null default 0.7,
   rest_days_per_week int not null default 1,
+  threads_access_token text,
   status text not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
