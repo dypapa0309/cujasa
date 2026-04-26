@@ -72,7 +72,11 @@ export async function searchKeyword(keyword, limit = 10) {
 export async function searchProductsForTopic(topicId) {
   const topic = await dbGet('topics', { id: topicId });
   const keywords = topic.search_keywords?.length ? topic.search_keywords : [topic.title];
-  const seen = new Set();
+
+  // 이미 이 topic에 저장된 product_id 목록 — 중복 insert 방지
+  const existing = await dbList('coupang_products', { topic_id: topic.id });
+  const seen = new Set(existing.map((p) => p.product_id));
+
   const saved = [];
   for (const keyword of keywords) {
     const products = await searchKeyword(keyword, 10);

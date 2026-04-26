@@ -20,17 +20,17 @@ export default function SettingsForm({ form, setForm, onSubmit }) {
         </select>
       </label>
       {[
-        ['name', '계정명'],
-        ['account_handle', '핸들'],
-        ['target_audience', '타깃'],
-        ['content_scope', '주제 범위'],
-        ['tone', '톤'],
-        ['cta_style', 'CTA 스타일'],
-        ['threads_access_token', 'Threads 액세스 토큰']
-      ].map(([key, label]) => (
+        ['name', '계정명', 'text'],
+        ['account_handle', '핸들', 'text'],
+        ['target_audience', '타깃', 'text'],
+        ['content_scope', '주제 범위', 'text'],
+        ['tone', '톤', 'text'],
+        ['cta_style', 'CTA 스타일', 'text'],
+        ['threads_access_token', 'Threads 액세스 토큰', 'password']
+      ].map(([key, label, type]) => (
         <label key={key} className="grid gap-1 text-sm">
           <span className="font-medium">{label}</span>
-          <input className="rounded border border-line px-3 py-2" value={form[key] || ''} onChange={(e) => update(key, e.target.value)} />
+          <input type={type} className="rounded border border-line px-3 py-2" value={form[key] || ''} onChange={(e) => update(key, e.target.value)} />
         </label>
       ))}
       <label className="grid gap-1 text-sm md:col-span-2">

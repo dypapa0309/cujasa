@@ -139,9 +139,5 @@ router.get('/:slug', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// 수동 생성 트리거 (관리자용)
-router.post('/generate/:topicId', async (req, res, next) => {
-  try { res.status(201).json(await generateBlogPost(req.params.topicId)); } catch (e) { next(e); }
-});
 
 export default router;

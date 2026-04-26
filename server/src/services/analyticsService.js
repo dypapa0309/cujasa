@@ -37,9 +37,13 @@ export async function dashboardSummary() {
   const accounts = await dbList('accounts');
   const queue = await dbList('post_queue');
   const clicks = await dbList('click_events');
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
   return {
     accounts: accounts.length,
-    scheduledToday: queue.filter((q) => q.status === 'scheduled').length,
+    scheduledToday: queue.filter((q) => q.status === 'scheduled' && new Date(q.scheduled_at) >= todayStart && new Date(q.scheduled_at) <= todayEnd).length,
     posted: queue.filter((q) => q.status === 'posted').length,
     clicks: clicks.length,
     bestTopics: []

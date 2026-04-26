@@ -41,8 +41,19 @@ export async function createDailyQueue(accountId) {
     const pp = await dbList('post_products', { topic_id: tid });
     if (pp.length > 0) productsPerTopic.add(tid);
   }
-  const drafts = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
+
+  // link_post_ratio 적용: 링크 있는 것과 없는 것을 비율에 맞게 섞기
+  const linkRatio = account.link_post_ratio ?? 0.3;
+  const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
+  const withoutLink = allDrafts.filter((p) => !productsPerTopic.has(p.topic_id));
   const times = createDailySchedule(account);
+  const total = times.length;
+  const linkCount = Math.round(total * linkRatio);
+  const noLinkCount = total - linkCount;
+  const drafts = [
+    ...withLink.slice(0, linkCount),
+    ...withoutLink.slice(0, noLinkCount)
+  ].slice(0, total);
   const queued = [];
   for (const [index, post] of drafts.slice(0, times.length).entries()) {
     queued.push(await addPostToQueue(post.id, times[index]));

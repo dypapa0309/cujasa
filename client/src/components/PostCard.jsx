@@ -29,14 +29,16 @@ export default function PostCard({ post, onQueue }) {
         <StatusBadge status={post.status} />
       </div>
       <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-700">{post.body}</pre>
-      <button
-        onClick={handleQueue}
-        disabled={queuing}
-        className="mt-4 flex items-center gap-1.5 rounded bg-coupang px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-      >
-        {queuing && <Spinner />}
-        {queuing ? '추가 중...' : '큐에 넣기'}
-      </button>
+      {!['queued', 'posted', 'manual_required'].includes(post.status) && (
+        <button
+          onClick={handleQueue}
+          disabled={queuing}
+          className="mt-4 flex items-center gap-1.5 rounded bg-coupang px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+        >
+          {queuing && <Spinner />}
+          {queuing ? '추가 중...' : '큐에 넣기'}
+        </button>
+      )}
     </div>
   );
 }

@@ -27,7 +27,11 @@ export async function runFullPipeline() {
           await selectProducts(topic.id);
           const posts = await generatePosts(topic.id);
           totalPosts += posts.length;
-          await generateBlogPost(topic.id);
+          try {
+            await generateBlogPost(topic.id);
+          } catch (blogErr) {
+            await logActivity({ account_id: account.id, project_id: account.project_id, action: 'pipeline_blog_failed', level: 'warn', message: `topic ${topic.id}: ${blogErr.message}` });
+          }
         } catch (err) {
           await logActivity({ account_id: account.id, project_id: account.project_id, action: 'pipeline_topic_failed', level: 'warn', message: `topic ${topic.id}: ${err.message}` });
         }
