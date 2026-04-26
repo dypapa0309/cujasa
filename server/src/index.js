@@ -14,11 +14,13 @@ import trackingRouter from './routes/tracking.js';
 import metricsRouter from './routes/metrics.js';
 import analyticsRouter from './routes/analytics.js';
 import notificationsRouter from './routes/notifications.js';
+import blogRouter from './routes/blog.js';
 import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { processDueQueue } from './services/schedulerService.js';
 import { runDueMetricJobs } from './services/metricsJobService.js';
 import { runFullPipeline } from './services/pipelineService.js';
+import { listBlogPosts } from './services/blogService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -57,6 +59,32 @@ app.use('/api/accounts', analyticsRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/r', trackingRouter);
+app.use('/blog', blogRouter);
+
+// sitemap.xml (블로그 글 포함 자동 생성)
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const baseUrl = process.env.APP_BASE_URL || `http://localhost:${port}`;
+    const posts = await listBlogPosts({ limit: 1000 });
+    const postUrls = posts.map((p) => `
+  <url>
+    <loc>${baseUrl}/blog/${p.slug}</loc>
+    <lastmod>${new Date(p.published_at).toISOString().split('T')[0]}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>`).join('');
+    res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>${baseUrl}/blog</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>${postUrls}
+</urlset>`);
+  } catch {
+    res.status(500).send('sitemap error');
+  }
+});
 app.get('/mock/threads/:postId', (req, res) => {
   res.type('html').send(`
     <!doctype html>

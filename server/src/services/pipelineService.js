@@ -4,6 +4,7 @@ import { searchProductsForTopic } from './coupangService.js';
 import { selectProducts } from './productSelectionService.js';
 import { generatePosts } from './contentService.js';
 import { createDailyQueue } from './schedulerService.js';
+import { generateBlogPost } from './blogService.js';
 import { logActivity } from './supabaseService.js';
 
 export async function runFullPipeline() {
@@ -26,6 +27,7 @@ export async function runFullPipeline() {
           await selectProducts(topic.id);
           const posts = await generatePosts(topic.id);
           totalPosts += posts.length;
+          await generateBlogPost(topic.id);
         } catch (err) {
           await logActivity({ account_id: account.id, project_id: account.project_id, action: 'pipeline_topic_failed', level: 'warn', message: `topic ${topic.id}: ${err.message}` });
         }
