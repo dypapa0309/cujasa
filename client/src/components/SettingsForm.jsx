@@ -25,7 +25,8 @@ export default function SettingsForm({ form, setForm, onSubmit }) {
         ['target_audience', '타깃'],
         ['content_scope', '주제 범위'],
         ['tone', '톤'],
-        ['cta_style', 'CTA 스타일']
+        ['cta_style', 'CTA 스타일'],
+        ['threads_access_token', 'Threads 액세스 토큰']
       ].map(([key, label]) => (
         <label key={key} className="grid gap-1 text-sm">
           <span className="font-medium">{label}</span>
