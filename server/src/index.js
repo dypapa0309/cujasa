@@ -18,6 +18,7 @@ import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { processDueQueue } from './services/schedulerService.js';
 import { runDueMetricJobs } from './services/metricsJobService.js';
+import { runFullPipeline } from './services/pipelineService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -88,9 +89,17 @@ app.use((error, req, res, next) => {
   res.status(error.status || 500).json({ error: error.message || 'Internal server error' });
 });
 
+// 매분: 예약된 포스팅 업로드 + 성과 측정
 cron.schedule('* * * * *', async () => {
   await processDueQueue();
   await runDueMetricJobs();
+});
+
+// 매일 새벽 2시: 전체 파이프라인 자동 실행 (주제→상품→콘텐츠→큐 등록)
+cron.schedule('0 2 * * *', async () => {
+  console.log('[Pipeline] 일일 자동화 파이프라인 시작');
+  const results = await runFullPipeline();
+  console.log('[Pipeline] 완료', JSON.stringify(results));
 });
 
 app.listen(port, () => {
