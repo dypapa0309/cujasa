@@ -11,6 +11,9 @@ export default function GeneratePage({ selectedAccount }) {
   const [loading, setLoading] = useState(false);
   const [busyTopicId, setBusyTopicId] = useState(null);
   const [busyAction, setBusyAction] = useState(null);
+  const [showManualForm, setShowManualForm] = useState(false);
+  const [manualTitle, setManualTitle] = useState('');
+  const [manualAngle, setManualAngle] = useState('');
 
   const load = async () => {
     if (!selectedAccount) return;
@@ -81,21 +84,86 @@ export default function GeneratePage({ selectedAccount }) {
     }
   };
 
+  const submitManualTopic = async (e) => {
+    e.preventDefault();
+    if (!manualTitle.trim()) return;
+    setBusyAction('주제 등록 중');
+    try {
+      await api.post(`/api/accounts/${selectedAccount.id}/manual-topic`, { title: manualTitle, angle: manualAngle });
+      await load();
+      setManualTitle('');
+      setManualAngle('');
+      setShowManualForm(false);
+      toast('주제가 등록됐습니다.', 'success');
+    } catch {
+      toast('주제 등록에 실패했습니다.', 'error');
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
   const isGlobalBusy = busyAction === '주제 자동 생성 중';
 
   return (
     <div className="grid gap-5">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm text-slate-500">{selectedAccount?.name}</div>
-        <button
-          disabled={!!busyAction || !selectedAccount}
-          onClick={generateTopics}
-          className="flex items-center gap-2 rounded bg-coupang px-4 py-2 font-medium text-white disabled:opacity-50"
-        >
-          {isGlobalBusy && <Spinner />}
-          {isGlobalBusy ? '생성 중...' : '주제 자동 생성'}
-        </button>
+        <div className="flex gap-2">
+          <button
+            disabled={!!busyAction || !selectedAccount}
+            onClick={() => setShowManualForm((v) => !v)}
+            className="rounded border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+          >
+            직접 입력
+          </button>
+          <button
+            disabled={!!busyAction || !selectedAccount}
+            onClick={generateTopics}
+            className="flex items-center gap-2 rounded bg-coupang px-4 py-2 font-medium text-white disabled:opacity-50"
+          >
+            {isGlobalBusy && <Spinner />}
+            {isGlobalBusy ? '생성 중...' : '주제 자동 생성'}
+          </button>
+        </div>
       </div>
+
+      {showManualForm && (
+        <form onSubmit={submitManualTopic} className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4">
+          <div className="text-sm font-medium text-slate-700">주제 직접 입력</div>
+          <input
+            type="text"
+            placeholder="주제 제목 (예: 여름 냄새 줄이는 법)"
+            value={manualTitle}
+            onChange={(e) => setManualTitle(e.target.value)}
+            className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-coupang"
+            required
+          />
+          <input
+            type="text"
+            placeholder="각도 (선택, 예: 원인부터 잡기)"
+            value={manualAngle}
+            onChange={(e) => setManualAngle(e.target.value)}
+            className="rounded border border-slate-200 px-3 py-2 text-sm outline-none focus:border-coupang"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowManualForm(false)}
+              className="rounded px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-50"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={!!busyAction || !manualTitle.trim()}
+              className="flex items-center gap-2 rounded bg-coupang px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {busyAction === '주제 등록 중' && <Spinner />}
+              등록
+            </button>
+          </div>
+        </form>
+      )}
 
       {busyAction && (
         <div className="flex items-center gap-3 rounded-lg border border-coupang/20 bg-red-50 px-4 py-3 text-sm font-medium text-coupang">

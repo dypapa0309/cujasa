@@ -53,3 +53,16 @@ export async function generateTopics(accountId) {
 }
 
 export const listTopics = (accountId) => dbList('topics', { account_id: accountId }, { order: 'created_at' });
+
+export async function createManualTopic(accountId, { title, angle }) {
+  const account = await getAccount(accountId);
+  assertAccountActive(account, 'create manual topic');
+  return dbInsert('topics', {
+    account_id: accountId,
+    project_id: account.project_id,
+    title,
+    angle: angle || null,
+    search_keywords: [],
+    status: 'new'
+  });
+}
