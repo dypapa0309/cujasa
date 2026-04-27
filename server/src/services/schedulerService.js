@@ -63,7 +63,11 @@ export async function createDailyQueue(accountId) {
 }
 
 export async function processDueQueue() {
-  const rows = await dbList('post_queue', { status: 'scheduled' });
+  const [scheduled, retrying] = await Promise.all([
+    dbList('post_queue', { status: 'scheduled' }),
+    dbList('post_queue', { status: 'retry' })
+  ]);
+  const rows = [...scheduled, ...retrying];
   const activeAccounts = await dbList('accounts', { status: 'active' });
   const activeAccountIds = new Set(activeAccounts.map((account) => account.id));
   const due = rows.filter((row) => activeAccountIds.has(row.account_id) && new Date(row.scheduled_at) <= new Date());
@@ -85,7 +89,11 @@ export async function uploadQueueItem(queueId) {
     const cta = ctas[Math.floor(Math.random() * Math.max(1, ctas.length))] || null;
     const postProduct = (await dbList('post_products', { topic_id: post.topic_id }, { order: 'rank', ascending: true }))[0];
     const product = postProduct ? await dbGet('coupang_products', { id: postProduct.product_id }) : null;
-    const trackingLink = product ? await createTrackingLink({
+    // retry 시 기존 tracking_link 재사용 — 중복 생성 방지
+    const existingLink = queue.tracking_link_id
+      ? await dbGet('tracking_links', { id: queue.tracking_link_id })
+      : null;
+    const trackingLink = existingLink || (product ? await createTrackingLink({
       project_id: post.project_id,
       account_id: post.account_id,
       topic_id: post.topic_id,
@@ -93,7 +101,7 @@ export async function uploadQueueItem(queueId) {
       product_id: product.id,
       destination_url: product.partner_url || product.product_url,
       link_type: product.is_fallback ? 'fallback' : 'coupang'
-    }) : null;
+    }) : null);
     const uploaded = await uploadThreads({ account, post, cta, trackingLink });
     const [updated] = await dbUpdate('post_queue', { id: queueId }, {
       status: 'posted',

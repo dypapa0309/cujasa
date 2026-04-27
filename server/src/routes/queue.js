@@ -52,13 +52,14 @@ router.get('/detail/:queueId', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// 취소 (scheduled → skipped)
+// 취소 (scheduled → skipped, post → draft 복구)
 router.post('/cancel/:queueId', async (req, res, next) => {
   try {
     const queue = await dbGet('post_queue', { id: req.params.queueId });
     if (!queue) return res.status(404).json({ error: 'Not found' });
     if (queue.status !== 'scheduled') return res.status(409).json({ error: `Cannot cancel status: ${queue.status}` });
     const [updated] = await dbUpdate('post_queue', { id: req.params.queueId }, { status: 'skipped', error_message: '수동 취소' });
+    if (queue.post_id) await dbUpdate('posts', { id: queue.post_id }, { status: 'draft' });
     res.json(updated);
   } catch (e) { next(e); }
 });

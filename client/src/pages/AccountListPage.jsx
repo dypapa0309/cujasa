@@ -6,7 +6,12 @@ import AccountSettingsPage from './AccountSettingsPage.jsx';
 export default function AccountListPage({ accounts, reloadAccounts, setSelectedAccountId }) {
   const [editing, setEditing] = useState(null);
   const create = async () => {
-    const project = (await api.get('/api/projects'))[0];
+    const projects = await api.get('/api/projects');
+    const project = projects[0];
+    if (!project) {
+      alert('프로젝트가 없습니다. 관리자에게 문의하세요.');
+      return;
+    }
     const account = await api.post('/api/accounts', {
       project_id: project.id,
       name: '새 쿠팡 계정',
