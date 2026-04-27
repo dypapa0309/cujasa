@@ -11,6 +11,7 @@ import AnalyticsPage from './pages/AnalyticsPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import AdminUsersPage from './pages/AdminUsersPage.jsx';
+import CustomerApp from './pages/customer/CustomerApp.jsx';
 import { api, getAuthToken, setAuthToken } from './lib/api.js';
 
 const adminTabs = [
@@ -84,6 +85,20 @@ export default function App() {
           setCurrentUser({ type: info.type, email: info.email, maxAccounts: info.maxAccounts });
           loadAccounts().catch(console.error);
         }} />
+      </ToastProvider>
+    );
+  }
+
+  // 고객(user)이면 별도 고객 앱 렌더링
+  if (currentUser?.type === 'user') {
+    return (
+      <ToastProvider>
+        <CustomerApp
+          accounts={accounts}
+          currentUser={currentUser}
+          reloadAccounts={loadAccounts}
+          onLogout={() => { setAuthToken(''); setCurrentUser(null); }}
+        />
       </ToastProvider>
     );
   }
