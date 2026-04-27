@@ -47,7 +47,13 @@ router.patch('/:accountId', async (req, res, next) => {
     if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(req.params.accountId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    res.json(await updateAccount(req.params.accountId, req.body));
+    // 유저는 안전한 필드만 수정 가능
+    const body = req.user?.type === 'user'
+      ? (({ threads_access_token, daily_post_min, daily_post_max, active_time_windows, min_interval_minutes }) =>
+          ({ threads_access_token, daily_post_min, daily_post_max, active_time_windows, min_interval_minutes })
+        )(req.body)
+      : req.body;
+    res.json(await updateAccount(req.params.accountId, body));
   } catch (e) { next(e); }
 });
 

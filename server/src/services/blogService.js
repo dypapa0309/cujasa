@@ -2,6 +2,17 @@ import { getJson } from './openaiService.js';
 import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { generateBlogPrompt } from '../prompts/generateBlogPrompt.js';
 
+function sanitizeHtml(html = '') {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<object[\s\S]*?<\/object>/gi, '')
+    .replace(/<embed[^>]*>/gi, '')
+    .replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '')
+    .replace(/javascript\s*:/gi, '')
+    .replace(/data\s*:/gi, '');
+}
+
 function toSlug(title) {
   const map = { ' ': '-', '(': '', ')': '', '[': '', ']': '', '/': '-', '?': '', '!': '', ',': '', '.': '', ':': '', "'": '', '"': '' };
   return title
@@ -36,7 +47,7 @@ export async function generateBlogPost(topicId) {
     slug: toSlug(result.title || topic.title),
     title: result.title || topic.title,
     meta_description: result.metaDescription || fallback.metaDescription,
-    content: result.content || fallback.content,
+    content: sanitizeHtml(result.content || fallback.content),
     status: 'published',
     published_at: new Date().toISOString()
   });

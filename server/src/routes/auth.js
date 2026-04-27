@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { isAuthConfigured, loginAdmin, loginUser, shouldBypassAuth } from '../services/authService.js';
+import { createRateLimit } from '../middleware/rateLimit.js';
+
+const loginRateLimit = createRateLimit({ scope: 'login', windowMs: 10 * 60 * 1000, maxRequests: 10 });
 
 const router = Router();
 
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginRateLimit, async (req, res, next) => {
   try {
     // admin 먼저 시도, 실패하면 user 시도
     try {
