@@ -1,9 +1,26 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { useToast } from '../lib/toast.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { dateTime } from '../lib/format.js';
 
+function groupByDate(rows) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+  const dayAfter = new Date(tomorrow); dayAfter.setDate(dayAfter.getDate() + 1);
+  const groups = { '오늘': [], '내일': [], '이후': [], '완료/기타': [] };
+  rows.forEach((r) => {
+    const d = new Date(r.scheduled_at);
+    if (!['scheduled','retry'].includes(r.status)) groups['완료/기타'].push(r);
+    else if (d >= today && d < tomorrow) groups['오늘'].push(r);
+    else if (d >= tomorrow && d < dayAfter) groups['내일'].push(r);
+    else groups['이후'].push(r);
+  });
+  return groups;
+}
+
 export default function QueuePage({ selectedAccount }) {
+  const toast = useToast();
   const [rows, setRows] = useState([]);
   const [detail, setDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -33,6 +50,9 @@ export default function QueuePage({ selectedAccount }) {
       await api.post(`/api/queue/cancel/${row.id}`, {});
       await load();
       if (detail?.queue?.id === row.id) setDetail(null);
+      toast('포스팅이 취소됐습니다.', 'info');
+    } catch {
+      toast('취소에 실패했습니다.', 'error');
     } finally {
       setCancellingId(null);
     }
@@ -43,39 +63,26 @@ export default function QueuePage({ selectedAccount }) {
     await load();
   };
 
-  const scheduled = rows.filter((r) => r.status === 'scheduled');
-  const others = rows.filter((r) => r.status !== 'scheduled');
+  const groups = groupByDate(rows);
 
   return (
     <div className="grid gap-4">
-      {/* 액션 버튼 */}
       <div className="flex justify-end gap-2">
-        <button onClick={async () => { await api.post(`/api/accounts/${selectedAccount.id}/create-daily-queue`, {}); await load(); }} className="rounded border border-line bg-white px-4 py-2 text-sm">일일 큐 생성</button>
+        <button onClick={async () => { await api.post(`/api/accounts/${selectedAccount.id}/create-daily-queue`, {}); await load(); toast('일일 큐가 생성됐습니다.', 'success'); }} className="rounded border border-line bg-white px-4 py-2 text-sm">일일 큐 생성</button>
         <button onClick={async () => { await api.post('/api/scheduler/run', {}); await load(); }} className="rounded bg-coupang px-4 py-2 text-sm font-medium text-white">스케줄러 실행</button>
       </div>
 
       <div className={`grid gap-4 ${detail ? 'lg:grid-cols-2' : ''}`}>
-        {/* 큐 목록 */}
-        <div className="grid gap-2">
+        <div className="grid gap-4">
           {rows.length === 0 && <div className="rounded border border-line bg-white p-8 text-center text-sm text-slate-400">예약된 포스팅이 없습니다</div>}
-
-          {scheduled.length > 0 && (
-            <div className="grid gap-2">
-              <div className="text-xs font-semibold text-slate-500 px-1">예약됨 ({scheduled.length})</div>
-              {scheduled.map((row) => (
+          {Object.entries(groups).map(([label, items]) => items.length === 0 ? null : (
+            <div key={label} className="grid gap-2">
+              <div className="text-xs font-semibold text-slate-500 px-1">{label} ({items.length})</div>
+              {items.map((row) => (
                 <QueueRow key={row.id} row={row} onDetail={openDetail} onCancel={cancel} onRun={run} cancelling={cancellingId === row.id} active={detail?.queue?.id === row.id} />
               ))}
             </div>
-          )}
-
-          {others.length > 0 && (
-            <div className="grid gap-2 mt-2">
-              <div className="text-xs font-semibold text-slate-500 px-1">완료 / 기타</div>
-              {others.map((row) => (
-                <QueueRow key={row.id} row={row} onDetail={openDetail} onCancel={cancel} onRun={run} cancelling={cancellingId === row.id} active={detail?.queue?.id === row.id} />
-              ))}
-            </div>
-          )}
+          ))}
         </div>
 
         {/* 상세 패널 */}

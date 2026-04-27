@@ -1,4 +1,4 @@
-export default function SettingsForm({ form, setForm, onSubmit }) {
+export default function SettingsForm({ form, setForm, onSubmit, saving }) {
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
   const updateList = (key, value) => update(key, value.split('\n').map((item) => item.trim()).filter(Boolean));
   const windows = form.active_time_windows?.length ? form.active_time_windows : [{ start: '09:00', end: '11:00' }];
@@ -89,7 +89,10 @@ export default function SettingsForm({ form, setForm, onSubmit }) {
         ))}
       </div>
       <div className="md:col-span-2">
-        <button className="focus-ring rounded bg-coupang px-4 py-2 font-medium text-white">저장</button>
+        <button disabled={saving} className="focus-ring flex items-center gap-2 rounded bg-coupang px-4 py-2 font-medium text-white disabled:opacity-60">
+          {saving && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
+          {saving ? '저장 중...' : '저장'}
+        </button>
       </div>
     </form>
   );

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ToastProvider } from './lib/toast.jsx';
 import { LayoutDashboard, Settings, Users, Wand2, Boxes, ListChecks, BarChart3 } from 'lucide-react';
 import DashboardPage from './pages/DashboardPage.jsx';
 import AccountListPage from './pages/AccountListPage.jsx';
@@ -67,6 +68,7 @@ export default function App() {
   }[page];
 
   return (
+    <ToastProvider>
     <div className="min-h-screen">
       <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-line bg-white p-4 md:block">
         <div className="px-2">
@@ -106,5 +108,6 @@ export default function App() {
         </section>
       </main>
     </div>
+    </ToastProvider>
   );
 }

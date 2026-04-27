@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
+import { useToast } from '../lib/toast.jsx';
 import TopicCard from '../components/TopicCard.jsx';
 import PostCard from '../components/PostCard.jsx';
 
 export default function GeneratePage({ selectedAccount }) {
+  const toast = useToast();
   const [topics, setTopics] = useState([]);
   const [posts, setPosts] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [busyTopicId, setBusyTopicId] = useState(null);
   const [busyAction, setBusyAction] = useState(null);
 
@@ -19,13 +22,19 @@ export default function GeneratePage({ selectedAccount }) {
     setPosts(p);
   };
 
-  useEffect(() => { load().catch(console.error); }, [selectedAccount?.id]);
+  useEffect(() => {
+    setLoading(true);
+    load().catch(() => toast('데이터를 불러오지 못했습니다.', 'error')).finally(() => setLoading(false));
+  }, [selectedAccount?.id]);
 
   const generateTopics = async () => {
     setBusyAction('주제 자동 생성 중');
     try {
       await api.post(`/api/accounts/${selectedAccount.id}/generate-topics`, {});
       await load();
+      toast('주제가 생성됐습니다.', 'success');
+    } catch {
+      toast('주제 생성에 실패했습니다.', 'error');
     } finally {
       setBusyAction(null);
     }
@@ -36,8 +45,11 @@ export default function GeneratePage({ selectedAccount }) {
     setBusyAction('상품 검색 중');
     try {
       await api.post(`/api/topics/${topic.id}/search-products`, {});
-      await api.post(`/api/topics/${topic.id}/select-products`, {});
+      const selected = await api.post(`/api/topics/${topic.id}/select-products`, {});
       await load();
+      toast(`상품 ${selected.length}개 검색 완료`, 'success');
+    } catch {
+      toast('상품 검색에 실패했습니다.', 'error');
     } finally {
       setBusyTopicId(null);
       setBusyAction(null);
@@ -48,8 +60,11 @@ export default function GeneratePage({ selectedAccount }) {
     setBusyTopicId(topic.id);
     setBusyAction('콘텐츠 생성 중');
     try {
-      await api.post(`/api/topics/${topic.id}/generate-posts`, {});
+      const created = await api.post(`/api/topics/${topic.id}/generate-posts`, {});
       await load();
+      toast(`콘텐츠 ${created.length}개 생성됐습니다.`, 'success');
+    } catch {
+      toast('콘텐츠 생성에 실패했습니다.', 'error');
     } finally {
       setBusyTopicId(null);
       setBusyAction(null);
@@ -57,15 +72,19 @@ export default function GeneratePage({ selectedAccount }) {
   };
 
   const queue = async (post) => {
-    await api.post(`/api/posts/${post.id}/add-to-queue`, {});
-    await load();
+    try {
+      await api.post(`/api/posts/${post.id}/add-to-queue`, {});
+      await load();
+      toast('큐에 추가됐습니다.', 'success');
+    } catch {
+      toast('큐 추가에 실패했습니다.', 'error');
+    }
   };
 
   const isGlobalBusy = busyAction === '주제 자동 생성 중';
 
   return (
     <div className="grid gap-5">
-      {/* 상단 액션바 */}
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm text-slate-500">{selectedAccount?.name}</div>
         <button
@@ -78,7 +97,6 @@ export default function GeneratePage({ selectedAccount }) {
         </button>
       </div>
 
-      {/* 전역 로딩 배너 */}
       {busyAction && (
         <div className="flex items-center gap-3 rounded-lg border border-coupang/20 bg-red-50 px-4 py-3 text-sm font-medium text-coupang">
           <Spinner className="text-coupang" />
@@ -86,27 +104,43 @@ export default function GeneratePage({ selectedAccount }) {
         </div>
       )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="grid gap-3">
-          <h2 className="font-semibold">주제</h2>
-          {topics.map((topic) => (
-            <TopicCard
-              key={topic.id}
-              topic={topic}
-              onSearch={search}
-              onGenerate={generate}
-              loadingAction={busyTopicId === topic.id ? busyAction : null}
-              disabled={!!busyAction}
-            />
-          ))}
+      {loading ? (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {[...Array(4)].map((_, i) => <Skeleton key={i} />)}
         </div>
-        <div className="grid gap-3 content-start">
-          <h2 className="font-semibold">콘텐츠</h2>
-          {posts.map((post) => (
-            <PostCard key={post.id} post={post} onQueue={queue} />
-          ))}
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-3">
+            <h2 className="font-semibold">주제 ({topics.length})</h2>
+            {topics.length === 0 && !busyAction && (
+              <div className="rounded border border-line bg-white p-6 text-center text-sm text-slate-400">
+                주제 자동 생성을 눌러 시작하세요
+              </div>
+            )}
+            {[...topics].reverse().map((topic) => (
+              <TopicCard
+                key={topic.id}
+                topic={topic}
+                onSearch={search}
+                onGenerate={generate}
+                loadingAction={busyTopicId === topic.id ? busyAction : null}
+                disabled={!!busyAction}
+              />
+            ))}
+          </div>
+          <div className="grid gap-3 content-start">
+            <h2 className="font-semibold">콘텐츠 ({posts.length})</h2>
+            {posts.length === 0 && (
+              <div className="rounded border border-line bg-white p-6 text-center text-sm text-slate-400">
+                주제를 선택하고 콘텐츠 생성을 눌러주세요
+              </div>
+            )}
+            {posts.map((post) => (
+              <PostCard key={post.id} post={post} onQueue={queue} topics={topics} />
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -118,4 +152,8 @@ function Spinner({ className = '' }) {
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
     </svg>
   );
+}
+
+function Skeleton() {
+  return <div className="h-36 animate-pulse rounded border border-line bg-white" />;
 }

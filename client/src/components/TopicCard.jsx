@@ -1,3 +1,5 @@
+import { dateTime } from '../lib/format.js';
+
 function Spinner() {
   return (
     <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
@@ -13,8 +15,11 @@ export default function TopicCard({ topic, onSearch, onGenerate, loadingAction, 
 
   return (
     <div className={`rounded border border-line bg-white p-4 transition-opacity ${disabled && !loadingAction ? 'opacity-50' : ''}`}>
-      <div className="text-xs font-medium uppercase text-coupang">{topic.expected_intent}</div>
-      <h3 className="mt-1 font-semibold">{topic.title}</h3>
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <div className="text-xs font-medium uppercase text-coupang">{topic.expected_intent}</div>
+        <div className="text-xs text-slate-400 flex-shrink-0">{dateTime(topic.created_at)}</div>
+      </div>
+      <h3 className="font-semibold">{topic.title}</h3>
       <p className="mt-1 text-sm text-slate-600">{topic.angle}</p>
       <p className="mt-2 text-sm text-slate-500">{topic.reason}</p>
       <div className="mt-3 flex flex-wrap gap-2">

@@ -10,25 +10,47 @@ function Spinner() {
   );
 }
 
-export default function PostCard({ post, onQueue }) {
+export default function PostCard({ post, onQueue, topics = [] }) {
   const [queuing, setQueuing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  const topic = topics.find((t) => t.id === post.topic_id);
 
   const handleQueue = async () => {
     setQueuing(true);
-    try {
-      await onQueue(post);
-    } finally {
-      setQueuing(false);
-    }
+    try { await onQueue(post); } finally { setQueuing(false); }
   };
+
+  const isLong = post.body?.length > 120;
 
   return (
     <div className="rounded border border-line bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-medium text-coupang">{post.content_type}</span>
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-medium text-coupang flex-shrink-0">{post.content_type}</span>
+          {topic && (
+            <span className="truncate text-xs text-slate-400 border border-line rounded px-1.5 py-0.5">
+              {topic.title}
+            </span>
+          )}
+        </div>
         <StatusBadge status={post.status} />
       </div>
-      <pre className="mt-3 whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-700">{post.body}</pre>
+
+      <div className="relative">
+        <pre className={`whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-700 ${!expanded && isLong ? 'line-clamp-4' : ''}`}>
+          {post.body}
+        </pre>
+        {isLong && (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            className="mt-1 text-xs text-coupang hover:underline"
+          >
+            {expanded ? '접기' : '더보기'}
+          </button>
+        )}
+      </div>
+
       {!['queued', 'posted', 'manual_required'].includes(post.status) && (
         <button
           onClick={handleQueue}
