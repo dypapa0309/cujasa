@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CUJASA — 쿠팡 파트너스 Threads 자동 포스팅 솔루션</title>
+  <meta name="description" content="AI가 주제 선정부터 쿠팡 상품 검색, 글 작성, Threads 자동 업로드까지 전부 대신합니다. 하루 5포스팅 자동화로 7~8개월 내 투자금 회수.">
+  <meta name="keywords" content="쿠팡 파트너스, 자동화, Threads 자동 포스팅, 쿠팡 파트너스 수익, AI 콘텐츠 생성, 제휴 마케팅 자동화">
+  <meta name="author" content="CUJASA">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://landing-phi-flame.vercel.app">
+
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://landing-phi-flame.vercel.app">
+  <meta property="og:title" content="CUJASA — 쿠팡 파트너스 Threads 자동 포스팅">
+  <meta property="og:description" content="AI가 주제부터 상품 검색, 글 작성, Threads 업로드까지 전부 자동. 지금 신청하기 ₩990,000 (얼리버드)">
+  <meta property="og:image" content="https://landing-phi-flame.vercel.app/images/og-image.png">
+  <meta property="og:locale" content="ko_KR">
+  <meta property="og:site_name" content="CUJASA">
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="CUJASA — 쿠팡 파트너스 자동 포스팅">
+  <meta name="twitter:description" content="AI가 Threads 자동 포스팅까지. 하루 5개, 24시간 자동 운영.">
+  <meta name="twitter:image" content="https://landing-phi-flame.vercel.app/images/og-image.png">
+
+  <!-- JSON-LD 구조화 데이터 -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "CUJASA",
+    "description": "쿠팡 파트너스 Threads 자동 포스팅 솔루션. AI가 주제 생성부터 업로드까지 전 과정 자동화.",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "offers": {
+      "@type": "Offer",
+      "price": "990000",
+      "priceCurrency": "KRW"
+    },
+    "url": "https://landing-phi-flame.vercel.app"
+  }
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            coupang: '#C00000',
+            'coupang-dark': '#9a0000',
+            navy: '#0F172A',
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Noto Sans KR', sans-serif; }
+    html { scroll-behavior: smooth; }
+
+    .fade-up {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 0.65s ease, transform 0.65s ease;
+    }
+    .fade-up.visible { opacity: 1; transform: translateY(0); }
+
+    .screenshot-shadow {
+      box-shadow: 0 20px 60px rgba(0,0,0,0.13), 0 4px 16px rgba(0,0,0,0.08);
+    }
+
+    .faq-answer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.32s ease, padding 0.32s ease;
+    }
+    .faq-answer.open { max-height: 300px; }
+
+    .step-connector {
+      position: absolute;
+      left: 50%;
+      bottom: -40px;
+      transform: translateX(-50%);
+      width: 2px;
+      height: 40px;
+      background: linear-gradient(to bottom, #e5e7eb, transparent);
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #C00000, #ff4444);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+  </style>
+</head>
+<body class="bg-white text-gray-900 antialiased">
+
+  <!-- ═══ NAV ═══ -->
+  <nav class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <span class="text-xl font-black text-coupang tracking-tight">CUJASA</span>
+        <span class="text-xs text-gray-400 font-medium hidden sm:block">쿠팡 파트너스 자동화</span>
+      </div>
+      <div class="flex items-center gap-3">
+        <a href="#pricing" class="hidden sm:block text-sm text-gray-600 font-medium hover:text-gray-900 transition-colors">요금제</a>
+        <a href="#pricing" class="bg-coupang hover:bg-coupang-dark text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-sm">
+          지금 시작하기
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ═══ HERO ═══ -->
+  <section class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white pt-20 pb-24 px-6 overflow-hidden relative">
+    <!-- bg decoration -->
+    <div class="absolute inset-0 opacity-20" style="background-image: radial-gradient(circle at 20% 50%, #C00000 0%, transparent 50%), radial-gradient(circle at 80% 20%, #C00000 0%, transparent 40%);"></div>
+
+    <div class="max-w-6xl mx-auto relative">
+      <div class="grid lg:grid-cols-2 gap-14 items-center">
+
+        <!-- Left: text -->
+        <div>
+          <div class="inline-flex items-center gap-2 bg-red-950/60 border border-red-800/50 px-4 py-1.5 rounded-full text-xs text-red-300 font-semibold mb-6">
+            <span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse block"></span>
+            Threads 자동 포스팅 솔루션
+          </div>
+          <h1 class="text-4xl lg:text-[52px] font-black leading-[1.15] mb-6 tracking-tight">
+            쿠팡 파트너스,<br>
+            <span class="gradient-text">이제 자동으로</span>
+          </h1>
+          <p class="text-lg text-slate-300 leading-relaxed mb-10 max-w-md">
+            AI가 주제 선정부터 상품 추천, 글 작성,<br>
+            Threads 업로드까지 전부 대신합니다.<br>
+            <span class="text-white font-semibold">당신은 수익만 확인하면 됩니다.</span>
+          </p>
+          <div class="flex flex-col sm:flex-row gap-3">
+            <a href="#pricing" class="bg-coupang hover:bg-coupang-dark text-white px-8 py-4 rounded-xl font-black text-base transition-all shadow-lg shadow-red-900/40 text-center hover:scale-105 active:scale-100">
+              지금 신청하기 →
+            </a>
+            <a href="#how-it-works" class="border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white px-8 py-4 rounded-xl font-semibold text-base transition-all text-center">
+              작동 방식 보기
+            </a>
+          </div>
+        </div>
+
+        <!-- Right: Threads post mockup -->
+        <div class="relative flex justify-center lg:justify-end">
+          <div class="relative max-w-[340px] w-full">
+            <!-- phone frame -->
+            <div class="bg-gray-900 border border-gray-700 rounded-[28px] p-1 shadow-2xl">
+              <div class="bg-black rounded-[24px] overflow-hidden">
+                <!-- status bar -->
+                <div class="flex justify-between items-center px-6 pt-4 pb-2">
+                  <span class="text-white text-xs font-semibold">9:41</span>
+                  <div class="flex gap-1.5">
+                    <div class="w-3.5 h-2 bg-white rounded-sm opacity-80"></div>
+                    <div class="w-1 h-2 bg-white rounded-sm opacity-60"></div>
+                  </div>
+                </div>
+                <!-- threads header -->
+                <div class="flex items-center justify-center py-3 border-b border-gray-800">
+                  <svg class="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 192 192"><path d="M141.537 88.988a66.667 66.667 0 0 0-2.518-1.143c-1.482-27.307-16.403-42.94-41.457-43.1h-.34c-14.986 0-27.449 6.396-35.12 18.036l13.779 9.452c5.73-8.695 14.724-10.548 21.348-10.548h.229c8.249.053 14.474 2.452 18.503 7.129 2.932 3.405 4.893 8.104 5.864 14.05-7.314-1.242-15.224-1.623-23.68-1.14-23.82 1.372-39.134 15.265-38.105 34.569.522 9.792 5.4 18.216 13.735 23.719 7.047 4.652 16.124 6.927 25.557 6.412 12.458-.683 22.231-5.436 29.049-14.127 5.178-6.6 8.452-15.153 9.899-25.93 5.937 3.583 10.337 8.298 12.767 13.966 4.132 9.635 4.373 25.468-8.546 38.376-11.319 11.308-24.925 16.2-45.488 16.351-22.809-.169-40.06-7.484-51.275-21.742C35.236 139.966 29.808 120.682 29.605 96c.203-24.682 5.63-43.966 16.133-57.317C56.954 24.425 74.204 17.11 97.013 16.94c22.975.17 40.526 7.52 52.171 21.847 5.71 7.026 10.015 15.86 12.853 26.162l16.147-4.308c-3.44-12.68-8.853-23.606-16.219-32.668C147.036 9.607 125.202.195 97.07 0h-.113C68.882.195 47.292 9.643 32.788 28.08 19.882 44.485 13.224 67.315 13.001 95.932L13 96v.068c.224 28.617 6.882 51.447 19.788 67.848 14.504 18.437 36.094 27.885 64.184 28.08h.113c24.97-.173 42.554-6.708 57.048-21.189 18.963-18.945 18.392-42.692 12.142-57.27-4.484-10.454-13.033-18.944-24.738-24.549Zm-43.022 43.806c-10.432.572-21.297-4.091-21.82-14.101-.377-7.058 5.03-14.907 21.34-15.864 1.869-.108 3.704-.159 5.508-.159 6.22 0 12.027.606 17.33 1.768-1.971 24.571-12.042 27.789-22.358 28.356Z"/></svg>
+                </div>
+                <!-- post content -->
+                <div class="p-5">
+                  <div class="flex items-start gap-3 mb-4">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-orange-400 to-amber-600 flex-shrink-0 flex items-center justify-center text-white text-xs font-bold">자취</div>
+                    <div>
+                      <div class="text-white text-sm font-bold">자취_꿀템</div>
+                      <div class="text-gray-500 text-xs">1분 전</div>
+                    </div>
+                  </div>
+                  <p class="text-white text-sm leading-relaxed mb-3">
+                    오늘은 자취방에서 요리했는데, 냄새가 너무 심했어요. 공기 정화제를 뿌리고 나니 한결 나아지더라고요. 여러분은 어떤 제품 쓰시나요?
+                  </p>
+                  <p class="text-gray-400 text-xs mb-4">여러분의 추천 제품이 궁금해요! 어떤 공기 정화제를 사용하시나요?</p>
+                  <div class="flex items-center gap-5 text-gray-600 text-sm">
+                    <span class="flex items-center gap-1.5">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>1
+                    </span>
+                    <span class="flex items-center gap-1.5">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>1
+                    </span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/></svg>
+                  </div>
+                  <div class="mt-4 pt-4 border-t border-gray-800 flex items-center gap-2">
+                    <span class="text-coupang text-xs font-bold">✦ AI 자동 작성</span>
+                    <span class="text-gray-600 text-xs">·</span>
+                    <span class="text-gray-500 text-xs">파트너스 링크 포함</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- floating badge: posted -->
+            <div class="absolute -right-6 top-10 bg-white rounded-2xl px-4 py-2.5 shadow-xl hidden lg:block border border-gray-100">
+              <div class="text-xs font-black text-blue-600">posted ✓</div>
+              <div class="text-gray-400 text-xs mt-0.5">4. 26. 오후 4:20</div>
+            </div>
+
+            <!-- floating badge: scheduled -->
+            <div class="absolute -left-6 bottom-12 bg-white rounded-2xl px-4 py-2.5 shadow-xl hidden lg:block border border-gray-100">
+              <div class="text-xs font-black text-amber-500">scheduled</div>
+              <div class="text-gray-400 text-xs mt-0.5">내일 오전 6:00</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ STATS BAR ═══ -->
+  <section class="bg-coupang text-white py-10 px-6">
+    <div class="max-w-4xl mx-auto grid grid-cols-3 gap-4 text-center divide-x divide-red-700">
+      <div class="px-4">
+        <div class="text-3xl lg:text-4xl font-black">24시간</div>
+        <div class="text-red-200 text-sm mt-1 font-medium">자동 운영</div>
+      </div>
+      <div class="px-4">
+        <div class="text-3xl lg:text-4xl font-black">∞</div>
+        <div class="text-red-200 text-sm mt-1 font-medium">자동 포스팅</div>
+      </div>
+      <div class="px-4">
+        <div class="text-3xl lg:text-4xl font-black">0분</div>
+        <div class="text-red-200 text-sm mt-1 font-medium">수동 작업</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ PROBLEM ═══ -->
+  <section class="py-24 px-6 bg-gray-50">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center mb-14 fade-up">
+        <h2 class="text-3xl lg:text-4xl font-black mb-3">혹시 이런 경험 있으신가요?</h2>
+        <p class="text-gray-400 text-lg">쿠팡 파트너스로 수익 내고 싶은데...</p>
+      </div>
+      <div class="grid sm:grid-cols-2 gap-4">
+        <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6 hover:border-red-200 hover:shadow-md transition-all">
+          <div class="mb-4"><i data-lucide="battery-low" class="w-9 h-9 text-coupang"></i></div>
+          <h3 class="font-black text-lg mb-2">매일 직접 쓰고 올리다 지쳤다</h3>
+          <p class="text-gray-500 text-sm leading-relaxed">상품 찾고, 글 쓰고, 업로드하는 과정이 너무 반복적으로 피곤합니다.</p>
+        </div>
+        <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6 hover:border-red-200 hover:shadow-md transition-all" style="transition-delay:.08s">
+          <div class="mb-4"><i data-lucide="help-circle" class="w-9 h-9 text-coupang"></i></div>
+          <h3 class="font-black text-lg mb-2">뭘 올려야 할지 모르겠다</h3>
+          <p class="text-gray-500 text-sm leading-relaxed">어떤 주제, 어떤 상품이 반응이 오는지 감을 잡기가 어렵습니다.</p>
+        </div>
+        <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6 hover:border-red-200 hover:shadow-md transition-all" style="transition-delay:.16s">
+          <div class="mb-4"><i data-lucide="clock" class="w-9 h-9 text-coupang"></i></div>
+          <h3 class="font-black text-lg mb-2">꾸준히 올리고 싶은데 시간이 없다</h3>
+          <p class="text-gray-500 text-sm leading-relaxed">직장, 학업, 육아에 치이다 보면 포스팅은 항상 뒷순위입니다.</p>
+        </div>
+        <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6 hover:border-red-200 hover:shadow-md transition-all" style="transition-delay:.24s">
+          <div class="mb-4"><i data-lucide="trending-down" class="w-9 h-9 text-coupang"></i></div>
+          <h3 class="font-black text-lg mb-2">꾸준히 못 해서 중간에 포기했다</h3>
+          <p class="text-gray-500 text-sm leading-relaxed">처음엔 열심히 하다가 며칠 지나면 흐지부지되는 패턴이 반복됩니다.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ SOLUTION ═══ -->
+  <section class="py-20 px-6 bg-white">
+    <div class="max-w-4xl mx-auto text-center">
+      <div class="fade-up inline-block bg-red-50 text-coupang font-bold px-4 py-1.5 rounded-full text-sm mb-4">해결책</div>
+      <h2 class="fade-up text-3xl lg:text-4xl font-black mb-4">CUJASA가 전부 합니다</h2>
+      <p class="fade-up text-gray-500 text-lg mb-14 max-w-lg mx-auto">주제 선정 → 상품 검색 → 글 작성 → Threads 업로드<br>모든 과정이 자동으로 돌아갑니다.</p>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-6">
+        <div class="fade-up">
+          <div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm"><i data-lucide="sparkles" class="w-7 h-7 text-coupang"></i></div>
+          <div class="font-bold text-sm leading-snug">AI 주제<br>자동 생성</div>
+        </div>
+        <div class="fade-up" style="transition-delay:.08s">
+          <div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm"><i data-lucide="package" class="w-7 h-7 text-coupang"></i></div>
+          <div class="font-bold text-sm leading-snug">쿠팡 상품<br>자동 검색</div>
+        </div>
+        <div class="fade-up" style="transition-delay:.16s">
+          <div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm"><i data-lucide="pen-line" class="w-7 h-7 text-coupang"></i></div>
+          <div class="font-bold text-sm leading-snug">콘텐츠<br>자동 작성</div>
+        </div>
+        <div class="fade-up" style="transition-delay:.24s">
+          <div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm"><i data-lucide="send" class="w-7 h-7 text-coupang"></i></div>
+          <div class="font-bold text-sm leading-snug">Threads<br>자동 업로드</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ HOW IT WORKS ═══ -->
+  <section id="how-it-works" class="py-24 px-6 bg-gray-50">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center mb-20 fade-up">
+        <h2 class="text-3xl lg:text-4xl font-black mb-3">3단계로 끝납니다</h2>
+        <p class="text-gray-400 text-lg">설정 한 번으로 무한 자동화</p>
+      </div>
+
+      <!-- Step 1 -->
+      <div class="grid lg:grid-cols-2 gap-12 items-center mb-24">
+        <div class="fade-up">
+          <div class="text-7xl font-black text-gray-100 leading-none mb-3 select-none">01</div>
+          <h3 class="text-2xl font-black mb-4">계정 등록</h3>
+          <p class="text-gray-500 leading-relaxed mb-5">
+            운영할 Threads 계정을 등록하고 타겟층을 설정합니다.<br>
+            AI가 그에 맞는 주제와 콘텐츠를 자동으로 생성합니다.
+          </p>
+          <div class="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-500">
+            <span class="text-green-500 font-bold">✓</span>
+            예시: 육아 꿀템 / 직장인 꿀템 / 자취 꿀템
+          </div>
+        </div>
+        <div class="fade-up">
+          <img src="images/accounts.png" alt="계정 관리 화면" class="rounded-2xl screenshot-shadow w-full border border-gray-100">
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="grid lg:grid-cols-2 gap-12 items-center mb-24">
+        <div class="fade-up order-2 lg:order-1">
+          <img src="images/generate.png" alt="콘텐츠 생성 화면" class="rounded-2xl screenshot-shadow w-full border border-gray-100">
+        </div>
+        <div class="fade-up order-1 lg:order-2">
+          <div class="text-7xl font-black text-gray-100 leading-none mb-3 select-none">02</div>
+          <h3 class="text-2xl font-black mb-4">주제 생성 → 콘텐츠 생성</h3>
+          <p class="text-gray-500 leading-relaxed mb-5">
+            AI가 타겟에 맞는 주제를 자동으로 생성하고,<br>
+            질문형·체크리스트형·문제 해결형 등 다양한 형태의<br>
+            Threads 콘텐츠를 즉시 만들어냅니다.
+          </p>
+          <div class="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-500">
+            <span class="text-green-500 font-bold">✓</span>
+            마음에 드는 글만 큐에 넣으면 끝
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="grid lg:grid-cols-2 gap-12 items-center">
+        <div class="fade-up">
+          <div class="text-7xl font-black text-gray-100 leading-none mb-3 select-none">03</div>
+          <h3 class="text-2xl font-black mb-4">자동 예약 발행</h3>
+          <p class="text-gray-500 leading-relaxed mb-5">
+            큐에 넣어두면 스케줄러가 알아서 최적 시간에 발행합니다.<br>
+            새벽에 자고 있어도 포스팅은 계속 올라갑니다.
+          </p>
+          <div class="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-500">
+            <span class="text-green-500 font-bold">✓</span>
+            posted → scheduled → 반복. 완전 자동화
+          </div>
+        </div>
+        <div class="fade-up">
+          <img src="images/queue.png" alt="업로드 큐 화면" class="rounded-2xl screenshot-shadow w-full border border-gray-100">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ FEATURES ═══ -->
+  <section class="py-24 px-6 bg-white">
+    <div class="max-w-5xl mx-auto">
+      <div class="text-center mb-20 fade-up">
+        <h2 class="text-3xl lg:text-4xl font-black mb-3">주요 기능</h2>
+        <p class="text-gray-400 text-lg">하나하나 직접 할 필요 없습니다</p>
+      </div>
+
+      <!-- Feature 1: 상품 자동 매칭 -->
+      <div class="grid lg:grid-cols-2 gap-14 items-center mb-28">
+        <div class="fade-up">
+          <img src="images/products.png" alt="쿠팡 상품 추천 화면" class="rounded-2xl screenshot-shadow w-full border border-gray-100">
+        </div>
+        <div class="fade-up">
+          <div class="inline-block bg-red-50 text-coupang font-bold px-3 py-1 rounded-full text-xs mb-5">쿠팡 파트너스 연동</div>
+          <h3 class="text-2xl font-black mb-4">주제에 맞는 쿠팡 상품 자동 매칭</h3>
+          <p class="text-gray-500 leading-relaxed mb-6">
+            생성된 주제와 관련된 쿠팡 상품을 API로 자동 검색합니다. 내 파트너스 추적 링크가 글 안에 자동으로 삽입됩니다.
+          </p>
+          <ul class="space-y-3">
+            <li class="flex items-start gap-3 text-sm text-gray-600">
+              <span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>
+              쿠팡 파트너스 HMAC API 연동
+            </li>
+            <li class="flex items-start gap-3 text-sm text-gray-600">
+              <span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>
+              내 추적 코드 자동 삽입 (subId)
+            </li>
+            <li class="flex items-start gap-3 text-sm text-gray-600">
+              <span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>
+              계정별 채널 성과 개별 추적
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Feature 2: 애널리틱스 -->
+      <div class="grid lg:grid-cols-2 gap-14 items-center">
+        <div class="fade-up order-2 lg:order-1">
+          <div class="inline-block bg-red-50 text-coupang font-bold px-3 py-1 rounded-full text-xs mb-5">성과 추적</div>
+          <h3 class="text-2xl font-black mb-4">클릭 & 성과 애널리틱스</h3>
+          <p class="text-gray-500 leading-relaxed mb-6">
+            포스팅별 클릭수, 유입 경로를 추적합니다. 24시간·72시간·7일 성과를 자동으로 측정해 어떤 글이 효과적인지 파악합니다.
+          </p>
+          <ul class="space-y-3">
+            <li class="flex items-start gap-3 text-sm text-gray-600">
+              <span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>
+              링크별 클릭 실시간 추적
+            </li>
+            <li class="flex items-start gap-3 text-sm text-gray-600">
+              <span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>
+              24h / 72h / 7일 자동 구간 측정
+            </li>
+            <li class="flex items-start gap-3 text-sm text-gray-600">
+              <span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>
+              IP·기기·유입 경로 분석
+            </li>
+          </ul>
+        </div>
+        <!-- Analytics mockup -->
+        <div class="fade-up order-1 lg:order-2">
+          <div class="bg-gray-50 rounded-2xl p-6 border border-gray-200 screenshot-shadow">
+            <div class="flex items-center justify-between mb-5">
+              <div class="text-sm font-bold text-gray-800">애널리틱스</div>
+              <div class="text-xs text-gray-400 bg-white border border-gray-200 px-3 py-1 rounded-full">최근 7일</div>
+            </div>
+            <div class="grid grid-cols-3 gap-3 mb-6">
+              <div class="bg-white rounded-xl p-3.5 text-center border border-gray-100">
+                <div class="text-2xl font-black text-coupang">247</div>
+                <div class="text-xs text-gray-400 mt-1">총 클릭</div>
+              </div>
+              <div class="bg-white rounded-xl p-3.5 text-center border border-gray-100">
+                <div class="text-2xl font-black text-emerald-500">32</div>
+                <div class="text-xs text-gray-400 mt-1">오늘 클릭</div>
+              </div>
+              <div class="bg-white rounded-xl p-3.5 text-center border border-gray-100">
+                <div class="text-2xl font-black text-blue-500">18</div>
+                <div class="text-xs text-gray-400 mt-1">포스팅 수</div>
+              </div>
+            </div>
+            <div class="space-y-3">
+              <div class="flex items-center gap-3">
+                <div class="text-xs text-gray-500 w-24 truncate flex-shrink-0">공기정화제 추천</div>
+                <div class="flex-1 bg-gray-200 rounded-full h-2">
+                  <div class="bg-coupang h-2 rounded-full transition-all" style="width:75%"></div>
+                </div>
+                <div class="text-xs text-gray-700 font-bold w-7 text-right">75</div>
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="text-xs text-gray-500 w-24 truncate flex-shrink-0">자취 요리 레시피</div>
+                <div class="flex-1 bg-gray-200 rounded-full h-2">
+                  <div class="bg-coupang h-2 rounded-full" style="width:52%"></div>
+                </div>
+                <div class="text-xs text-gray-700 font-bold w-7 text-right">52</div>
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="text-xs text-gray-500 w-24 truncate flex-shrink-0">주방 가전 체크리스트</div>
+                <div class="flex-1 bg-gray-200 rounded-full h-2">
+                  <div class="bg-coupang h-2 rounded-full" style="width:40%"></div>
+                </div>
+                <div class="text-xs text-gray-700 font-bold w-7 text-right">40</div>
+              </div>
+              <div class="flex items-center gap-3">
+                <div class="text-xs text-gray-500 w-24 truncate flex-shrink-0">직장인 점심 도시락</div>
+                <div class="flex-1 bg-gray-200 rounded-full h-2">
+                  <div class="bg-coupang h-2 rounded-full" style="width:28%"></div>
+                </div>
+                <div class="text-xs text-gray-700 font-bold w-7 text-right">28</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ SOCIAL PROOF ═══ -->
+  <section class="py-24 px-6 bg-slate-950">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center mb-14 fade-up">
+        <h2 class="text-3xl lg:text-4xl font-black text-white mb-3">실제로 이런 반응이 옵니다</h2>
+        <p class="text-slate-400 text-lg">광고처럼 보이지 않아서 자연스러운 댓글이 달립니다</p>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-4 fade-up">
+        <!-- Comment 1 -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-orange-400 to-amber-600 flex-shrink-0 flex items-center justify-center text-white text-xs font-bold">거</div>
+            <div>
+              <div class="text-white text-sm font-semibold">geoje_aju_cheol_duk_house</div>
+              <div class="text-slate-500 text-xs">1분 전</div>
+            </div>
+          </div>
+          <p class="text-slate-300 text-sm leading-relaxed">오늘은 자취방에서 요리했는데, 냄새가 너무 심했어요...</p>
+          <div class="flex items-center gap-4 mt-4 text-slate-600 text-xs">
+            <span>♡ 1</span><span>○ 1</span>
+          </div>
+        </div>
+
+        <!-- Comment 2 -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white text-xs font-bold">유</div>
+            <div>
+              <div class="text-white text-sm font-semibold">yuriheo9</div>
+              <div class="text-slate-500 text-xs">2분 전</div>
+            </div>
+          </div>
+          <p class="text-slate-300 text-sm leading-relaxed">리노베라요~</p>
+          <div class="flex items-center gap-4 mt-4 text-slate-600 text-xs">
+            <span>♡</span><span>○</span>
+          </div>
+        </div>
+
+        <!-- Comment 3 (wide) -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:col-span-2">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="w-9 h-9 rounded-full bg-gradient-to-br from-violet-400 to-purple-700 flex-shrink-0 flex items-center justify-center text-white text-xs font-bold">마</div>
+            <div>
+              <div class="flex items-center gap-1.5">
+                <div class="text-white text-sm font-semibold">majesticjung</div>
+                <span class="text-blue-400 text-xs">✓</span>
+              </div>
+              <div class="text-slate-500 text-xs">3분 전</div>
+            </div>
+          </div>
+          <p class="text-slate-300 text-sm leading-relaxed">아이고, 냄새 때문에 힘들었겠어요. 공기청정제 뿌리니까 조금 나아지니 다행이다 싶네요. 저도 좋은 제품 있으면 추천해주세요!</p>
+          <div class="flex items-center gap-4 mt-4 text-slate-600 text-xs">
+            <span>♡</span><span>○</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-center text-slate-500 text-sm mt-8 fade-up">실제 Threads 게시글에 달린 댓글입니다</p>
+    </div>
+  </section>
+
+  <!-- ═══ ROI CALCULATOR ═══ -->
+  <section class="py-24 px-6 bg-gray-50">
+    <div class="max-w-5xl mx-auto">
+
+      <div class="text-center mb-16 fade-up">
+        <div class="inline-block bg-red-50 text-coupang font-bold px-4 py-1.5 rounded-full text-sm mb-4">수익 시뮬레이션</div>
+        <h2 class="text-3xl lg:text-4xl font-black mb-4">언제 수익이 나고, 언제 본전 뽑을까?</h2>
+        <p class="text-gray-500 text-lg max-w-xl mx-auto">쿠팡 파트너스 실제 데이터 기반으로 계산했습니다</p>
+      </div>
+
+      <!-- Key stats -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-14 fade-up">
+        <div class="bg-white rounded-2xl p-5 text-center border border-gray-200">
+          <div class="text-2xl font-black text-coupang mb-1">3~5%</div>
+          <div class="text-xs text-gray-500 font-medium">평균 수수료율<br><span class="text-gray-400">(생활/식품 카테고리)</span></div>
+        </div>
+        <div class="bg-white rounded-2xl p-5 text-center border border-gray-200">
+          <div class="text-2xl font-black text-coupang mb-1">24시간</div>
+          <div class="text-xs text-gray-500 font-medium">쿠키 유지<br><span class="text-gray-400">(클릭 후 모든 구매 인정)</span></div>
+        </div>
+        <div class="bg-white rounded-2xl p-5 text-center border border-gray-200">
+          <div class="text-2xl font-black text-coupang mb-1">월 150개</div>
+          <div class="text-xs text-gray-500 font-medium">CUJASA 자동 포스팅<br><span class="text-gray-400">(하루 5개 기준)</span></div>
+        </div>
+        <div class="bg-white rounded-2xl p-5 text-center border border-gray-200">
+          <div class="text-2xl font-black text-coupang mb-1">익익월 15일</div>
+          <div class="text-xs text-gray-500 font-medium">정산 입금일<br><span class="text-gray-400">(쿠팡 공식 정책)</span></div>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      <div class="bg-white rounded-3xl p-6 lg:p-10 border border-gray-200 shadow-sm fade-up mb-8">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div>
+            <h3 class="text-xl font-black">월별 예상 수익 (계정 1개 기준)</h3>
+            <p class="text-sm text-gray-400 mt-1">팔로워 0에서 시작, CUJASA로 하루 5포스팅 자동화</p>
+          </div>
+          <div class="flex items-center gap-4 text-xs">
+            <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-coupang inline-block"></span><span class="text-gray-600">월 수익</span></div>
+            <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-blue-400 inline-block"></span><span class="text-gray-600">누적 수익</span></div>
+            <div class="flex items-center gap-1.5"><span class="w-6 border-t-2 border-dashed border-amber-500 inline-block"></span><span class="text-gray-600">투자 회수선</span></div>
+          </div>
+        </div>
+        <div class="relative" style="height:320px">
+          <canvas id="roiChart"></canvas>
+        </div>
+        <div class="mt-6 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-center gap-3">
+          <i data-lucide="target" class="w-6 h-6 text-amber-600 flex-shrink-0"></i>
+          <div>
+            <div class="font-black text-amber-800">평균 7~8개월 차에 투자금 990,000원 회수</div>
+            <div class="text-sm text-amber-700 mt-0.5">이후부터는 매달 순수익 — 계정 늘릴수록 수익도 배로 증가</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Manual vs CUJASA comparison -->
+      <div class="grid sm:grid-cols-2 gap-4 fade-up">
+        <div class="bg-white rounded-2xl p-6 border-2 border-gray-200">
+          <div class="flex items-center gap-2 mb-4">
+            <i data-lucide="user" class="w-5 h-5 text-gray-500"></i>
+            <h4 class="font-black text-gray-700">직접 할 때</h4>
+          </div>
+          <ul class="space-y-3 text-sm text-gray-500">
+            <li class="flex items-start gap-2"><span class="text-red-400 font-bold mt-0.5">✗</span>글 1개 작성에 평균 20~30분 소요</li>
+            <li class="flex items-start gap-2"><span class="text-red-400 font-bold mt-0.5">✗</span>월 30개 포스팅 → 약 15시간 투자</li>
+            <li class="flex items-start gap-2"><span class="text-red-400 font-bold mt-0.5">✗</span>꾸준히 못 해서 중간에 포기하는 경우 多</li>
+            <li class="flex items-start gap-2"><span class="text-red-400 font-bold mt-0.5">✗</span>수익 발생까지 6개월+ 소요</li>
+          </ul>
+          <div class="mt-5 bg-gray-50 rounded-xl p-3 text-center">
+            <div class="text-xs text-gray-400">12개월 예상 누적 수익</div>
+            <div class="text-2xl font-black text-gray-500 mt-1">~ ₩800,000</div>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-6 border-2 border-coupang shadow-md shadow-red-100">
+          <div class="flex items-center gap-2 mb-4">
+            <i data-lucide="zap" class="w-5 h-5 text-coupang"></i>
+            <h4 class="font-black text-coupang">CUJASA 쓸 때</h4>
+          </div>
+          <ul class="space-y-3 text-sm text-gray-600">
+            <li class="flex items-start gap-2"><span class="text-green-500 font-bold mt-0.5">✓</span>하루 5개, 월 150개 포스팅 자동화</li>
+            <li class="flex items-start gap-2"><span class="text-green-500 font-bold mt-0.5">✓</span>내가 투자하는 시간 <strong>0분</strong></li>
+            <li class="flex items-start gap-2"><span class="text-green-500 font-bold mt-0.5">✓</span>잠자는 새벽에도 포스팅 자동 발행</li>
+            <li class="flex items-start gap-2"><span class="text-green-500 font-bold mt-0.5">✓</span>7~8개월 차에 투자금 전액 회수</li>
+          </ul>
+          <div class="mt-5 bg-red-50 rounded-xl p-3 text-center">
+            <div class="text-xs text-gray-500">12개월 예상 누적 수익</div>
+            <div class="text-2xl font-black text-coupang mt-1">~ ₩4,000,000+</div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-center text-xs text-gray-400 mt-6">* 계정 1개, 팔로워 0 시작 기준 보수적 추정치 / 계정 수·팔로워·상품 단가에 따라 수익은 크게 달라질 수 있습니다</p>
+    </div>
+  </section>
+
+  <!-- ═══ PRICING ═══ -->
+  <section id="pricing" class="py-24 px-6 bg-white">
+    <div class="max-w-4xl mx-auto">
+      <div class="text-center mb-14 fade-up">
+        <h2 class="text-3xl lg:text-4xl font-black mb-3">가격</h2>
+        <p class="text-gray-400 text-lg">두 가지 방법으로 시작할 수 있습니다</p>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-6">
+
+        <!-- 월정액 카드 -->
+        <div class="fade-up border-2 border-gray-200 rounded-3xl p-8 flex flex-col">
+          <div class="text-sm font-bold text-gray-400 uppercase tracking-wide mb-4">월정액</div>
+          <div class="mb-2">
+            <span class="text-5xl font-black text-gray-900">₩129,000</span>
+            <span class="text-gray-400 text-base font-medium"> / 월</span>
+          </div>
+          <p class="text-gray-500 text-sm mb-6">언제든 해지 가능. 부담 없이 시작.</p>
+
+          <ul class="space-y-3 text-sm text-gray-600 mb-8 flex-1">
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> Threads 계정 4개</li>
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> AI 주제 / 콘텐츠 자동 생성</li>
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> 쿠팡 파트너스 상품 자동 매칭</li>
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> 24시간 자동 예약 발행</li>
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> 클릭 & 성과 애널리틱스</li>
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> 1:1 셋업 지원</li>
+          </ul>
+
+          <a href="#purchase-form" onclick="selectPlan('monthly')"
+            class="block text-center border-2 border-gray-900 text-gray-900 font-black py-4 rounded-xl transition-all hover:bg-gray-900 hover:text-white">
+            월정액으로 시작하기 →
+          </a>
+        </div>
+
+        <!-- 일시불 카드 -->
+        <div class="fade-up border-2 border-coupang rounded-3xl p-8 flex flex-col relative shadow-xl shadow-red-100" style="transition-delay:.1s">
+          <div class="absolute -top-4 left-1/2 -translate-x-1/2 bg-coupang text-white text-xs font-black px-5 py-1.5 rounded-full shadow whitespace-nowrap">
+            얼리버드 한정가
+          </div>
+
+          <div class="text-sm font-bold text-coupang uppercase tracking-wide mb-4">일시불</div>
+
+          <!-- 4월 30일 특가 -->
+          <div class="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 mb-3">
+            <div class="text-xs font-black text-amber-600 mb-0.5">⚡ 4월 30일 자정까지</div>
+            <div class="text-4xl font-black text-amber-500">₩590,000</div>
+            <div class="text-xs text-amber-600 mt-0.5 font-semibold" id="countdown"></div>
+          </div>
+
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-gray-400 text-sm line-through">₩1,990,000</span>
+            <span class="text-gray-600 text-sm">→ 이후 ₩990,000</span>
+          </div>
+          <div class="inline-flex items-center gap-1.5 bg-red-50 text-coupang font-bold px-3 py-1 rounded-full text-xs mb-6 self-start">
+            <span class="w-1.5 h-1.5 rounded-full bg-coupang animate-pulse block"></span>
+            20명 초과 시 ₩1,990,000으로 인상
+          </div>
+
+          <!-- Buyer progress -->
+          <div class="bg-gray-50 rounded-xl p-4 mb-6">
+            <div class="flex items-center justify-between mb-2">
+              <span class="text-xs font-bold text-gray-600">현재 구매 현황</span>
+              <span class="text-xs font-black text-coupang" id="buyer-count">9명 구매 완료</span>
+            </div>
+            <div class="w-full bg-gray-200 rounded-full h-2">
+              <div class="bg-coupang h-2 rounded-full" style="width:35%"></div>
+            </div>
+            <div class="flex justify-between text-xs text-gray-400 mt-1">
+              <span>0명</span><span>20명</span>
+            </div>
+          </div>
+
+          <ul class="space-y-3 text-sm text-gray-600 mb-8 flex-1">
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> Threads 계정 4개</li>
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> AI 주제 / 콘텐츠 자동 생성</li>
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> 쿠팡 파트너스 상품 자동 매칭</li>
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> 24시간 자동 예약 발행</li>
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> 클릭 & 성과 애널리틱스</li>
+            <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span> 1:1 셋업 지원</li>
+          </ul>
+
+          <a href="#purchase-form" onclick="selectPlan('onetime')"
+            class="block text-center bg-amber-500 hover:bg-amber-600 text-white font-black py-4 rounded-xl transition-all shadow-lg shadow-amber-200 hover:scale-105 active:scale-100">
+            일시불로 시작하기 (₩590,000) →
+          </a>
+          <p class="text-center text-gray-400 text-xs mt-2">5월 1일부터 ₩990,000</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ FAQ ═══ -->
+  <section class="py-24 px-6 bg-gray-50">
+    <div class="max-w-2xl mx-auto">
+      <div class="text-center mb-12 fade-up">
+        <h2 class="text-3xl font-black">자주 묻는 질문</h2>
+      </div>
+      <div class="space-y-3 fade-up">
+
+        <div class="faq-item bg-white rounded-2xl overflow-hidden border border-gray-200">
+          <button class="faq-trigger w-full text-left px-6 py-5 font-bold text-sm flex items-center justify-between gap-4">
+            <span>쿠팡 파트너스 가입이 필요한가요?</span>
+            <span class="faq-icon text-gray-400 text-xl leading-none flex-shrink-0">+</span>
+          </button>
+          <div class="faq-answer">
+            <p class="px-6 pb-5 text-gray-500 text-sm leading-relaxed">
+              네, 쿠팡 파트너스 계정이 필요합니다. 가입 후 API 키를 CUJASA에 등록하면 포스팅마다 내 추적 링크가 자동으로 삽입됩니다.
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item bg-white rounded-2xl overflow-hidden border border-gray-200">
+          <button class="faq-trigger w-full text-left px-6 py-5 font-bold text-sm flex items-center justify-between gap-4">
+            <span>Threads 계정이 반드시 있어야 하나요?</span>
+            <span class="faq-icon text-gray-400 text-xl leading-none flex-shrink-0">+</span>
+          </button>
+          <div class="faq-answer">
+            <p class="px-6 pb-5 text-gray-500 text-sm leading-relaxed">
+              네, Threads 계정이 필요합니다. 계정을 CUJASA에 연동하면 이후 업로드는 모두 자동으로 처리됩니다.
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item bg-white rounded-2xl overflow-hidden border border-gray-200">
+          <button class="faq-trigger w-full text-left px-6 py-5 font-bold text-sm flex items-center justify-between gap-4">
+            <span>AI가 쓴 글을 직접 수정할 수 있나요?</span>
+            <span class="faq-icon text-gray-400 text-xl leading-none flex-shrink-0">+</span>
+          </button>
+          <div class="faq-answer">
+            <p class="px-6 pb-5 text-gray-500 text-sm leading-relaxed">
+              네. AI가 생성한 콘텐츠를 큐에 넣기 전에 확인하고 수정할 수 있습니다. 마음에 드는 것만 선택해서 예약하세요.
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item bg-white rounded-2xl overflow-hidden border border-gray-200">
+          <button class="faq-trigger w-full text-left px-6 py-5 font-bold text-sm flex items-center justify-between gap-4">
+            <span>여러 Threads 계정을 동시에 운영할 수 있나요?</span>
+            <span class="faq-icon text-gray-400 text-xl leading-none flex-shrink-0">+</span>
+          </button>
+          <div class="faq-answer">
+            <p class="px-6 pb-5 text-gray-500 text-sm leading-relaxed">
+              네. Basic 플랜은 3개, Pro 플랜은 무제한 계정을 운영할 수 있습니다. 각 계정별로 타겟과 주제를 다르게 설정할 수 있습니다.
+            </p>
+          </div>
+        </div>
+
+        <div class="faq-item bg-white rounded-2xl overflow-hidden border border-gray-200">
+          <button class="faq-trigger w-full text-left px-6 py-5 font-bold text-sm flex items-center justify-between gap-4">
+            <span>환불 정책은 어떻게 되나요?</span>
+            <span class="faq-icon text-gray-400 text-xl leading-none flex-shrink-0">+</span>
+          </button>
+          <div class="faq-answer">
+            <p class="px-6 pb-5 text-gray-500 text-sm leading-relaxed">
+              결제 후 7일 이내 환불 신청 시 구매 가격의 20%가 환불됩니다. 7일 이후에는 환불이 불가합니다.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ PURCHASE FORM ═══ -->
+  <section id="purchase-form" class="py-24 px-6 bg-white">
+    <div class="max-w-lg mx-auto">
+      <div class="text-center mb-10 fade-up">
+        <div class="inline-block bg-red-50 text-coupang font-bold px-4 py-1.5 rounded-full text-sm mb-4">구매 신청</div>
+        <h2 class="text-3xl font-black mb-3">구매 신청서</h2>
+        <p class="text-gray-400">아래 정보를 입력하시면 담당자가 빠르게 연락드립니다</p>
+      </div>
+
+      <div class="fade-up bg-gray-50 border border-gray-200 rounded-3xl p-8">
+
+        <!-- 플랜 선택 -->
+        <div class="grid grid-cols-2 gap-3 mb-6" id="planSelector">
+          <button type="button" onclick="selectPlan('onetime')" id="btn-onetime"
+            class="plan-btn rounded-xl border-2 p-4 text-left transition-all border-amber-400 bg-amber-50">
+            <div class="text-xs font-black text-amber-600 mb-1">⚡ 4월 30일까지</div>
+            <div class="text-xl font-black text-amber-500">₩590,000</div>
+            <div class="text-xs text-gray-500 mt-0.5">일시불</div>
+          </button>
+          <button type="button" onclick="selectPlan('monthly')" id="btn-monthly"
+            class="plan-btn rounded-xl border-2 p-4 text-left transition-all border-gray-200 bg-white">
+            <div class="text-xs font-black text-gray-400 mb-1">월정액</div>
+            <div class="text-xl font-black text-gray-700">₩129,000</div>
+            <div class="text-xs text-gray-500 mt-0.5">/ 월 · 언제든 해지</div>
+          </button>
+        </div>
+
+        <!-- 선택된 플랜 요약 -->
+        <div id="planSummary" class="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 mb-6 flex items-center justify-between">
+          <div>
+            <div class="text-xs text-gray-400 font-medium" id="planLabel">일시불</div>
+            <div class="text-2xl font-black text-amber-500" id="planPrice">₩590,000</div>
+          </div>
+          <div class="text-right">
+            <div class="text-xs text-amber-700 font-black bg-amber-100 px-3 py-1 rounded-full" id="planBadge">⚡ 4월 30일 한정</div>
+            <div class="text-xs text-gray-400 mt-1" id="countdown2"></div>
+          </div>
+        </div>
+
+        <form id="buyForm" class="space-y-5">
+          <div>
+            <label class="block text-sm font-bold text-gray-700 mb-2">구매자명 <span class="text-coupang">*</span></label>
+            <input type="text" id="buyerName" placeholder="홍길동"
+              class="w-full border-2 border-gray-200 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-coupang transition-colors" required>
+          </div>
+          <div>
+            <label class="block text-sm font-bold text-gray-700 mb-2">전화번호 <span class="text-coupang">*</span></label>
+            <input type="tel" id="buyerPhone" placeholder="010-0000-0000"
+              class="w-full border-2 border-gray-200 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-coupang transition-colors" required>
+          </div>
+          <button type="submit" id="submitBtn"
+            class="w-full bg-amber-500 hover:bg-amber-600 text-white font-black py-4 rounded-xl transition-all text-base shadow-lg hover:scale-105 active:scale-100">
+            신청하기 (₩590,000 일시불) →
+          </button>
+        </form>
+
+        <p class="text-center text-gray-400 text-xs mt-5 leading-relaxed">
+          신청 후 문자로 결제 안내를 드립니다.<br>
+          문의: <a href="tel:01040941666" class="text-coupang font-semibold underline">010-4094-1666</a>
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ FINAL CTA ═══ -->
+  <section class="py-28 px-6 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white relative overflow-hidden">
+    <div class="absolute inset-0 opacity-15" style="background-image: radial-gradient(circle at 50% 50%, #C00000 0%, transparent 60%);"></div>
+    <div class="max-w-2xl mx-auto text-center relative fade-up">
+      <h2 class="text-3xl lg:text-5xl font-black mb-5 leading-tight">
+        지금 바로<br>자동화 시작하기
+      </h2>
+      <p class="text-slate-300 text-lg mb-10">오늘 설정하면 내일부터 자동으로 포스팅됩니다</p>
+      <a href="#pricing" class="inline-block bg-coupang hover:bg-coupang-dark text-white px-12 py-5 rounded-2xl font-black text-lg transition-all shadow-xl shadow-red-900/40 hover:scale-105 active:scale-100">
+        지금 신청하기 →
+      </a>
+    </div>
+  </section>
+
+  <!-- ═══ FOOTER ═══ -->
+  <footer class="bg-gray-950 text-gray-500 py-10 px-6">
+    <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="font-black text-white text-xl tracking-tight">CUJASA</div>
+      <div class="text-sm">© 2026 CUJASA. All rights reserved.</div>
+      <div class="flex gap-6 text-sm">
+        <a href="#" class="hover:text-gray-300 transition-colors">이용약관</a>
+        <a href="#" class="hover:text-gray-300 transition-colors">개인정보처리방침</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ═══ SCRIPTS ═══ -->
+  <script>
+    // Lucide icons
+    lucide.createIcons();
+
+    // 4월 30일 카운트다운
+    function updateCountdown() {
+      const el = document.getElementById('countdown');
+      if (!el) return;
+      const deadline = new Date('2026-04-30T23:59:59+09:00');
+      const now = new Date();
+      const diff = deadline - now;
+      if (diff <= 0) { el.textContent = '특가 종료'; return; }
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff % 86400000) / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      el.textContent = `종료까지 ${d}일 ${h}시간 ${m}분 ${s}초`;
+    }
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
+    function syncCountdown2() {
+      const el2 = document.getElementById('countdown2');
+      const el1 = document.getElementById('countdown');
+      if (el2 && el1) el2.textContent = el1.textContent;
+    }
+    syncCountdown2();
+    setInterval(syncCountdown2, 1000);
+
+    // Scroll fade-in
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, { threshold: 0.12 });
+
+    document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
+
+    // ROI Chart
+    const monthLabels = ['1개월','2개월','3개월','4개월','5개월','6개월','7개월','8개월','9개월','10개월','11개월','12개월'];
+    const monthlyRevenue = [30000, 60000, 100000, 150000, 200000, 280000, 350000, 430000, 500000, 580000, 650000, 720000];
+    const cumulative = monthlyRevenue.reduce((acc, v, i) => { acc.push((acc[i-1] || 0) + v); return acc; }, []);
+
+    const ctx = document.getElementById('roiChart');
+    if (ctx) {
+      new Chart(ctx, {
+        data: {
+          labels: monthLabels,
+          datasets: [
+            {
+              type: 'bar',
+              label: '월 수익',
+              data: monthlyRevenue,
+              backgroundColor: 'rgba(192,0,0,0.15)',
+              borderColor: '#C00000',
+              borderWidth: 2,
+              borderRadius: 6,
+              yAxisID: 'y',
+            },
+            {
+              type: 'line',
+              label: '누적 수익',
+              data: cumulative,
+              borderColor: '#60a5fa',
+              backgroundColor: 'rgba(96,165,250,0.1)',
+              borderWidth: 3,
+              pointBackgroundColor: '#60a5fa',
+              pointRadius: 5,
+              tension: 0.4,
+              fill: true,
+              yAxisID: 'y1',
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => {
+                  const val = ctx.raw;
+                  return ctx.dataset.label + ': ₩' + val.toLocaleString('ko-KR');
+                }
+              }
+            },
+            annotation: {
+              annotations: {
+                breakeven: {
+                  type: 'line',
+                  yScaleID: 'y1',
+                  yMin: 990000,
+                  yMax: 990000,
+                  borderColor: '#f59e0b',
+                  borderWidth: 2,
+                  borderDash: [6, 4],
+                  label: {
+                    display: true,
+                    content: '투자 회수 ₩990,000',
+                    color: '#92400e',
+                    backgroundColor: '#fef3c7',
+                    font: { weight: 'bold', size: 11 },
+                    position: 'start',
+                    padding: { x: 8, y: 4 },
+                  }
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { font: { size: 11 }, color: '#9ca3af' }
+            },
+            y: {
+              position: 'left',
+              grid: { color: '#f3f4f6' },
+              ticks: {
+                font: { size: 11 },
+                color: '#9ca3af',
+                callback: v => '₩' + (v/10000).toFixed(0) + '만'
+              },
+              title: { display: true, text: '월 수익', color: '#C00000', font: { size: 11 } }
+            },
+            y1: {
+              position: 'right',
+              grid: { drawOnChartArea: false },
+              ticks: {
+                font: { size: 11 },
+                color: '#60a5fa',
+                callback: v => '₩' + (v/10000).toFixed(0) + '만'
+              },
+              title: { display: true, text: '누적 수익', color: '#60a5fa', font: { size: 11 } }
+            }
+          }
+        }
+      });
+    }
+
+    // 플랜 선택
+    let selectedPlan = 'onetime';
+    function selectPlan(plan) {
+      selectedPlan = plan;
+      const isOnetime = plan === 'onetime';
+
+      // 버튼 스타일
+      document.getElementById('btn-onetime').className = 'plan-btn rounded-xl border-2 p-4 text-left transition-all ' +
+        (isOnetime ? 'border-amber-400 bg-amber-50' : 'border-gray-200 bg-white');
+      document.getElementById('btn-monthly').className = 'plan-btn rounded-xl border-2 p-4 text-left transition-all ' +
+        (!isOnetime ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white');
+
+      // 요약 박스
+      const summary = document.getElementById('planSummary');
+      const priceEl = document.getElementById('planPrice');
+      const labelEl = document.getElementById('planLabel');
+      const badgeEl = document.getElementById('planBadge');
+      const submitBtn = document.getElementById('submitBtn');
+
+      if (isOnetime) {
+        summary.className = 'bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 mb-6 flex items-center justify-between';
+        priceEl.className = 'text-2xl font-black text-amber-500';
+        priceEl.textContent = '₩590,000';
+        labelEl.textContent = '일시불';
+        badgeEl.textContent = '⚡ 4월 30일 한정';
+        badgeEl.className = 'text-xs text-amber-700 font-black bg-amber-100 px-3 py-1 rounded-full';
+        submitBtn.className = 'w-full bg-amber-500 hover:bg-amber-600 text-white font-black py-4 rounded-xl transition-all text-base shadow-lg hover:scale-105 active:scale-100';
+        submitBtn.textContent = '신청하기 (₩590,000 일시불) →';
+        document.getElementById('countdown2').style.display = '';
+      } else {
+        summary.className = 'bg-gray-50 border-2 border-gray-900 rounded-2xl p-4 mb-6 flex items-center justify-between';
+        priceEl.className = 'text-2xl font-black text-gray-900';
+        priceEl.textContent = '₩129,000 / 월';
+        labelEl.textContent = '월정액';
+        badgeEl.textContent = '언제든 해지 가능';
+        badgeEl.className = 'text-xs text-gray-700 font-black bg-gray-200 px-3 py-1 rounded-full';
+        submitBtn.className = 'w-full bg-gray-900 hover:bg-gray-700 text-white font-black py-4 rounded-xl transition-all text-base shadow-lg hover:scale-105 active:scale-100';
+        submitBtn.textContent = '신청하기 (₩129,000/월) →';
+        document.getElementById('countdown2').style.display = 'none';
+      }
+    }
+
+    // Purchase form → SMS
+    document.getElementById('buyForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const name = document.getElementById('buyerName').value.trim();
+      const phone = document.getElementById('buyerPhone').value.trim();
+      if (!name || !phone) return;
+
+      const planText = selectedPlan === 'onetime' ? '일시불 ₩590,000' : '월정액 ₩129,000/월';
+      const message = encodeURIComponent(
+        '[CUJASA 구매 신청]\n구매자명: ' + name + '\n전화번호: ' + phone + '\n플랜: ' + planText
+      );
+      const smsUri = 'sms:01040941666?body=' + message;
+      window.location.href = smsUri;
+    });
+
+    // FAQ accordion
+    document.querySelectorAll('.faq-trigger').forEach(trigger => {
+      trigger.addEventListener('click', () => {
+        const item = trigger.closest('.faq-item');
+        const answer = item.querySelector('.faq-answer');
+        const icon = trigger.querySelector('.faq-icon');
+        const isOpen = answer.classList.contains('open');
+
+        document.querySelectorAll('.faq-answer').forEach(a => a.classList.remove('open'));
+        document.querySelectorAll('.faq-icon').forEach(i => i.textContent = '+');
+
+        if (!isOpen) {
+          answer.classList.add('open');
+          icon.textContent = '−';
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>
