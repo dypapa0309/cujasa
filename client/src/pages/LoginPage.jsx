@@ -14,7 +14,7 @@ export default function LoginPage({ onLogin }) {
     try {
       const result = await api.post('/api/auth/login', form);
       setAuthToken(result.token);
-      onLogin(result.admin);
+      onLogin(result);
     } catch (err) {
       setError('로그인 정보를 확인하세요. 서버 인증 환경변수가 없으면 README의 관리자 비밀번호 설정을 먼저 진행해야 합니다.');
     } finally {
@@ -30,8 +30,8 @@ export default function LoginPage({ onLogin }) {
             <ShieldCheck size={21} />
           </div>
           <div>
-            <h1 className="text-lg font-semibold">CUJASA 관리자 로그인</h1>
-            <p className="text-sm text-slate-500">쿠팡 자동화 콘솔 접근 보호</p>
+            <h1 className="text-lg font-semibold">CUJASA 로그인</h1>
+            <p className="text-sm text-slate-500">쿠팡 파트너스 자동화 콘솔</p>
           </div>
         </div>
         <label className="mt-6 grid gap-1 text-sm">

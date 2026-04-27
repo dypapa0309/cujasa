@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
-import { verifyPassword } from '../utils/password.js';
+import { verifyPassword, hashPassword } from '../utils/password.js';
+import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
 
@@ -19,13 +20,12 @@ export function shouldBypassAuth() {
   return !isAuthConfigured() && process.env.NODE_ENV !== 'production';
 }
 
-export function createToken(adminEmail) {
+function makeToken(payload) {
   const header = base64url({ alg: 'HS256', typ: 'JWT' });
   const body = base64url({
-    sub: adminEmail,
-    role: 'admin',
     iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS
+    exp: Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS,
+    ...payload
   });
   const unsigned = `${header}.${body}`;
   return `${unsigned}.${sign(unsigned)}`;
@@ -56,5 +56,45 @@ export function loginAdmin(email, password) {
     error.status = 401;
     throw error;
   }
-  return { token: createToken(process.env.ADMIN_EMAIL), admin: { email: process.env.ADMIN_EMAIL } };
+  const token = makeToken({ sub: process.env.ADMIN_EMAIL, role: 'admin' });
+  return { token, type: 'admin', email: process.env.ADMIN_EMAIL };
 }
+
+export async function loginUser(email, password) {
+  const user = await dbGet('users', { email: email?.trim().toLowerCase() });
+  if (!user) {
+    const error = new Error('Invalid email or password');
+    error.status = 401;
+    throw error;
+  }
+  if (user.status === 'suspended') {
+    const error = new Error('Account suspended');
+    error.status = 403;
+    throw error;
+  }
+  if (!verifyPassword(password || '', user.password_hash)) {
+    const error = new Error('Invalid email or password');
+    error.status = 401;
+    throw error;
+  }
+  const token = makeToken({ sub: user.email, role: 'user', userId: user.id, maxAccounts: user.max_accounts });
+  return { token, type: 'user', email: user.email, userId: user.id, maxAccounts: user.max_accounts };
+}
+
+export async function createUser(email, password, maxAccounts = 4) {
+  const existing = await dbGet('users', { email: email.trim().toLowerCase() });
+  if (existing) {
+    const error = new Error('이미 존재하는 이메일입니다.');
+    error.status = 409;
+    throw error;
+  }
+  return dbInsert('users', {
+    email: email.trim().toLowerCase(),
+    password_hash: hashPassword(password),
+    max_accounts: maxAccounts,
+    status: 'active'
+  });
+}
+
+export const listUsers = () => dbList('users', {}, { order: 'created_at', ascending: false });
+export const updateUser = (id, patch) => dbUpdate('users', { id }, patch);

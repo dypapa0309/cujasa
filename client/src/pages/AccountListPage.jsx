@@ -3,8 +3,11 @@ import { api } from '../lib/api.js';
 import AccountCard from '../components/AccountCard.jsx';
 import AccountSettingsPage from './AccountSettingsPage.jsx';
 
-export default function AccountListPage({ accounts, reloadAccounts, setSelectedAccountId }) {
+export default function AccountListPage({ accounts, reloadAccounts, setSelectedAccountId, currentUser }) {
   const [editing, setEditing] = useState(null);
+  const isAdmin = !currentUser || currentUser.type === 'admin';
+  const maxAccounts = currentUser?.maxAccounts ?? 999;
+  const atLimit = !isAdmin && accounts.length >= maxAccounts;
   const create = async () => {
     const projects = await api.get('/api/projects');
     const project = projects[0];
@@ -27,8 +30,16 @@ export default function AccountListPage({ accounts, reloadAccounts, setSelectedA
   if (editing) return <AccountSettingsPage selectedAccount={editing} reloadAccounts={reloadAccounts} />;
   return (
     <div className="grid gap-4">
-      <div className="flex justify-end">
-        <button onClick={create} className="rounded bg-coupang px-4 py-2 font-medium text-white">계정 생성</button>
+      <div className="flex items-center justify-between gap-3">
+        {!isAdmin && (
+          <div className="text-sm text-slate-500">
+            계정 <span className="font-semibold">{accounts.length}</span> / {maxAccounts}
+            {atLimit && <span className="ml-2 text-xs text-red-500 font-medium">한도 도달 — 추가 계정은 문의해주세요</span>}
+          </div>
+        )}
+        {(isAdmin || !atLimit) && (
+          <button onClick={create} className="ml-auto rounded bg-coupang px-4 py-2 font-medium text-white">계정 생성</button>
+        )}
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {accounts.map((account) => <AccountCard key={account.id} account={account} onSelect={setEditing} />)}

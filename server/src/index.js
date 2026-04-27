@@ -15,6 +15,7 @@ import metricsRouter from './routes/metrics.js';
 import analyticsRouter from './routes/analytics.js';
 import notificationsRouter from './routes/notifications.js';
 import blogRouter from './routes/blog.js';
+import adminRouter from './routes/admin.js';
 import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { processDueQueue } from './services/schedulerService.js';
@@ -60,6 +61,7 @@ app.use('/api/analytics', analyticsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/r', trackingRouter);
 app.use('/blog', blogRouter);
+app.use('/api/admin', adminRouter);
 
 // sitemap.xml (블로그 글 포함 자동 생성)
 app.get('/sitemap.xml', async (req, res) => {
