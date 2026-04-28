@@ -15,9 +15,11 @@ export function createCoupangSignatureMessage(signedDate, method, pathWithQuery)
   return signedDate + method.toUpperCase() + path + query;
 }
 
-export function createCoupangAuthorization(method, pathWithQuery) {
+export function createCoupangAuthorization(method, pathWithQuery, accessKey, secretKey) {
+  const ak = accessKey || process.env.COUPANG_ACCESS_KEY || '';
+  const sk = secretKey || process.env.COUPANG_SECRET_KEY || '';
   const signedDate = createCoupangSignedDate();
   const message = createCoupangSignatureMessage(signedDate, method, pathWithQuery);
-  const signature = crypto.createHmac('sha256', process.env.COUPANG_SECRET_KEY || '').update(message).digest('hex');
-  return `CEA algorithm=HmacSHA256, access-key=${process.env.COUPANG_ACCESS_KEY || ''}, signed-date=${signedDate}, signature=${signature}`;
+  const signature = crypto.createHmac('sha256', sk).update(message).digest('hex');
+  return `CEA algorithm=HmacSHA256, access-key=${ak}, signed-date=${signedDate}, signature=${signature}`;
 }

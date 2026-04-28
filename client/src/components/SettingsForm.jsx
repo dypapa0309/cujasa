@@ -26,7 +26,11 @@ export default function SettingsForm({ form, setForm, onSubmit, saving }) {
         ['content_scope', '주제 범위', 'text'],
         ['tone', '톤', 'text'],
         ['cta_style', 'CTA 스타일', 'text'],
-        ['threads_access_token', 'Threads 액세스 토큰', 'password']
+        ['threads_access_token', 'Threads 액세스 토큰', 'password'],
+        ['coupang_access_key', '쿠팡 Access Key', 'text'],
+        ['coupang_secret_key', '쿠팡 Secret Key', 'password'],
+        ['coupang_partner_id', '쿠팡 Partner ID', 'text'],
+        ['coupang_tracking_code', '쿠팡 Tracking Code', 'text']
       ].map(([key, label, type]) => (
         <label key={key} className="grid gap-1 text-sm">
           <span className="font-medium">{label}</span>

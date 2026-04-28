@@ -3,14 +3,13 @@ import { dbGet, dbInsert, dbList, logActivity } from './supabaseService.js';
 
 const host = 'https://api-gateway.coupang.com';
 
-function createSearchPath(keyword, limit = 10) {
+function createSearchPath(keyword, limit = 10, trackingCode) {
   const params = new URLSearchParams({
     keyword,
     limit: String(limit)
   });
-  if (process.env.COUPANG_TRACKING_CODE) {
-    params.set('subId', process.env.COUPANG_TRACKING_CODE);
-  }
+  const subId = trackingCode || process.env.COUPANG_TRACKING_CODE;
+  if (subId) params.set('subId', subId);
   return `/v2/providers/affiliate_open_api/apis/openapi/products/search?${params.toString()}`;
 }
 
@@ -29,14 +28,15 @@ function fallbackProduct(keyword, index = 0) {
   };
 }
 
-export async function searchKeyword(keyword, limit = 10) {
-  if (!process.env.COUPANG_ACCESS_KEY || !process.env.COUPANG_SECRET_KEY) {
-    return [fallbackProduct(keyword)];
-  }
-  const path = createSearchPath(keyword, limit);
+export async function searchKeyword(keyword, limit = 10, creds = {}) {
+  const accessKey = creds.accessKey || process.env.COUPANG_ACCESS_KEY;
+  const secretKey = creds.secretKey || process.env.COUPANG_SECRET_KEY;
+  if (!accessKey || !secretKey) return [fallbackProduct(keyword)];
+
+  const path = createSearchPath(keyword, limit, creds.trackingCode);
   try {
     const response = await fetch(`${host}${path}`, {
-      headers: { Authorization: createCoupangAuthorization('GET', path), 'Content-Type': 'application/json' }
+      headers: { Authorization: createCoupangAuthorization('GET', path, accessKey, secretKey), 'Content-Type': 'application/json' }
     });
     if (!response.ok) {
       const body = await response.text();
@@ -60,7 +60,7 @@ export async function searchKeyword(keyword, limit = 10) {
         action: 'coupang_fallback',
         level: 'warn',
         message: error.message,
-        payload: { keyword, hasSubId: Boolean(process.env.COUPANG_TRACKING_CODE) }
+        payload: { keyword }
       });
     } catch (logError) {
       console.warn('[coupang_fallback_log_failed]', logError.message);
@@ -71,15 +71,20 @@ export async function searchKeyword(keyword, limit = 10) {
 
 export async function searchProductsForTopic(topicId) {
   const topic = await dbGet('topics', { id: topicId });
+  const account = await dbGet('accounts', { id: topic.account_id });
+  const creds = {
+    accessKey: account.coupang_access_key,
+    secretKey: account.coupang_secret_key,
+    trackingCode: account.coupang_tracking_code
+  };
   const keywords = topic.search_keywords?.length ? topic.search_keywords : [topic.title];
 
-  // 이미 이 topic에 저장된 product_id 목록 — 중복 insert 방지
   const existing = await dbList('coupang_products', { topic_id: topic.id });
   const seen = new Set(existing.map((p) => p.product_id));
 
   const saved = [];
   for (const keyword of keywords) {
-    const products = await searchKeyword(keyword, 10);
+    const products = await searchKeyword(keyword, 10, creds);
     for (const product of products) {
       if (seen.has(product.product_id)) continue;
       seen.add(product.product_id);
