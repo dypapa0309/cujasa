@@ -103,7 +103,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts }) {
       </Section>
 
       {/* Threads 연결 */}
-      <Section title="Threads 연결">
+      <Section title="Threads 연결" collapsible>
         <Field label="액세스 토큰">
           <div className="relative">
             <input type={showToken ? 'text' : 'password'} value={form.threads_access_token}
@@ -123,7 +123,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts }) {
       </Section>
 
       {/* 쿠팡 파트너스 */}
-      <Section title="쿠팡 파트너스 API" desc="쿠팡 파트너스 사이트 → Open API에서 확인할 수 있습니다">
+      <Section title="쿠팡 파트너스 API" desc="쿠팡 파트너스 사이트 → Open API에서 확인할 수 있습니다" collapsible>
         <Field label="Access Key">
           <input type="text" value={form.coupang_access_key} onChange={(e) => setForm((p) => ({ ...p, coupang_access_key: e.target.value }))}
             placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className={input} />
@@ -190,14 +190,28 @@ export default function CustomerSettingsPage({ account, reloadAccounts }) {
 
 const input = 'w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-coupang transition-colors';
 
-function Section({ title, desc, children }) {
+function Section({ title, desc, children, collapsible = false }) {
+  const [open, setOpen] = useState(!collapsible);
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 grid gap-4">
-      <div>
-        <h3 className="font-bold text-gray-800">{title}</h3>
-        {desc && <p className="text-xs text-gray-400 mt-0.5">{desc}</p>}
-      </div>
-      {children}
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => collapsible && setOpen((v) => !v)}
+        className={`w-full flex items-center justify-between px-5 py-4 text-left ${collapsible ? 'cursor-pointer hover:bg-gray-50' : 'cursor-default'}`}
+      >
+        <div>
+          <h3 className="font-bold text-gray-800">{title}</h3>
+          {desc && <p className="text-xs text-gray-400 mt-0.5">{desc}</p>}
+        </div>
+        {collapsible && (
+          <span className="text-gray-400 text-lg leading-none ml-4">{open ? '−' : '+'}</span>
+        )}
+      </button>
+      {open && (
+        <div className="px-5 pb-5 grid gap-4 border-t border-gray-50">
+          {children}
+        </div>
+      )}
     </div>
   );
 }
