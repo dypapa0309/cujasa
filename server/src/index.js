@@ -16,6 +16,7 @@ import analyticsRouter from './routes/analytics.js';
 import notificationsRouter from './routes/notifications.js';
 import blogRouter from './routes/blog.js';
 import adminRouter from './routes/admin.js';
+import inquiriesRouter from './routes/inquiries.js';
 import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { processDueQueue } from './services/schedulerService.js';
@@ -25,10 +26,10 @@ import { listBlogPosts } from './services/blogService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
-const allowedOrigins = (process.env.CLIENT_BASE_URL || '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+const allowedOrigins = [
+  ...(process.env.CLIENT_BASE_URL || '').split(',').map((o) => o.trim()).filter(Boolean),
+  'https://jasain.vercel.app',
+];
 
 app.use(cors({
   origin(origin, callback) {
@@ -62,6 +63,7 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/r', trackingRouter);
 app.use('/blog', blogRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/inquiries', inquiriesRouter);
 
 // sitemap.xml (블로그 글 포함 자동 생성)
 app.get('/sitemap.xml', async (req, res) => {

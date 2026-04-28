@@ -1,7 +1,7 @@
 import { isAuthConfigured, shouldBypassAuth, verifyToken } from '../services/authService.js';
 import { dbList } from '../services/supabaseService.js';
 
-const publicPaths = ['/api/health', '/api/auth/login'];
+const publicPaths = ['/api/health', '/api/auth/login', '/api/inquiries'];
 
 export async function requireAuth(req, res, next) {
   try {
