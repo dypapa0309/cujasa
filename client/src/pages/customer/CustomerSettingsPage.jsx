@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 
-export default function CustomerSettingsPage({ account, reloadAccounts }) {
+export default function CustomerSettingsPage({ account, reloadAccounts, onPipelineDone }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -53,8 +53,8 @@ export default function CustomerSettingsPage({ account, reloadAccounts }) {
 
     setRunning(true);
     try {
-      await api.post(`/api/accounts/${account.id}/run-pipeline`, {});
-      toast('오늘 포스팅 예약이 완료됐습니다.', 'success');
+      const result = await api.post(`/api/accounts/${account.id}/run-pipeline`, {});
+      onPipelineDone?.(result);
     } catch {
       toast('자동화 실행에 실패했습니다. 잠시 후 자동으로 재시도됩니다.', 'error');
     } finally {

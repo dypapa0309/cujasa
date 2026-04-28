@@ -22,6 +22,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
   const toast = useToast();
   const [tab, setTab] = useState('home');
   const [selectedIdx, setSelectedIdx] = useState(0);
+  const [pipelineResult, setPipelineResult] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newAccount, setNewAccount] = useState({ name: '', account_handle: '' });
@@ -132,7 +133,14 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
               </form>
             )}
 
-            <Page account={account} accounts={accounts} currentUser={currentUser} reloadAccounts={reloadAccounts} />
+            <Page
+              account={account}
+              accounts={accounts}
+              currentUser={currentUser}
+              reloadAccounts={reloadAccounts}
+              pipelineResult={pipelineResult}
+              onPipelineDone={(result) => { setPipelineResult(result); setTab('posts'); }}
+            />
           </>
         )}
       </main>

@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 
-export default function CustomerPostsPage({ account }) {
+export default function CustomerPostsPage({ account, pipelineResult }) {
   const [queue, setQueue] = useState([]);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
 
-  useEffect(() => {
+  const load = () => {
     if (!account) return;
+    setLoading(true);
     Promise.all([
       api.get(`/api/accounts/${account.id}/queue`),
       api.get(`/api/accounts/${account.id}/posts`),
@@ -17,7 +18,10 @@ export default function CustomerPostsPage({ account }) {
       setQueue(q);
       setPosts(p);
     }).catch(console.error).finally(() => setLoading(false));
-  }, [account?.id]);
+  };
+
+  useEffect(() => { load(); }, [account?.id]);
+  useEffect(() => { if (pipelineResult) load(); }, [pipelineResult]);
 
   const posted = queue
     .filter((r) => r.status === 'posted')
@@ -37,6 +41,25 @@ export default function CustomerPostsPage({ account }) {
 
   return (
     <div className="grid gap-5">
+
+      {/* 파이프라인 실행 결과 */}
+      {pipelineResult && (
+        <div className={`rounded-2xl px-5 py-4 text-sm font-medium ${pipelineResult.status === 'ok' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+          {pipelineResult.status === 'ok' ? (
+            <div className="grid gap-1">
+              <div className="font-bold">자동화 실행 완료 ✓</div>
+              <div className="text-xs opacity-80">
+                주제 {pipelineResult.steps?.topics ?? 0}개 생성 · 콘텐츠 {pipelineResult.steps?.posts ?? 0}개 작성 · {pipelineResult.steps?.queued ?? 0}개 예약 완료
+              </div>
+            </div>
+          ) : (
+            <div>
+              <div className="font-bold">실행 중 오류 발생</div>
+              <div className="text-xs mt-1 opacity-80">{pipelineResult.error}</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 예약된 포스팅 */}
       {scheduled.length > 0 && (
