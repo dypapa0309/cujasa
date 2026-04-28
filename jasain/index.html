@@ -10,8 +10,8 @@
   <meta property="og:title" content="JASAIN — 자동화 솔루션" />
   <meta property="og:description" content="반복 업무는 자동으로, 수익은 꾸준히." />
   <meta property="og:locale" content="ko_KR" />
-  <meta name="twitter:card" content="summary" />
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -20,9 +20,8 @@
       theme: {
         extend: {
           colors: {
-            jasain: '#6366f1',
-            'jasain-dark': '#4f46e5',
-            'jasain-light': '#818cf8',
+            jasain: '#6366f1', 'jasain-dark': '#4f46e5', 'jasain-light': '#818cf8',
+            coupang: '#C00000', 'coupang-dark': '#9a0000',
           }
         }
       }
@@ -31,261 +30,321 @@
   <style>
     * { font-family: 'Noto Sans KR', sans-serif; }
     html { scroll-behavior: smooth; }
-
-    .fade-up {
-      opacity: 0;
-      transform: translateY(24px);
-      transition: opacity 0.6s ease, transform 0.6s ease;
-    }
+    .fade-up { opacity: 0; transform: translateY(24px); transition: opacity 0.65s ease, transform 0.65s ease; }
     .fade-up.visible { opacity: 1; transform: translateY(0); }
-
-    .card-hover {
-      transition: transform 0.25s ease, box-shadow 0.25s ease;
-    }
-    .card-hover:hover {
-      transform: translateY(-4px);
-      box-shadow: 0 20px 48px rgba(0,0,0,0.13);
-    }
-
-    .gradient-text {
-      background: linear-gradient(135deg, #818cf8, #c084fc);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-    }
-
-    .bg-grid {
-      background-image: radial-gradient(circle, rgba(99,102,241,0.12) 1px, transparent 1px);
-      background-size: 32px 32px;
-    }
-
-    .badge-live {
-      animation: pulse-dot 2s infinite;
-    }
-    @keyframes pulse-dot {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
+    .screenshot-shadow { box-shadow: 0 20px 60px rgba(0,0,0,0.13), 0 4px 16px rgba(0,0,0,0.08); }
+    .faq-answer { max-height: 0; overflow: hidden; transition: max-height 0.32s ease; }
+    .faq-answer.open { max-height: 300px; }
+    .bg-grid { background-image: radial-gradient(circle, rgba(99,102,241,0.12) 1px, transparent 1px); background-size: 32px 32px; }
+    .badge-live { animation: pulse-dot 2s infinite; }
+    @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+    #tab-jasain .gradient-text { background: linear-gradient(135deg, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    #tab-cujasa .gradient-text { background: linear-gradient(135deg, #C00000, #ff4444); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .card-hover { transition: transform 0.25s ease, box-shadow 0.25s ease; }
+    .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 48px rgba(0,0,0,0.13); }
   </style>
 </head>
 <body class="bg-white text-gray-900 antialiased">
 
-  <!-- NAV -->
+  <!-- NAV (공통) -->
   <nav class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
-    <div class="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-      <div class="flex items-center gap-2">
-        <span class="text-xl font-black tracking-tight" style="background: linear-gradient(135deg, #6366f1, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">JASAIN</span>
-        <span class="text-xs text-gray-400 font-medium hidden sm:block">자동화 솔루션</span>
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+      <button onclick="showTab('jasain')" class="flex items-center gap-2 flex-shrink-0">
+        <span class="text-xl font-black tracking-tight" style="background:linear-gradient(135deg,#6366f1,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">JASAIN</span>
+      </button>
+      <div class="flex items-center bg-gray-100 rounded-xl p-1 gap-1">
+        <button id="tab-btn-jasain" onclick="showTab('jasain')" class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all bg-white text-gray-800 shadow-sm">전체 솔루션</button>
+        <button id="tab-btn-cujasa" onclick="showTab('cujasa')" class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-gray-600">CUJASA</button>
       </div>
-      <a href="#contact" class="bg-jasain hover:bg-jasain-dark text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-sm">
-        문의하기
-      </a>
+      <a id="nav-cta" href="#contact" class="bg-jasain hover:bg-jasain-dark text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-sm flex-shrink-0">문의하기</a>
     </div>
   </nav>
 
-  <!-- HERO -->
-  <section class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white py-28 px-6 relative overflow-hidden">
-    <div class="absolute inset-0 bg-grid opacity-100"></div>
-    <div class="absolute inset-0" style="background: radial-gradient(ellipse at 30% 50%, rgba(99,102,241,0.18) 0%, transparent 60%), radial-gradient(ellipse at 75% 20%, rgba(192,132,252,0.12) 0%, transparent 50%);"></div>
-
-    <div class="max-w-3xl mx-auto text-center relative fade-up">
-      <div class="inline-flex items-center gap-2 bg-white/10 border border-white/10 rounded-full px-4 py-1.5 text-xs font-semibold text-jasain-light mb-8">
-        <span class="w-1.5 h-1.5 bg-jasain-light rounded-full badge-live"></span>
-        자동화 솔루션 브랜드
+  <!-- ══════════════ TAB 1: JASAIN ══════════════ -->
+  <div id="tab-jasain">
+    <section class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white py-28 px-6 relative overflow-hidden">
+      <div class="absolute inset-0 bg-grid"></div>
+      <div class="absolute inset-0" style="background:radial-gradient(ellipse at 30% 50%,rgba(99,102,241,0.18) 0%,transparent 60%),radial-gradient(ellipse at 75% 20%,rgba(192,132,252,0.12) 0%,transparent 50%);"></div>
+      <div class="max-w-3xl mx-auto text-center relative fade-up">
+        <div class="inline-flex items-center gap-2 bg-white/10 border border-white/10 rounded-full px-4 py-1.5 text-xs font-semibold text-jasain-light mb-8"><span class="w-1.5 h-1.5 bg-jasain-light rounded-full badge-live"></span>자동화 솔루션 브랜드</div>
+        <h1 class="text-5xl sm:text-6xl font-black mb-6 leading-tight tracking-tight">반복 업무는 <span class="gradient-text">자동으로</span>,<br>수익은 꾸준히</h1>
+        <p class="text-lg text-slate-400 mb-10 leading-relaxed max-w-xl mx-auto">JASAIN은 비즈니스의 반복적인 작업을 자동화합니다.<br>시간을 아끼고, 수익에 집중하세요.</p>
+        <a href="#products" class="inline-block bg-jasain hover:bg-jasain-dark text-white font-bold px-8 py-4 rounded-xl text-base transition-colors shadow-lg hover:scale-105 active:scale-100 transform duration-150">솔루션 보기 →</a>
       </div>
-      <h1 class="text-5xl sm:text-6xl font-black mb-6 leading-tight tracking-tight">
-        반복 업무는 <span class="gradient-text">자동으로</span>,<br>수익은 꾸준히
-      </h1>
-      <p class="text-lg text-slate-400 mb-10 leading-relaxed max-w-xl mx-auto">
-        JASAIN은 비즈니스의 반복적인 작업을 자동화합니다.<br>
-        시간을 아끼고, 수익에 집중하세요.
-      </p>
-      <a href="#products" class="inline-block bg-jasain hover:bg-jasain-dark text-white font-bold px-8 py-4 rounded-xl text-base transition-colors shadow-lg hover:scale-105 active:scale-100 transform duration-150">
-        솔루션 보기 →
-      </a>
-    </div>
-  </section>
+    </section>
 
-  <!-- STATS -->
-  <section class="bg-slate-950 border-b border-slate-800">
-    <div class="max-w-5xl mx-auto px-6 py-10 grid grid-cols-3 gap-6 text-center">
-      <div class="fade-up">
-        <div class="text-3xl font-black text-white mb-1">11<span class="text-jasain-light">+</span></div>
-        <div class="text-xs text-slate-500 font-medium">누적 구매자</div>
+    <section class="bg-slate-950 border-b border-slate-800">
+      <div class="max-w-5xl mx-auto px-6 py-10 grid grid-cols-3 gap-6 text-center">
+        <div class="fade-up"><div class="text-3xl font-black text-white mb-1">11<span class="text-jasain-light">+</span></div><div class="text-xs text-slate-500 font-medium">누적 구매자</div></div>
+        <div class="fade-up"><div class="text-3xl font-black text-white mb-1">1<span class="text-jasain-light">+</span></div><div class="text-xs text-slate-500 font-medium">출시 솔루션</div></div>
+        <div class="fade-up"><div class="text-3xl font-black text-white mb-1">24<span class="text-jasain-light">h</span></div><div class="text-xs text-slate-500 font-medium">자동 운영</div></div>
       </div>
-      <div class="fade-up">
-        <div class="text-3xl font-black text-white mb-1">1<span class="text-jasain-light">+</span></div>
-        <div class="text-xs text-slate-500 font-medium">출시 솔루션</div>
-      </div>
-      <div class="fade-up">
-        <div class="text-3xl font-black text-white mb-1">24<span class="text-jasain-light">h</span></div>
-        <div class="text-xs text-slate-500 font-medium">자동 운영</div>
-      </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- PRODUCTS -->
-  <section id="products" class="py-24 px-6 bg-gray-50">
-    <div class="max-w-5xl mx-auto">
-      <div class="text-center mb-14 fade-up">
-        <div class="text-xs font-bold text-jasain uppercase tracking-widest mb-3">SOLUTIONS</div>
-        <h2 class="text-3xl font-black mb-3">자동화 솔루션</h2>
-        <p class="text-gray-500 text-sm">각 솔루션을 클릭해 자세한 내용을 확인하세요.</p>
-      </div>
-
-      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-
-        <!-- CUJASA 카드 -->
-        <a href="/cujasa" target="_blank" rel="noopener"
-           class="bg-white rounded-2xl p-6 border border-gray-100 card-hover fade-up block group">
-          <div class="flex items-start justify-between mb-5">
-            <div class="w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-sm"
-                 style="background: linear-gradient(135deg, #C00000, #ff4444);">CJ</div>
-            <span class="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full">
-              <span class="w-1.5 h-1.5 bg-emerald-500 rounded-full badge-live"></span>출시
-            </span>
-          </div>
-          <h3 class="text-lg font-black mb-1 group-hover:text-jasain transition-colors">CUJASA</h3>
-          <p class="text-xs font-semibold text-gray-400 mb-3">쿠팡 파트너스 자동화</p>
-          <p class="text-sm text-gray-600 leading-relaxed mb-5">
-            AI가 주제 선정부터 쿠팡 상품 검색, 글 작성, Threads 자동 업로드까지 전부 대신합니다.
-          </p>
-          <div class="flex flex-wrap gap-2 mb-5">
-            <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">Threads 자동 포스팅</span>
-            <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">AI 콘텐츠 생성</span>
-            <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">쿠팡 파트너스</span>
-          </div>
-          <div class="flex items-center justify-between pt-4 border-t border-gray-100">
-            <span class="text-sm font-black text-gray-900">₩590,000 ~</span>
-            <span class="text-xs font-bold text-jasain group-hover:translate-x-1 transition-transform inline-block">자세히 보기 →</span>
-          </div>
-        </a>
-
-        <!-- Coming Soon 1 -->
-        <div class="bg-white rounded-2xl p-6 border border-dashed border-gray-200 fade-up opacity-60">
-          <div class="flex items-start justify-between mb-5">
-            <div class="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
-              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path d="M12 6v6l4 2M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/>
-              </svg>
+    <section id="products" class="py-24 px-6 bg-gray-50">
+      <div class="max-w-5xl mx-auto">
+        <div class="text-center mb-14 fade-up">
+          <div class="text-xs font-bold text-jasain uppercase tracking-widest mb-3">SOLUTIONS</div>
+          <h2 class="text-3xl font-black mb-3">자동화 솔루션</h2>
+          <p class="text-gray-500 text-sm">클릭해서 자세한 내용을 확인하세요.</p>
+        </div>
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <button onclick="showTab('cujasa')" class="bg-white rounded-2xl p-6 border border-gray-100 card-hover fade-up text-left group w-full">
+            <div class="flex items-start justify-between mb-5">
+              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-sm" style="background:linear-gradient(135deg,#C00000,#ff4444);">CJ</div>
+              <span class="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full"><span class="w-1.5 h-1.5 bg-emerald-500 rounded-full badge-live"></span>출시</span>
             </div>
-            <span class="text-xs font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">Coming Soon</span>
-          </div>
-          <h3 class="text-lg font-black mb-1 text-gray-400">준비 중</h3>
-          <p class="text-xs font-semibold text-gray-300 mb-3">새로운 자동화 솔루션</p>
-          <p class="text-sm text-gray-400 leading-relaxed">
-            다음 솔루션을 준비하고 있습니다. 출시 알림을 받으려면 아래에서 문의해주세요.
-          </p>
-        </div>
-
-        <!-- Coming Soon 2 -->
-        <div class="bg-white rounded-2xl p-6 border border-dashed border-gray-200 fade-up opacity-60">
-          <div class="flex items-start justify-between mb-5">
-            <div class="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
-              <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path d="M12 6v6l4 2M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/>
-              </svg>
+            <h3 class="text-lg font-black mb-1 group-hover:text-jasain transition-colors">CUJASA</h3>
+            <p class="text-xs font-semibold text-gray-400 mb-3">쿠팡 파트너스 자동화</p>
+            <p class="text-sm text-gray-600 leading-relaxed mb-5">AI가 주제 선정부터 쿠팡 상품 검색, 글 작성, Threads 자동 업로드까지 전부 대신합니다.</p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">Threads 자동 포스팅</span>
+              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">AI 콘텐츠 생성</span>
+              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">쿠팡 파트너스</span>
             </div>
-            <span class="text-xs font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">Coming Soon</span>
+            <div class="flex items-center justify-between pt-4 border-t border-gray-100">
+              <span class="text-sm font-black text-gray-900">₩590,000 ~</span>
+              <span class="text-xs font-bold text-jasain group-hover:translate-x-1 transition-transform inline-block">자세히 보기 →</span>
+            </div>
+          </button>
+          <div class="bg-white rounded-2xl p-6 border border-dashed border-gray-200 fade-up opacity-60">
+            <div class="flex items-start justify-between mb-5"><div class="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center"><svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 6v6l4 2M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/></svg></div><span class="text-xs font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">Coming Soon</span></div>
+            <h3 class="text-lg font-black mb-1 text-gray-400">준비 중</h3>
+            <p class="text-xs font-semibold text-gray-300 mb-3">새로운 자동화 솔루션</p>
+            <p class="text-sm text-gray-400 leading-relaxed">다음 솔루션을 준비하고 있습니다. 출시 알림을 받으려면 아래에서 문의해주세요.</p>
           </div>
-          <h3 class="text-lg font-black mb-1 text-gray-400">준비 중</h3>
-          <p class="text-xs font-semibold text-gray-300 mb-3">새로운 자동화 솔루션</p>
-          <p class="text-sm text-gray-400 leading-relaxed">
-            더 많은 자동화 솔루션이 곧 출시됩니다. 기대해주세요.
-          </p>
-        </div>
-
-      </div>
-    </div>
-  </section>
-
-  <!-- WHY -->
-  <section class="py-24 px-6 bg-white">
-    <div class="max-w-5xl mx-auto">
-      <div class="text-center mb-14 fade-up">
-        <div class="text-xs font-bold text-jasain uppercase tracking-widest mb-3">WHY JASAIN</div>
-        <h2 class="text-3xl font-black">자동화가 필요한 이유</h2>
-      </div>
-      <div class="grid sm:grid-cols-3 gap-8">
-        <div class="text-center fade-up">
-          <div class="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <svg class="w-7 h-7 text-jasain" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/>
-            </svg>
+          <div class="bg-white rounded-2xl p-6 border border-dashed border-gray-200 fade-up opacity-60">
+            <div class="flex items-start justify-between mb-5"><div class="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center"><svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 6v6l4 2M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/></svg></div><span class="text-xs font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">Coming Soon</span></div>
+            <h3 class="text-lg font-black mb-1 text-gray-400">준비 중</h3>
+            <p class="text-xs font-semibold text-gray-300 mb-3">새로운 자동화 솔루션</p>
+            <p class="text-sm text-gray-400 leading-relaxed">더 많은 자동화 솔루션이 곧 출시됩니다. 기대해주세요.</p>
           </div>
-          <h3 class="font-black mb-2">시간 절약</h3>
-          <p class="text-sm text-gray-500 leading-relaxed">매일 반복되는 업무를 자동화해 하루 수 시간을 되찾습니다.</p>
-        </div>
-        <div class="text-center fade-up">
-          <div class="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <svg class="w-7 h-7 text-jasain" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
-            </svg>
-          </div>
-          <h3 class="font-black mb-2">꾸준한 수익</h3>
-          <p class="text-sm text-gray-500 leading-relaxed">자는 동안에도 자동으로 운영되어 수익이 지속됩니다.</p>
-        </div>
-        <div class="text-center fade-up">
-          <div class="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <svg class="w-7 h-7 text-jasain" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622C17.176 19.29 21 14.591 21 9c0-1.042-.133-2.052-.382-3.016z"/>
-            </svg>
-          </div>
-          <h3 class="font-black mb-2">검증된 솔루션</h3>
-          <p class="text-sm text-gray-500 leading-relaxed">실제 운영 중인 사용자들의 피드백으로 계속 개선됩니다.</p>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- CONTACT -->
-  <section id="contact" class="py-24 px-6 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white relative overflow-hidden">
-    <div class="absolute inset-0 bg-grid opacity-100"></div>
-    <div class="absolute inset-0" style="background: radial-gradient(ellipse at 50% 50%, rgba(99,102,241,0.15) 0%, transparent 65%);"></div>
-    <div class="max-w-xl mx-auto text-center relative fade-up">
-      <div class="text-xs font-bold text-jasain-light uppercase tracking-widest mb-4">CONTACT</div>
-      <h2 class="text-3xl font-black mb-4">어떤 자동화가 필요하세요?</h2>
-      <p class="text-slate-400 text-sm mb-10 leading-relaxed">
-        원하는 솔루션이 없거나 출시 알림을 받고 싶다면<br>아래 버튼으로 문의해주세요.
-      </p>
-      <div class="flex flex-col sm:flex-row gap-3 justify-center">
-        <a href="sms:01040941666?body=%5BJASAIN%20%EB%AC%B8%EC%9D%98%5D%20%EC%95%88%EB%85%95%ED%95%98%EC%84%B8%EC%9A%94%2C%20"
-           class="bg-jasain hover:bg-jasain-dark text-white font-bold px-8 py-4 rounded-xl transition-colors shadow-lg hover:scale-105 active:scale-100 transform duration-150 text-sm">
-          문자로 문의하기
-        </a>
-        <a href="tel:01040941666"
-           class="bg-white/10 hover:bg-white/20 border border-white/10 text-white font-bold px-8 py-4 rounded-xl transition-colors text-sm">
-          010-4094-1666
-        </a>
+    <section class="py-24 px-6 bg-white">
+      <div class="max-w-5xl mx-auto">
+        <div class="text-center mb-14 fade-up"><div class="text-xs font-bold text-jasain uppercase tracking-widest mb-3">WHY JASAIN</div><h2 class="text-3xl font-black">자동화가 필요한 이유</h2></div>
+        <div class="grid sm:grid-cols-3 gap-8">
+          <div class="text-center fade-up"><div class="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><svg class="w-7 h-7 text-jasain" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg></div><h3 class="font-black mb-2">시간 절약</h3><p class="text-sm text-gray-500 leading-relaxed">매일 반복되는 업무를 자동화해 하루 수 시간을 되찾습니다.</p></div>
+          <div class="text-center fade-up"><div class="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><svg class="w-7 h-7 text-jasain" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg></div><h3 class="font-black mb-2">꾸준한 수익</h3><p class="text-sm text-gray-500 leading-relaxed">자는 동안에도 자동으로 운영되어 수익이 지속됩니다.</p></div>
+          <div class="text-center fade-up"><div class="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><svg class="w-7 h-7 text-jasain" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622C17.176 19.29 21 14.591 21 9c0-1.042-.133-2.052-.382-3.016z"/></svg></div><h3 class="font-black mb-2">검증된 솔루션</h3><p class="text-sm text-gray-500 leading-relaxed">실제 운영 중인 사용자들의 피드백으로 계속 개선됩니다.</p></div>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- FOOTER -->
-  <footer class="bg-slate-950 border-t border-slate-800 py-10 px-6">
-    <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-      <div>
-        <span class="font-black text-white tracking-tight" style="background: linear-gradient(135deg, #6366f1, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;">JASAIN</span>
-        <span class="text-slate-600 text-xs ml-2">자동화 솔루션</span>
+    <section id="contact" class="py-24 px-6 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white relative overflow-hidden">
+      <div class="absolute inset-0 bg-grid"></div>
+      <div class="absolute inset-0" style="background:radial-gradient(ellipse at 50% 50%,rgba(99,102,241,0.15) 0%,transparent 65%);"></div>
+      <div class="max-w-xl mx-auto text-center relative fade-up">
+        <div class="text-xs font-bold text-jasain-light uppercase tracking-widest mb-4">CONTACT</div>
+        <h2 class="text-3xl font-black mb-4">어떤 자동화가 필요하세요?</h2>
+        <p class="text-slate-400 text-sm mb-10 leading-relaxed">원하는 솔루션이 없거나 출시 알림을 받고 싶다면<br>아래 버튼으로 문의해주세요.</p>
+        <div class="flex flex-col sm:flex-row gap-3 justify-center">
+          <a href="sms:01040941666?body=%5BJASAIN%20%EB%AC%B8%EC%9D%98%5D%20" class="bg-jasain hover:bg-jasain-dark text-white font-bold px-8 py-4 rounded-xl transition-colors shadow-lg hover:scale-105 active:scale-100 transform duration-150 text-sm">문자로 문의하기</a>
+          <a href="tel:01040941666" class="bg-white/10 hover:bg-white/20 border border-white/10 text-white font-bold px-8 py-4 rounded-xl transition-colors text-sm">010-4094-1666</a>
+        </div>
       </div>
-      <div class="flex items-center gap-6 text-xs text-slate-500">
-        <a href="/cujasa" target="_blank" rel="noopener" class="hover:text-white transition-colors">CUJASA</a>
-        <a href="tel:01040941666" class="hover:text-white transition-colors">010-4094-1666</a>
+    </section>
+
+    <footer class="bg-slate-950 border-t border-slate-800 py-10 px-6">
+      <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+        <span class="font-black text-white tracking-tight" style="background:linear-gradient(135deg,#6366f1,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">JASAIN</span>
+        <div class="flex items-center gap-6 text-xs text-slate-500">
+          <button onclick="showTab('cujasa')" class="hover:text-white transition-colors">CUJASA</button>
+          <a href="tel:01040941666" class="hover:text-white transition-colors">010-4094-1666</a>
+        </div>
       </div>
-    </div>
-  </footer>
+    </footer>
+  </div>
+
+  <!-- ══════════════ TAB 2: CUJASA ══════════════ -->
+  <div id="tab-cujasa" style="display:none;">
+    <section class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white pt-20 pb-24 px-6 overflow-hidden relative">
+      <div class="absolute inset-0 opacity-20" style="background-image:radial-gradient(circle at 20% 50%,#C00000 0%,transparent 50%),radial-gradient(circle at 80% 20%,#C00000 0%,transparent 40%);"></div>
+      <div class="max-w-4xl mx-auto relative">
+        <div class="inline-flex items-center gap-2 bg-red-950/60 border border-red-800/50 px-4 py-1.5 rounded-full text-xs text-red-300 font-semibold mb-6"><span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse block"></span>Threads 자동 포스팅 솔루션</div>
+        <h1 class="text-4xl lg:text-[52px] font-black leading-[1.15] mb-6 tracking-tight">쿠팡 파트너스,<br><span class="gradient-text">이제 자동으로</span></h1>
+        <p class="text-lg text-slate-300 leading-relaxed mb-10 max-w-md">AI가 주제 선정부터 상품 추천, 글 작성, Threads 업로드까지 전부 대신합니다.<br><span class="text-white font-semibold">당신은 수익만 확인하면 됩니다.</span></p>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <a href="#cj-pricing" class="bg-coupang hover:bg-coupang-dark text-white px-8 py-4 rounded-xl font-black text-base transition-all shadow-lg text-center hover:scale-105 active:scale-100">지금 신청하기 →</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-coupang text-white py-10 px-6">
+      <div class="max-w-4xl mx-auto grid grid-cols-3 gap-4 text-center divide-x divide-red-700">
+        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">24시간</div><div class="text-red-200 text-sm mt-1 font-medium">자동 운영</div></div>
+        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">∞</div><div class="text-red-200 text-sm mt-1 font-medium">자동 포스팅</div></div>
+        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">0분</div><div class="text-red-200 text-sm mt-1 font-medium">수동 작업</div></div>
+      </div>
+    </section>
+
+    <section class="py-20 px-6 bg-white">
+      <div class="max-w-4xl mx-auto text-center">
+        <div class="fade-up inline-block bg-red-50 text-coupang font-bold px-4 py-1.5 rounded-full text-sm mb-4">해결책</div>
+        <h2 class="fade-up text-3xl lg:text-4xl font-black mb-4">CUJASA가 전부 합니다</h2>
+        <p class="fade-up text-gray-500 text-lg mb-14 max-w-lg mx-auto">주제 선정 → 상품 검색 → 글 작성 → Threads 업로드<br>모든 과정이 자동으로 돌아갑니다.</p>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-6">
+          <div class="fade-up"><div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3"><i data-lucide="sparkles" class="w-7 h-7 text-coupang"></i></div><div class="font-bold text-sm leading-snug">AI 주제<br>자동 생성</div></div>
+          <div class="fade-up"><div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3"><i data-lucide="package" class="w-7 h-7 text-coupang"></i></div><div class="font-bold text-sm leading-snug">쿠팡 상품<br>자동 검색</div></div>
+          <div class="fade-up"><div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3"><i data-lucide="pen-line" class="w-7 h-7 text-coupang"></i></div><div class="font-bold text-sm leading-snug">콘텐츠<br>자동 작성</div></div>
+          <div class="fade-up"><div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3"><i data-lucide="send" class="w-7 h-7 text-coupang"></i></div><div class="font-bold text-sm leading-snug">Threads<br>자동 업로드</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="cj-pricing" class="py-24 px-6 bg-gray-50">
+      <div class="max-w-4xl mx-auto">
+        <div class="text-center mb-14 fade-up"><h2 class="text-3xl lg:text-4xl font-black mb-3">가격</h2><p class="text-gray-400 text-lg">두 가지 방법으로 시작할 수 있습니다</p></div>
+        <div class="grid sm:grid-cols-2 gap-6">
+          <div class="fade-up border-2 border-gray-200 rounded-3xl p-8 flex flex-col bg-white">
+            <div class="text-sm font-bold text-gray-400 uppercase tracking-wide mb-4">월정액</div>
+            <div class="mb-2"><span class="text-5xl font-black text-gray-900">₩129,000</span><span class="text-gray-400 text-base font-medium"> / 월</span></div>
+            <p class="text-gray-500 text-sm mb-6">언제든 해지 가능. 부담 없이 시작.</p>
+            <ul class="space-y-3 text-sm text-gray-600 mb-8 flex-1">
+              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>Threads 계정 4개</li>
+              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>AI 주제 / 콘텐츠 자동 생성</li>
+              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>쿠팡 파트너스 상품 자동 매칭</li>
+              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>24시간 자동 예약 발행</li>
+              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>1:1 셋업 지원</li>
+            </ul>
+            <a href="#cj-form" onclick="cjSelectPlan('monthly')" class="block text-center border-2 border-gray-900 text-gray-900 font-black py-4 rounded-xl transition-all hover:bg-gray-900 hover:text-white">월정액으로 시작하기 →</a>
+          </div>
+          <div class="fade-up border-2 border-coupang rounded-3xl p-8 flex flex-col relative shadow-xl shadow-red-100 bg-white">
+            <div class="absolute -top-4 left-1/2 -translate-x-1/2 bg-coupang text-white text-xs font-black px-5 py-1.5 rounded-full shadow whitespace-nowrap">얼리버드 한정가</div>
+            <div class="text-sm font-bold text-coupang uppercase tracking-wide mb-4">일시불</div>
+            <div class="mb-2"><span class="text-5xl font-black text-gray-900">₩590,000</span></div>
+            <div class="inline-flex items-center gap-1.5 bg-red-50 text-coupang font-bold px-3 py-1 rounded-full text-xs mb-4 self-start"><span class="w-1.5 h-1.5 rounded-full bg-coupang animate-pulse block"></span>20명 초과 시 인상</div>
+            <div class="bg-gray-50 rounded-xl p-4 mb-6">
+              <div class="flex items-center justify-between mb-2"><span class="text-xs font-bold text-gray-600">현재 구매 현황</span><span class="text-xs font-black text-coupang">11명 구매 완료</span></div>
+              <div class="w-full bg-gray-200 rounded-full h-2"><div class="bg-coupang h-2 rounded-full" style="width:55%"></div></div>
+              <div class="flex justify-between text-xs text-gray-400 mt-1"><span>0명</span><span>20명</span></div>
+            </div>
+            <ul class="space-y-3 text-sm text-gray-600 mb-8 flex-1">
+              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>Threads 계정 4개</li>
+              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>AI 주제 / 콘텐츠 자동 생성</li>
+              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>쿠팡 파트너스 상품 자동 매칭</li>
+              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>24시간 자동 예약 발행</li>
+              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>1:1 셋업 지원</li>
+            </ul>
+            <a href="#cj-form" onclick="cjSelectPlan('onetime')" class="block text-center bg-coupang hover:bg-coupang-dark text-white font-black py-4 rounded-xl transition-all shadow-lg hover:scale-105 active:scale-100">일시불로 시작하기 →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="py-24 px-6 bg-white">
+      <div class="max-w-2xl mx-auto">
+        <div class="text-center mb-12 fade-up"><h2 class="text-3xl font-black">자주 묻는 질문</h2></div>
+        <div class="space-y-3 fade-up">
+          <div class="cj-faq-item bg-white rounded-2xl overflow-hidden border border-gray-200">
+            <button class="cj-faq-trigger w-full text-left px-6 py-5 font-bold text-sm flex items-center justify-between gap-4"><span>쿠팡 파트너스 가입이 필요한가요?</span><span class="cj-faq-icon text-gray-400 text-xl leading-none flex-shrink-0">+</span></button>
+            <div class="cj-faq-answer"><p class="px-6 pb-5 text-gray-500 text-sm leading-relaxed">네, 쿠팡 파트너스 계정이 필요합니다. API 키를 CUJASA에 등록하면 포스팅마다 내 추적 링크가 자동으로 삽입됩니다.</p></div>
+          </div>
+          <div class="cj-faq-item bg-white rounded-2xl overflow-hidden border border-gray-200">
+            <button class="cj-faq-trigger w-full text-left px-6 py-5 font-bold text-sm flex items-center justify-between gap-4"><span>Threads 계정이 반드시 있어야 하나요?</span><span class="cj-faq-icon text-gray-400 text-xl leading-none flex-shrink-0">+</span></button>
+            <div class="cj-faq-answer"><p class="px-6 pb-5 text-gray-500 text-sm leading-relaxed">네, Threads 계정이 필요합니다. 연동 후 업로드는 모두 자동으로 처리됩니다.</p></div>
+          </div>
+          <div class="cj-faq-item bg-white rounded-2xl overflow-hidden border border-gray-200">
+            <button class="cj-faq-trigger w-full text-left px-6 py-5 font-bold text-sm flex items-center justify-between gap-4"><span>환불 정책은 어떻게 되나요?</span><span class="cj-faq-icon text-gray-400 text-xl leading-none flex-shrink-0">+</span></button>
+            <div class="cj-faq-answer"><p class="px-6 pb-5 text-gray-500 text-sm leading-relaxed">결제 후 7일 이내 환불 신청 시 구매 가격의 20%가 환불됩니다. 7일 이후에는 환불이 불가합니다.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="cj-form" class="py-24 px-6 bg-gray-50">
+      <div class="max-w-lg mx-auto">
+        <div class="text-center mb-10 fade-up">
+          <div class="inline-block bg-red-50 text-coupang font-bold px-4 py-1.5 rounded-full text-sm mb-4">구매 신청</div>
+          <h2 class="text-3xl font-black mb-3">구매 신청서</h2>
+          <p class="text-gray-400">아래 정보를 입력하시면 담당자가 빠르게 연락드립니다</p>
+        </div>
+        <div class="fade-up bg-white border border-gray-200 rounded-3xl p-8">
+          <div class="grid grid-cols-2 gap-3 mb-6">
+            <button type="button" onclick="cjSelectPlan('onetime')" id="cj-btn-onetime" class="rounded-xl border-2 p-4 text-left transition-all border-coupang bg-red-50">
+              <div class="text-xs font-black text-coupang mb-1">일시불</div>
+              <div class="text-xl font-black text-gray-900">₩590,000</div>
+            </button>
+            <button type="button" onclick="cjSelectPlan('monthly')" id="cj-btn-monthly" class="rounded-xl border-2 p-4 text-left transition-all border-gray-200 bg-white">
+              <div class="text-xs font-black text-gray-400 mb-1">월정액</div>
+              <div class="text-xl font-black text-gray-700">₩129,000</div>
+              <div class="text-xs text-gray-500 mt-0.5">/ 월</div>
+            </button>
+          </div>
+          <form id="cj-buyForm" class="space-y-5">
+            <div><label class="block text-sm font-bold text-gray-700 mb-2">구매자명 <span class="text-coupang">*</span></label><input type="text" id="cj-buyerName" placeholder="홍길동" class="w-full border-2 border-gray-200 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-coupang transition-colors" required></div>
+            <div><label class="block text-sm font-bold text-gray-700 mb-2">전화번호 <span class="text-coupang">*</span></label><input type="tel" id="cj-buyerPhone" placeholder="010-0000-0000" class="w-full border-2 border-gray-200 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-coupang transition-colors" required></div>
+            <button type="submit" id="cj-submitBtn" class="w-full bg-coupang hover:bg-coupang-dark text-white font-black py-4 rounded-xl transition-all text-base shadow-lg hover:scale-105 active:scale-100">신청하기 (₩590,000 일시불) →</button>
+          </form>
+          <p class="text-center text-gray-400 text-xs mt-5 leading-relaxed">신청 후 문자로 결제 안내를 드립니다.<br>문의: <a href="tel:01040941666" class="text-coupang font-semibold underline">010-4094-1666</a></p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="bg-gray-950 text-gray-500 py-10 px-6">
+      <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-4"><button onclick="showTab('jasain')" class="text-sm text-gray-500 hover:text-white transition-colors">← 전체 솔루션</button><span class="font-black text-white text-xl tracking-tight">CUJASA</span></div>
+        <div class="text-sm">© 2026 JASAIN. All rights reserved.</div>
+        <a href="tel:01040941666" class="text-sm hover:text-gray-300 transition-colors">010-4094-1666</a>
+      </div>
+    </footer>
+  </div>
 
   <script>
+    function showTab(tab) {
+      const isJasain = tab === 'jasain';
+      document.getElementById('tab-jasain').style.display = isJasain ? 'block' : 'none';
+      document.getElementById('tab-cujasa').style.display = isJasain ? 'none' : 'block';
+      document.getElementById('tab-btn-jasain').className = 'px-4 py-1.5 rounded-lg text-sm font-bold transition-all ' + (isJasain ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600');
+      document.getElementById('tab-btn-cujasa').className = 'px-4 py-1.5 rounded-lg text-sm font-bold transition-all ' + (!isJasain ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600');
+      document.getElementById('nav-cta').href = isJasain ? '#contact' : '#cj-form';
+      document.getElementById('nav-cta').textContent = isJasain ? '문의하기' : '신청하기';
+      window.scrollTo(0, 0);
+      document.querySelectorAll('.fade-up').forEach(el => { if (!el.classList.contains('visible')) observer.observe(el); });
+      lucide.createIcons();
+    }
+
     const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-        }
-      });
+      entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
     }, { threshold: 0.1 });
-
     document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
-  </script>
+    lucide.createIcons();
 
+    let cjPlan = 'onetime';
+    function cjSelectPlan(plan) {
+      cjPlan = plan;
+      const isOnetime = plan === 'onetime';
+      document.getElementById('cj-btn-onetime').className = 'rounded-xl border-2 p-4 text-left transition-all ' + (isOnetime ? 'border-coupang bg-red-50' : 'border-gray-200 bg-white');
+      document.getElementById('cj-btn-monthly').className = 'rounded-xl border-2 p-4 text-left transition-all ' + (!isOnetime ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white');
+      const btn = document.getElementById('cj-submitBtn');
+      btn.className = 'w-full text-white font-black py-4 rounded-xl transition-all text-base shadow-lg hover:scale-105 active:scale-100 ' + (isOnetime ? 'bg-coupang hover:bg-coupang-dark' : 'bg-gray-900 hover:bg-gray-700');
+      btn.textContent = isOnetime ? '신청하기 (₩590,000 일시불) →' : '신청하기 (₩129,000/월) →';
+    }
+
+    document.getElementById('cj-buyForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const name = document.getElementById('cj-buyerName').value.trim();
+      const phone = document.getElementById('cj-buyerPhone').value.trim();
+      if (!name || !phone) return;
+      const planText = cjPlan === 'onetime' ? '일시불 ₩590,000' : '월정액 ₩129,000/월';
+      const msg = encodeURIComponent('[CUJASA 구매 신청]\n구매자명: ' + name + '\n전화번호: ' + phone + '\n플랜: ' + planText);
+      window.location.href = 'sms:01040941666?body=' + msg;
+    });
+
+    document.querySelectorAll('.cj-faq-trigger').forEach(trigger => {
+      trigger.addEventListener('click', () => {
+        const item = trigger.closest('.cj-faq-item');
+        const answer = item.querySelector('.cj-faq-answer');
+        const icon = trigger.querySelector('.cj-faq-icon');
+        const isOpen = answer.classList.contains('open');
+        document.querySelectorAll('.cj-faq-answer').forEach(a => a.classList.remove('open'));
+        document.querySelectorAll('.cj-faq-icon').forEach(i => i.textContent = '+');
+        if (!isOpen) { answer.classList.add('open'); icon.textContent = '−'; }
+      });
+    });
+  </script>
 </body>
 </html>
