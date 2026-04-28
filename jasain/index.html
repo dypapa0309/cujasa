@@ -574,28 +574,28 @@
       btn.textContent = isOnetime ? '신청하기 (₩590,000 일시불) →' : '신청하기 (₩129,000/월) →';
     }
 
-    document.getElementById('cj-buyForm').addEventListener('submit', async function(e) {
+    document.getElementById('cj-buyForm').addEventListener('submit', function(e) {
       e.preventDefault();
       const name = document.getElementById('cj-buyerName').value.trim();
       const phone = document.getElementById('cj-buyerPhone').value.trim();
       if (!name || !phone) return;
       const planText = cjPlan === 'onetime' ? '일시불 ₩590,000' : '월정액 ₩129,000/월';
       const msgText = '[CUJASA 구매 신청]\n구매자명: ' + name + '\n전화번호: ' + phone + '\n플랜: ' + planText;
-
-      // DB 저장 (실패해도 신청 흐름 막지 않음)
-      fetch('https://cujasa.onrender.com/api/inquiries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, plan: cjPlan, source: 'cujasa' })
-      }).catch(() => {});
-
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+      // 사용자 액션(SMS/모달)을 먼저 실행, DB 저장은 이후 백그라운드
       if (isMobile) {
         window.location.href = 'sms:01040941666?body=' + encodeURIComponent(msgText);
       } else {
         document.getElementById('cj-pc-msg').textContent = msgText;
         document.getElementById('cj-pc-modal').style.display = 'flex';
       }
+
+      fetch('https://cujasa.onrender.com/api/inquiries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, plan: cjPlan, source: 'cujasa' })
+      }).catch(() => {});
     });
 
     const roiCtx = document.getElementById('roiChart');
