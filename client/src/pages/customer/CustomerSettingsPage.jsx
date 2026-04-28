@@ -6,6 +6,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
   const [showToken, setShowToken] = useState(false);
   const [showSecretKey, setShowSecretKey] = useState(false);
 
@@ -42,11 +43,22 @@ export default function CustomerSettingsPage({ account, reloadAccounts }) {
         forbidden_words: form.forbidden_words.split('\n').map((s) => s.trim()).filter(Boolean),
       });
       await reloadAccounts();
-      toast('저장됐습니다.', 'success');
+      toast('저장됐습니다. 자동화를 시작합니다.', 'success');
     } catch {
       toast('저장에 실패했습니다.', 'error');
+      return;
     } finally {
       setSaving(false);
+    }
+
+    setRunning(true);
+    try {
+      await api.post(`/api/accounts/${account.id}/run-pipeline`, {});
+      toast('오늘 포스팅 예약이 완료됐습니다.', 'success');
+    } catch {
+      toast('자동화 실행에 실패했습니다. 잠시 후 자동으로 재시도됩니다.', 'error');
+    } finally {
+      setRunning(false);
     }
   };
 
@@ -179,10 +191,10 @@ export default function CustomerSettingsPage({ account, reloadAccounts }) {
         </Field>
       </Section>
 
-      <button onClick={save} disabled={saving}
+      <button onClick={save} disabled={saving || running}
         className="w-full bg-coupang hover:bg-coupang-dark text-white font-black py-4 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-        {saving && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
-        {saving ? '저장 중...' : '저장하기'}
+        {(saving || running) && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
+        {saving ? '저장 중...' : running ? '자동화 실행 중...' : '저장하고 시작하기'}
       </button>
     </div>
   );

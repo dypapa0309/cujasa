@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { createAccount, deleteAccount, getAccount, listAccounts, updateAccount } from '../services/accountService.js';
 import { dbInsert, dbList } from '../services/supabaseService.js';
+import { runPipelineForAccount } from '../services/pipelineService.js';
 
 const router = Router();
 
@@ -60,6 +61,15 @@ router.patch('/:accountId', async (req, res, next) => {
         )(req.body)
       : req.body;
     res.json(await updateAccount(req.params.accountId, body));
+  } catch (e) { next(e); }
+});
+
+router.post('/:accountId/run-pipeline', async (req, res, next) => {
+  try {
+    if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(req.params.accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(await runPipelineForAccount(req.params.accountId));
   } catch (e) { next(e); }
 });
 
