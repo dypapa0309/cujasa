@@ -7,6 +7,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const [errors, setErrors] = useState({});
   const [showToken, setShowToken] = useState(false);
   const [showSecretKey, setShowSecretKey] = useState(false);
 
@@ -35,6 +36,11 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
   }, [account?.id]);
 
   const save = async () => {
+    const errs = {};
+    if (!form.target_audience?.trim()) errs.target_audience = '타겟 오디언스를 입력해주세요.';
+    if (!form.content_scope?.trim()) errs.content_scope = '다룰 카테고리를 입력해주세요.';
+    if (Object.keys(errs).length) { setErrors(errs); return; }
+    setErrors({});
     setSaving(true);
     try {
       await api.patch(`/api/accounts/${account.id}`, {
@@ -88,13 +94,15 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
 
       {/* 콘텐츠 설정 */}
       <Section title="콘텐츠 설정" desc="AI가 주제와 글을 생성할 때 기반이 됩니다">
-        <Field label="타겟 오디언스">
-          <input type="text" value={form.target_audience} onChange={(e) => setForm((p) => ({ ...p, target_audience: e.target.value }))}
-            placeholder="예: 30대 주부, 자취하는 직장인" className={input} />
+        <Field label="타겟 오디언스 *">
+          <input type="text" value={form.target_audience} onChange={(e) => { setForm((p) => ({ ...p, target_audience: e.target.value })); setErrors((p) => ({ ...p, target_audience: null })); }}
+            placeholder="예: 30대 주부, 자취하는 직장인" className={`${input} ${errors.target_audience ? 'border-red-400' : ''}`} />
+          {errors.target_audience && <span className="text-xs text-red-500">{errors.target_audience}</span>}
         </Field>
-        <Field label="다룰 카테고리">
-          <input type="text" value={form.content_scope} onChange={(e) => setForm((p) => ({ ...p, content_scope: e.target.value }))}
-            placeholder="예: 주방용품, 청소, 수납" className={input} />
+        <Field label="다룰 카테고리 *">
+          <input type="text" value={form.content_scope} onChange={(e) => { setForm((p) => ({ ...p, content_scope: e.target.value })); setErrors((p) => ({ ...p, content_scope: null })); }}
+            placeholder="예: 주방용품, 청소, 수납" className={`${input} ${errors.content_scope ? 'border-red-400' : ''}`} />
+          {errors.content_scope && <span className="text-xs text-red-500">{errors.content_scope}</span>}
         </Field>
         <Field label="말투 / 톤">
           <input type="text" value={form.tone} onChange={(e) => setForm((p) => ({ ...p, tone: e.target.value }))}
@@ -191,10 +199,17 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
         </Field>
       </Section>
 
+      {running && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-700">
+          <div className="font-bold mb-0.5">자동화 실행 중입니다</div>
+          <div className="text-xs opacity-80">주제 생성 → 상품 검색 → 콘텐츠 작성 → 예약 순으로 진행됩니다. 완료까지 약 1~2분 소요됩니다.</div>
+        </div>
+      )}
       <button onClick={save} disabled={saving || running}
-        className="w-full bg-coupang hover:bg-coupang-dark text-white font-black py-4 rounded-2xl transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+        className={`w-full font-black py-4 rounded-2xl transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-white
+          ${running ? 'bg-gray-400 cursor-not-allowed' : 'bg-coupang hover:bg-coupang-dark'}`}>
         {(saving || running) && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
-        {saving ? '저장 중...' : running ? '자동화 실행 중...' : '저장하고 시작하기'}
+        {saving ? '저장 중...' : running ? '실행 중 (잠시 기다려주세요)' : '저장하고 시작하기'}
       </button>
     </div>
   );
