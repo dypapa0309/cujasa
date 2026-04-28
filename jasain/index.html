@@ -373,7 +373,11 @@
           <div class="fade-up border-2 border-coupang rounded-3xl p-8 flex flex-col relative shadow-xl shadow-red-100 bg-white">
             <div class="absolute -top-4 left-1/2 -translate-x-1/2 bg-coupang text-white text-xs font-black px-5 py-1.5 rounded-full shadow whitespace-nowrap">얼리버드 한정가</div>
             <div class="text-sm font-bold text-coupang uppercase tracking-wide mb-4">일시불</div>
-            <div class="mb-2"><span class="text-5xl font-black text-gray-900">₩590,000</span></div>
+            <div class="mb-1"><span class="text-5xl font-black text-gray-900">₩590,000</span></div>
+            <div class="flex items-center gap-2 mb-3">
+              <span class="text-gray-400 text-sm line-through">₩1,990,000</span>
+              <span class="text-gray-600 text-sm">→ 이후 ₩990,000</span>
+            </div>
             <div class="inline-flex items-center gap-1.5 bg-red-50 text-coupang font-bold px-3 py-1 rounded-full text-xs mb-4 self-start"><span class="w-1.5 h-1.5 rounded-full bg-coupang animate-pulse block"></span>20명 초과 시 인상</div>
             <div class="bg-gray-50 rounded-xl p-4 mb-6">
               <div class="flex items-center justify-between mb-2"><span class="text-xs font-bold text-gray-600">현재 구매 현황</span><span class="text-xs font-black text-coupang">11명 구매 완료</span></div>
@@ -459,6 +463,23 @@
         </div>
       </div>
     </footer>
+  </div>
+
+  <!-- PC 신청 안내 모달 -->
+  <div id="cj-pc-modal" style="display:none;" class="fixed inset-0 z-50 flex items-center justify-center p-4" onclick="if(event.target===this)document.getElementById('cj-pc-modal').style.display='none'">
+    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+    <div class="relative bg-white rounded-3xl w-full max-w-sm p-8 text-center">
+      <div class="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+        <svg class="w-7 h-7 text-coupang" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 8.25h3m-3 3h3m-3 3h.008v.008H10.5v-.008Z"/></svg>
+      </div>
+      <h3 class="font-black text-lg mb-2">모바일에서 신청해주세요</h3>
+      <p class="text-gray-500 text-sm mb-5 leading-relaxed">PC에서는 문자 전송이 되지 않습니다.<br>아래 내용을 <strong>010-4094-1666</strong>으로<br>직접 문자 보내주시면 안내드릴게요.</p>
+      <div class="bg-gray-50 rounded-2xl px-4 py-4 text-left text-xs text-gray-600 mb-5 whitespace-pre-line" id="cj-pc-msg"></div>
+      <div class="flex gap-3">
+        <a href="tel:01040941666" class="flex-1 bg-coupang hover:bg-coupang-dark text-white font-bold py-3 rounded-xl text-sm transition-colors">전화 문의하기</a>
+        <button onclick="document.getElementById('cj-pc-modal').style.display='none'" class="flex-1 border border-gray-200 text-gray-600 font-bold py-3 rounded-xl text-sm hover:bg-gray-50">닫기</button>
+      </div>
+    </div>
   </div>
 
   <!-- 개인정보처리방침 모달 -->
@@ -559,8 +580,14 @@
       const phone = document.getElementById('cj-buyerPhone').value.trim();
       if (!name || !phone) return;
       const planText = cjPlan === 'onetime' ? '일시불 ₩590,000' : '월정액 ₩129,000/월';
-      const msg = encodeURIComponent('[CUJASA 구매 신청]\n구매자명: ' + name + '\n전화번호: ' + phone + '\n플랜: ' + planText);
-      window.location.href = 'sms:01040941666?body=' + msg;
+      const msgText = '[CUJASA 구매 신청]\n구매자명: ' + name + '\n전화번호: ' + phone + '\n플랜: ' + planText;
+      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile) {
+        window.location.href = 'sms:01040941666?body=' + encodeURIComponent(msgText);
+      } else {
+        document.getElementById('cj-pc-msg').textContent = msgText;
+        document.getElementById('cj-pc-modal').style.display = 'flex';
+      }
     });
 
     const roiCtx = document.getElementById('roiChart');
