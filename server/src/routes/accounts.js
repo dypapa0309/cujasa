@@ -49,8 +49,14 @@ router.patch('/:accountId', async (req, res, next) => {
     }
     // 유저는 안전한 필드만 수정 가능
     const body = req.user?.type === 'user'
-      ? (({ threads_access_token, daily_post_min, daily_post_max, active_time_windows, min_interval_minutes }) =>
-          ({ threads_access_token, daily_post_min, daily_post_max, active_time_windows, min_interval_minutes })
+      ? (({ threads_access_token, daily_post_min, daily_post_max, active_time_windows, min_interval_minutes,
+             name, account_handle, target_audience, content_scope, tone, cta_style,
+             forbidden_topics, forbidden_words,
+             coupang_access_key, coupang_secret_key, coupang_partner_id, coupang_tracking_code }) =>
+          ({ threads_access_token, daily_post_min, daily_post_max, active_time_windows, min_interval_minutes,
+             name, account_handle, target_audience, content_scope, tone, cta_style,
+             forbidden_topics, forbidden_words,
+             coupang_access_key, coupang_secret_key, coupang_partner_id, coupang_tracking_code })
         )(req.body)
       : req.body;
     res.json(await updateAccount(req.params.accountId, body));
