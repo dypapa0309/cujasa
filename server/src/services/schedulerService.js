@@ -4,6 +4,25 @@ import { uploadPost as uploadThreads } from '../platformAdapters/threadsAdapter.
 import { createMetricJobs } from './metricsJobService.js';
 import { listCtas } from './ctaService.js';
 import { createTrackingLink } from './trackingService.js';
+import { validatePostCandidate } from '../utils/contentGuardrails.js';
+
+async function isPostAllowedForQueue(post, account) {
+  const topic = post.topic_id ? await dbGet('topics', { id: post.topic_id }) : null;
+  const guardrail = validatePostCandidate(post.body, account, topic);
+  if (guardrail.allowed) return true;
+  await logActivity({
+    account_id: post.account_id,
+    project_id: post.project_id,
+    topic_id: post.topic_id,
+    post_id: post.id,
+    action: 'queue_guardrail_skipped',
+    level: 'warn',
+    message: guardrail.reasons.join('; '),
+    payload: { context: guardrail.context }
+  });
+  await dbUpdate('posts', { id: post.id }, { status: 'skipped' });
+  return false;
+}
 
 export async function addPostToQueue(postId, scheduledAt = null) {
   const post = await dbGet('posts', { id: postId });
@@ -12,6 +31,11 @@ export async function addPostToQueue(postId, scheduledAt = null) {
   if (account?.status !== 'active') {
     const error = new Error(`Account is ${account?.status || 'missing'}; cannot add post to queue`);
     error.status = 409;
+    throw error;
+  }
+  if (!(await isPostAllowedForQueue(post, account))) {
+    const error = new Error('Post blocked by content guardrails');
+    error.status = 422;
     throw error;
   }
   const status = post.status === 'manual_required' || post.risk_level === 'high' ? 'manual_required' : 'scheduled';
@@ -34,7 +58,10 @@ export async function createDailyQueue(accountId) {
     error.status = 409;
     throw error;
   }
-  const allDrafts = (await dbList('posts', { account_id: accountId })).filter((p) => ['draft', 'ready'].includes(p.status));
+  const allDrafts = [];
+  for (const post of (await dbList('posts', { account_id: accountId })).filter((p) => ['draft', 'ready'].includes(p.status))) {
+    if (await isPostAllowedForQueue(post, account)) allDrafts.push(post);
+  }
   const topicIds = [...new Set(allDrafts.map((p) => p.topic_id))];
   const productsPerTopic = new Set();
   for (const tid of topicIds) {

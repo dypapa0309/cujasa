@@ -10,7 +10,7 @@ router.post('/run', async (req, res, next) => {
 });
 
 router.post('/run-pipeline', async (req, res, next) => {
-  try { res.json({ results: await runFullPipeline() }); } catch (e) { next(e); }
+  try { res.json({ results: await runFullPipeline({ requestedBy: req.user?.email || req.user?.type || 'scheduler' }) }); } catch (e) { next(e); }
 });
 
 router.post('/generate-blog/:topicId', async (req, res, next) => {

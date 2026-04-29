@@ -8,9 +8,9 @@ export async function generateCtas(postId) {
   const account = await getAccount(post.account_id);
   const fallback = {
     ctas: [
-      { variantKey: 'A', ctaText: '물어보는 분 있을 것 같아서 제가 찾아본 제품은 댓글에 남겨둘게요.' },
-      { variantKey: 'B', ctaText: '비슷한 걸 찾는다면 이쪽 키워드로 보면 됩니다.' },
-      { variantKey: 'C', ctaText: '가격은 자주 바뀌니까 최저가 위주로 보시면 됩니다.' }
+      { variantKey: 'A', ctaText: '비슷한 걸 고를 때 참고만 해보세요.' },
+      { variantKey: 'B', ctaText: '취향이나 상황에 맞게 비교해보면 좋아요.' },
+      { variantKey: 'C', ctaText: '필요한 분들만 가볍게 확인해보세요.' }
     ]
   };
   const result = await getJson(generateCtaPrompt(post, account), fallback);

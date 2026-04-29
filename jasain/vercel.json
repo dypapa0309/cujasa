@@ -1,4 +1,8 @@
 {
   "cleanUrls": true,
-  "trailingSlash": false
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/cujasa", "destination": "/cujasa/index.html" },
+    { "source": "/dexor", "destination": "/dexor/index.html" }
+  ]
 }

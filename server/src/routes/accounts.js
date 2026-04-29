@@ -69,7 +69,7 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
     if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(req.params.accountId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    res.json(await runPipelineForAccount(req.params.accountId));
+    res.json(await runPipelineForAccount(req.params.accountId, { requestedBy: req.user?.email || req.user?.type || 'manual' }));
   } catch (e) { next(e); }
 });
 

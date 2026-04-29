@@ -41,6 +41,9 @@ export default function CustomerPostsPage({ account, pipelineResult }) {
 
   const scheduled = queue.filter((r) => r.status === 'scheduled').sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
   const posted = queue.filter((r) => r.status === 'posted').sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at));
+  const needsAttention = queue
+    .filter((r) => ['failed', 'retry', 'manual_required', 'skipped'].includes(r.status))
+    .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
 
   if (loading) return (
     <div className="grid gap-3">
@@ -74,6 +77,52 @@ export default function CustomerPostsPage({ account, pipelineResult }) {
       )}
 
       {/* 예약된 포스팅 */}
+      {needsAttention.length > 0 && (
+        <div>
+          <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 px-1">확인 필요 ({needsAttention.length})</div>
+          <div className="grid gap-2">
+            {needsAttention.map((r) => {
+              const isExpanded = expandedId === r.id;
+              const d = detail[r.id];
+              const label = {
+                failed: '실패',
+                retry: '재시도',
+                manual_required: '수동 검토',
+                skipped: '취소됨',
+              }[r.status] || r.status;
+              return (
+                <div key={r.id} className="bg-white rounded-2xl border border-rose-100 overflow-hidden">
+                  <button onClick={() => toggleDetail(r.id)} className="w-full px-5 py-4 flex items-center gap-3 text-left">
+                    <div className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-700">{dateTime(r.scheduled_at)}</div>
+                      <div className="text-xs text-rose-500 mt-0.5 truncate">{r.error_message || label}</div>
+                    </div>
+                    <span className="text-gray-300 text-sm flex-shrink-0">{isExpanded ? '▲' : '▼'}</span>
+                  </button>
+                  {isExpanded && (
+                    <div className="border-t border-gray-50 px-5 py-4 grid gap-4">
+                      {loadingDetailId === r.id ? (
+                        <div className="text-xs text-gray-400">불러오는 중...</div>
+                      ) : d ? (
+                        <>
+                          {d.post?.body && (
+                            <pre className="whitespace-pre-wrap break-words font-sans text-sm text-gray-700 leading-relaxed">{d.post.body}</pre>
+                          )}
+                          {r.error_message && (
+                            <div className="rounded-xl bg-rose-50 px-4 py-3 text-xs text-rose-600">{r.error_message}</div>
+                          )}
+                        </>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {scheduled.length > 0 && (
         <div>
           <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 px-1">예약됨 ({scheduled.length})</div>
@@ -197,7 +246,7 @@ export default function CustomerPostsPage({ account, pipelineResult }) {
         </div>
       )}
 
-      {posted.length === 0 && scheduled.length === 0 && (
+      {posted.length === 0 && scheduled.length === 0 && needsAttention.length === 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 p-10 text-center">
           <div className="flex justify-center mb-3">
             <svg className="w-10 h-10 text-gray-200" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">

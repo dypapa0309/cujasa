@@ -3,6 +3,23 @@ const minutesOfDay = (time) => {
   return h * 60 + m;
 };
 
+const KST_OFFSET_MINUTES = 9 * 60;
+
+const getKstDateParts = (date) => {
+  const shifted = new Date(date.getTime() + KST_OFFSET_MINUTES * 60 * 1000);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth(),
+    date: shifted.getUTCDate()
+  };
+};
+
+const fromKstDateTime = ({ year, month, date }, minute) => {
+  const hour = Math.floor(minute / 60);
+  const minutes = minute % 60;
+  return new Date(Date.UTC(year, month, date, hour, minutes, 0, 0) - KST_OFFSET_MINUTES * 60 * 1000);
+};
+
 export function createDailySchedule(account, date = new Date()) {
   const min = account.daily_post_min || 1;
   const max = account.daily_post_max || min;
@@ -11,15 +28,16 @@ export function createDailySchedule(account, date = new Date()) {
   const minGap = account.min_interval_minutes || 45;
   const result = [];
   let attempts = 0;
+  const now = new Date();
+  const baseKstDate = getKstDateParts(date);
   while (result.length < count && attempts < 200) {
     attempts += 1;
     const w = windows[Math.floor(Math.random() * windows.length)];
     const start = minutesOfDay(w.start);
     const end = minutesOfDay(w.end);
     const minute = start + Math.floor(Math.random() * Math.max(1, end - start));
-    const candidate = new Date(date);
-    candidate.setHours(Math.floor(minute / 60), minute % 60, 0, 0);
-    if (candidate < new Date()) candidate.setDate(candidate.getDate() + 1);
+    let candidate = fromKstDateTime(baseKstDate, minute);
+    if (candidate < now) candidate = fromKstDateTime({ ...baseKstDate, date: baseKstDate.date + 1 }, minute);
     const ok = result.every((item) => Math.abs(item.getTime() - candidate.getTime()) >= minGap * 60 * 1000);
     if (ok) result.push(candidate);
   }

@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JASAIN — 자동화 솔루션</title>
   <meta name="description" content="반복 업무는 자동으로, 수익은 꾸준히. JASAIN의 자동화 솔루션으로 비즈니스를 자동화하세요.">
+  <meta name="naver-site-verification" content="d8b972bdc82cf129569a39fd26c6ea90b56b51c1" />
+  <meta name="google-site-verification" content="m86b1pmlHCpiA_K9v0qSjs54ip7RyvZQ7IpVBEAjtXI" />
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%236366f1'/><path d='M19 4L8 18h8l-3 10 15-14h-9z' fill='white'/></svg>" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="JASAIN — 자동화 솔루션" />
@@ -23,6 +25,7 @@
           colors: {
             jasain: '#6366f1', 'jasain-dark': '#4f46e5', 'jasain-light': '#818cf8',
             coupang: '#C00000', 'coupang-dark': '#9a0000',
+            dexor: '#2f6fed', 'dexor-dark': '#1d4ed8',
           }
         }
       }
@@ -41,6 +44,7 @@
     @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
     #tab-jasain .gradient-text { background: linear-gradient(135deg, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
     #tab-cujasa .gradient-text { background: linear-gradient(135deg, #C00000, #ff4444); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    #tab-dexor .gradient-text { background: linear-gradient(135deg, #60a5fa, #2f6fed); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
     .card-hover { transition: transform 0.25s ease, box-shadow 0.25s ease; }
     .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 48px rgba(0,0,0,0.13); }
   </style>
@@ -56,6 +60,7 @@
       <div class="flex items-center bg-gray-100 rounded-xl p-1 gap-1">
         <button id="tab-btn-jasain" onclick="showTab('jasain')" class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all bg-white text-gray-800 shadow-sm">전체 솔루션</button>
         <button id="tab-btn-cujasa" onclick="showTab('cujasa')" class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-gray-600">CUJASA</button>
+        <button id="tab-btn-dexor" onclick="showTab('dexor')" class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-gray-600">DEXOR</button>
       </div>
       <a id="nav-cta" href="#contact" class="bg-jasain hover:bg-jasain-dark text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-sm flex-shrink-0">문의하기</a>
     </div>
@@ -77,7 +82,7 @@
     <section class="bg-slate-950 border-b border-slate-800">
       <div class="max-w-5xl mx-auto px-6 py-10 grid grid-cols-3 gap-6 text-center">
         <div class="fade-up"><div class="text-3xl font-black text-white mb-1">11<span class="text-jasain-light">+</span></div><div class="text-xs text-slate-500 font-medium">누적 구매자</div></div>
-        <div class="fade-up"><div class="text-3xl font-black text-white mb-1">1<span class="text-jasain-light">+</span></div><div class="text-xs text-slate-500 font-medium">출시 솔루션</div></div>
+        <div class="fade-up"><div class="text-3xl font-black text-white mb-1">2<span class="text-jasain-light">+</span></div><div class="text-xs text-slate-500 font-medium">출시 솔루션</div></div>
         <div class="fade-up"><div class="text-3xl font-black text-white mb-1">24<span class="text-jasain-light">h</span></div><div class="text-xs text-slate-500 font-medium">자동 운영</div></div>
       </div>
     </section>
@@ -108,17 +113,24 @@
               <span class="text-xs font-bold text-jasain group-hover:translate-x-1 transition-transform inline-block">자세히 보기 →</span>
             </div>
           </button>
-          <div class="bg-white rounded-2xl p-6 border border-dashed border-gray-200 fade-up opacity-70">
+          <button onclick="showTab('dexor')" class="bg-white rounded-2xl p-6 border border-gray-100 card-hover fade-up text-left group w-full">
             <div class="flex items-start justify-between mb-5">
-              <div class="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
-                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"/></svg>
-              </div>
-              <span class="text-xs font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">Coming Soon</span>
+              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-sm" style="background:linear-gradient(135deg,#2f6fed,#60a5fa);">DX</div>
+              <span class="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full"><span class="w-1.5 h-1.5 bg-emerald-500 rounded-full badge-live"></span>출시</span>
             </div>
-            <h3 class="text-lg font-black mb-1 text-gray-500">블로그 지수 판별기</h3>
-            <p class="text-xs font-semibold text-gray-400 mb-3">네이버 블로그 분석</p>
-            <p class="text-sm text-gray-400 leading-relaxed">URL 하나로 네이버 블로그 지수·최적화 상태를 즉시 분석합니다. 내 블로그가 왜 상위노출이 안 되는지 파악하세요.</p>
-          </div>
+            <h3 class="text-lg font-black mb-1 group-hover:text-jasain transition-colors">DEXOR</h3>
+            <p class="text-xs font-semibold text-gray-400 mb-3">네이버 블로그 선정 자동화</p>
+            <p class="text-sm text-gray-600 leading-relaxed mb-5">체험단·마케팅 담당자가 블로그 URL을 업로드하면 광고 위험도, 활동성, 등급 판단을 자동으로 정리합니다.</p>
+            <div class="flex flex-wrap gap-2 mb-5">
+              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">S/A 후보 필터</span>
+              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">엑셀 업로드</span>
+              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">CSV 다운로드</span>
+            </div>
+            <div class="flex items-center justify-between pt-4 border-t border-gray-100">
+              <span class="text-sm font-black text-gray-900">크레딧 충전형</span>
+              <span class="text-xs font-bold text-jasain group-hover:translate-x-1 transition-transform inline-block">자세히 보기 →</span>
+            </div>
+          </button>
           <div class="bg-white rounded-2xl p-6 border border-dashed border-gray-200 fade-up opacity-70">
             <div class="flex items-start justify-between mb-5">
               <div class="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
@@ -165,6 +177,7 @@
           <span class="font-black text-white tracking-tight text-lg" style="background:linear-gradient(135deg,#6366f1,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">JASAIN</span>
           <div class="flex items-center gap-6 text-xs text-slate-500">
             <button onclick="showTab('cujasa')" class="hover:text-white transition-colors">CUJASA</button>
+            <button onclick="showTab('dexor')" class="hover:text-white transition-colors">DEXOR</button>
             <button onclick="openPrivacy()" class="hover:text-white transition-colors">개인정보처리방침</button>
           </div>
         </div>
@@ -482,6 +495,61 @@
     </div>
   </div>
 
+  <!-- ══════════════ TAB 3: DEXOR ══════════════ -->
+  <div id="tab-dexor" style="display:none;">
+    <section class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white pt-20 pb-24 px-6 overflow-hidden relative">
+      <div class="absolute inset-0 opacity-20" style="background-image:radial-gradient(circle at 20% 50%,#2f6fed 0%,transparent 50%),radial-gradient(circle at 80% 20%,#60a5fa 0%,transparent 40%);"></div>
+      <div class="max-w-4xl mx-auto relative">
+        <div class="inline-flex items-center gap-2 bg-blue-950/60 border border-blue-800/50 px-4 py-1.5 rounded-full text-xs text-blue-200 font-semibold mb-6"><span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse block"></span>네이버 블로그 선정 자동화</div>
+        <h1 class="text-4xl lg:text-[52px] font-black leading-[1.15] mb-6 tracking-tight">체험단 블로그 선정,<br><span class="gradient-text">분석부터 다운로드까지</span></h1>
+        <p class="text-lg text-slate-300 leading-relaxed mb-10 max-w-lg">URL과 엑셀을 업로드하면 광고 위험도, 활동성, 등급 판단을 자동으로 정리합니다.<br><span class="text-white font-semibold">S/A 후보만 빠르게 남겨 선정 시간을 줄입니다.</span></p>
+        <div class="flex flex-col sm:flex-row gap-3">
+          <a href="#dx-form" class="bg-dexor hover:bg-dexor-dark text-white px-8 py-4 rounded-xl font-black text-base transition-all shadow-lg text-center hover:scale-105 active:scale-100">DEXOR 문의하기 →</a>
+          <a href="#dx-how" class="border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white px-8 py-4 rounded-xl font-semibold text-base transition-all text-center">작동 방식 보기</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="bg-dexor text-white py-10 px-6">
+      <div class="max-w-4xl mx-auto grid grid-cols-3 gap-4 text-center divide-x divide-blue-500/40">
+        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">Quick</div><div class="text-blue-100 text-sm mt-1 font-medium">최근 글 10개 1차 필터</div></div>
+        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">Deep</div><div class="text-blue-100 text-sm mt-1 font-medium">선택 블로그 정밀 분석</div></div>
+        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">S/A</div><div class="text-blue-100 text-sm mt-1 font-medium">선정 후보 자동 분류</div></div>
+      </div>
+    </section>
+
+    <section id="dx-how" class="py-24 px-6 bg-gray-50">
+      <div class="max-w-5xl mx-auto">
+        <div class="text-center mb-14 fade-up"><h2 class="text-3xl lg:text-4xl font-black mb-3">선정 작업을 한 화면에서 끝냅니다</h2><p class="text-gray-400 text-lg">엑셀 업로드 → 분석 → S/A 필터 → 다운로드</p></div>
+        <div class="grid sm:grid-cols-3 gap-4">
+          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6"><div class="text-4xl font-black text-gray-100 mb-3">01</div><h3 class="font-black text-lg mb-2">URL 업로드</h3><p class="text-gray-500 text-sm leading-relaxed">붙여넣기와 엑셀 업로드를 모두 지원하고, 게시글 URL은 블로그 URL로 자동 정리합니다.</p></div>
+          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6"><div class="text-4xl font-black text-gray-100 mb-3">02</div><h3 class="font-black text-lg mb-2">등급 분석</h3><p class="text-gray-500 text-sm leading-relaxed">활동성, 광고성, 반응성, 콘텐츠 품질을 종합해 S/A/B/C/D로 분류합니다.</p></div>
+          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6"><div class="text-4xl font-black text-gray-100 mb-3">03</div><h3 class="font-black text-lg mb-2">후보 다운로드</h3><p class="text-gray-500 text-sm leading-relaxed">S/A만 남기고 CSV로 내려받아 체험단 선정 리스트로 바로 활용합니다.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="dx-form" class="py-24 px-6 bg-white">
+      <div class="max-w-xl mx-auto text-center fade-up">
+        <div class="text-xs font-bold text-dexor uppercase tracking-widest mb-4">DEXOR</div>
+        <h2 class="text-3xl font-black mb-4">네이버 블로그 선정 자동화가 필요하신가요?</h2>
+        <p class="text-gray-500 text-sm mb-8 leading-relaxed">JASAIN 계정 안에서 DEXOR를 함께 제공할 수 있도록 준비 중입니다. 현재는 도입 문의를 먼저 받고 있습니다.</p>
+        <div class="flex flex-col sm:flex-row gap-3 justify-center">
+          <a href="sms:01040941666?body=%5BDEXOR%20%EB%AC%B8%EC%9D%98%5D%20" class="bg-dexor hover:bg-dexor-dark text-white font-bold px-8 py-4 rounded-xl transition-colors shadow-lg text-sm">문자로 문의하기</a>
+          <a href="tel:01040941666" class="border border-gray-200 text-gray-700 font-bold px-8 py-4 rounded-xl transition-colors text-sm hover:bg-gray-50">전화 문의하기</a>
+        </div>
+      </div>
+    </section>
+
+    <footer class="bg-slate-950 border-t border-slate-800 py-12 px-6">
+      <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-slate-500 text-sm">
+        <button onclick="showTab('jasain')" class="text-sm text-gray-500 hover:text-white transition-colors">← 전체 솔루션</button>
+        <span class="font-black text-white text-xl tracking-tight">DEXOR</span>
+        <div>© 2026 JASAIN. All rights reserved.</div>
+      </div>
+    </footer>
+  </div>
+
   <!-- 개인정보처리방침 모달 -->
   <div id="privacy-modal" style="display:none;" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onclick="if(event.target===this)closePrivacy()">
     <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
@@ -546,12 +614,16 @@
 
     function showTab(tab) {
       const isJasain = tab === 'jasain';
+      const isCujasa = tab === 'cujasa';
+      const isDexor = tab === 'dexor';
       document.getElementById('tab-jasain').style.display = isJasain ? 'block' : 'none';
-      document.getElementById('tab-cujasa').style.display = isJasain ? 'none' : 'block';
+      document.getElementById('tab-cujasa').style.display = isCujasa ? 'block' : 'none';
+      document.getElementById('tab-dexor').style.display = isDexor ? 'block' : 'none';
       document.getElementById('tab-btn-jasain').className = 'px-4 py-1.5 rounded-lg text-sm font-bold transition-all ' + (isJasain ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600');
-      document.getElementById('tab-btn-cujasa').className = 'px-4 py-1.5 rounded-lg text-sm font-bold transition-all ' + (!isJasain ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600');
-      document.getElementById('nav-cta').href = isJasain ? '#contact' : '#cj-form';
-      document.getElementById('nav-cta').textContent = isJasain ? '문의하기' : '신청하기';
+      document.getElementById('tab-btn-cujasa').className = 'px-4 py-1.5 rounded-lg text-sm font-bold transition-all ' + (isCujasa ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600');
+      document.getElementById('tab-btn-dexor').className = 'px-4 py-1.5 rounded-lg text-sm font-bold transition-all ' + (isDexor ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600');
+      document.getElementById('nav-cta').href = isJasain ? '#contact' : (isCujasa ? '#cj-form' : '#dx-form');
+      document.getElementById('nav-cta').textContent = isJasain ? '문의하기' : (isCujasa ? '신청하기' : '문의하기');
       window.scrollTo(0, 0);
       document.querySelectorAll('.fade-up').forEach(el => { if (!el.classList.contains('visible')) observer.observe(el); });
       lucide.createIcons();
@@ -591,7 +663,7 @@
         document.getElementById('cj-pc-modal').style.display = 'flex';
       }
 
-      fetch('https://cujasa.onrender.com/api/inquiries', {
+      fetch('https://api.jasain.kr/api/inquiries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, phone, plan: cjPlan, source: 'cujasa' })

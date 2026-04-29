@@ -1,6 +1,14 @@
-# CUJASA
+# JASAIN / CUJASA
 
-쿠팡 파트너스 자동 포스팅 MVP입니다. 운영 단위는 계정이며, 프론트에는 쿠팡 파트너스 자동화만 노출합니다. SPREAD는 `project_type = spread`와 `spreadService` 구조만 남겨두었습니다.
+JASAIN은 상위 브랜드이고, 이 저장소는 현재 JASAIN 공통 API 기반의 CUJASA 운영 콘솔을 포함합니다. CUJASA는 쿠팡 파트너스 자동 포스팅 제품이며, DEXOR 같은 후속 제품은 같은 `users`/`user_products` 권한 모델을 공유합니다.
+
+운영 도메인 기준:
+
+- `api.jasain.kr`: JASAIN 공통 API
+- `cujasa.jasain.kr`: CUJASA canonical 앱
+- `app.jasain.kr`: CUJASA legacy alias
+- `dexor.jasain.kr`: DEXOR canonical 앱
+- `jasain.kr`: 브랜드 및 제품 랜딩
 
 ## 설치
 
@@ -15,6 +23,10 @@ Supabase SQL editor에서 아래 순서로 실행합니다.
 
 ```sql
 -- supabase/schema.sql
+-- supabase/users.sql
+-- supabase/migrate_pipeline_runs.sql
+-- supabase/migrate_threads_oauth.sql
+-- supabase/migrate_jasain_products.sql
 -- supabase/seed.sql
 ```
 
@@ -36,6 +48,9 @@ COUPANG_PARTNER_ID=
 COUPANG_TRACKING_CODE=
 APP_BASE_URL=http://localhost:3005
 CLIENT_BASE_URL=http://localhost:5175
+THREADS_APP_ID=
+THREADS_APP_SECRET=
+THREADS_REDIRECT_URI=http://localhost:3005/api/auth/threads/callback
 MOCK_UPLOAD=true
 ```
 
@@ -95,6 +110,16 @@ npm run test:coupang --prefix server -- "탈취제"
 
 초기 Threads adapter는 실제 업로드하지 않고 콘솔에 내용을 출력하며 mock `post_url`을 생성합니다.
 
+## Threads 연결 설정
+
+Meta Developers의 Threads 앱 설정에 OAuth 리디렉션 URI를 등록합니다.
+
+```env
+THREADS_REDIRECT_URI=https://api.jasain.kr/api/auth/threads/callback
+```
+
+서버 환경변수에는 `THREADS_APP_ID`, `THREADS_APP_SECRET`, `THREADS_REDIRECT_URI`를 넣습니다. 고객은 CUJASA 설정 화면에서 `Threads 연결하기`를 눌러 본인 Threads 계정 권한을 승인합니다. 앱이 개발 모드인 동안에는 해당 고객 Threads 계정을 테스터로 초대하고 고객이 초대를 수락해야 합니다.
+
 ## 추적 링크 테스트
 
 업로드가 완료되면 `tracking_links`에 `/r/:code` 링크가 생성됩니다.
@@ -146,7 +171,7 @@ ADMIN_PASSWORD_HASH=
 JWT_SECRET=
 IP_HASH_SALT=
 APP_BASE_URL=https://your-render-api.onrender.com
-CLIENT_BASE_URL=https://your-vercel-client.vercel.app
+CLIENT_BASE_URL=https://app.jasain.kr,https://cujasa.jasain.kr,https://dexor.jasain.kr,https://jasain.kr
 COUPANG_ACCESS_KEY=
 COUPANG_SECRET_KEY=
 COUPANG_PARTNER_ID=
@@ -159,7 +184,7 @@ TRACKING_RATE_LIMIT_MAX=120
 `CLIENT_BASE_URL`은 쉼표로 여러 origin을 넣을 수 있습니다.
 
 ```env
-CLIENT_BASE_URL=http://localhost:5175,https://your-vercel-client.vercel.app
+CLIENT_BASE_URL=http://localhost:5175,https://app.jasain.kr,https://cujasa.jasain.kr,https://dexor.jasain.kr,https://jasain.kr
 ```
 
 ### Vercel 클라이언트

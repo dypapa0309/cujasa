@@ -3,11 +3,30 @@ import { generateBlogPost, getBlogPost, listBlogPosts } from '../services/blogSe
 
 const router = Router();
 
-const LANDING_URL = process.env.LANDING_URL || 'https://landing-phi-flame.vercel.app';
+const LANDING_URL = process.env.LANDING_URL || 'https://jasain.kr';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3000';
+const BLOG_IMAGE_URL = process.env.BLOG_IMAGE_URL || `${LANDING_URL}/images/og-image.png`;
+const BLOG_AUTHOR = 'CUJASA';
 
 function formatDate(dateStr) {
   return new Date(dateStr).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function stripHtml(value = '') {
+  return String(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function seoJson(data) {
+  return JSON.stringify(data).replaceAll('<', '\\u003c');
 }
 
 function cujasaBanner() {
@@ -18,26 +37,42 @@ function cujasaBanner() {
     <p style="font-size:15px;color:#ccc;margin:0 0 24px;line-height:1.6;">AI가 주제 선정부터 상품 검색, 글 작성, Threads 업로드까지<br>전부 자동으로 해드립니다. 지금 신청하세요.</p>
     <a href="${LANDING_URL}#purchase-form" target="_blank"
       style="display:inline-block;background:#C00000;color:#fff;font-weight:900;font-size:15px;padding:14px 36px;border-radius:10px;text-decoration:none;">
-      지금 신청하기 (₩990,000) →
+      지금 신청하기 (일시불 ₩590,000 / 월 ₩129,000) →
     </a>
-    <div style="font-size:12px;color:#888;margin-top:12px;">구매자 20명 초과 시 ₩1,990,000으로 인상</div>
+    <div style="font-size:12px;color:#888;margin-top:12px;">베이직 플랜: Threads 계정 2개까지 운영</div>
   </div>`;
 }
 
-function blogLayout({ title, metaDescription, canonical, body }) {
+function blogLayout({ title, metaDescription, canonical, body, ogType = 'article', publishedAt, modifiedAt, structuredData }) {
+  const safeTitle = escapeHtml(title);
+  const safeDescription = escapeHtml(metaDescription);
+  const safeCanonical = escapeHtml(canonical);
+  const safeImage = escapeHtml(BLOG_IMAGE_URL);
+  const jsonLd = structuredData ? seoJson(structuredData) : null;
   return `<!DOCTYPE html>
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title}</title>
-  <meta name="description" content="${metaDescription}">
+  <title>${safeTitle}</title>
+  <meta name="description" content="${safeDescription}">
   <meta name="robots" content="index, follow">
-  <link rel="canonical" href="${canonical}">
-  <meta property="og:type" content="article">
-  <meta property="og:title" content="${title}">
-  <meta property="og:description" content="${metaDescription}">
+  <link rel="canonical" href="${safeCanonical}">
+  <meta property="og:type" content="${ogType}">
+  <meta property="og:url" content="${safeCanonical}">
+  <meta property="og:title" content="${safeTitle}">
+  <meta property="og:description" content="${safeDescription}">
+  <meta property="og:image" content="${safeImage}">
+  <meta property="og:image:alt" content="CUJASA 쿠팡 파트너스 자동화">
+  <meta property="og:locale" content="ko_KR">
   <meta property="og:site_name" content="CUJASA 블로그">
+  ${publishedAt ? `<meta property="article:published_time" content="${escapeHtml(new Date(publishedAt).toISOString())}">` : ''}
+  ${modifiedAt ? `<meta property="article:modified_time" content="${escapeHtml(new Date(modifiedAt).toISOString())}">` : ''}
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${safeTitle}">
+  <meta name="twitter:description" content="${safeDescription}">
+  <meta name="twitter:image" content="${safeImage}">
+  ${jsonLd ? `<script type="application/ld+json">${jsonLd}</script>` : ''}
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Noto Sans KR',Apple SD Gothic Neo,sans-serif;background:#f8f9fa;color:#1a1a1a;line-height:1.8;font-size:16px}
@@ -89,11 +124,11 @@ router.get('/', async (req, res, next) => {
   try {
     const posts = await listBlogPosts({ limit: 20 });
     const cards = posts.map((p) => `
-      <a href="${APP_BASE_URL}/blog/${p.slug}" style="text-decoration:none">
+      <a href="${APP_BASE_URL}/blog/${escapeHtml(p.slug)}" style="text-decoration:none">
         <div class="post-card">
           <div class="post-card-date">${formatDate(p.published_at)}</div>
-          <div class="post-card-title">${p.title}</div>
-          <div class="post-card-desc">${p.meta_description || ''}</div>
+          <div class="post-card-title">${escapeHtml(p.title)}</div>
+          <div class="post-card-desc">${escapeHtml(p.meta_description || '')}</div>
         </div>
       </a>`).join('');
 
@@ -105,10 +140,25 @@ router.get('/', async (req, res, next) => {
       ${posts.length ? `<div class="card-grid">${cards}</div>` : '<p style="color:#aaa">아직 게시된 글이 없습니다.</p>'}
       ${cujasaBanner()}`;
 
+    const canonical = `${APP_BASE_URL}/blog`;
     res.type('html').send(blogLayout({
       title: 'CUJASA 블로그 — 쿠팡 파트너스 꿀팁 & 상품 추천',
       metaDescription: '쿠팡 파트너스 수익화 꿀팁, 추천 상품 정보를 AI가 자동으로 작성합니다.',
-      canonical: `${APP_BASE_URL}/blog`,
+      canonical,
+      ogType: 'website',
+      structuredData: {
+        '@context': 'https://schema.org',
+        '@type': 'Blog',
+        name: 'CUJASA 블로그',
+        description: '쿠팡 파트너스 수익화 꿀팁, 추천 상품 정보를 AI가 자동으로 작성합니다.',
+        url: canonical,
+        image: BLOG_IMAGE_URL,
+        publisher: {
+          '@type': 'Organization',
+          name: BLOG_AUTHOR,
+          url: LANDING_URL
+        }
+      },
       body
     }));
   } catch (e) { next(e); }
@@ -120,20 +170,48 @@ router.get('/:slug', async (req, res, next) => {
     const post = await getBlogPost(req.params.slug);
     if (!post) return res.status(404).type('html').send('<h1>글을 찾을 수 없습니다</h1>');
 
+    const canonical = `${APP_BASE_URL}/blog/${post.slug}`;
+    const title = `${post.title} | CUJASA 블로그`;
+    const metaDescription = post.meta_description || stripHtml(post.content).slice(0, 150);
     const body = `
-      <div class="breadcrumb"><a href="${APP_BASE_URL}/blog">블로그</a> / ${post.title}</div>
+      <div class="breadcrumb"><a href="${APP_BASE_URL}/blog">블로그</a> / ${escapeHtml(post.title)}</div>
       <div class="post-header">
         <div class="tag">쿠팡 파트너스</div>
-        <h1 class="post-title">${post.title}</h1>
+        <h1 class="post-title">${escapeHtml(post.title)}</h1>
         <div class="post-meta">${formatDate(post.published_at)}</div>
       </div>
       <div class="post-body">${post.content}</div>
       ${cujasaBanner()}`;
 
     res.type('html').send(blogLayout({
-      title: `${post.title} | CUJASA 블로그`,
-      metaDescription: post.meta_description || '',
-      canonical: `${APP_BASE_URL}/blog/${post.slug}`,
+      title,
+      metaDescription,
+      canonical,
+      publishedAt: post.published_at,
+      modifiedAt: post.updated_at || post.published_at,
+      structuredData: {
+        '@context': 'https://schema.org',
+        '@type': 'BlogPosting',
+        headline: post.title,
+        description: metaDescription,
+        image: BLOG_IMAGE_URL,
+        datePublished: new Date(post.published_at).toISOString(),
+        dateModified: new Date(post.updated_at || post.published_at).toISOString(),
+        author: {
+          '@type': 'Organization',
+          name: BLOG_AUTHOR,
+          url: LANDING_URL
+        },
+        publisher: {
+          '@type': 'Organization',
+          name: BLOG_AUTHOR,
+          url: LANDING_URL
+        },
+        mainEntityOfPage: {
+          '@type': 'WebPage',
+          '@id': canonical
+        }
+      },
       body
     }));
   } catch (e) { next(e); }

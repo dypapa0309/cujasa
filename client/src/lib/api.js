@@ -22,7 +22,17 @@ async function request(path, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   if (res.status === 401) setAuthToken('');
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const text = await res.text();
+    let message = text || `Request failed (${res.status})`;
+    try {
+      const data = JSON.parse(text);
+      message = data.error || data.message || message;
+    } catch {
+      // keep plain text response
+    }
+    throw new Error(message);
+  }
   if (res.status === 204) return null;
   return res.json();
 }

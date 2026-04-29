@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 
-export default function CustomerSettingsPage({ account, reloadAccounts, onPipelineDone }) {
+export default function CustomerSettingsPage({ account, reloadAccounts, onPipelineDone, onPipelineRunningChange }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const [connectingThreads, setConnectingThreads] = useState(false);
   const [errors, setErrors] = useState({});
   const [showToken, setShowToken] = useState(false);
   const [showSecretKey, setShowSecretKey] = useState(false);
@@ -58,6 +59,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
     }
 
     setRunning(true);
+    onPipelineRunningChange?.(true);
     try {
       const result = await api.post(`/api/accounts/${account.id}/run-pipeline`, {});
       onPipelineDone?.(result);
@@ -65,6 +67,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
       toast('자동화 실행에 실패했습니다. 잠시 후 자동으로 재시도됩니다.', 'error');
     } finally {
       setRunning(false);
+      onPipelineRunningChange?.(false);
     }
   };
 
@@ -73,6 +76,28 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
       ...p,
       active_time_windows: p.active_time_windows.map((w, idx) => idx === i ? { ...w, [key]: val } : w)
     }));
+  };
+
+  const threadsStatus = (() => {
+    if (account.threads_token_status === 'refresh_failed') return { label: '갱신 실패', tone: 'danger' };
+    if (!form.threads_access_token) return { label: '연결 안 됨', tone: 'warn' };
+    if (account.threads_token_expires_at) {
+      const daysLeft = (new Date(account.threads_token_expires_at).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+      if (daysLeft <= 0) return { label: '만료됨', tone: 'danger' };
+      if (daysLeft <= 7) return { label: '만료 임박', tone: 'warn' };
+    }
+    return { label: '연결됨', tone: 'ok' };
+  })();
+
+  const connectThreads = async () => {
+    setConnectingThreads(true);
+    try {
+      const result = await api.get(`/api/auth/threads/start?accountId=${account.id}`);
+      window.location.href = result.url;
+    } catch {
+      toast('Threads 연결을 시작하지 못했습니다. 관리자에게 문의해주세요.', 'error');
+      setConnectingThreads(false);
+    }
   };
 
   if (!form) return null;
@@ -114,32 +139,59 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
         </Field>
         <Field label="다루지 말 것 (줄바꿈으로 구분)">
           <textarea rows="3" value={form.forbidden_topics} onChange={(e) => setForm((p) => ({ ...p, forbidden_topics: e.target.value }))}
-            placeholder={"정치\n다이어트 약\n의약품"} className={input} />
+            placeholder={"의약품\n다이어트 보조제\n건강 효능 단정"} className={input} />
         </Field>
         <Field label="금지어 (줄바꿈으로 구분)">
           <textarea rows="3" value={form.forbidden_words} onChange={(e) => setForm((p) => ({ ...p, forbidden_words: e.target.value }))}
-            placeholder={"100% 효과\n치료\n보장"} className={input} />
+            placeholder={"100% 효과\n치료/예방\n체중감량 보장\n가르시니아"} className={input} />
         </Field>
       </Section>
 
       {/* Threads 연결 */}
       <Section title="Threads 연결" collapsible>
-        <Field label="액세스 토큰">
-          <div className="relative">
-            <input type={showToken ? 'text' : 'password'} value={form.threads_access_token}
-              onChange={(e) => setForm((p) => ({ ...p, threads_access_token: e.target.value }))}
-              placeholder="Threads 액세스 토큰 입력" className={`${input} pr-16`} />
-            <button type="button" onClick={() => setShowToken((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600">
-              {showToken ? '숨기기' : '보기'}
+        <div className={`rounded-xl border px-4 py-4 ${
+          threadsStatus.tone === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+            : threadsStatus.tone === 'danger' ? 'border-rose-200 bg-rose-50 text-rose-700'
+              : 'border-amber-200 bg-amber-50 text-amber-700'
+        }`}>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold">Threads {threadsStatus.label}</div>
+              <div className="mt-1 text-xs opacity-80">
+                초대 수락 후 연결해주세요. 초대가 없으면 관리자에게 문의해주세요.
+              </div>
+              {account.threads_token_expires_at && (
+                <div className="mt-1 text-xs opacity-70">
+                  만료 예정: {new Date(account.threads_token_expires_at).toLocaleDateString('ko-KR')}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={connectThreads}
+              disabled={connectingThreads}
+              className="shrink-0 rounded-lg bg-coupang px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+            >
+              {connectingThreads ? '이동 중...' : form.threads_access_token ? '다시 연결' : 'Threads 연결하기'}
             </button>
           </div>
-        </Field>
-        {!form.threads_access_token && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
-            토큰이 없으면 포스팅이 실제로 올라가지 않습니다.
+        </div>
+        <details className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+          <summary className="cursor-pointer text-xs font-bold text-gray-500">수동 토큰 입력</summary>
+          <div className="mt-3">
+            <Field label="액세스 토큰">
+              <div className="relative">
+                <input type={showToken ? 'text' : 'password'} value={form.threads_access_token}
+                  onChange={(e) => setForm((p) => ({ ...p, threads_access_token: e.target.value }))}
+                  placeholder="Threads 액세스 토큰 입력" className={`${input} pr-16`} />
+                <button type="button" onClick={() => setShowToken((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600">
+                  {showToken ? '숨기기' : '보기'}
+                </button>
+              </div>
+            </Field>
           </div>
-        )}
+        </details>
       </Section>
 
       {/* 쿠팡 파트너스 */}

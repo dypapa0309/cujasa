@@ -1,12 +1,13 @@
-import { isAuthConfigured, shouldBypassAuth, verifyToken } from '../services/authService.js';
+import { isTokenConfigured, listUserProducts, shouldBypassAuth, verifyToken } from '../services/authService.js';
 import { dbList } from '../services/supabaseService.js';
 
-const publicPaths = ['/api/health', '/api/auth/login', '/api/inquiries'];
+const publicPaths = ['/api/health', '/api/auth/login', '/api/auth/threads/callback', '/api/inquiries', '/api/webhooks/toss'];
 
 export async function requireAuth(req, res, next) {
   try {
     if (!req.path.startsWith('/api/')) return next();
     if (publicPaths.includes(req.path)) return next();
+    if (req.path === '/api/auth/me' && !req.headers.authorization) return next();
 
     if (shouldBypassAuth()) {
       req.user = { type: 'admin', email: 'dev-local' };
@@ -14,8 +15,8 @@ export async function requireAuth(req, res, next) {
       return next();
     }
 
-    if (!isAuthConfigured()) {
-      return res.status(503).json({ error: 'Admin auth is not configured' });
+    if (!isTokenConfigured()) {
+      return res.status(503).json({ error: 'Server auth token secret is not configured' });
     }
 
     const header = req.headers.authorization || '';
@@ -32,8 +33,9 @@ export async function requireAuth(req, res, next) {
         type: 'user',
         userId: payload.userId,
         email: payload.sub,
-        maxAccounts: payload.maxAccounts ?? 4,
-        allowedAccountIds: userAccounts.map((ua) => ua.account_id)
+        maxAccounts: payload.maxAccounts ?? 2,
+        allowedAccountIds: userAccounts.map((ua) => ua.account_id),
+        products: await listUserProducts(payload.userId)
       };
     } else {
       return res.status(401).json({ error: 'Unauthorized' });

@@ -5,14 +5,19 @@ import { useToast } from '../lib/toast.jsx';
 export default function AdminUsersPage({ accounts }) {
   const toast = useToast();
   const [users, setUsers] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ email: '', password: '', maxAccounts: 4 });
+  const [form, setForm] = useState({ email: '', password: '', maxAccounts: 2 });
   const [creating, setCreating] = useState(false);
 
   const load = async () => {
-    const data = await api.get('/api/admin/users');
-    setUsers(data);
+    const [nextUsers, nextProducts] = await Promise.all([
+      api.get('/api/admin/users'),
+      api.get('/api/admin/products'),
+    ]);
+    setUsers(nextUsers);
+    setProducts(nextProducts);
   };
 
   useEffect(() => {
@@ -25,7 +30,7 @@ export default function AdminUsersPage({ accounts }) {
     try {
       await api.post('/api/admin/users', form);
       await load();
-      setForm({ email: '', password: '', maxAccounts: 4 });
+      setForm({ email: '', password: '', maxAccounts: 2 });
       setShowCreate(false);
       toast('구매자 계정이 생성됐습니다.', 'success');
     } catch (err) {
@@ -56,6 +61,27 @@ export default function AdminUsersPage({ accounts }) {
     }
   };
 
+  const assignProduct = async (userId, productId) => {
+    try {
+      await api.post(`/api/admin/users/${userId}/products`, { productId });
+      await load();
+      toast('제품 권한이 추가됐습니다.', 'success');
+    } catch (err) {
+      toast(err.message || '제품 권한 추가에 실패했습니다.', 'error');
+    }
+  };
+
+  const unassignProduct = async (userId, productId) => {
+    if (!confirm('제품 권한을 해제하시겠습니까?')) return;
+    try {
+      await api.delete(`/api/admin/users/${userId}/products/${productId}`);
+      await load();
+      toast('제품 권한이 해제됐습니다.', 'info');
+    } catch {
+      toast('제품 권한 해제에 실패했습니다.', 'error');
+    }
+  };
+
   const toggleStatus = async (user) => {
     const next = user.status === 'active' ? 'suspended' : 'active';
     try {
@@ -80,7 +106,7 @@ export default function AdminUsersPage({ accounts }) {
   return (
     <div className="grid gap-5">
       <div className="flex items-center justify-between">
-        <div className="text-sm text-slate-400">구매자 계정 관리</div>
+        <div className="text-sm text-slate-400">고객 계정 및 제품 권한 관리</div>
         <button onClick={() => setShowCreate((v) => !v)} className="rounded bg-coupang px-4 py-2 text-sm font-medium text-white">
           {showCreate ? '취소' : '+ 구매자 생성'}
         </button>
@@ -117,6 +143,8 @@ export default function AdminUsersPage({ accounts }) {
           {users.map((user) => {
             const assignedIds = user.accounts?.map((a) => a.id) || [];
             const unassigned = accounts.filter((a) => !assignedIds.includes(a.id));
+            const grantedProductIds = user.products?.map((product) => product.productId) || [];
+            const ungrantedProducts = products.filter((product) => !grantedProductIds.includes(product.id));
             return (
               <div key={user.id} className="rounded border border-line bg-white p-5">
                 <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -139,7 +167,29 @@ export default function AdminUsersPage({ accounts }) {
                   </button>
                 </div>
 
-                <div className="grid gap-2">
+                <div className="grid gap-2 border-t border-line pt-4">
+                  <div className="text-xs font-semibold text-slate-500">보유 제품</div>
+                  {user.products?.length === 0 && <div className="text-xs text-slate-400">보유 제품 없음</div>}
+                  <div className="flex flex-wrap gap-2">
+                    {user.products?.map((product) => (
+                      <span key={product.productId} className="flex items-center gap-1.5 rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">
+                        {product.name || product.productId}
+                        <button onClick={() => unassignProduct(user.id, product.productId)} className="text-blue-300 hover:text-red-500 font-bold">✕</button>
+                      </span>
+                    ))}
+                  </div>
+                  {ungrantedProducts.length > 0 && (
+                    <div className="flex items-center gap-2 mt-1">
+                      <select className="rounded border border-line px-2 py-1 text-xs" defaultValue=""
+                        onChange={(e) => { if (e.target.value) { assignProduct(user.id, e.target.value); e.target.value = ''; } }}>
+                        <option value="">+ 제품 권한 추가...</option>
+                        {ungrantedProducts.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 grid gap-2 border-t border-line pt-4">
                   <div className="text-xs font-semibold text-slate-500">할당된 계정</div>
                   {user.accounts?.length === 0 && <div className="text-xs text-slate-400">할당된 계정 없음</div>}
                   <div className="flex flex-wrap gap-2">

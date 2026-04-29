@@ -1,39 +1,63 @@
-import { useState } from 'react';
-import { Home, FileText, Settings, Plus, X } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Home, FileText, Settings, Plus, X, CreditCard } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import CustomerHomePage from './CustomerHomePage.jsx';
 import CustomerPostsPage from './CustomerPostsPage.jsx';
 import CustomerSettingsPage from './CustomerSettingsPage.jsx';
+import CustomerBillingPage from './CustomerBillingPage.jsx';
+import { CURRENT_PRODUCT, JASAIN_BRAND } from '../../config/products.js';
 
 const tabs = [
   ['home', '홈', Home],
   ['posts', '포스팅 현황', FileText],
+  ['billing', '결제', CreditCard],
   ['settings', '설정', Settings],
 ];
 
 const pages = {
   home: CustomerHomePage,
   posts: CustomerPostsPage,
+  billing: CustomerBillingPage,
   settings: CustomerSettingsPage,
 };
 
 export default function CustomerApp({ accounts, currentUser, reloadAccounts, onLogout }) {
   const toast = useToast();
-  const [tab, setTab] = useState('home');
+  const [tab, setTab] = useState(() => window.location.pathname.startsWith('/billing/') ? 'billing' : 'home');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [pipelineResult, setPipelineResult] = useState(null);
+  const [pipelineRunning, setPipelineRunning] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newAccount, setNewAccount] = useState({ name: '', account_handle: '' });
 
-  const maxAccounts = currentUser?.maxAccounts ?? 4;
+  const maxAccounts = currentUser?.maxAccounts ?? 2;
   const account = accounts[selectedIdx] ?? accounts[0];
   const Page = pages[tab];
   const canAdd = accounts.length < maxAccounts;
 
+  const guardDuringPipeline = () => {
+    if (!pipelineRunning) return false;
+    toast('예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.', 'info');
+    return true;
+  };
+
+  useEffect(() => {
+    if (!pipelineRunning) return undefined;
+
+    const preventLeave = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', preventLeave);
+    return () => window.removeEventListener('beforeunload', preventLeave);
+  }, [pipelineRunning]);
+
   const addAccount = async (e) => {
     e.preventDefault();
+    if (guardDuringPipeline()) return;
     if (!newAccount.name.trim()) return;
     setAdding(true);
     try {
@@ -61,10 +85,10 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
       <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-5 py-4">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div>
-            <div className="font-black text-lg text-coupang tracking-tight">CUJASA</div>
-            <div className="text-xs text-gray-400 mt-0.5">{currentUser.email}</div>
+            <div className="font-black text-lg text-coupang tracking-tight">{JASAIN_BRAND.name}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{CURRENT_PRODUCT.name} · {currentUser.email}</div>
           </div>
-          <button onClick={onLogout} className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5">
+          <button onClick={() => { if (!guardDuringPipeline()) onLogout(); }} className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5">
             로그아웃
           </button>
         </div>
@@ -80,7 +104,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
               {accounts.map((acc, i) => (
                 <button
                   key={acc.id}
-                  onClick={() => setSelectedIdx(i)}
+                  onClick={() => { if (!guardDuringPipeline()) setSelectedIdx(i); }}
                   className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-colors
                     ${selectedIdx === i ? 'bg-coupang text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-coupang hover:text-coupang'}`}
                 >
@@ -89,7 +113,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
               ))}
               {canAdd && (
                 <button
-                  onClick={() => setShowAddForm(true)}
+                  onClick={() => { if (!guardDuringPipeline()) setShowAddForm(true); }}
                   className="flex-shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold border border-dashed border-gray-300 text-gray-400 hover:border-coupang hover:text-coupang transition-colors"
                 >
                   <Plus size={14} />
@@ -140,6 +164,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
               reloadAccounts={reloadAccounts}
               pipelineResult={pipelineResult}
               onPipelineDone={(result) => { setPipelineResult(result); setTab('posts'); }}
+              onPipelineRunningChange={setPipelineRunning}
             />
           </>
         )}
@@ -147,9 +172,9 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
 
       {/* 하단 탭 */}
       <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-100 safe-area-bottom">
-        <div className="max-w-2xl mx-auto grid grid-cols-3">
+        <div className="max-w-2xl mx-auto grid grid-cols-4">
           {tabs.map(([key, label, Icon]) => (
-            <button key={key} onClick={() => setTab(key)}
+            <button key={key} onClick={() => { if (!guardDuringPipeline()) setTab(key); }}
               className={`flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors
                 ${tab === key ? 'text-coupang' : 'text-gray-400 hover:text-gray-600'}`}>
               <Icon size={20} strokeWidth={tab === key ? 2.5 : 1.8} />
@@ -158,6 +183,22 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
           ))}
         </div>
       </nav>
+      {pipelineRunning && <PipelineOverlay />}
+    </div>
+  );
+}
+
+function PipelineOverlay() {
+  return (
+    <div className="fixed inset-0 z-40 grid place-items-center bg-white/80 px-5 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border border-blue-100 bg-white p-6 text-center shadow-xl">
+        <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-blue-100 border-t-coupang" />
+        <div className="text-lg font-black text-gray-800">예약 작업 실행 중입니다</div>
+        <p className="mt-2 text-sm leading-relaxed text-gray-500">
+          주제 생성, 상품 검색, 콘텐츠 작성, 예약 등록을 진행하고 있습니다.<br />
+          중복 생성을 막기 위해 완료 전까지 화면 이동이 잠시 제한됩니다.
+        </p>
+      </div>
     </div>
   );
 }

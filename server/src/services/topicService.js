@@ -3,6 +3,7 @@ import { assertAccountActive, getAccount } from './accountService.js';
 import { dbInsert, dbList, logActivity } from './supabaseService.js';
 import { generateTopicsPrompt } from '../prompts/generateTopicsPrompt.js';
 import { isDuplicateTopic } from './similarityService.js';
+import { validateTopicCandidate } from '../utils/contentGuardrails.js';
 
 const sampleTopics = (account) => ({
   topics: [
@@ -32,6 +33,18 @@ export async function generateTopics(accountId) {
   const generated = await getJson(generateTopicsPrompt(account), () => sampleTopics(account));
   const rows = [];
   for (const topic of generated.topics || []) {
+    const guardrail = validateTopicCandidate(topic, account);
+    if (!guardrail.allowed) {
+      await logActivity({
+        account_id: accountId,
+        project_id: account.project_id,
+        action: 'topic_guardrail_blocked',
+        level: 'warn',
+        message: topic.title,
+        payload: { reasons: guardrail.reasons, context: guardrail.context }
+      });
+      continue;
+    }
     const duplicate = isDuplicateTopic(topic, recent.concat(rows));
     if (duplicate.duplicate) {
       await logActivity({ account_id: accountId, project_id: account.project_id, action: 'topic_duplicate_skipped', message: topic.title });
@@ -57,6 +70,20 @@ export const listTopics = (accountId) => dbList('topics', { account_id: accountI
 export async function createManualTopic(accountId, { title, angle }) {
   const account = await getAccount(accountId);
   assertAccountActive(account, 'create manual topic');
+  const guardrail = validateTopicCandidate({ title, angle, searchKeywords: [] }, account);
+  if (!guardrail.allowed) {
+    await logActivity({
+      account_id: accountId,
+      project_id: account.project_id,
+      action: 'manual_topic_guardrail_blocked',
+      level: 'warn',
+      message: title,
+      payload: { reasons: guardrail.reasons, context: guardrail.context }
+    });
+    const error = new Error(`Topic blocked by content guardrails: ${guardrail.reasons.join(', ')}`);
+    error.status = 422;
+    throw error;
+  }
   return dbInsert('topics', {
     account_id: accountId,
     project_id: account.project_id,

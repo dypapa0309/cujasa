@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { verifyPassword, hashPassword } from '../utils/password.js';
-import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
+import { DEFAULT_PRODUCT_ID, PRODUCTS } from '../config/products.js';
+import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
 
@@ -16,8 +17,12 @@ export function isAuthConfigured() {
   return Boolean(process.env.ADMIN_EMAIL && process.env.ADMIN_PASSWORD_HASH && process.env.JWT_SECRET);
 }
 
+export function isTokenConfigured() {
+  return Boolean(process.env.JWT_SECRET);
+}
+
 export function shouldBypassAuth() {
-  return !isAuthConfigured() && process.env.NODE_ENV !== 'production';
+  return !isTokenConfigured() && process.env.NODE_ENV !== 'production';
 }
 
 function makeToken(payload) {
@@ -60,6 +65,87 @@ export function loginAdmin(email, password) {
   return { token, type: 'admin', email: process.env.ADMIN_EMAIL };
 }
 
+function defaultProductGrant() {
+  const product = PRODUCTS.find((item) => item.id === DEFAULT_PRODUCT_ID);
+  return {
+    productId: DEFAULT_PRODUCT_ID,
+    status: 'active',
+    role: 'customer',
+    name: product?.name || 'CUJASA',
+    description: product?.description || '쿠팡 파트너스 자동화 콘솔',
+    appUrl: product?.appUrl || 'https://cujasa.jasain.kr',
+    landingUrl: product?.landingUrl || 'https://jasain.kr/cujasa'
+  };
+}
+
+export async function listAvailableProducts() {
+  try {
+    const rows = await dbList('jasain_products', {}, { order: 'name', ascending: true });
+    return rows.length > 0 ? rows : PRODUCTS.map((product) => ({
+      id: product.id,
+      name: product.name,
+      description: product.description,
+      app_url: product.appUrl,
+      landing_url: product.landingUrl,
+      status: product.status
+    }));
+  } catch {
+    return PRODUCTS.map((product) => ({
+      id: product.id,
+      name: product.name,
+      description: product.description,
+      app_url: product.appUrl,
+      landing_url: product.landingUrl,
+      status: product.status
+    }));
+  }
+}
+
+export async function listUserProducts(userId) {
+  if (!userId) return [];
+  try {
+    const [grants, products] = await Promise.all([
+      dbList('user_products', { user_id: userId }),
+      listAvailableProducts()
+    ]);
+    const productById = Object.fromEntries(products.map((product) => [product.id, product]));
+    const activeGrants = grants.filter((grant) => grant.status !== 'suspended');
+    if (activeGrants.length === 0) return [];
+    return activeGrants.map((grant) => {
+      const product = productById[grant.product_id] || {};
+      return {
+        productId: grant.product_id,
+        status: grant.status,
+        role: grant.role,
+        name: product.name || grant.product_id,
+        description: product.description,
+        appUrl: product.app_url,
+        landingUrl: product.landing_url
+      };
+    });
+  } catch {
+    return [defaultProductGrant()];
+  }
+}
+
+export async function grantUserProduct(userId, productId = DEFAULT_PRODUCT_ID, patch = {}) {
+  const existing = await dbGet('user_products', { user_id: userId, product_id: productId });
+  const payload = {
+    status: patch.status || 'active',
+    role: patch.role || 'customer',
+    granted_at: new Date().toISOString()
+  };
+  if (existing) {
+    const [updated] = await dbUpdate('user_products', { user_id: userId, product_id: productId }, payload);
+    return updated;
+  }
+  return dbInsert('user_products', { user_id: userId, product_id: productId, ...payload });
+}
+
+export async function revokeUserProduct(userId, productId) {
+  return dbDelete('user_products', { user_id: userId, product_id: productId });
+}
+
 export async function loginUser(email, password) {
   const user = await dbGet('users', { email: email?.trim().toLowerCase() });
   if (!user) {
@@ -77,23 +163,37 @@ export async function loginUser(email, password) {
     error.status = 401;
     throw error;
   }
-  const token = makeToken({ sub: user.email, role: 'user', userId: user.id, maxAccounts: user.max_accounts });
-  return { token, type: 'user', email: user.email, userId: user.id, maxAccounts: user.max_accounts };
+  const products = await listUserProducts(user.id);
+  const token = makeToken({
+    sub: user.email,
+    role: 'user',
+    userId: user.id,
+    maxAccounts: user.max_accounts,
+    products: products.map((product) => product.productId)
+  });
+  return { token, type: 'user', email: user.email, userId: user.id, maxAccounts: user.max_accounts, products };
 }
 
-export async function createUser(email, password, maxAccounts = 4) {
+export async function createUser(email, password, maxAccounts = 2) {
   const existing = await dbGet('users', { email: email.trim().toLowerCase() });
   if (existing) {
     const error = new Error('이미 존재하는 이메일입니다.');
     error.status = 409;
     throw error;
   }
-  return dbInsert('users', {
+  const user = await dbInsert('users', {
     email: email.trim().toLowerCase(),
     password_hash: hashPassword(password),
     max_accounts: maxAccounts,
-    status: 'active'
+    status: 'active',
+    billing_status: 'none'
   });
+  try {
+    await grantUserProduct(user.id, DEFAULT_PRODUCT_ID);
+  } catch {
+    // Product grants depend on the JASAIN migration. Do not block account creation if it has not been applied yet.
+  }
+  return user;
 }
 
 export const listUsers = () => dbList('users', {}, { order: 'created_at', ascending: false });

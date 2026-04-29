@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { api, setAuthToken } from '../lib/api.js';
+import { CURRENT_PRODUCT, JASAIN_BRAND } from '../config/products.js';
 
 export default function LoginPage({ onLogin }) {
   const [form, setForm] = useState({ email: '', password: '' });
@@ -16,7 +17,7 @@ export default function LoginPage({ onLogin }) {
       setAuthToken(result.token);
       onLogin(result);
     } catch (err) {
-      setError('로그인 정보를 확인하세요. 서버 인증 환경변수가 없으면 README의 관리자 비밀번호 설정을 먼저 진행해야 합니다.');
+      setError(err.message || '로그인 정보를 확인하세요.');
     } finally {
       setBusy(false);
     }
@@ -30,8 +31,8 @@ export default function LoginPage({ onLogin }) {
             <ShieldCheck size={21} />
           </div>
           <div>
-            <h1 className="text-lg font-semibold">CUJASA 로그인</h1>
-            <p className="text-sm text-slate-500">쿠팡 파트너스 자동화 콘솔</p>
+            <h1 className="text-lg font-semibold">{JASAIN_BRAND.name} 로그인</h1>
+            <p className="text-sm text-slate-500">{CURRENT_PRODUCT.name} · {CURRENT_PRODUCT.description}</p>
           </div>
         </div>
         <label className="mt-6 grid gap-1 text-sm">

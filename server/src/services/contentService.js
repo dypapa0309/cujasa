@@ -1,17 +1,23 @@
 import { getJson } from './openaiService.js';
 import { getAccount } from './accountService.js';
-import { dbGet, dbInsert, dbList } from './supabaseService.js';
+import { dbGet, dbInsert, dbList, logActivity } from './supabaseService.js';
 import { generatePostsPrompt } from '../prompts/generatePostsPrompt.js';
 import { checkAndRewriteRisk } from './riskService.js';
+import { validatePostCandidate } from '../utils/contentGuardrails.js';
+import { buildFallbackPostBody, validatePostStyleFit } from '../utils/accountStyle.js';
 
 export async function generatePosts(topicId) {
   const topic = await dbGet('topics', { id: topicId });
   const account = await getAccount(topic.account_id);
-  const selected = await dbList('post_products', { topic_id: topicId });
+  const selectedRows = await dbList('post_products', { topic_id: topicId });
+  const selected = (await Promise.all(selectedRows.map(async (row) => {
+    const product = await dbGet('coupang_products', { id: row.product_id });
+    return product ? { ...product, recommendation_reason: row.recommendation_reason, fit_score: row.fit_score, rank: row.rank } : null;
+  }))).filter(Boolean);
   const fallback = {
     posts: [{
       contentType: '공감형',
-      body: `${topic.title}, 생각보다 은근 스트레스다.\n\n${topic.angle}만 잘 잡아도 하루가 조금 편해진다.\n\n청소를 더 열심히 하기보다 원인을 줄이는 쪽으로 보면 좋다.`,
+      body: buildFallbackPostBody(topic, account),
       riskLevel: 'low'
     }]
   };
@@ -19,6 +25,32 @@ export async function generatePosts(topicId) {
   const posts = [];
   for (const item of result.posts || []) {
     const risk = checkAndRewriteRisk(item.body);
+    const guardrail = validatePostCandidate(risk.body, account, topic);
+    if (!guardrail.allowed) {
+      await logActivity({
+        account_id: topic.account_id,
+        project_id: topic.project_id,
+        topic_id: topic.id,
+        action: 'post_guardrail_blocked',
+        level: 'warn',
+        message: guardrail.reasons.join('; '),
+        payload: { contentType: item.contentType, body: risk.body, context: guardrail.context }
+      });
+      continue;
+    }
+    const styleFit = validatePostStyleFit(risk.body, account);
+    if (!styleFit.allowed) {
+      await logActivity({
+        account_id: topic.account_id,
+        project_id: topic.project_id,
+        topic_id: topic.id,
+        action: 'post_style_blocked',
+        level: 'warn',
+        message: styleFit.reasons.join('; '),
+        payload: { contentType: item.contentType, body: risk.body, tone: styleFit.profile.tone }
+      });
+      continue;
+    }
     posts.push(await dbInsert('posts', {
       project_id: topic.project_id,
       account_id: topic.account_id,

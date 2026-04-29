@@ -1,0 +1,170 @@
+import { dbGet, dbList } from './supabaseService.js';
+import { latestPipelineRun } from './pipelineRunService.js';
+
+const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+function kstDayRange(date = new Date()) {
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const start = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - 9 * 60 * 60 * 1000);
+  const end = new Date(start.getTime() + ONE_DAY_MS);
+  return { start, end };
+}
+
+function inRange(value, start, end) {
+  const time = value ? new Date(value).getTime() : 0;
+  return time >= start.getTime() && time < end.getTime();
+}
+
+function tokenState(account) {
+  if (!account.threads_access_token) return { status: 'error', label: '미연결' };
+  if (account.threads_token_status === 'refresh_failed') return { status: 'error', label: '갱신 실패' };
+  if (!account.threads_token_expires_at) return { status: 'ok', label: '연결됨' };
+  const daysLeft = (new Date(account.threads_token_expires_at).getTime() - Date.now()) / ONE_DAY_MS;
+  if (daysLeft <= 0) return { status: 'error', label: '만료됨' };
+  if (daysLeft <= 7) return { status: 'warn', label: `만료 ${Math.ceil(daysLeft)}일 전` };
+  return { status: 'ok', label: '연결됨' };
+}
+
+function coupangState(account) {
+  const missing = [];
+  if (!account.coupang_access_key && !process.env.COUPANG_ACCESS_KEY) missing.push('Access Key');
+  if (!account.coupang_secret_key && !process.env.COUPANG_SECRET_KEY) missing.push('Secret Key');
+  if (!account.coupang_partner_id && !process.env.COUPANG_PARTNER_ID) missing.push('Partner ID');
+  if (!account.coupang_tracking_code && !process.env.COUPANG_TRACKING_CODE) missing.push('Tracking Code');
+  return missing.length
+    ? { status: 'error', label: '키 누락', missing }
+    : { status: 'ok', label: '설정됨', missing: [] };
+}
+
+function pushProblem(problems, account, severity, type, label, detail = '') {
+  problems.push({
+    accountId: account.id,
+    accountName: account.name,
+    accountHandle: account.account_handle,
+    severity,
+    type,
+    label,
+    detail
+  });
+}
+
+async function customerLabelFor(accountId, userAccounts, usersById) {
+  const links = userAccounts.filter((ua) => ua.account_id === accountId);
+  const labels = links.map((link) => usersById.get(link.user_id)?.email).filter(Boolean);
+  return labels.join(', ');
+}
+
+export async function operationAccountRows() {
+  const { start, end } = kstDayRange();
+  const [
+    accounts,
+    queue,
+    products,
+    activityLogs,
+    users,
+    userAccounts
+  ] = await Promise.all([
+    dbList('accounts'),
+    dbList('post_queue'),
+    dbList('coupang_products'),
+    dbList('activity_logs', {}, { order: 'created_at', ascending: false, limit: 300 }),
+    dbList('users'),
+    dbList('user_accounts')
+  ]);
+  const usersById = new Map(users.map((user) => [user.id, user]));
+
+  return Promise.all(accounts.map(async (account) => {
+    const accountQueue = queue.filter((row) => row.account_id === account.id);
+    const todayQueue = accountQueue.filter((row) => inRange(row.scheduled_at, start, end));
+    const todayScheduled = todayQueue.filter((row) => row.status === 'scheduled').length;
+    const todayPosted = accountQueue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length;
+    const failedCount = accountQueue.filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status)).length;
+    const mockCount = accountQueue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length;
+    const accountProducts = products.filter((row) => row.account_id === account.id);
+    const fallbackCount = accountProducts.filter((row) => row.is_fallback).length;
+    const fallbackRatio = accountProducts.length ? fallbackCount / accountProducts.length : 0;
+    const recentPosted = accountQueue
+      .filter((row) => row.status === 'posted' && row.posted_at)
+      .sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at))[0];
+    const lastActivity = activityLogs.find((row) => row.account_id === account.id) || null;
+    const pipelineRun = await latestPipelineRun(account.id);
+    const threads = tokenState(account);
+    const coupang = coupangState(account);
+    const customer = await customerLabelFor(account.id, userAccounts, usersById);
+    const problems = [];
+
+    if (threads.status === 'error') pushProblem(problems, account, 'error', 'threads', `Threads ${threads.label}`);
+    else if (threads.status === 'warn') pushProblem(problems, account, 'warn', 'threads', `Threads ${threads.label}`);
+    if (coupang.status === 'error') pushProblem(problems, account, 'error', 'coupang', '쿠팡 API 키 누락', coupang.missing.join(', '));
+    if (account.status === 'active' && todayScheduled === 0) pushProblem(problems, account, 'warn', 'no_schedule', '오늘 예약 없음');
+    if (failedCount > 0) pushProblem(problems, account, 'error', 'queue_failed', `실패/검토 ${failedCount}건`);
+    if (mockCount > 0) pushProblem(problems, account, 'warn', 'mock_upload', `Mock 업로드 ${mockCount}건`);
+    if (fallbackRatio >= 0.5 && accountProducts.length >= 5) pushProblem(problems, account, 'warn', 'fallback_products', `fallback 상품 ${Math.round(fallbackRatio * 100)}%`);
+    if (lastActivity?.action === 'pipeline_failed' || pipelineRun?.status === 'failed') {
+      pushProblem(problems, account, 'error', 'pipeline_failed', '최근 파이프라인 실패', pipelineRun?.error_message || lastActivity?.message || '');
+    }
+
+    return {
+      accountId: account.id,
+      accountName: account.name,
+      accountHandle: account.account_handle,
+      customer,
+      accountStatus: account.status,
+      health: pipelineRun?.status === 'running' ? 'running' : problems.some((p) => p.severity === 'error') ? 'error' : problems.length ? 'warn' : 'ok',
+      threads,
+      coupang,
+      todayScheduled,
+      todayPosted,
+      failedCount,
+      mockCount,
+      fallbackRatio,
+      lastPostedAt: recentPosted?.posted_at || null,
+      lastActivity: lastActivity ? {
+        action: lastActivity.action,
+        level: lastActivity.level,
+        message: lastActivity.message,
+        createdAt: lastActivity.created_at
+      } : null,
+      pipelineRun: pipelineRun ? {
+        id: pipelineRun.id,
+        status: pipelineRun.status,
+        startedAt: pipelineRun.started_at,
+        finishedAt: pipelineRun.finished_at,
+        errorMessage: pipelineRun.error_message
+      } : null,
+      problems
+    };
+  }));
+}
+
+export async function operationSummary() {
+  const { start, end } = kstDayRange();
+  const [accounts, queue, rows] = await Promise.all([
+    dbList('accounts'),
+    dbList('post_queue'),
+    operationAccountRows()
+  ]);
+  const todayQueue = queue.filter((row) => inRange(row.scheduled_at, start, end));
+  const problemAccounts = rows.flatMap((row) => row.problems).sort((a, b) => {
+    const rank = { error: 0, warn: 1, ok: 2 };
+    return rank[a.severity] - rank[b.severity];
+  });
+
+  return {
+    cards: {
+      accountsTotal: accounts.length,
+      accountsActive: accounts.filter((account) => account.status === 'active').length,
+      scheduledToday: todayQueue.filter((row) => row.status === 'scheduled').length,
+      postedToday: queue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length,
+      queueProblems: queue.filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status)).length,
+      mockUploads: queue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length,
+      threadsProblems: rows.filter((row) => row.threads.status !== 'ok').length
+    },
+    problemAccounts
+  };
+}
+
+export async function operationAccountDetail(accountId) {
+  return dbGet('accounts', { id: accountId });
+}

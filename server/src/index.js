@@ -17,33 +17,58 @@ import notificationsRouter from './routes/notifications.js';
 import blogRouter from './routes/blog.js';
 import adminRouter from './routes/admin.js';
 import inquiriesRouter from './routes/inquiries.js';
+import billingRouter, { tossWebhook } from './routes/billing.js';
 import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { processDueQueue } from './services/schedulerService.js';
 import { runDueMetricJobs } from './services/metricsJobService.js';
 import { runFullPipeline } from './services/pipelineService.js';
 import { listBlogPosts } from './services/blogService.js';
+import { refreshExpiringThreadsTokens } from './services/threadsOAuthService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
-const allowedOrigins = [
-  ...(process.env.CLIENT_BASE_URL || '').split(',').map((o) => o.trim()).filter(Boolean),
-  'https://jasain.vercel.app',
-];
+const allowedOrigins = new Set([
+  ...(process.env.CLIENT_BASE_URL || '').split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean),
+  'https://jasain.kr',
+  'https://www.jasain.kr',
+  'https://app.jasain.kr',
+  'https://cujasa.jasain.kr',
+  'https://dexor.jasain.kr',
+  'https://cujasa.vercel.app',
+  'https://cujasa.onrender.com'
+]);
 
-app.use(cors({
+function isAllowedOrigin(origin = '') {
+  const normalized = origin.replace(/\/$/, '');
+  if (!normalized) return true;
+  if (allowedOrigins.has(normalized)) return true;
+  if (/^https:\/\/([a-z0-9-]+\.)?jasain\.kr$/i.test(normalized)) return true;
+  if (/^https:\/\/([a-z0-9-]+\.)?vercel\.app$/i.test(normalized) && process.env.NODE_ENV !== 'production') return true;
+  if (/^http:\/\/localhost:\d+$/i.test(normalized) || /^http:\/\/127\.0\.0\.1:\d+$/i.test(normalized)) return true;
+  return false;
+}
+
+const corsOptions = {
   origin(origin, callback) {
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+    if (isAllowedOrigin(origin)) {
       return callback(null, true);
     }
     return callback(new Error(`CORS blocked origin: ${origin}`));
-  }
-}));
+  },
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+  optionsSuccessStatus: 204
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(securityHeaders);
 app.use(express.json({ limit: '1mb' }));
 app.use(requireAuth);
 
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'cujasa-server' }));
+app.get('/api/health', (req, res) => res.json({ ok: true, service: 'jasain-api', product: 'cujasa' }));
 app.use('/api/auth', authRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/accounts', accountsRouter);
@@ -64,6 +89,8 @@ app.use('/r', trackingRouter);
 app.use('/blog', blogRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/inquiries', inquiriesRouter);
+app.use('/api/billing', billingRouter);
+app.post('/api/webhooks/toss', tossWebhook);
 
 // sitemap.xml (블로그 글 포함 자동 생성)
 app.get('/sitemap.xml', async (req, res) => {
@@ -134,6 +161,12 @@ cron.schedule('0 2 * * *', async () => {
   console.log('[Pipeline] 완료', JSON.stringify(results));
 });
 
+// 매일 새벽 3시: Threads long-lived token 만료 전 갱신
+cron.schedule('0 3 * * *', async () => {
+  const result = await refreshExpiringThreadsTokens();
+  console.log('[Threads Token Refresh]', JSON.stringify(result));
+});
+
 app.listen(port, () => {
-  console.log(`CUJASA API running on http://localhost:${port}`);
+  console.log(`JASAIN API running on http://localhost:${port}`);
 });

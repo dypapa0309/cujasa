@@ -20,14 +20,10 @@ export default function CustomerHomePage({ account }) {
 
   const isActive = account?.status === 'active';
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const todayScheduled = queue.filter((r) => {
-    const d = new Date(r.scheduled_at);
-    return r.status === 'scheduled' && d >= today && d < tomorrow;
-  });
+  const upcomingScheduled = queue
+    .filter((r) => r.status === 'scheduled' && new Date(r.scheduled_at) >= new Date())
+    .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
+    .slice(0, 5);
 
   const recentPosted = queue
     .filter((r) => r.status === 'posted' && r.posted_at)
@@ -59,8 +55,8 @@ export default function CustomerHomePage({ account }) {
       {/* 오늘 통계 */}
       <div className="grid grid-cols-3 gap-3">
         <div className="bg-white rounded-2xl p-4 text-center border border-gray-100">
-          <div className="text-2xl font-black text-coupang">{todayScheduled.length}</div>
-          <div className="text-xs text-gray-400 mt-1">오늘 예약</div>
+          <div className="text-2xl font-black text-coupang">{upcomingScheduled.length}</div>
+          <div className="text-xs text-gray-400 mt-1">예약 대기</div>
         </div>
         <div className="bg-white rounded-2xl p-4 text-center border border-gray-100">
           <div className="text-2xl font-black text-gray-800">{totalPosted}</div>
@@ -72,14 +68,14 @@ export default function CustomerHomePage({ account }) {
         </div>
       </div>
 
-      {/* 오늘 예약 목록 */}
-      {todayScheduled.length > 0 && (
+      {/* 예약 목록 */}
+      {upcomingScheduled.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-50">
-            <div className="font-bold text-sm text-gray-700">오늘 예약된 포스팅</div>
+            <div className="font-bold text-sm text-gray-700">다가오는 예약 포스팅</div>
           </div>
           <div className="divide-y divide-gray-50">
-            {todayScheduled.map((r) => (
+            {upcomingScheduled.map((r) => (
               <div key={r.id} className="px-5 py-3 flex items-center justify-between">
                 <div className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
                 <div className="text-sm text-gray-600 flex-1 mx-3">{dateTime(r.scheduled_at)}</div>
@@ -113,7 +109,7 @@ export default function CustomerHomePage({ account }) {
         </div>
       )}
 
-      {totalPosted === 0 && todayScheduled.length === 0 && (
+      {totalPosted === 0 && upcomingScheduled.length === 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center">
           <div className="flex justify-center mb-3">
             <svg className="w-10 h-10 text-gray-200" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">

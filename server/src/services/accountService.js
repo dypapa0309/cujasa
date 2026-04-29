@@ -38,7 +38,7 @@ export const createAccount = (payload) => dbInsert('accounts', normalizeAccount(
   platform: 'threads',
   status: 'active',
   forbidden_topics: [],
-  forbidden_words: ['100%', '무조건', '완벽', '보장', '치료', '예방'],
+  forbidden_words: ['100%', '무조건', '완벽', '보장', '치료', '예방', '다이어트 약', '보조제', '가르시니아', '효과 보장', '체중감량 보장'],
   daily_post_min: 1,
   daily_post_max: 3,
   active_time_windows: [{ start: '09:00', end: '11:00' }, { start: '20:00', end: '23:00' }],

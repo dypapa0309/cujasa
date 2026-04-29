@@ -29,7 +29,7 @@ const tables = {
     target_audience: index === 1 ? '육아 중인 부모' : index === 2 ? '직장인' : index === 3 ? '살림 관심 사용자' : '20대 자취생',
     content_scope: name.replace(' 꿀템', '') + ' 생활 문제와 쿠팡 상품 연결',
     forbidden_topics: [],
-    forbidden_words: ['100%', '무조건', '완벽', '보장', '치료', '예방'],
+    forbidden_words: ['100%', '무조건', '완벽', '보장', '치료', '예방', '다이어트 약', '보조제', '가르시니아', '효과 보장', '체중감량 보장'],
     tone: '친근하고 실제 후기처럼 짧게',
     cta_style: '댓글 유도형',
     daily_post_min: 2,
@@ -51,10 +51,60 @@ const tables = {
   tracking_links: [],
   click_events: [],
   post_queue: [],
+  pipeline_runs: [],
   post_metrics_jobs: [],
   post_metrics: [],
   activity_logs: [],
-  notifications: []
+  notifications: [],
+  users: [],
+  user_accounts: [],
+  jasain_products: [
+    {
+      id: 'cujasa',
+      name: 'CUJASA',
+      description: '쿠팡 파트너스 자동화 콘솔',
+      app_url: 'https://cujasa.jasain.kr',
+      landing_url: 'https://jasain.kr/cujasa',
+      status: 'active',
+      created_at: now(),
+      updated_at: now()
+    },
+    {
+      id: 'dexor',
+      name: 'DEXOR',
+      description: '블로그 분석 및 선정 자동화',
+      app_url: 'https://dexor.jasain.kr',
+      landing_url: 'https://jasain.kr/dexor',
+      status: 'active',
+      created_at: now(),
+      updated_at: now()
+    }
+  ],
+  user_products: [],
+  billing_products: [
+    {
+      id: 'onetime_590000',
+      name: 'CUJASA 베이직 일시불',
+      plan: 'onetime',
+      amount: 590000,
+      billing_cycle: 'once',
+      max_accounts: 2,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'monthly_129000',
+      name: 'CUJASA 베이직 월정액',
+      plan: 'monthly',
+      amount: 129000,
+      billing_cycle: 'monthly',
+      max_accounts: 2,
+      active: true,
+      created_at: now()
+    }
+  ],
+  billing_payments: [],
+  billing_subscriptions: []
 };
 
 const matches = (row, filters) => Object.entries(filters).every(([key, value]) => row[key] === value);

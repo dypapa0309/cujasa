@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { isAuthConfigured, loginAdmin, loginUser, shouldBypassAuth } from '../services/authService.js';
 import { createRateLimit } from '../middleware/rateLimit.js';
+import { completeThreadsOAuth, createThreadsAuthUrl } from '../services/threadsOAuthService.js';
 
 const loginRateLimit = createRateLimit({ scope: 'login', windowMs: 10 * 60 * 1000, maxRequests: 10 });
 
@@ -8,11 +9,12 @@ const router = Router();
 
 router.post('/login', loginRateLimit, async (req, res, next) => {
   try {
-    // admin 먼저 시도, 실패하면 user 시도
-    try {
-      return res.json(loginAdmin(req.body.email, req.body.password));
-    } catch (adminErr) {
-      if (adminErr.status !== 401) throw adminErr;
+    if (isAuthConfigured()) {
+      try {
+        return res.json(loginAdmin(req.body.email, req.body.password));
+      } catch (adminErr) {
+        if (adminErr.status !== 401) throw adminErr;
+      }
     }
     return res.json(await loginUser(req.body.email, req.body.password));
   } catch (error) {
@@ -20,17 +22,53 @@ router.post('/login', loginRateLimit, async (req, res, next) => {
   }
 });
 
-router.get('/me', (req, res) => {
-  const user = req.user;
-  if (!user) return res.json({ authConfigured: isAuthConfigured(), devBypass: shouldBypassAuth() });
-  if (user.type === 'admin') {
-    return res.json({ type: 'admin', admin: { email: user.email }, authConfigured: true });
+router.get('/me', async (req, res, next) => {
+  try {
+    const user = req.user;
+    if (!user) return res.json({ authConfigured: isAuthConfigured(), devBypass: shouldBypassAuth() });
+    if (user.type === 'admin') {
+      return res.json({ type: 'admin', admin: { email: user.email }, authConfigured: true });
+    }
+    return res.json({
+      type: 'user',
+      user: {
+        email: user.email,
+        userId: user.userId,
+        maxAccounts: user.maxAccounts,
+        allowedAccountIds: user.allowedAccountIds,
+        products: user.products || []
+      },
+      authConfigured: true
+    });
+  } catch (error) {
+    next(error);
   }
-  return res.json({
-    type: 'user',
-    user: { email: user.email, userId: user.userId, maxAccounts: user.maxAccounts, allowedAccountIds: user.allowedAccountIds },
-    authConfigured: true
-  });
+});
+
+router.get('/threads/start', async (req, res, next) => {
+  try {
+    if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
+    const accountId = req.query.accountId;
+    if (!accountId) return res.status(400).json({ error: 'accountId is required' });
+    const url = await createThreadsAuthUrl({ accountId, user: req.user });
+    if (req.headers.authorization || req.accepts('json') === 'json') return res.json({ url });
+    res.redirect(url);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/threads/callback', async (req, res, next) => {
+  try {
+    const account = await completeThreadsOAuth({ code: req.query.code, state: req.query.state });
+    const clientBase = (process.env.CLIENT_BASE_URL || 'http://localhost:5175').split(',')[0].trim();
+    const params = new URLSearchParams({ threads: 'connected', accountId: account.id });
+    res.redirect(`${clientBase}?${params.toString()}`);
+  } catch (error) {
+    const clientBase = (process.env.CLIENT_BASE_URL || 'http://localhost:5175').split(',')[0].trim();
+    const params = new URLSearchParams({ threads: 'error', message: error.message });
+    res.redirect(`${clientBase}?${params.toString()}`);
+  }
 });
 
 export default router;

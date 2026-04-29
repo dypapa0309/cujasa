@@ -1,13 +1,22 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import AccountCard from '../components/AccountCard.jsx';
 import AccountSettingsPage from './AccountSettingsPage.jsx';
 
-export default function AccountListPage({ accounts, reloadAccounts, setSelectedAccountId, currentUser }) {
+export default function AccountListPage({ accounts, reloadAccounts, setSelectedAccountId, currentUser, accountSettingsOpenId, onAccountSettingsOpened }) {
   const [editing, setEditing] = useState(null);
   const isAdmin = !currentUser || currentUser.type === 'admin';
   const maxAccounts = currentUser?.maxAccounts ?? 999;
   const atLimit = !isAdmin && accounts.length >= maxAccounts;
+  useEffect(() => {
+    if (!accountSettingsOpenId) return;
+    const account = accounts.find((item) => item.id === accountSettingsOpenId);
+    if (account) {
+      setEditing(account);
+      onAccountSettingsOpened?.();
+    }
+  }, [accountSettingsOpenId, accounts, onAccountSettingsOpened]);
+
   const create = async () => {
     const projects = await api.get('/api/projects');
     const project = projects[0];
