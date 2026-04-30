@@ -67,19 +67,35 @@ export default function App() {
   useEffect(() => {
     api.get('/api/auth/me')
       .then((result) => {
-        if (result.type === 'admin') setCurrentUser({ type: 'admin', email: result.admin?.email });
-        else if (result.type === 'user') {
+        if (result.type === 'admin') {
+          setCurrentUser({ type: 'admin', email: result.admin?.email });
+          return loadAccounts();
+        }
+        if (result.type === 'user') {
           setCurrentUser({
             type: 'user',
             email: result.user?.email,
             maxAccounts: result.user?.maxAccounts,
             products: result.user?.products || []
           });
+          return loadAccounts();
         }
-        else setCurrentUser({ type: 'admin', email: 'dev-local' }); // bypass
-        return loadAccounts();
+        if (result.devBypass === true) {
+          setCurrentUser({ type: 'admin', email: 'dev-local' });
+          return loadAccounts();
+        }
+        setAuthToken('');
+        setCurrentUser(null);
+        setAccounts([]);
+        setSelectedAccountId('');
+        return null;
       })
-      .catch(() => setAuthToken(''))
+      .catch(() => {
+        setAuthToken('');
+        setCurrentUser(null);
+        setAccounts([]);
+        setSelectedAccountId('');
+      })
       .finally(() => setCheckingAuth(false));
   }, []);
 
