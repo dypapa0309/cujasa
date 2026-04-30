@@ -2,8 +2,35 @@ import { Router } from 'express';
 import { createAccount, deleteAccount, getAccount, listAccounts, updateAccount } from '../services/accountService.js';
 import { dbInsert, dbList } from '../services/supabaseService.js';
 import { runPipelineForAccount } from '../services/pipelineService.js';
+import { latestPipelineRun } from '../services/pipelineRunService.js';
 
 const router = Router();
+
+function mapPipelineRun(run) {
+  if (!run) return null;
+  const result = run.result && typeof run.result === 'object' ? run.result : {};
+  return {
+    id: run.id,
+    accountId: run.account_id,
+    status: run.status,
+    requestedBy: run.requested_by,
+    startedAt: run.started_at,
+    finishedAt: run.finished_at,
+    expiresAt: run.expires_at,
+    errorMessage: run.error_message,
+    progress: {
+      percent: Number(result.percent ?? (run.status === 'completed' ? 100 : 0)),
+      stage: result.stage || run.status,
+      label: result.label || (run.status === 'completed' ? '예약 작업이 완료됐습니다' : '예약 작업 상태를 확인하고 있습니다'),
+      topicsTotal: result.topicsTotal ?? result.steps?.topics ?? 0,
+      topicsDone: result.topicsDone ?? 0,
+      postsCreated: result.postsCreated ?? result.steps?.posts ?? 0,
+      queuedCount: result.queuedCount ?? result.steps?.queued ?? 0,
+      updatedAt: result.updatedAt || run.updated_at
+    },
+    result
+  };
+}
 
 router.get('/', async (req, res, next) => {
   try {
@@ -30,6 +57,15 @@ router.post('/', async (req, res, next) => {
       await dbInsert('user_accounts', { user_id: req.user.userId, account_id: account.id });
     }
     res.status(201).json(account);
+  } catch (e) { next(e); }
+});
+
+router.get('/:accountId/pipeline-run', async (req, res, next) => {
+  try {
+    if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(req.params.accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json({ run: mapPipelineRun(await latestPipelineRun(req.params.accountId)) });
   } catch (e) { next(e); }
 });
 

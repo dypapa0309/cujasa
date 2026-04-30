@@ -50,7 +50,12 @@ export async function startPipelineRun(account, requestedBy = 'system') {
       requested_by: requestedBy,
       status: 'running',
       started_at: now().toISOString(),
-      expires_at: new Date(now().getTime() + LOCK_TTL_MS).toISOString()
+      expires_at: new Date(now().getTime() + LOCK_TTL_MS).toISOString(),
+      result: {
+        percent: 0,
+        stage: 'starting',
+        label: '예약 작업을 준비하고 있습니다'
+      }
     });
   } catch (insertError) {
     const error = new Error('이미 예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.');
@@ -58,6 +63,22 @@ export async function startPipelineRun(account, requestedBy = 'system') {
     error.cause = insertError;
     throw error;
   }
+}
+
+export async function updatePipelineRunProgress(runId, progress = {}) {
+  if (!runId) return null;
+  const current = await dbGet('pipeline_runs', { id: runId });
+  const previous = current?.result && typeof current.result === 'object' ? current.result : {};
+  const percent = Math.max(0, Math.min(100, Number(progress.percent ?? previous.percent ?? 0)));
+  const [updated] = await dbUpdate('pipeline_runs', { id: runId }, {
+    result: {
+      ...previous,
+      ...progress,
+      percent,
+      updatedAt: now().toISOString()
+    }
+  });
+  return updated;
 }
 
 export async function finishPipelineRun(runId, status, patch = {}) {

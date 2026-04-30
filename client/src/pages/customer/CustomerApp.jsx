@@ -25,6 +25,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [pipelineResult, setPipelineResult] = useState(null);
   const [pipelineRunning, setPipelineRunning] = useState(false);
+  const [pipelineProgress, setPipelineProgress] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newAccount, setNewAccount] = useState({ name: '', account_handle: '' });
@@ -51,6 +52,49 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     window.addEventListener('beforeunload', preventLeave);
     return () => window.removeEventListener('beforeunload', preventLeave);
   }, [pipelineRunning]);
+
+  useEffect(() => {
+    if (!pipelineRunning || !account?.id) return undefined;
+    let cancelled = false;
+
+    const loadProgress = async () => {
+      try {
+        const payload = await api.get(`/api/accounts/${account.id}/pipeline-run`);
+        if (cancelled || !payload?.run) return;
+        setPipelineProgress(payload.run.progress);
+        if (payload.run.status === 'completed') {
+          setPipelineResult(payload.run.result);
+          setTab('posts');
+          setPipelineRunning(false);
+        } else if (payload.run.status === 'failed') {
+          toast(payload.run.errorMessage || '자동화 실행에 실패했습니다.', 'error');
+          setPipelineRunning(false);
+        }
+      } catch {
+        // Progress polling should never interrupt the actual pipeline request.
+      }
+    };
+
+    loadProgress();
+    const timer = window.setInterval(loadProgress, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [pipelineRunning, account?.id, toast]);
+
+  const handlePipelineRunningChange = (isRunning, progress = null) => {
+    setPipelineRunning(isRunning);
+    if (isRunning) {
+      setPipelineProgress(progress || {
+        percent: 0,
+        stage: 'starting',
+        label: '예약 작업을 준비하고 있습니다'
+      });
+    } else {
+      setPipelineProgress(null);
+    }
+  };
 
   const addAccount = async (e) => {
     e.preventDefault();
@@ -161,7 +205,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
               reloadAccounts={reloadAccounts}
               pipelineResult={pipelineResult}
               onPipelineDone={(result) => { setPipelineResult(result); setTab('posts'); }}
-              onPipelineRunningChange={setPipelineRunning}
+              onPipelineRunningChange={handlePipelineRunningChange}
             />
           </>
         )}
@@ -180,19 +224,33 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
           ))}
         </div>
       </nav>
-      {pipelineRunning && <PipelineOverlay />}
+      {pipelineRunning && <PipelineOverlay progress={pipelineProgress} />}
     </div>
   );
 }
 
-function PipelineOverlay() {
+function PipelineOverlay({ progress }) {
+  const percent = Math.max(0, Math.min(100, Number(progress?.percent ?? 0)));
+  const label = progress?.label || '예약 작업을 준비하고 있습니다';
+
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-white/80 px-5 backdrop-blur-sm">
       <div className="w-full max-w-sm rounded-2xl border border-blue-100 bg-white p-6 text-center shadow-xl">
         <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-blue-100 border-t-coupang" />
         <div className="text-lg font-black text-gray-800">예약 작업 실행 중입니다</div>
-        <p className="mt-2 text-sm leading-relaxed text-gray-500">
-          주제 생성, 상품 검색, 콘텐츠 작성, 예약 등록을 진행하고 있습니다.<br />
+        <div className="mt-4">
+          <div className="mb-2 flex items-center justify-between text-xs font-bold text-blue-600">
+            <span>{label}</span>
+            <span>{Math.round(percent)}%</span>
+          </div>
+          <div className="h-3 overflow-hidden rounded-full bg-blue-50">
+            <div
+              className="h-full rounded-full bg-coupang transition-all duration-500"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        </div>
+        <p className="mt-3 text-sm leading-relaxed text-gray-500">
           중복 생성을 막기 위해 완료 전까지 화면 이동이 잠시 제한됩니다.
         </p>
       </div>

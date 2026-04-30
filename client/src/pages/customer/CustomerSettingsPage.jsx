@@ -54,7 +54,11 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
     }
 
     setRunning(true);
-    onPipelineRunningChange?.(true);
+    onPipelineRunningChange?.(true, {
+      percent: 0,
+      stage: 'starting',
+      label: '예약 작업을 준비하고 있습니다'
+    });
     try {
       const result = await api.post(`/api/accounts/${account.id}/run-pipeline`, {});
       onPipelineDone?.(result);
