@@ -7,13 +7,13 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
-  const [connectingThreads, setConnectingThreads] = useState(false);
   const [errors, setErrors] = useState({});
-  const [showToken, setShowToken] = useState(false);
-  const [showSecretKey, setShowSecretKey] = useState(false);
 
   useEffect(() => {
-    if (!account) return;
+    if (!account) {
+      setForm(null);
+      return;
+    }
     setForm({
       name: account.name || '',
       account_handle: account.account_handle || '',
@@ -21,20 +21,15 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
       content_scope: account.content_scope || '',
       tone: account.tone || '',
       cta_style: account.cta_style || '',
-      forbidden_topics: (account.forbidden_topics || []).join('\n'),
-      forbidden_words: (account.forbidden_words || []).join('\n'),
-      threads_access_token: account.threads_access_token || '',
-      coupang_access_key: account.coupang_access_key || '',
-      coupang_secret_key: account.coupang_secret_key || '',
-      coupang_partner_id: account.coupang_partner_id || '',
-      coupang_tracking_code: account.coupang_tracking_code || '',
+      forbidden_topics: Array.isArray(account.forbidden_topics) ? account.forbidden_topics.join('\n') : '',
+      forbidden_words: Array.isArray(account.forbidden_words) ? account.forbidden_words.join('\n') : '',
       daily_post_min: account.daily_post_min ?? 2,
       daily_post_max: account.daily_post_max ?? 4,
-      active_time_windows: account.active_time_windows?.length
+      active_time_windows: Array.isArray(account.active_time_windows) && account.active_time_windows.length
         ? account.active_time_windows
         : [{ start: '09:00', end: '22:00' }],
     });
-  }, [account?.id]);
+  }, [account]);
 
   const save = async () => {
     const errs = {};
@@ -78,29 +73,11 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
     }));
   };
 
-  const threadsStatus = (() => {
-    if (account.threads_token_status === 'refresh_failed') return { label: '갱신 실패', tone: 'danger' };
-    if (!form.threads_access_token) return { label: '연결 안 됨', tone: 'warn' };
-    if (account.threads_token_expires_at) {
-      const daysLeft = (new Date(account.threads_token_expires_at).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
-      if (daysLeft <= 0) return { label: '만료됨', tone: 'danger' };
-      if (daysLeft <= 7) return { label: '만료 임박', tone: 'warn' };
-    }
-    return { label: '연결됨', tone: 'ok' };
-  })();
-
-  const connectThreads = async () => {
-    setConnectingThreads(true);
-    try {
-      const result = await api.get(`/api/auth/threads/start?accountId=${account.id}`);
-      window.location.href = result.url;
-    } catch {
-      toast('Threads 연결을 시작하지 못했습니다. 관리자에게 문의해주세요.', 'error');
-      setConnectingThreads(false);
-    }
-  };
-
-  if (!form) return null;
+  if (!form) return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-400">
+      계정 설정을 불러오는 중입니다.
+    </div>
+  );
 
   return (
     <div className="grid gap-5">
@@ -144,80 +121,6 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
         <Field label="금지어 (줄바꿈으로 구분)">
           <textarea rows="3" value={form.forbidden_words} onChange={(e) => setForm((p) => ({ ...p, forbidden_words: e.target.value }))}
             placeholder={"100% 효과\n치료/예방\n체중감량 보장\n가르시니아"} className={input} />
-        </Field>
-      </Section>
-
-      {/* Threads 연결 */}
-      <Section title="Threads 연결" collapsible>
-        <div className={`rounded-xl border px-4 py-4 ${
-          threadsStatus.tone === 'ok' ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
-            : threadsStatus.tone === 'danger' ? 'border-rose-200 bg-rose-50 text-rose-700'
-              : 'border-amber-200 bg-amber-50 text-amber-700'
-        }`}>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="text-sm font-bold">Threads {threadsStatus.label}</div>
-              <div className="mt-1 text-xs opacity-80">
-                초대 수락 후 연결해주세요. 초대가 없으면 관리자에게 문의해주세요.
-              </div>
-              {account.threads_token_expires_at && (
-                <div className="mt-1 text-xs opacity-70">
-                  만료 예정: {new Date(account.threads_token_expires_at).toLocaleDateString('ko-KR')}
-                </div>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={connectThreads}
-              disabled={connectingThreads}
-              className="shrink-0 rounded-lg bg-coupang px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
-            >
-              {connectingThreads ? '이동 중...' : form.threads_access_token ? '다시 연결' : 'Threads 연결하기'}
-            </button>
-          </div>
-        </div>
-        <details className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-          <summary className="cursor-pointer text-xs font-bold text-gray-500">수동 토큰 입력</summary>
-          <div className="mt-3">
-            <Field label="액세스 토큰">
-              <div className="relative">
-                <input type={showToken ? 'text' : 'password'} value={form.threads_access_token}
-                  onChange={(e) => setForm((p) => ({ ...p, threads_access_token: e.target.value }))}
-                  placeholder="Threads 액세스 토큰 입력" className={`${input} pr-16`} />
-                <button type="button" onClick={() => setShowToken((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600">
-                  {showToken ? '숨기기' : '보기'}
-                </button>
-              </div>
-            </Field>
-          </div>
-        </details>
-      </Section>
-
-      {/* 쿠팡 파트너스 */}
-      <Section title="쿠팡 파트너스 API" desc="쿠팡 파트너스 사이트 → Open API에서 확인할 수 있습니다" collapsible>
-        <Field label="Access Key">
-          <input type="text" value={form.coupang_access_key} onChange={(e) => setForm((p) => ({ ...p, coupang_access_key: e.target.value }))}
-            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" className={input} />
-        </Field>
-        <Field label="Secret Key">
-          <div className="relative">
-            <input type={showSecretKey ? 'text' : 'password'} value={form.coupang_secret_key}
-              onChange={(e) => setForm((p) => ({ ...p, coupang_secret_key: e.target.value }))}
-              placeholder="Secret Key" className={`${input} pr-16`} />
-            <button type="button" onClick={() => setShowSecretKey((v) => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600">
-              {showSecretKey ? '숨기기' : '보기'}
-            </button>
-          </div>
-        </Field>
-        <Field label="Partner ID">
-          <input type="text" value={form.coupang_partner_id} onChange={(e) => setForm((p) => ({ ...p, coupang_partner_id: e.target.value }))}
-            placeholder="AF0000000" className={input} />
-        </Field>
-        <Field label="Tracking Code">
-          <input type="text" value={form.coupang_tracking_code} onChange={(e) => setForm((p) => ({ ...p, coupang_tracking_code: e.target.value }))}
-            placeholder="트래킹 코드 (서브ID)" className={input} />
         </Field>
       </Section>
 
