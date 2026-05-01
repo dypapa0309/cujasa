@@ -11,6 +11,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [form, setForm] = useState({ buyerName: '', email: '', password: '', maxAccounts: 2 });
   const [creating, setCreating] = useState(false);
   const [buyerNameDrafts, setBuyerNameDrafts] = useState({});
+  const [accountDrafts, setAccountDrafts] = useState({});
 
   const load = async () => {
     const [nextUsers, nextProducts] = await Promise.all([
@@ -49,6 +50,36 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
       toast('설정이 변경되었습니다.', 'success');
     } catch (err) {
       toast(err.message || '할당에 실패했습니다.', 'error');
+    }
+  };
+
+  const createAndAssignAccount = async (user) => {
+    const draft = accountDrafts[user.id] || {};
+    const name = String(draft.name || '').trim();
+    const accountHandle = String(draft.account_handle || '').trim();
+    const trackingCode = String(draft.coupang_tracking_code || '').trim();
+    if (!name) {
+      toast('Threads 계정 이름을 입력해주세요.', 'error');
+      return;
+    }
+    if ((user.accounts?.length || 0) >= user.max_accounts) {
+      toast(`계정 한도 초과 (최대 ${user.max_accounts}개)`, 'error');
+      return;
+    }
+    try {
+      const account = await api.post('/api/accounts', {
+        name,
+        account_handle: accountHandle,
+        platform: 'threads',
+        project_id: '00000000-0000-0000-0000-000000000001',
+        coupang_tracking_code: trackingCode
+      });
+      await api.post(`/api/admin/users/${user.id}/accounts`, { accountId: account.id });
+      setAccountDrafts((prev) => ({ ...prev, [user.id]: { name: '', account_handle: '', coupang_tracking_code: '' } }));
+      await load();
+      toast('설정이 변경되었습니다.', 'success');
+    } catch (err) {
+      toast(err.message || 'Threads 계정 생성/할당에 실패했습니다.', 'error');
     }
   };
 
@@ -292,6 +323,47 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                         <option value="">+ 계정 할당...</option>
                         {unassigned.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
                       </select>
+                    </div>
+                  )}
+                  {user.accounts?.length < user.max_accounts && (
+                    <div className="mt-2 rounded border border-dashed border-line bg-white p-3">
+                      <div className="mb-2 text-xs font-semibold text-slate-500">고객 Threads 계정 새로 만들고 바로 할당</div>
+                      <div className="grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto] md:items-end">
+                        <label className="grid gap-1 text-xs">
+                          <span className="font-semibold text-slate-500">계정 이름</span>
+                          <input
+                            className="rounded border border-line px-2 py-1.5"
+                            value={accountDrafts[user.id]?.name || ''}
+                            placeholder="예: andsomwith01 꿀템"
+                            onChange={(e) => setAccountDrafts((prev) => ({ ...prev, [user.id]: { ...(prev[user.id] || {}), name: e.target.value } }))}
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs">
+                          <span className="font-semibold text-slate-500">Threads 핸들</span>
+                          <input
+                            className="rounded border border-line px-2 py-1.5"
+                            value={accountDrafts[user.id]?.account_handle || ''}
+                            placeholder="@ 포함 가능"
+                            onChange={(e) => setAccountDrafts((prev) => ({ ...prev, [user.id]: { ...(prev[user.id] || {}), account_handle: e.target.value } }))}
+                          />
+                        </label>
+                        <label className="grid gap-1 text-xs">
+                          <span className="font-semibold text-slate-500">Tracking Code</span>
+                          <input
+                            className="rounded border border-line px-2 py-1.5"
+                            value={accountDrafts[user.id]?.coupang_tracking_code || ''}
+                            placeholder="없으면 고객 기본값"
+                            onChange={(e) => setAccountDrafts((prev) => ({ ...prev, [user.id]: { ...(prev[user.id] || {}), coupang_tracking_code: e.target.value } }))}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => createAndAssignAccount(user)}
+                          className="rounded bg-coupang px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+                        >
+                          생성/할당
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
