@@ -9,6 +9,8 @@ create table if not exists jasain_products (
   updated_at timestamptz not null default now()
 );
 
+alter table users add column if not exists buyer_name text;
+
 insert into jasain_products (id, name, description, app_url, landing_url, status)
 values
   ('cujasa', 'CUJASA', '쿠팡 파트너스 자동화 콘솔', 'https://cujasa.jasain.kr', 'https://jasain.kr/cujasa', 'active'),
@@ -27,6 +29,7 @@ create table if not exists user_products (
   product_id text not null references jasain_products(id) on delete cascade,
   status text not null default 'active' check (status in ('active', 'suspended', 'trial', 'expired')),
   role text not null default 'customer' check (role in ('customer', 'manager', 'admin')),
+  settings jsonb not null default '{}',
   granted_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -35,6 +38,7 @@ create table if not exists user_products (
 
 create index if not exists idx_user_products_user on user_products(user_id);
 create index if not exists idx_user_products_product on user_products(product_id, status);
+alter table user_products add column if not exists settings jsonb not null default '{}';
 
 alter table billing_products add column if not exists app_product_id text not null default 'cujasa';
 alter table billing_payments add column if not exists app_product_id text not null default 'cujasa';

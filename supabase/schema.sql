@@ -246,6 +246,7 @@ create table if not exists users (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
   password_hash text not null,
+  buyer_name text,
   status text not null default 'active' check (status in ('active', 'suspended')),
   max_accounts int not null default 2,
   plan text,
@@ -255,6 +256,7 @@ create table if not exists users (
 );
 
 alter table users alter column max_accounts set default 2;
+alter table users add column if not exists buyer_name text;
 alter table users add column if not exists plan text;
 alter table users add column if not exists billing_status text not null default 'none';
 alter table users add column if not exists paid_until timestamptz;
@@ -296,11 +298,14 @@ create table if not exists user_products (
   product_id text not null references jasain_products(id) on delete cascade,
   status text not null default 'active' check (status in ('active', 'suspended', 'trial', 'expired')),
   role text not null default 'customer' check (role in ('customer', 'manager', 'admin')),
+  settings jsonb not null default '{}',
   granted_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique(user_id, product_id)
 );
+
+alter table user_products add column if not exists settings jsonb not null default '{}';
 
 insert into user_products (user_id, product_id, status, role)
 select id, 'cujasa', 'active', 'customer'

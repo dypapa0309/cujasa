@@ -1,5 +1,6 @@
 import { dbGet, dbList } from './supabaseService.js';
 import { latestPipelineRun } from './pipelineRunService.js';
+import { resolveCoupangCredentialsForAccount } from './coupangService.js';
 
 const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -26,12 +27,13 @@ function tokenState(account) {
   return { status: 'ok', label: '연결됨' };
 }
 
-function coupangState(account) {
+async function coupangState(account) {
+  const creds = await resolveCoupangCredentialsForAccount(account);
   const missing = [];
-  if (!account.coupang_access_key && !process.env.COUPANG_ACCESS_KEY) missing.push('Access Key');
-  if (!account.coupang_secret_key && !process.env.COUPANG_SECRET_KEY) missing.push('Secret Key');
-  if (!account.coupang_partner_id && !process.env.COUPANG_PARTNER_ID) missing.push('Partner ID');
-  if (!account.coupang_tracking_code && !process.env.COUPANG_TRACKING_CODE) missing.push('Tracking Code');
+  if (!creds.accessKey) missing.push('Access Key');
+  if (!creds.secretKey) missing.push('Secret Key');
+  if (!creds.partnerId) missing.push('Partner ID');
+  if (!creds.trackingCode) missing.push('Tracking Code');
   return missing.length
     ? { status: 'error', label: '키 누락', missing }
     : { status: 'ok', label: '설정됨', missing: [] };
@@ -51,7 +53,10 @@ function pushProblem(problems, account, severity, type, label, detail = '') {
 
 async function customerLabelFor(accountId, userAccounts, usersById) {
   const links = userAccounts.filter((ua) => ua.account_id === accountId);
-  const labels = links.map((link) => usersById.get(link.user_id)?.email).filter(Boolean);
+  const labels = links.map((link) => {
+    const user = usersById.get(link.user_id);
+    return user?.buyer_name || user?.email;
+  }).filter(Boolean);
   return labels.join(', ');
 }
 
@@ -90,7 +95,7 @@ export async function operationAccountRows() {
     const lastActivity = activityLogs.find((row) => row.account_id === account.id) || null;
     const pipelineRun = await latestPipelineRun(account.id);
     const threads = tokenState(account);
-    const coupang = coupangState(account);
+    const coupang = await coupangState(account);
     const customer = await customerLabelFor(account.id, userAccounts, usersById);
     const problems = [];
 

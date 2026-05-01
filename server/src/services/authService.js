@@ -101,7 +101,7 @@ export async function listAvailableProducts() {
   }
 }
 
-export async function listUserProducts(userId) {
+export async function listUserProducts(userId, { includeSettings = false } = {}) {
   if (!userId) return [];
   try {
     const [grants, products] = await Promise.all([
@@ -113,15 +113,31 @@ export async function listUserProducts(userId) {
     if (activeGrants.length === 0) return [];
     return activeGrants.map((grant) => {
       const product = productById[grant.product_id] || {};
-      return {
+      const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+      const mapped = {
         productId: grant.product_id,
         status: grant.status,
         role: grant.role,
         name: product.name || grant.product_id,
         description: product.description,
         appUrl: product.app_url,
-        landingUrl: product.landing_url
+        landingUrl: product.landing_url,
+        settingsSummary: {
+          hasCoupangAccessKey: Boolean(settings.coupangAccessKey),
+          hasCoupangSecretKey: Boolean(settings.coupangSecretKey),
+          hasCoupangPartnerId: Boolean(settings.coupangPartnerId),
+          defaultTrackingCode: settings.defaultTrackingCode || ''
+        }
       };
+      if (includeSettings) {
+        mapped.settings = {
+          coupangAccessKey: settings.coupangAccessKey || '',
+          coupangPartnerId: settings.coupangPartnerId || '',
+          defaultTrackingCode: settings.defaultTrackingCode || '',
+          hasCoupangSecretKey: Boolean(settings.coupangSecretKey)
+        };
+      }
+      return mapped;
     });
   } catch {
     return [defaultProductGrant()];
@@ -133,6 +149,7 @@ export async function grantUserProduct(userId, productId = DEFAULT_PRODUCT_ID, p
   const payload = {
     status: patch.status || 'active',
     role: patch.role || 'customer',
+    ...(patch.settings ? { settings: patch.settings } : {}),
     granted_at: new Date().toISOString()
   };
   if (existing) {
@@ -144,6 +161,27 @@ export async function grantUserProduct(userId, productId = DEFAULT_PRODUCT_ID, p
 
 export async function revokeUserProduct(userId, productId) {
   return dbDelete('user_products', { user_id: userId, product_id: productId });
+}
+
+export async function updateUserProductSettings(userId, productId, settingsPatch = {}) {
+  const grant = await dbGet('user_products', { user_id: userId, product_id: productId });
+  if (!grant) {
+    const error = new Error('Product grant not found');
+    error.status = 404;
+    throw error;
+  }
+  const current = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  const next = { ...current };
+  const allowed = ['coupangAccessKey', 'coupangSecretKey', 'coupangPartnerId', 'defaultTrackingCode'];
+  for (const key of allowed) {
+    if (Object.prototype.hasOwnProperty.call(settingsPatch, key)) {
+      const value = String(settingsPatch[key] ?? '').trim();
+      if (key === 'coupangSecretKey' && !value) continue;
+      next[key] = value;
+    }
+  }
+  const [updated] = await dbUpdate('user_products', { user_id: userId, product_id: productId }, { settings: next });
+  return updated;
 }
 
 export async function loginUser(email, password) {
@@ -174,7 +212,7 @@ export async function loginUser(email, password) {
   return { token, type: 'user', email: user.email, userId: user.id, maxAccounts: user.max_accounts, products };
 }
 
-export async function createUser(email, password, maxAccounts = 2) {
+export async function createUser(email, password, maxAccounts = 2, buyerName = '') {
   const existing = await dbGet('users', { email: email.trim().toLowerCase() });
   if (existing) {
     const error = new Error('이미 존재하는 이메일입니다.');
@@ -184,6 +222,7 @@ export async function createUser(email, password, maxAccounts = 2) {
   const user = await dbInsert('users', {
     email: email.trim().toLowerCase(),
     password_hash: hashPassword(password),
+    buyer_name: buyerName ? String(buyerName).trim() : null,
     max_accounts: maxAccounts,
     status: 'active',
     billing_status: 'none'

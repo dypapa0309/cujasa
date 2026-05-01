@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 
-export default function AdminUsersPage({ accounts }) {
+export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const toast = useToast();
   const [users, setUsers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ email: '', password: '', maxAccounts: 2 });
+  const [form, setForm] = useState({ buyerName: '', email: '', password: '', maxAccounts: 2 });
   const [creating, setCreating] = useState(false);
 
   const load = async () => {
@@ -30,7 +30,7 @@ export default function AdminUsersPage({ accounts }) {
     try {
       await api.post('/api/admin/users', form);
       await load();
-      setForm({ email: '', password: '', maxAccounts: 2 });
+      setForm({ buyerName: '', email: '', password: '', maxAccounts: 2 });
       setShowCreate(false);
       toast('구매자 계정이 생성됐습니다.', 'success');
     } catch (err) {
@@ -68,6 +68,40 @@ export default function AdminUsersPage({ accounts }) {
       toast('제품 권한이 추가됐습니다.', 'success');
     } catch (err) {
       toast(err.message || '제품 권한 추가에 실패했습니다.', 'error');
+    }
+  };
+
+  const saveProductSettings = async (userId, productId, settings) => {
+    try {
+      await api.patch(`/api/admin/users/${userId}/products/${productId}/settings`, settings);
+      await load();
+      toast('제품 설정이 저장됐습니다.', 'success');
+    } catch (err) {
+      toast(err.message || '제품 설정 저장에 실패했습니다.', 'error');
+    }
+  };
+
+  const updateBuyerName = async (user, buyerName) => {
+    const next = String(buyerName || '').trim();
+    if (next === (user.buyer_name || user.buyerName || '')) return;
+    try {
+      await api.patch(`/api/admin/users/${user.id}`, { buyerName: next });
+      await load();
+      toast('구매자명이 저장됐습니다.', 'success');
+    } catch {
+      toast('구매자명 저장에 실패했습니다.', 'error');
+    }
+  };
+
+  const updateAccountTrackingCode = async (account, trackingCode) => {
+    const next = String(trackingCode || '').trim();
+    if (next === (account.coupang_tracking_code || '')) return;
+    try {
+      await api.patch(`/api/accounts/${account.id}`, { coupang_tracking_code: next });
+      await load();
+      toast('계정별 Tracking Code가 저장됐습니다.', 'success');
+    } catch (err) {
+      toast(err.message || 'Tracking Code 저장에 실패했습니다.', 'error');
     }
   };
 
@@ -113,7 +147,11 @@ export default function AdminUsersPage({ accounts }) {
       </div>
 
       {showCreate && (
-        <form onSubmit={createUser} className="rounded border border-line bg-white p-5 grid gap-4 md:grid-cols-3">
+        <form onSubmit={createUser} className="rounded border border-line bg-white p-5 grid gap-4 md:grid-cols-4">
+          <label className="grid gap-1 text-sm">
+            <span className="font-medium">구매자명</span>
+            <input className="rounded border border-line px-3 py-2" value={form.buyerName} onChange={(e) => setForm((p) => ({ ...p, buyerName: e.target.value }))} placeholder="예: 박순상" />
+          </label>
           <label className="grid gap-1 text-sm">
             <span className="font-medium">이메일</span>
             <input type="email" required className="rounded border border-line px-3 py-2" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
@@ -126,7 +164,7 @@ export default function AdminUsersPage({ accounts }) {
             <span className="font-medium">계정 한도</span>
             <input type="number" min="1" max="20" className="rounded border border-line px-3 py-2" value={form.maxAccounts} onChange={(e) => setForm((p) => ({ ...p, maxAccounts: Number(e.target.value) }))} />
           </label>
-          <div className="md:col-span-3">
+          <div className="md:col-span-4">
             <button disabled={creating} className="rounded bg-coupang px-4 py-2 text-sm font-medium text-white disabled:opacity-50">
               {creating ? '생성 중...' : '생성'}
             </button>
@@ -148,7 +186,19 @@ export default function AdminUsersPage({ accounts }) {
             return (
               <div key={user.id} className="rounded border border-line bg-white p-5">
                 <div className="flex flex-wrap items-center gap-3 mb-4">
-                  <div className="font-semibold text-sm">{user.email}</div>
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-semibold text-slate-400">구매자명</span>
+                    <input
+                      className="w-32 rounded border border-line px-2 py-1 text-sm font-semibold"
+                      defaultValue={user.buyer_name || user.buyerName || ''}
+                      placeholder="미입력"
+                      onBlur={(e) => updateBuyerName(user, e.target.value)}
+                    />
+                  </label>
+                  <div>
+                    <div className="font-semibold text-sm">{user.email}</div>
+                    {(user.buyer_name || user.buyerName) && <div className="text-xs text-slate-400">{user.buyer_name || user.buyerName}</div>}
+                  </div>
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                     {user.status === 'active' ? '활성' : '정지'}
                   </span>
@@ -168,14 +218,17 @@ export default function AdminUsersPage({ accounts }) {
                 </div>
 
                 <div className="grid gap-2 border-t border-line pt-4">
-                  <div className="text-xs font-semibold text-slate-500">보유 제품</div>
+                  <div className="text-xs font-semibold text-slate-500">보유 제품 및 제품별 설정</div>
                   {user.products?.length === 0 && <div className="text-xs text-slate-400">보유 제품 없음</div>}
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid gap-3">
                     {user.products?.map((product) => (
-                      <span key={product.productId} className="flex items-center gap-1.5 rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">
-                        {product.name || product.productId}
-                        <button onClick={() => unassignProduct(user.id, product.productId)} className="text-blue-300 hover:text-red-500 font-bold">✕</button>
-                      </span>
+                      <ProductGrantCard
+                        key={product.productId}
+                        userId={user.id}
+                        product={product}
+                        onRevoke={() => unassignProduct(user.id, product.productId)}
+                        onSaveSettings={saveProductSettings}
+                      />
                     ))}
                   </div>
                   {ungrantedProducts.length > 0 && (
@@ -190,14 +243,31 @@ export default function AdminUsersPage({ accounts }) {
                 </div>
 
                 <div className="mt-4 grid gap-2 border-t border-line pt-4">
-                  <div className="text-xs font-semibold text-slate-500">할당된 계정</div>
+                  <div className="text-xs font-semibold text-slate-500">할당된 Threads 계정</div>
                   {user.accounts?.length === 0 && <div className="text-xs text-slate-400">할당된 계정 없음</div>}
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid gap-2">
                     {user.accounts?.map((a) => (
-                      <span key={a.id} className="flex items-center gap-1.5 rounded bg-gray-100 px-2 py-1 text-xs font-medium">
-                        {a.name}
-                        <button onClick={() => unassignAccount(user.id, a.id)} className="text-slate-400 hover:text-red-500 font-bold">✕</button>
-                      </span>
+                      <div key={a.id} className="grid gap-2 rounded border border-line bg-gray-50 p-3 md:grid-cols-[1.4fr_1fr_auto_auto] md:items-center">
+                        <div>
+                          <div className="text-sm font-semibold">{a.name}</div>
+                          <div className="text-xs text-slate-400">{a.account_handle || '핸들 미입력'} · Threads {a.threads_access_token ? '연결됨' : '미연결'}</div>
+                        </div>
+                        <label className="grid gap-1 text-xs">
+                          <span className="font-semibold text-slate-500">계정별 Tracking Code</span>
+                          <input
+                            className="rounded border border-line bg-white px-2 py-1.5"
+                            defaultValue={a.coupang_tracking_code || ''}
+                            placeholder="없으면 고객 기본값 사용"
+                            onBlur={(e) => updateAccountTrackingCode(a, e.target.value)}
+                          />
+                        </label>
+                        <button onClick={() => openAccountSettings?.(a.id)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-coupang hover:text-coupang">
+                          설정 열기
+                        </button>
+                        <button onClick={() => unassignAccount(user.id, a.id)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-red-500 hover:border-red-300">
+                          해제
+                        </button>
+                      </div>
                     ))}
                   </div>
 
@@ -214,6 +284,71 @@ export default function AdminUsersPage({ accounts }) {
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
+  const settings = product.settings || {};
+  const [draft, setDraft] = useState({
+    coupangAccessKey: settings.coupangAccessKey || '',
+    coupangSecretKey: '',
+    coupangPartnerId: settings.coupangPartnerId || '',
+    defaultTrackingCode: settings.defaultTrackingCode || ''
+  });
+
+  useEffect(() => {
+    setDraft({
+      coupangAccessKey: settings.coupangAccessKey || '',
+      coupangSecretKey: '',
+      coupangPartnerId: settings.coupangPartnerId || '',
+      defaultTrackingCode: settings.defaultTrackingCode || ''
+    });
+  }, [settings.coupangAccessKey, settings.coupangPartnerId, settings.defaultTrackingCode]);
+
+  const update = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
+  const save = () => onSaveSettings(userId, product.productId, draft);
+  const isCujasa = product.productId === 'cujasa';
+
+  return (
+    <div className="rounded border border-blue-100 bg-blue-50/50 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded bg-blue-100 px-2 py-1 text-xs font-bold text-blue-700">{product.name || product.productId}</span>
+        <span className="text-xs text-slate-500">{product.status || 'active'} · {product.role || 'customer'}</span>
+        <button onClick={onRevoke} className="ml-auto text-xs font-bold text-blue-300 hover:text-red-500">제품 권한 해제</button>
+      </div>
+
+      {isCujasa && (
+        <div className="mt-3 grid gap-3 rounded border border-line bg-white p-3 md:grid-cols-2">
+          <div className="md:col-span-2 text-xs font-semibold text-slate-500">쿠팡 파트너스 설정</div>
+          <label className="grid gap-1 text-xs">
+            <span className="font-medium">Access Key</span>
+            <input className="rounded border border-line px-2 py-2" value={draft.coupangAccessKey} onChange={(e) => update('coupangAccessKey', e.target.value)} />
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="font-medium">Secret Key</span>
+            <input
+              type="password"
+              className="rounded border border-line px-2 py-2"
+              value={draft.coupangSecretKey}
+              onChange={(e) => update('coupangSecretKey', e.target.value)}
+              placeholder={settings.hasCoupangSecretKey ? '저장됨 - 변경 시에만 입력' : ''}
+            />
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="font-medium">Partner ID</span>
+            <input className="rounded border border-line px-2 py-2" value={draft.coupangPartnerId} onChange={(e) => update('coupangPartnerId', e.target.value)} />
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="font-medium">기본 Tracking Code</span>
+            <input className="rounded border border-line px-2 py-2" value={draft.defaultTrackingCode} onChange={(e) => update('defaultTrackingCode', e.target.value)} />
+          </label>
+          <div className="md:col-span-2 flex flex-wrap items-center gap-2">
+            <button type="button" onClick={save} className="rounded bg-coupang px-3 py-2 text-xs font-bold text-white">쿠팡 설정 저장</button>
+            <span className="text-xs text-slate-400">계정별 Tracking Code가 비어 있으면 이 기본값을 사용합니다.</span>
+          </div>
         </div>
       )}
     </div>

@@ -3,6 +3,7 @@ import { dbGet, dbInsert, dbList, logActivity } from './supabaseService.js';
 import { selectProductsPrompt } from '../prompts/selectProductsPrompt.js';
 import { getAccount } from './accountService.js';
 import { validateProductCandidate } from '../utils/contentGuardrails.js';
+import { buildDiverseProductSelection, enrichProductsWithDiversity, getProductGroup } from '../utils/productDiversity.js';
 
 export async function selectProducts(topicId, postId = null) {
   const topic = await dbGet('topics', { id: topicId });
@@ -25,26 +26,39 @@ export async function selectProducts(topicId, postId = null) {
       });
     }
   }
-  const fallback = {
-    selectedProducts: products.slice(0, 3).map((p, i) => ({
-      productId: p.product_id,
-      fitScore: 90 - i * 5,
-      reason: `${topic.angle}와 자연스럽게 연결됨`,
-      recommendedUse: '댓글 링크용'
-    }))
-  };
   if (products.length === 0) return [];
-  const result = await getJson(selectProductsPrompt(topic, products, account), fallback);
+  const diverseProducts = enrichProductsWithDiversity(products);
+  const fallback = () => ({
+    selectedProducts: buildDiverseProductSelection([], diverseProducts, topic, 3).selected.map(({ product, item }) => ({
+      ...item,
+      productId: product.product_id,
+      productGroup: getProductGroup(product)
+    }))
+  });
+  const result = await getJson(selectProductsPrompt(topic, diverseProducts, account), fallback);
+  const repairedSelection = buildDiverseProductSelection(result.selectedProducts || [], diverseProducts, topic, 3);
+  if (repairedSelection.diversityLimited) {
+    await logActivity({
+      account_id: topic.account_id,
+      project_id: topic.project_id,
+      topic_id: topic.id,
+      action: 'product_diversity_limited',
+      level: 'info',
+      message: '상품 후보군이 좁아 일부 상품군이 중복 선택되었습니다.',
+      payload: {
+        selectedGroups: repairedSelection.selected.map(({ product }) => getProductGroup(product)),
+        candidateCount: diverseProducts.length
+      }
+    });
+  }
   const selected = [];
-  for (const [index, item] of (result.selectedProducts || []).slice(0, 3).entries()) {
-    const product = products.find((p) => p.product_id === String(item.productId));
-    if (!product) continue;
+  for (const [index, { product, item }] of repairedSelection.selected.entries()) {
     selected.push(await dbInsert('post_products', {
       post_id: postId,
       topic_id: topicId,
       product_id: product.id,
-      fit_score: item.fitScore,
-      recommendation_reason: item.reason,
+      fit_score: item.fitScore || 75,
+      recommendation_reason: item.reason || `${topic.angle || topic.title}와 자연스럽게 연결됨`,
       rank: index + 1
     }));
   }

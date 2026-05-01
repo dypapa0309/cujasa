@@ -69,14 +69,43 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
   }
 }
 
+export async function resolveCoupangCredentialsForAccount(account) {
+  if (!account) {
+    return {
+      accessKey: process.env.COUPANG_ACCESS_KEY,
+      secretKey: process.env.COUPANG_SECRET_KEY,
+      partnerId: process.env.COUPANG_PARTNER_ID,
+      trackingCode: process.env.COUPANG_TRACKING_CODE
+    };
+  }
+
+  let productSettings = {};
+  try {
+    const links = await dbList('user_accounts', { account_id: account.id });
+    const userIds = links.map((link) => link.user_id).filter(Boolean);
+    for (const userId of userIds) {
+      const grant = await dbGet('user_products', { user_id: userId, product_id: 'cujasa' });
+      if (grant?.settings && typeof grant.settings === 'object') {
+        productSettings = grant.settings;
+        break;
+      }
+    }
+  } catch (error) {
+    console.warn('[coupang_settings_lookup_failed]', error.message);
+  }
+
+  return {
+    accessKey: account.coupang_access_key || productSettings.coupangAccessKey || process.env.COUPANG_ACCESS_KEY,
+    secretKey: account.coupang_secret_key || productSettings.coupangSecretKey || process.env.COUPANG_SECRET_KEY,
+    partnerId: account.coupang_partner_id || productSettings.coupangPartnerId || process.env.COUPANG_PARTNER_ID,
+    trackingCode: account.coupang_tracking_code || productSettings.defaultTrackingCode || process.env.COUPANG_TRACKING_CODE
+  };
+}
+
 export async function searchProductsForTopic(topicId) {
   const topic = await dbGet('topics', { id: topicId });
   const account = await dbGet('accounts', { id: topic.account_id });
-  const creds = {
-    accessKey: account.coupang_access_key,
-    secretKey: account.coupang_secret_key,
-    trackingCode: account.coupang_tracking_code
-  };
+  const creds = await resolveCoupangCredentialsForAccount(account);
   const keywords = topic.search_keywords?.length ? topic.search_keywords : [topic.title];
 
   const existing = await dbList('coupang_products', { topic_id: topic.id });
@@ -84,7 +113,7 @@ export async function searchProductsForTopic(topicId) {
 
   const saved = [];
   for (const keyword of keywords) {
-    const products = await searchKeyword(keyword, 10, creds);
+    const products = await searchKeyword(keyword, 15, creds);
     for (const product of products) {
       if (seen.has(product.product_id)) continue;
       seen.add(product.product_id);

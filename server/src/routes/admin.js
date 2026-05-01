@@ -6,7 +6,8 @@ import {
   listUserProducts,
   listUsers,
   revokeUserProduct,
-  updateUser
+  updateUser,
+  updateUserProductSettings
 } from '../services/authService.js';
 import { dbDelete, dbGet, dbInsert, dbList } from '../services/supabaseService.js';
 import { hashPassword } from '../utils/password.js';
@@ -37,10 +38,16 @@ router.get('/users', async (req, res, next) => {
     const result = await Promise.all(users.map(async (u) => {
       const [ua, products] = await Promise.all([
         dbList('user_accounts', { user_id: u.id }),
-        listUserProducts(u.id)
+        listUserProducts(u.id, { includeSettings: true })
       ]);
       const accounts = await Promise.all(ua.map((x) => dbGet('accounts', { id: x.account_id })));
-      return { ...u, password_hash: undefined, accounts: accounts.filter(Boolean), products };
+      return {
+        ...u,
+        buyerName: u.buyer_name || '',
+        password_hash: undefined,
+        accounts: accounts.filter(Boolean),
+        products
+      };
     }));
     res.json(result);
   } catch (e) { next(e); }
@@ -55,9 +62,9 @@ router.get('/products', async (req, res, next) => {
 // 구매자 생성
 router.post('/users', async (req, res, next) => {
   try {
-    const { email, password, maxAccounts = 2 } = req.body;
+    const { email, password, maxAccounts = 2, buyerName = '' } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'email, password 필수' });
-    const user = await createUser(email, password, maxAccounts);
+    const user = await createUser(email, password, maxAccounts, buyerName);
     res.status(201).json({ ...user, password_hash: undefined });
   } catch (e) { next(e); }
 });
@@ -65,10 +72,11 @@ router.post('/users', async (req, res, next) => {
 // 구매자 수정 (상태, 계정 한도)
 router.patch('/users/:id', async (req, res, next) => {
   try {
-    const { status, maxAccounts, password } = req.body;
+    const { status, maxAccounts, password, buyerName } = req.body;
     const patch = {};
     if (status) patch.status = status;
     if (maxAccounts != null) patch.max_accounts = maxAccounts;
+    if (buyerName !== undefined) patch.buyer_name = String(buyerName || '').trim() || null;
     if (password) patch.password_hash = hashPassword(password);
     const [updated] = await updateUser(req.params.id, patch);
     res.json({ ...updated, password_hash: undefined });
@@ -114,6 +122,31 @@ router.delete('/users/:id/products/:productId', async (req, res, next) => {
   try {
     await revokeUserProduct(req.params.id, req.params.productId);
     res.status(204).end();
+  } catch (e) { next(e); }
+});
+
+router.patch('/users/:id/products/:productId/settings', async (req, res, next) => {
+  try {
+    if (req.params.productId !== 'cujasa') {
+      return res.status(400).json({ error: 'CUJASA 제품 설정만 지원합니다.' });
+    }
+    const updated = await updateUserProductSettings(req.params.id, req.params.productId, req.body || {});
+    const settings = updated.settings && typeof updated.settings === 'object' ? updated.settings : {};
+    res.json({
+      productId: req.params.productId,
+      settingsSummary: {
+        hasCoupangAccessKey: Boolean(settings.coupangAccessKey),
+        hasCoupangSecretKey: Boolean(settings.coupangSecretKey),
+        hasCoupangPartnerId: Boolean(settings.coupangPartnerId),
+        defaultTrackingCode: settings.defaultTrackingCode || ''
+      },
+      settings: {
+        coupangAccessKey: settings.coupangAccessKey || '',
+        coupangPartnerId: settings.coupangPartnerId || '',
+        defaultTrackingCode: settings.defaultTrackingCode || '',
+        hasCoupangSecretKey: Boolean(settings.coupangSecretKey)
+      }
+    });
   } catch (e) { next(e); }
 });
 
