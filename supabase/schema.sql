@@ -252,7 +252,8 @@ create table if not exists users (
   plan text,
   billing_status text not null default 'none' check (billing_status in ('none', 'pending', 'paid', 'active', 'past_due', 'canceled')),
   paid_until timestamptz,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 alter table users alter column max_accounts set default 2;

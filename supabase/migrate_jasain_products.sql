@@ -10,6 +10,7 @@ create table if not exists jasain_products (
 );
 
 alter table users add column if not exists buyer_name text;
+alter table users add column if not exists updated_at timestamptz not null default now();
 
 insert into jasain_products (id, name, description, app_url, landing_url, status)
 values
