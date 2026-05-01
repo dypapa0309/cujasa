@@ -17,7 +17,7 @@ export default function AccountSettingsPage({ selectedAccount, reloadAccounts })
       const saved = await api.patch(`/api/accounts/${form.id}`, form);
       setForm(saved);
       await reloadAccounts?.();
-      toast('설정이 저장됐습니다.', 'success');
+      toast('설정이 변경되었습니다.', 'success');
     } catch {
       toast('저장에 실패했습니다.', 'error');
     } finally {

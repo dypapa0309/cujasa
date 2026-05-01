@@ -45,7 +45,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
         forbidden_words: form.forbidden_words.split('\n').map((s) => s.trim()).filter(Boolean),
       });
       await reloadAccounts();
-      toast('저장됐습니다. 자동화를 시작합니다.', 'success');
+      toast('설정이 변경되었습니다. 자동화를 시작합니다.', 'success');
     } catch {
       toast('저장에 실패했습니다.', 'error');
       return;
