@@ -28,11 +28,11 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     e.preventDefault();
     setCreating(true);
     try {
-      await api.post('/api/admin/users', form);
+      await api.post('/api/admin/users', { ...form, buyer_name: form.buyerName });
       await load();
       setForm({ buyerName: '', email: '', password: '', maxAccounts: 2 });
       setShowCreate(false);
-      toast('구매자 계정이 생성됐습니다.', 'success');
+      toast('설정이 변경되었습니다.', 'success');
     } catch (err) {
       toast(err.message || '생성에 실패했습니다.', 'error');
     } finally {
@@ -44,7 +44,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     try {
       await api.post(`/api/admin/users/${userId}/accounts`, { accountId });
       await load();
-      toast('계정이 할당됐습니다.', 'success');
+      toast('설정이 변경되었습니다.', 'success');
     } catch (err) {
       toast(err.message || '할당에 실패했습니다.', 'error');
     }
@@ -55,7 +55,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     try {
       await api.delete(`/api/admin/users/${userId}/accounts/${accountId}`);
       await load();
-      toast('계정 할당이 해제됐습니다.', 'info');
+      toast('설정이 변경되었습니다.', 'success');
     } catch {
       toast('해제에 실패했습니다.', 'error');
     }
@@ -65,7 +65,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     try {
       await api.post(`/api/admin/users/${userId}/products`, { productId });
       await load();
-      toast('제품 권한이 추가됐습니다.', 'success');
+      toast('설정이 변경되었습니다.', 'success');
     } catch (err) {
       toast(err.message || '제품 권한 추가에 실패했습니다.', 'error');
     }
@@ -75,7 +75,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     try {
       await api.patch(`/api/admin/users/${userId}/products/${productId}/settings`, settings);
       await load();
-      toast('제품 설정이 저장됐습니다.', 'success');
+      toast('설정이 변경되었습니다.', 'success');
     } catch (err) {
       toast(err.message || '제품 설정 저장에 실패했습니다.', 'error');
     }
@@ -85,9 +85,9 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     const next = String(buyerName || '').trim();
     if (next === (user.buyer_name || user.buyerName || '')) return;
     try {
-      await api.patch(`/api/admin/users/${user.id}`, { buyerName: next });
+      await api.patch(`/api/admin/users/${user.id}`, { buyerName: next, buyer_name: next });
       await load();
-      toast('구매자명이 저장됐습니다.', 'success');
+      toast('설정이 변경되었습니다.', 'success');
     } catch {
       toast('구매자명 저장에 실패했습니다.', 'error');
     }
@@ -99,7 +99,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     try {
       await api.patch(`/api/accounts/${account.id}`, { coupang_tracking_code: next });
       await load();
-      toast('계정별 Tracking Code가 저장됐습니다.', 'success');
+      toast('설정이 변경되었습니다.', 'success');
     } catch (err) {
       toast(err.message || 'Tracking Code 저장에 실패했습니다.', 'error');
     }
@@ -110,7 +110,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     try {
       await api.delete(`/api/admin/users/${userId}/products/${productId}`);
       await load();
-      toast('제품 권한이 해제됐습니다.', 'info');
+      toast('설정이 변경되었습니다.', 'success');
     } catch {
       toast('제품 권한 해제에 실패했습니다.', 'error');
     }
@@ -121,7 +121,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     try {
       await api.patch(`/api/admin/users/${user.id}`, { status: next });
       await load();
-      toast(`${next === 'active' ? '활성화' : '정지'}됐습니다.`, 'info');
+      toast('설정이 변경되었습니다.', 'success');
     } catch {
       toast('상태 변경에 실패했습니다.', 'error');
     }
@@ -131,7 +131,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     try {
       await api.patch(`/api/admin/users/${user.id}`, { maxAccounts: Number(maxAccounts) });
       await load();
-      toast('계정 한도가 변경됐습니다.', 'success');
+      toast('설정이 변경되었습니다.', 'success');
     } catch {
       toast('변경에 실패했습니다.', 'error');
     }

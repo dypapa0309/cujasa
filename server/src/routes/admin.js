@@ -62,9 +62,9 @@ router.get('/products', async (req, res, next) => {
 // 구매자 생성
 router.post('/users', async (req, res, next) => {
   try {
-    const { email, password, maxAccounts = 2, buyerName = '' } = req.body;
+    const { email, password, maxAccounts = 2, buyerName, buyer_name } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'email, password 필수' });
-    const user = await createUser(email, password, maxAccounts, buyerName);
+    const user = await createUser(email, password, maxAccounts, buyerName ?? buyer_name ?? '');
     res.status(201).json({ ...user, password_hash: undefined });
   } catch (e) { next(e); }
 });
@@ -72,11 +72,12 @@ router.post('/users', async (req, res, next) => {
 // 구매자 수정 (상태, 계정 한도)
 router.patch('/users/:id', async (req, res, next) => {
   try {
-    const { status, maxAccounts, password, buyerName } = req.body;
+    const { status, maxAccounts, password, buyerName, buyer_name } = req.body;
     const patch = {};
     if (status) patch.status = status;
     if (maxAccounts != null) patch.max_accounts = maxAccounts;
-    if (buyerName !== undefined) patch.buyer_name = String(buyerName || '').trim() || null;
+    const buyerNameValue = buyerName ?? buyer_name;
+    if (buyerNameValue !== undefined) patch.buyer_name = String(buyerNameValue || '').trim() || null;
     if (password) patch.password_hash = hashPassword(password);
     const [updated] = await updateUser(req.params.id, patch);
     res.json({ ...updated, password_hash: undefined });
