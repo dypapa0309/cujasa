@@ -10,6 +10,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ buyerName: '', email: '', password: '', maxAccounts: 2 });
   const [creating, setCreating] = useState(false);
+  const [buyerNameDrafts, setBuyerNameDrafts] = useState({});
 
   const load = async () => {
     const [nextUsers, nextProducts] = await Promise.all([
@@ -18,6 +19,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     ]);
     setUsers(nextUsers);
     setProducts(nextProducts);
+    setBuyerNameDrafts(Object.fromEntries(nextUsers.map((user) => [user.id, user.buyer_name || user.buyerName || ''])));
   };
 
   useEffect(() => {
@@ -83,7 +85,10 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
 
   const updateBuyerName = async (user, buyerName) => {
     const next = String(buyerName || '').trim();
-    if (next === (user.buyer_name || user.buyerName || '')) return;
+    if (next === (user.buyer_name || user.buyerName || '')) {
+      toast('이미 저장된 값입니다.', 'info');
+      return;
+    }
     try {
       await api.patch(`/api/admin/users/${user.id}`, { buyerName: next, buyer_name: next });
       await load();
@@ -188,12 +193,21 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                 <div className="flex flex-wrap items-center gap-3 mb-4">
                   <label className="grid gap-1">
                     <span className="text-[11px] font-semibold text-slate-400">구매자명</span>
-                    <input
-                      className="w-32 rounded border border-line px-2 py-1 text-sm font-semibold"
-                      defaultValue={user.buyer_name || user.buyerName || ''}
-                      placeholder="미입력"
-                      onBlur={(e) => updateBuyerName(user, e.target.value)}
-                    />
+                    <div className="flex gap-1">
+                      <input
+                        className="w-32 rounded border border-line px-2 py-1 text-sm font-semibold"
+                        value={buyerNameDrafts[user.id] ?? user.buyer_name ?? user.buyerName ?? ''}
+                        placeholder="미입력"
+                        onChange={(e) => setBuyerNameDrafts((prev) => ({ ...prev, [user.id]: e.target.value }))}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => updateBuyerName(user, buyerNameDrafts[user.id] ?? '')}
+                        className="rounded border border-line px-2 py-1 text-xs font-semibold text-slate-600 hover:border-coupang hover:text-coupang"
+                      >
+                        저장
+                      </button>
+                    </div>
                   </label>
                   <div>
                     <div className="font-semibold text-sm">{user.email}</div>
