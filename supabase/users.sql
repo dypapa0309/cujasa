@@ -20,6 +20,7 @@ create table if not exists user_accounts (
   user_id uuid not null references users(id) on delete cascade,
   account_id uuid not null references accounts(id) on delete cascade,
   created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
   unique(user_id, account_id)
 );
 
