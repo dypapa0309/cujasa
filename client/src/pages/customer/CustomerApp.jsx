@@ -255,15 +255,15 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
 function AnnouncementModal({ announcement, onClose }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5 backdrop-blur-sm">
-      <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="border-b border-gray-100 px-6 py-5">
+      <div className="flex max-h-[85vh] w-full max-w-sm flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="shrink-0 border-b border-gray-100 px-6 py-5">
           <div className="text-xs font-bold uppercase tracking-widest text-coupang">공지사항</div>
           <h2 className="mt-2 text-xl font-black text-gray-900">{announcement.title}</h2>
         </div>
-        <div className="px-6 py-5">
-          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-600">{announcement.message}</p>
+        <div className="min-h-0 overflow-y-auto px-6 py-5">
+          <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-600">{announcement.message}</p>
         </div>
-        <div className="grid grid-cols-2 gap-2 border-t border-gray-100 bg-gray-50 px-5 py-4">
+        <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-gray-100 bg-gray-50 px-5 py-4">
           <button type="button" onClick={onClose} className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-600">
             닫기
           </button>
