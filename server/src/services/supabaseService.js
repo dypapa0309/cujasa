@@ -56,6 +56,7 @@ const tables = {
   post_metrics: [],
   activity_logs: [],
   notifications: [],
+  announcements: [],
   users: [],
   user_accounts: [],
   jasain_products: [

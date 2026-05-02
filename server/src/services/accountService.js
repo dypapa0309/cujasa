@@ -20,7 +20,8 @@ function normalizeAccount(payload) {
   return next;
 }
 
-export const listAccounts = () => dbList('accounts', {}, { order: 'created_at', ascending: true });
+export const listAccounts = () => dbList('accounts', { status: 'active' }, { order: 'created_at', ascending: true });
+export const listAllAccounts = () => dbList('accounts', {}, { order: 'created_at', ascending: true });
 export const getAccount = (id) => dbGet('accounts', { id });
 export function assertAccountActive(account, action = 'run automation') {
   if (!account) {

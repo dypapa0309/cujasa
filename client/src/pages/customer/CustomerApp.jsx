@@ -29,6 +29,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
   const [showAddForm, setShowAddForm] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newAccount, setNewAccount] = useState({ name: '', account_handle: '' });
+  const [announcement, setAnnouncement] = useState(null);
 
   const maxAccounts = currentUser?.maxAccounts ?? 2;
   const account = accounts[selectedIdx] ?? accounts[0];
@@ -39,6 +40,25 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     if (!pipelineRunning) return false;
     toast('예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.', 'info');
     return true;
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/api/announcements/active')
+      .then((row) => {
+        if (cancelled || !row?.id) return;
+        if (localStorage.getItem(`announcement:${row.id}:dismissed`) === '1') return;
+        setAnnouncement(row);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.email]);
+
+  const dismissAnnouncement = () => {
+    if (announcement?.id) localStorage.setItem(`announcement:${announcement.id}:dismissed`, '1');
+    setAnnouncement(null);
   };
 
   useEffect(() => {
@@ -224,7 +244,34 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
           ))}
         </div>
       </nav>
+      {announcement && (
+        <AnnouncementModal announcement={announcement} onClose={dismissAnnouncement} />
+      )}
       {pipelineRunning && <PipelineOverlay progress={pipelineProgress} />}
+    </div>
+  );
+}
+
+function AnnouncementModal({ announcement, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5 backdrop-blur-sm">
+      <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="border-b border-gray-100 px-6 py-5">
+          <div className="text-xs font-bold uppercase tracking-widest text-coupang">공지사항</div>
+          <h2 className="mt-2 text-xl font-black text-gray-900">{announcement.title}</h2>
+        </div>
+        <div className="px-6 py-5">
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-600">{announcement.message}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2 border-t border-gray-100 bg-gray-50 px-5 py-4">
+          <button type="button" onClick={onClose} className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-600">
+            닫기
+          </button>
+          <button type="button" onClick={onClose} className="rounded-xl bg-coupang px-4 py-3 text-sm font-bold text-white">
+            확인
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

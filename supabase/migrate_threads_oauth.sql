@@ -10,3 +10,9 @@ set threads_token_status = case
   else 'not_connected'
 end
 where threads_token_status is null or threads_token_status = 'not_connected';
+
+update accounts
+set threads_token_status = 'connected'
+where threads_access_token is not null
+  and threads_access_token <> ''
+  and threads_token_status <> 'connected';

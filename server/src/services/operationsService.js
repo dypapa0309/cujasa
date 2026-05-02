@@ -78,8 +78,9 @@ export async function operationAccountRows() {
     dbList('user_accounts')
   ]);
   const usersById = new Map(users.map((user) => [user.id, user]));
+  const activeAccounts = accounts.filter((account) => account.status === 'active');
 
-  return Promise.all(accounts.map(async (account) => {
+  return Promise.all(activeAccounts.map(async (account) => {
     const accountQueue = queue.filter((row) => row.account_id === account.id);
     const todayQueue = accountQueue.filter((row) => inRange(row.scheduled_at, start, end));
     const todayScheduled = todayQueue.filter((row) => row.status === 'scheduled').length;
@@ -150,7 +151,9 @@ export async function operationSummary() {
     dbList('post_queue'),
     operationAccountRows()
   ]);
-  const todayQueue = queue.filter((row) => inRange(row.scheduled_at, start, end));
+  const activeAccountIds = new Set(accounts.filter((account) => account.status === 'active').map((account) => account.id));
+  const activeQueue = queue.filter((row) => activeAccountIds.has(row.account_id));
+  const todayQueue = activeQueue.filter((row) => inRange(row.scheduled_at, start, end));
   const problemAccounts = rows.flatMap((row) => row.problems).sort((a, b) => {
     const rank = { error: 0, warn: 1, ok: 2 };
     return rank[a.severity] - rank[b.severity];
@@ -161,9 +164,9 @@ export async function operationSummary() {
       accountsTotal: accounts.length,
       accountsActive: accounts.filter((account) => account.status === 'active').length,
       scheduledToday: todayQueue.filter((row) => row.status === 'scheduled').length,
-      postedToday: queue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length,
-      queueProblems: queue.filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status)).length,
-      mockUploads: queue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length,
+      postedToday: activeQueue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length,
+      queueProblems: activeQueue.filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status)).length,
+      mockUploads: activeQueue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length,
       threadsProblems: rows.filter((row) => row.threads.status !== 'ok').length
     },
     problemAccounts

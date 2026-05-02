@@ -9,7 +9,7 @@ import {
   updateUser,
   updateUserProductSettings
 } from '../services/authService.js';
-import { dbDelete, dbGet, dbInsert, dbList } from '../services/supabaseService.js';
+import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
 import { hashPassword } from '../utils/password.js';
 import { operationAccountRows, operationSummary } from '../services/operationsService.js';
 
@@ -56,6 +56,52 @@ router.get('/users', async (req, res, next) => {
 router.get('/products', async (req, res, next) => {
   try {
     res.json(await listAvailableProducts());
+  } catch (e) { next(e); }
+});
+
+router.get('/announcements', async (req, res, next) => {
+  try {
+    res.json(await dbList('announcements', {}, { order: 'created_at', ascending: false }));
+  } catch (e) { next(e); }
+});
+
+router.post('/announcements', async (req, res, next) => {
+  try {
+    const { title, message, status = 'draft', starts_at, startsAt, ends_at, endsAt } = req.body || {};
+    if (!String(title || '').trim() || !String(message || '').trim()) {
+      return res.status(400).json({ error: 'title, message 필수' });
+    }
+    const row = await dbInsert('announcements', {
+      title: String(title).trim(),
+      message: String(message).trim(),
+      status: ['draft', 'active', 'inactive'].includes(status) ? status : 'draft',
+      audience: 'all',
+      starts_at: starts_at || startsAt || null,
+      ends_at: ends_at || endsAt || null
+    });
+    res.status(201).json(row);
+  } catch (e) { next(e); }
+});
+
+router.patch('/announcements/:id', async (req, res, next) => {
+  try {
+    const patch = {};
+    if (req.body.title !== undefined) patch.title = String(req.body.title || '').trim();
+    if (req.body.message !== undefined) patch.message = String(req.body.message || '').trim();
+    if (req.body.status !== undefined && ['draft', 'active', 'inactive'].includes(req.body.status)) patch.status = req.body.status;
+    if (req.body.starts_at !== undefined || req.body.startsAt !== undefined) patch.starts_at = req.body.starts_at || req.body.startsAt || null;
+    if (req.body.ends_at !== undefined || req.body.endsAt !== undefined) patch.ends_at = req.body.ends_at || req.body.endsAt || null;
+    if (patch.title === '' || patch.message === '') return res.status(400).json({ error: 'title, message 필수' });
+    const [updated] = await dbUpdate('announcements', { id: req.params.id }, patch);
+    if (!updated) return res.status(404).json({ error: 'Announcement not found' });
+    res.json(updated);
+  } catch (e) { next(e); }
+});
+
+router.delete('/announcements/:id', async (req, res, next) => {
+  try {
+    await dbDelete('announcements', { id: req.params.id });
+    res.status(204).end();
   } catch (e) { next(e); }
 });
 

@@ -141,6 +141,15 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     }
   };
 
+  const connectThreads = async (account) => {
+    try {
+      const payload = await api.get(`/api/auth/threads/start?accountId=${account.id}`);
+      if (payload?.url) window.location.href = payload.url;
+    } catch (err) {
+      toast(err.message || 'Threads 연결을 시작하지 못했습니다.', 'error');
+    }
+  };
+
   const unassignProduct = async (userId, productId) => {
     if (!confirm('제품 권한을 해제하시겠습니까?')) return;
     try {
@@ -292,7 +301,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                   {user.accounts?.length === 0 && <div className="text-xs text-slate-400">할당된 계정 없음</div>}
                   <div className="grid gap-2">
                     {user.accounts?.map((a) => (
-                      <div key={a.id} className="grid gap-2 rounded border border-line bg-gray-50 p-3 md:grid-cols-[1.4fr_1fr_auto_auto] md:items-center">
+                      <div key={a.id} className="grid gap-2 rounded border border-line bg-gray-50 p-3 md:grid-cols-[1.4fr_1fr_auto_auto_auto] md:items-center">
                         <div>
                           <div className="text-sm font-semibold">{a.name}</div>
                           <div className="text-xs text-slate-400">{a.account_handle || '핸들 미입력'} · Threads {a.threads_access_token ? '연결됨' : '미연결'}</div>
@@ -308,6 +317,9 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                         </label>
                         <button onClick={() => openAccountSettings?.(a.id)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-coupang hover:text-coupang">
                           설정 열기
+                        </button>
+                        <button onClick={() => connectThreads(a)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-gray-900 hover:text-gray-900">
+                          {a.threads_access_token ? '재연결' : 'Threads 연결'}
                         </button>
                         <button onClick={() => unassignAccount(user.id, a.id)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-red-500 hover:border-red-300">
                           해제

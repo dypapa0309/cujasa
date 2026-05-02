@@ -7,6 +7,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const [connectingThreads, setConnectingThreads] = useState(false);
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
@@ -77,6 +78,18 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
     }));
   };
 
+  const connectThreads = async () => {
+    if (!account?.id) return;
+    setConnectingThreads(true);
+    try {
+      const payload = await api.get(`/api/auth/threads/start?accountId=${account.id}`);
+      if (payload?.url) window.location.href = payload.url;
+    } catch (err) {
+      toast(err.message || 'Threads 연결을 시작하지 못했습니다.', 'error');
+      setConnectingThreads(false);
+    }
+  };
+
   if (!form) return (
     <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-400">
       계정 설정을 불러오는 중입니다.
@@ -88,6 +101,24 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
 
       {/* 계정 기본 정보 */}
       <Section title="계정 기본 정보">
+        <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-gray-800">Threads 연결</div>
+              <div className={`mt-0.5 text-xs font-medium ${account.threads_access_token ? 'text-emerald-600' : 'text-rose-500'}`}>
+                {account.threads_access_token ? '연결됨' : '미연결'}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={connectThreads}
+              disabled={connectingThreads}
+              className="rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
+            >
+              {connectingThreads ? '연결 이동 중...' : account.threads_access_token ? '다시 연결하기' : 'Threads 연결하기'}
+            </button>
+          </div>
+        </div>
         <Field label="계정 이름">
           <input type="text" value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
             placeholder="자취 꿀템" className={input} />
