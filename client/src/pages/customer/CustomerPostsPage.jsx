@@ -2,6 +2,39 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 
+function friendlyQueueError(message = '') {
+  const value = String(message || '');
+  if (!value) return null;
+  if (/THREADS_TOKEN_MISSING|Threads access token is required|계정 관리에서 Threads 연결/i.test(value)) {
+    return {
+      title: 'Threads 연결이 필요합니다',
+      message: '설정에서 Threads를 연결한 뒤 다시 실행해주세요.'
+    };
+  }
+  if (/OAuth|access token|Cannot parse access token|token|code"?\s*:\s*190|code 190/i.test(value)) {
+    return {
+      title: 'Threads 연결이 만료되었습니다',
+      message: 'Threads 토큰이 만료되었거나 더 이상 사용할 수 없습니다. 설정에서 다시 연결해주세요.'
+    };
+  }
+  if (/reply container failed|reply publish failed/i.test(value)) {
+    return {
+      title: '댓글 등록만 실패했습니다',
+      message: '본문 업로드 이후 링크/고지 댓글 등록 중 문제가 있었습니다. 본문 게시 여부를 먼저 확인해주세요.'
+    };
+  }
+  if (/Post blocked by content guardrails|post_style_blocked|guardrail/i.test(value)) {
+    return {
+      title: '콘텐츠 후보가 제외되었습니다',
+      message: '계정의 톤/금지어/콘텐츠 규칙과 맞지 않아 이 글은 업로드 대상에서 제외되었습니다.'
+    };
+  }
+  return {
+    title: '업로드 확인이 필요합니다',
+    message: value.length > 100 ? `${value.slice(0, 100)}...` : value
+  };
+}
+
 export default function CustomerPostsPage({ account, pipelineResult }) {
   const [queue, setQueue] = useState([]);
   const [posts, setPosts] = useState([]);
@@ -90,13 +123,14 @@ export default function CustomerPostsPage({ account, pipelineResult }) {
                 manual_required: '수동 검토',
                 skipped: '취소됨',
               }[r.status] || r.status;
+              const friendly = friendlyQueueError(r.error_message);
               return (
                 <div key={r.id} className="bg-white rounded-2xl border border-rose-100 overflow-hidden">
                   <button onClick={() => toggleDetail(r.id)} className="w-full px-5 py-4 flex items-center gap-3 text-left">
                     <div className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-700">{dateTime(r.scheduled_at)}</div>
-                      <div className="text-xs text-rose-500 mt-0.5 truncate">{r.error_message || label}</div>
+                      <div className="text-xs text-rose-500 mt-0.5 truncate">{friendly?.title || label}</div>
                     </div>
                     <span className="text-gray-300 text-sm flex-shrink-0">{isExpanded ? '▲' : '▼'}</span>
                   </button>
@@ -110,7 +144,16 @@ export default function CustomerPostsPage({ account, pipelineResult }) {
                             <pre className="whitespace-pre-wrap break-words font-sans text-sm text-gray-700 leading-relaxed">{d.post.body}</pre>
                           )}
                           {r.error_message && (
-                            <div className="rounded-xl bg-rose-50 px-4 py-3 text-xs text-rose-600">{r.error_message}</div>
+                            <div className="grid gap-3 rounded-xl bg-rose-50 px-4 py-3 text-xs text-rose-600">
+                              <div>
+                                <div className="font-black">{friendly?.title || '업로드 오류'}</div>
+                                <div className="mt-1 leading-relaxed">{friendly?.message || r.error_message}</div>
+                              </div>
+                              <details className="rounded-lg bg-white/70 px-3 py-2">
+                                <summary className="cursor-pointer font-bold">기술 정보 보기</summary>
+                                <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">{r.error_message}</pre>
+                              </details>
+                            </div>
                           )}
                         </>
                       ) : null}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Clock3, ExternalLink, ListChecks, Play, RefreshCw, Settings, Users } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, ListChecks, Play, RefreshCw, Settings, Users, Wrench } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import { dateTime } from '../lib/format.js';
@@ -18,14 +18,23 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
   const [loading, setLoading] = useState(true);
   const [runningAll, setRunningAll] = useState(false);
   const [runningAccountId, setRunningAccountId] = useState('');
+  const [conflicts, setConflicts] = useState([]);
+  const [misassignments, setMisassignments] = useState(null);
+  const [preflightModal, setPreflightModal] = useState(null);
+  const [runSummaryModal, setRunSummaryModal] = useState(null);
+  const [cleaningQueue, setCleaningQueue] = useState(false);
 
   const load = async () => {
-    const [nextSummary, nextRows] = await Promise.all([
+    const [nextSummary, nextRows, nextConflicts, nextMisassignments] = await Promise.all([
       api.get('/api/admin/operations/summary'),
-      api.get('/api/admin/operations/accounts')
+      api.get('/api/admin/operations/accounts'),
+      api.get('/api/admin/account-conflicts').catch(() => []),
+      api.get('/api/admin/account-misassignments').catch(() => null)
     ]);
     setSummary(nextSummary);
     setRows(nextRows);
+    setConflicts(nextConflicts || []);
+    setMisassignments(nextMisassignments);
   };
 
   useEffect(() => {
@@ -38,8 +47,11 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
       const result = await api.post('/api/scheduler/run-pipeline', {});
       const ok = result.results?.filter((r) => r.status === 'ok').length ?? 0;
       const skipped = result.results?.filter((r) => r.status === 'skipped').length ?? 0;
+      const reconnect = result.results?.filter((r) => /Threads|토큰|연결|access token|OAuth/i.test(r.error || r.reason || '')).length ?? 0;
+      const failed = result.results?.filter((r) => r.status === 'error').length ?? 0;
       const total = result.results?.length ?? 0;
-      toast(`전체 자동화 완료: 성공 ${ok}개, 실행 중 skip ${skipped}개 / ${total}개`, skipped ? 'info' : 'success');
+      setRunSummaryModal({ results: result.results || [] });
+      toast(`전체 자동화 완료: 성공 ${ok}개 · 스킵 ${skipped}개 · 재연결 필요 ${reconnect}개 · 실패 ${failed}개 / ${total}개`, failed || reconnect ? 'info' : 'success');
       await load();
     } catch (err) {
       toast(err.message || '전체 자동화 실행에 실패했습니다.', 'error');
@@ -51,6 +63,12 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
   const runAccount = async (row) => {
     setRunningAccountId(row.accountId);
     try {
+      const preflight = await api.get(`/api/accounts/${row.accountId}/preflight`);
+      if (!preflight.canPublish) {
+        setPreflightModal({ accountName: row.accountName, result: preflight });
+        toast(`${row.accountName} 실행 전 확인이 필요합니다.`, 'error');
+        return;
+      }
       await api.post(`/api/accounts/${row.accountId}/run-pipeline`, {});
       toast(`${row.accountName} 자동화가 완료됐습니다.`, 'success');
       await load();
@@ -58,6 +76,25 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
       toast(err.message || '자동화 실행에 실패했습니다.', 'error');
     } finally {
       setRunningAccountId('');
+    }
+  };
+
+  const cleanupQueueErrors = async () => {
+    setCleaningQueue(true);
+    try {
+      const dryRun = await api.post('/api/admin/operations/cleanup-queue-errors', { mode: 'dry-run' });
+      const total = dryRun.targets?.length || 0;
+      if (total === 0) {
+        toast('정리할 실패 큐가 없습니다.', 'success');
+        return;
+      }
+      const applied = await api.post('/api/admin/operations/cleanup-queue-errors', { mode: 'apply' });
+      toast(`실패 큐 ${applied.updated}건을 분류했습니다.`, 'success');
+      await load();
+    } catch (err) {
+      toast(err.message || '실패 큐 정리에 실패했습니다.', 'error');
+    } finally {
+      setCleaningQueue(false);
     }
   };
 
@@ -101,8 +138,22 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
             {runningAll ? <Spinner /> : <Play size={16} />}
             전체 자동화 실행
           </button>
+          <button
+            onClick={cleanupQueueErrors}
+            disabled={cleaningQueue}
+            className="inline-flex items-center gap-2 rounded border border-line bg-white px-3 py-2 text-sm font-medium disabled:opacity-50"
+          >
+            {cleaningQueue ? <Spinner /> : <Wrench size={16} />}
+            실패 큐 정리
+          </button>
         </div>
       </div>
+
+      <RiskPanel
+        conflicts={conflicts}
+        misassignments={misassignments}
+        onOpenUsers={() => setPage?.('admin-users')}
+      />
 
       <div className="grid gap-3 md:grid-cols-4">
         <OpsCard label="계정" value={`${summary?.cards?.accountsActive ?? 0}/${summary?.cards?.accountsTotal ?? 0}`} hint="활성 / 전체" tone="ok" />
@@ -183,15 +234,15 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
                   </td>
                   <td className="px-4 py-3">
                     <div className="font-semibold">예약 {row.todayScheduled} · 완료 {row.todayPosted}</div>
-                    <div className="text-xs text-slate-400">실패/검토 {row.failedCount} · 테스트 {row.mockCount}</div>
+                    <div className="text-xs text-slate-400">실패/검토 {row.failedCount} · 댓글경고 {row.replyWarningCount || 0} · 테스트 {row.mockCount}</div>
                   </td>
                   <td className="px-4 py-3">
                     {row.pipelineRun?.status === 'running' ? (
                       <div className="inline-flex items-center gap-1 text-xs font-bold text-blue-600"><Clock3 size={13} />자동화 실행 중</div>
                     ) : row.lastActivity ? (
                       <>
-                        <div className="text-xs font-medium text-slate-600">{activityLabel(row.lastActivity.action)}</div>
-                        <div className="mt-0.5 max-w-[220px] truncate text-xs text-slate-400" title={row.lastActivity.message || ''}>{activityMessage(row.lastActivity) || '-'}</div>
+                        <div className="text-xs font-medium text-slate-600">{row.lastActivity.label || activityLabel(row.lastActivity.action)}</div>
+                        <div className="mt-0.5 max-w-[220px] truncate text-xs text-slate-400" title={row.lastActivity.rawMessage || row.lastActivity.message || ''}>{activityMessage(row.lastActivity) || '-'}</div>
                       </>
                     ) : (
                       <span className="text-xs text-slate-400">활동 없음</span>
@@ -219,8 +270,136 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
           </table>
         </div>
       </section>
+      {preflightModal && (
+        <PreflightModal
+          accountName={preflightModal.accountName}
+          result={preflightModal.result}
+          onClose={() => setPreflightModal(null)}
+          onOpenSettings={() => {
+            const accountId = preflightModal.result?.accountId;
+            setPreflightModal(null);
+            if (accountId) openAccountSettings?.(accountId);
+          }}
+        />
+      )}
+      {runSummaryModal && (
+        <RunSummaryModal
+          results={runSummaryModal.results}
+          onClose={() => setRunSummaryModal(null)}
+        />
+      )}
     </div>
   );
+}
+
+function RiskPanel({ conflicts, misassignments, onOpenUsers }) {
+  const separable = misassignments?.separable || [];
+  const needsReview = misassignments?.needsReview || [];
+  const total = (conflicts?.length || 0) + separable.length + needsReview.length;
+  if (total === 0) return null;
+  return (
+    <section className="rounded border border-amber-200 bg-amber-50">
+      <div className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 text-sm font-black text-amber-800">
+            <AlertTriangle size={16} />
+            계정 배정/연결 점검 필요
+          </div>
+          <div className="mt-1 text-xs text-amber-700">
+            중복 연결 {conflicts?.length || 0}건 · 확정 분리 가능 {separable.length}건 · 검토 필요 {needsReview.length}건
+          </div>
+        </div>
+        <button onClick={onOpenUsers} className="rounded bg-white px-3 py-2 text-xs font-bold text-amber-800 ring-1 ring-amber-200">
+          고객/권한 관리에서 확인
+        </button>
+      </div>
+      <div className="grid divide-y divide-amber-100 border-t border-amber-100 bg-white/50">
+        {(conflicts || []).slice(0, 3).map((conflict, index) => (
+          <div key={`${conflict.type}-${conflict.key}-${index}`} className="px-5 py-3 text-xs text-amber-800">
+            <span className="font-bold">{conflict.label}</span>
+            <span className="ml-2 text-amber-700">{conflict.key}</span>
+          </div>
+        ))}
+        {separable.slice(0, 2).map((row) => (
+          <div key={`separable-${row.userId}-${row.accountId}`} className="px-5 py-3 text-xs text-amber-800">
+            <span className="font-bold">잘못 배정 의심</span>
+            <span className="ml-2 text-amber-700">{row.userEmail} · {row.accountName}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PreflightModal({ accountName, result, onClose, onOpenSettings }) {
+  const checks = Array.isArray(result?.checks) ? result.checks : [];
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5">
+      <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded bg-white shadow-2xl">
+        <div className="shrink-0 border-b border-line px-5 py-4">
+          <div className="text-lg font-black text-slate-900">{accountName} 실행 전 점검</div>
+          <div className="mt-1 text-sm font-semibold text-rose-600">자동화 전에 조치가 필요합니다</div>
+        </div>
+        <div className="grid gap-2 overflow-y-auto p-5">
+          {checks.map((check) => (
+            <div key={`${check.key}-${check.title}`} className={`rounded border px-4 py-3 ${check.status === 'error' ? 'border-rose-100 bg-rose-50 text-rose-700' : check.status === 'warn' ? 'border-amber-100 bg-amber-50 text-amber-700' : 'border-emerald-100 bg-emerald-50 text-emerald-700'}`}>
+              <div className="text-sm font-black">{check.title}</div>
+              <div className="mt-1 break-words text-xs leading-relaxed opacity-80">{check.message}</div>
+            </div>
+          ))}
+        </div>
+        <div className="flex shrink-0 gap-2 border-t border-line px-5 py-4">
+          <button onClick={onClose} className="flex-1 rounded border border-line py-3 text-sm font-bold text-slate-500">닫기</button>
+          <button onClick={onOpenSettings} className="flex-1 rounded bg-slate-900 py-3 text-sm font-bold text-white">설정 열기</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RunSummaryModal({ results, onClose }) {
+  const rows = Array.isArray(results) ? results : [];
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5">
+      <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded bg-white shadow-2xl">
+        <div className="shrink-0 border-b border-line px-5 py-4">
+          <div className="text-lg font-black text-slate-900">전체 자동화 실행 결과</div>
+          <div className="mt-1 text-xs text-slate-400">문제 계정은 자동으로 스킵하거나 오류로 분리했습니다.</div>
+        </div>
+        <div className="overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-panel text-left text-xs text-slate-500">
+              <tr>
+                <th className="px-4 py-3">계정</th>
+                <th className="px-4 py-3">결과</th>
+                <th className="px-4 py-3">메시지</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line">
+              {rows.map((row, index) => (
+                <tr key={`${row.accountId || row.accountName}-${index}`}>
+                  <td className="px-4 py-3 font-semibold">{row.accountName || row.accountId || '-'}</td>
+                  <td className="px-4 py-3"><StatusPill status={row.status === 'ok' ? 'ok' : row.status === 'skipped' ? 'warn' : 'error'} label={runResultLabel(row)} /></td>
+                  <td className="px-4 py-3 text-xs text-slate-500">{row.error || row.reason || row.label || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="shrink-0 border-t border-line px-5 py-4 text-right">
+          <button onClick={onClose} className="rounded bg-slate-900 px-4 py-2 text-sm font-bold text-white">닫기</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function runResultLabel(row) {
+  if (row.status === 'ok') return '성공';
+  if (row.reason === 'already_running') return '이미 실행 중';
+  if (/Threads|토큰|연결|access token|OAuth/i.test(row.error || row.reason || '')) return '재연결 필요';
+  if (row.status === 'skipped') return '스킵';
+  return '실패';
 }
 
 function OpsCard({ label, value, hint, tone }) {

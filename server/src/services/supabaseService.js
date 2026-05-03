@@ -55,6 +55,7 @@ const tables = {
   post_metrics_jobs: [],
   post_metrics: [],
   activity_logs: [],
+  account_conflict_audits: [],
   notifications: [],
   announcements: [],
   users: [],

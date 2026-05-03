@@ -11,8 +11,9 @@ import {
 } from '../services/authService.js';
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
 import { hashPassword } from '../utils/password.js';
-import { operationAccountRows, operationSummary } from '../services/operationsService.js';
+import { cleanupQueueErrors, operationAccountRows, operationSummary } from '../services/operationsService.js';
 import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js';
+import { buildMisassignmentReport } from '../services/accountOwnershipService.js';
 
 const router = Router();
 
@@ -105,12 +106,97 @@ router.get('/operations/accounts', async (req, res, next) => {
   try { res.json(await operationAccountRows()); } catch (e) { next(e); }
 });
 
+router.post('/operations/cleanup-queue-errors', async (req, res, next) => {
+  try {
+    const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
+    res.json(await cleanupQueueErrors({ mode }));
+  } catch (e) { next(e); }
+});
+
 router.get('/setup-tasks', async (req, res, next) => {
   try { res.json(await listSetupTasks()); } catch (e) { next(e); }
 });
 
 router.get('/account-conflicts', async (req, res, next) => {
   try { res.json(await buildAccountConflicts()); } catch (e) { next(e); }
+});
+
+router.get('/account-misassignments', async (req, res, next) => {
+  try { res.json(await buildMisassignmentReport()); } catch (e) { next(e); }
+});
+
+async function auditMisassignment(row, action) {
+  try {
+    await dbInsert('account_conflict_audits', {
+      conflict_type: 'suspected_misassignment',
+      conflict_key: `${row.userEmail || row.userId}:${row.accountName || row.accountId}`,
+      account_ids: [row.accountId],
+      details: { action, row }
+    });
+  } catch {
+    // Older databases may not have the audit table yet. Cleanup should still be usable.
+  }
+}
+
+router.post('/account-misassignments/cleanup', async (req, res, next) => {
+  try {
+    const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
+    const report = await buildMisassignmentReport();
+    const targets = report.separable || [];
+    const reviews = report.needsReview || [];
+    if (mode === 'apply') {
+      for (const row of targets) {
+        await dbDelete('user_accounts', { user_id: row.userId, account_id: row.accountId });
+        await auditMisassignment(row, 'auto_unassigned');
+      }
+      for (const row of reviews) await auditMisassignment(row, 'needs_review');
+    }
+    res.json({ mode, unassigned: mode === 'apply' ? targets.length : 0, targets, needsReview: reviews });
+  } catch (e) { next(e); }
+});
+
+router.post('/account-misassignments/unassign', async (req, res, next) => {
+  try {
+    const { userId, accountId } = req.body || {};
+    if (!userId || !accountId) return res.status(400).json({ error: 'userId, accountId 필수' });
+    await dbDelete('user_accounts', { user_id: userId, account_id: accountId });
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+router.post('/account-misassignments/reassign', async (req, res, next) => {
+  try {
+    const { fromUserId, toUserId, accountId } = req.body || {};
+    if (!toUserId || !accountId) return res.status(400).json({ error: 'toUserId, accountId 필수' });
+    const targetUser = await dbGet('users', { id: toUserId });
+    if (!targetUser) return res.status(404).json({ error: 'Target user not found' });
+    const targetLinks = await dbList('user_accounts', { user_id: toUserId });
+    const alreadyTarget = targetLinks.some((row) => row.account_id === accountId);
+    if (!alreadyTarget && targetLinks.length >= targetUser.max_accounts) {
+      return res.status(403).json({ error: `추천 소유자의 계정 한도 초과 (최대 ${targetUser.max_accounts}개)` });
+    }
+    const currentOwners = await dbList('user_accounts', { account_id: accountId });
+    const otherOwner = currentOwners.find((row) => row.user_id !== fromUserId && row.user_id !== toUserId);
+    if (otherOwner) return res.status(409).json({ error: '이미 다른 고객에게 할당된 계정입니다.' });
+    if (fromUserId) await dbDelete('user_accounts', { user_id: fromUserId, account_id: accountId });
+    const exists = (await dbList('user_accounts', { user_id: toUserId, account_id: accountId }))[0];
+    const link = exists || await dbInsert('user_accounts', { user_id: toUserId, account_id: accountId });
+    res.json(link);
+  } catch (e) { next(e); }
+});
+
+router.post('/account-misassignments/mark-ok', async (req, res, next) => {
+  try {
+    const { userId, accountId, row } = req.body || {};
+    if (!userId || !accountId) return res.status(400).json({ error: 'userId, accountId 필수' });
+    const audit = await dbInsert('account_conflict_audits', {
+      conflict_type: 'assignment_marked_ok',
+      conflict_key: `${userId}:${accountId}`,
+      account_ids: [accountId],
+      details: { row: row || null }
+    });
+    res.json(audit);
+  } catch (e) { next(e); }
 });
 
 router.post('/accounts/:accountId/disconnect-threads', async (req, res, next) => {

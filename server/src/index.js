@@ -150,7 +150,11 @@ app.get('/mock/threads/:postId', (req, res) => {
 
 app.use((error, req, res, next) => {
   console.error(error);
-  res.status(error.status || 500).json({ error: error.message || 'Internal server error' });
+  res.status(error.status || 500).json({
+    error: error.message || 'Internal server error',
+    ...(error.code ? { code: error.code } : {}),
+    ...(error.preflight ? { preflight: error.preflight } : {})
+  });
 });
 
 // 매분: 예약된 포스팅 업로드 + 성과 측정

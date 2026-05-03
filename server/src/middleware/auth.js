@@ -1,5 +1,6 @@
 import { isTokenConfigured, listUserProducts, shouldBypassAuth, verifyToken } from '../services/authService.js';
 import { dbList } from '../services/supabaseService.js';
+import { markedOkKeysFromAudits, shouldHideAssignment, suspiciousAssignmentsForUser } from '../services/accountOwnershipService.js';
 
 const publicPaths = [
   '/api/health',
@@ -36,13 +37,25 @@ export async function requireAuth(req, res, next) {
       req.user = { type: 'admin', email: payload.sub };
       req.admin = { email: payload.sub };
     } else if (payload.role === 'user') {
-      const userAccounts = await dbList('user_accounts', { user_id: payload.userId });
+      const [userAccounts, users, accounts, allUserAccounts, audits] = await Promise.all([
+        dbList('user_accounts', { user_id: payload.userId }),
+        dbList('users'),
+        dbList('accounts'),
+        dbList('user_accounts'),
+        dbList('account_conflict_audits').catch(() => [])
+      ]);
+      const ignoredKeys = markedOkKeysFromAudits(audits);
+      const hiddenIds = new Set(
+        suspiciousAssignmentsForUser({ userId: payload.userId, users, accounts, userAccounts: allUserAccounts, ignoredKeys })
+          .filter(shouldHideAssignment)
+          .map((row) => row.accountId)
+      );
       req.user = {
         type: 'user',
         userId: payload.userId,
         email: payload.sub,
         maxAccounts: payload.maxAccounts ?? 2,
-        allowedAccountIds: userAccounts.map((ua) => ua.account_id),
+        allowedAccountIds: userAccounts.map((ua) => ua.account_id).filter((accountId) => !hiddenIds.has(accountId)),
         products: await listUserProducts(payload.userId)
       };
     } else {

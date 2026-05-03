@@ -25,13 +25,17 @@ async function request(path, options = {}) {
   if (!res.ok) {
     const text = await res.text();
     let message = text || `Request failed (${res.status})`;
+    let data = null;
     try {
-      const data = JSON.parse(text);
+      data = JSON.parse(text);
       message = data.error || data.message || message;
     } catch {
       // keep plain text response
     }
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    if (data && typeof data === 'object') Object.assign(error, data);
+    throw error;
   }
   if (res.status === 204) return null;
   return res.json();

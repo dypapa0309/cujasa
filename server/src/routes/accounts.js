@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { createAccount, deleteAccount, getAccount, listAccounts, updateAccount } from '../services/accountService.js';
-import { dbInsert, dbList } from '../services/supabaseService.js';
+import { dbGet, dbInsert, dbList, logActivity } from '../services/supabaseService.js';
 import { runPipelineForAccount } from '../services/pipelineService.js';
 import { latestPipelineRun } from '../services/pipelineRunService.js';
+import { markedOkKeysFromAudits, shouldHideAssignment, suspiciousAssignmentsForUser } from '../services/accountOwnershipService.js';
+import { preflightAccount } from '../services/accountPreflightService.js';
 
 const router = Router();
 
@@ -36,7 +38,25 @@ router.get('/', async (req, res, next) => {
   try {
     const all = await listAccounts();
     if (req.user?.type === 'user') {
-      return res.json(all.filter((a) => req.user.allowedAccountIds.includes(a.id)));
+      const assigned = all.filter((a) => req.user.allowedAccountIds.includes(a.id));
+      const [user, users, userAccounts, audits] = await Promise.all([
+        dbGet('users', { id: req.user.userId }),
+        dbList('users'),
+        dbList('user_accounts'),
+        dbList('account_conflict_audits').catch(() => [])
+      ]);
+      const ignoredKeys = markedOkKeysFromAudits(audits);
+      const suspicious = suspiciousAssignmentsForUser({ userId: req.user.userId, users, accounts: all, userAccounts, ignoredKeys });
+      const hiddenIds = new Set(suspicious.filter(shouldHideAssignment).map((row) => row.accountId));
+      if (hiddenIds.size > 0) {
+        logActivity({
+          level: 'warn',
+          action: 'suspected_misassigned_accounts_hidden',
+          message: `${user?.email || req.user.email} 계정에서 잘못 배정 의심 계정을 숨김`,
+          payload: { userId: req.user.userId, accountIds: [...hiddenIds], suspicious }
+        }).catch(() => {});
+      }
+      return res.json(assigned.filter((account) => !hiddenIds.has(account.id)));
     }
     res.json(all);
   } catch (e) { next(e); }
@@ -66,6 +86,15 @@ router.get('/:accountId/pipeline-run', async (req, res, next) => {
       return res.status(403).json({ error: 'Access denied' });
     }
     res.json({ run: mapPipelineRun(await latestPipelineRun(req.params.accountId)) });
+  } catch (e) { next(e); }
+});
+
+router.get('/:accountId/preflight', async (req, res, next) => {
+  try {
+    if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(req.params.accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(await preflightAccount(req.params.accountId));
   } catch (e) { next(e); }
 });
 

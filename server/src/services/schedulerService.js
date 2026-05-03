@@ -5,6 +5,8 @@ import { createMetricJobs } from './metricsJobService.js';
 import { listCtas } from './ctaService.js';
 import { createTrackingLink } from './trackingService.js';
 import { validatePostCandidate } from '../utils/contentGuardrails.js';
+import { assertPreflightCanPublish, preflightAccount } from './accountPreflightService.js';
+import { classifyQueueError } from './queueErrorService.js';
 
 async function isPostAllowedForQueue(post, account) {
   const topic = post.topic_id ? await dbGet('topics', { id: post.topic_id }) : null;
@@ -58,6 +60,7 @@ export async function createDailyQueue(accountId) {
     error.status = 409;
     throw error;
   }
+  assertPreflightCanPublish(await preflightAccount(accountId, { includeQueue: false }));
   const allDrafts = [];
   for (const post of (await dbList('posts', { account_id: accountId })).filter((p) => ['draft', 'ready'].includes(p.status))) {
     if (await isPostAllowedForQueue(post, account)) allDrafts.push(post);
@@ -126,6 +129,7 @@ export async function uploadQueueItem(queueId) {
       await logActivity({ account_id: queue.account_id, project_id: queue.project_id, post_id: queue.post_id, action: 'upload_skipped_inactive_account', level: 'warn', message: account?.status || 'missing' });
       return (await dbUpdate('post_queue', { id: queueId }, { status: 'skipped', error_message: `Account is ${account?.status || 'missing'}` }))[0];
     }
+    assertPreflightCanPublish(await preflightAccount(account.id, { includeQueue: false }));
     await dbUpdate('post_queue', { id: queueId }, { status: 'posting' });
     const ctas = await listCtas(post.id);
     const cta = ctas[Math.floor(Math.random() * Math.max(1, ctas.length))] || null;
@@ -170,10 +174,23 @@ export async function uploadQueueItem(queueId) {
   } catch (error) {
     const retry = (queue.retry_count || 0) + 1;
     const status = error.permanent || retry >= 3 ? 'manual_required' : 'retry';
+    const classified = classifyQueueError(error.message);
     if (error.code === 'THREADS_TOKEN_INVALID' || error.code === 'THREADS_TOKEN_MISSING') {
       await dbUpdate('accounts', { id: queue.account_id }, { threads_token_status: 'refresh_failed' });
     }
-    const [updated] = await dbUpdate('post_queue', { id: queueId }, { status, retry_count: retry, error_message: error.message });
+    let updatedRows;
+    try {
+      updatedRows = await dbUpdate('post_queue', { id: queueId }, {
+        status,
+        retry_count: retry,
+        error_message: error.message,
+        error_category: classified.category
+      });
+    } catch (updateError) {
+      if (!/error_category|schema cache|column/i.test(updateError.message || '')) throw updateError;
+      updatedRows = await dbUpdate('post_queue', { id: queueId }, { status, retry_count: retry, error_message: error.message });
+    }
+    const [updated] = updatedRows;
     await logActivity({ account_id: queue.account_id, project_id: queue.project_id, action: 'upload_failed', level: 'error', message: error.message });
     return updated;
   }

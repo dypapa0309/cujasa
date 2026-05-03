@@ -7,6 +7,7 @@ import { createDailyQueue } from './schedulerService.js';
 import { generateBlogPost } from './blogService.js';
 import { logActivity } from './supabaseService.js';
 import { finishPipelineRun, getRunningPipeline, startPipelineRun, updatePipelineRunProgress } from './pipelineRunService.js';
+import { assertPreflightCanPublish, preflightAccount } from './accountPreflightService.js';
 
 export async function runPipelineForAccount(accountId, options = {}) {
   const account = await getAccount(accountId);
@@ -23,6 +24,8 @@ export async function runPipelineForAccount(accountId, options = {}) {
   };
   try {
     await progress({ percent: 5, stage: 'starting', label: '예약 작업을 준비하고 있습니다' });
+    await progress({ percent: 7, stage: 'preflight', label: '계정 연결 상태를 점검하고 있습니다' });
+    assertPreflightCanPublish(await preflightAccount(account.id));
 
     await progress({ percent: 10, stage: 'topics', label: '주제를 생성하고 있습니다' });
     const topics = await generateTopics(account.id);
@@ -115,6 +118,18 @@ export async function runFullPipeline(options = {}) {
       continue;
     }
     try {
+      const preflight = await preflightAccount(account.id);
+      if (!preflight.canPublish) {
+        const first = preflight.checks.find((check) => check.status === 'error');
+        results.push({
+          accountId: account.id,
+          accountName: account.name,
+          status: 'skipped',
+          reason: first?.message || 'preflight_failed',
+          preflight
+        });
+        continue;
+      }
       results.push(await runPipelineForAccount(account.id, { requestedBy: options.requestedBy || 'full_pipeline' }));
     } catch (err) {
       if (err.status === 409) {

@@ -1,6 +1,7 @@
-import { dbGet, dbList } from './supabaseService.js';
+import { dbGet, dbList, dbUpdate } from './supabaseService.js';
 import { latestPipelineRun } from './pipelineRunService.js';
 import { resolveCoupangCredentialsForAccount } from './coupangService.js';
+import { adminActivityLabel, adminActivityMessage, classifyQueueError } from './queueErrorService.js';
 
 const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -18,11 +19,11 @@ function inRange(value, start, end) {
 }
 
 function tokenState(account) {
-  if (!account.threads_access_token) return { status: 'error', label: '미연결' };
-  if (account.threads_token_status === 'refresh_failed') return { status: 'error', label: '갱신 실패' };
+  if (!account.threads_access_token) return { status: 'error', label: 'Threads 연결 필요' };
+  if (account.threads_token_status === 'refresh_failed') return { status: 'error', label: '다시 연결 필요' };
   if (!account.threads_token_expires_at) return { status: 'ok', label: '연결됨' };
   const daysLeft = (new Date(account.threads_token_expires_at).getTime() - Date.now()) / ONE_DAY_MS;
-  if (daysLeft <= 0) return { status: 'error', label: '만료됨' };
+  if (daysLeft <= 0) return { status: 'error', label: '다시 연결 필요' };
   if (daysLeft <= 7) return { status: 'warn', label: `만료 ${Math.ceil(daysLeft)}일 전` };
   return { status: 'ok', label: '연결됨' };
 }
@@ -85,7 +86,13 @@ export async function operationAccountRows() {
     const todayQueue = accountQueue.filter((row) => inRange(row.scheduled_at, start, end));
     const todayScheduled = todayQueue.filter((row) => row.status === 'scheduled').length;
     const todayPosted = accountQueue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length;
-    const failedCount = accountQueue.filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status)).length;
+    const problemQueue = accountQueue.filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status));
+    const categorizedProblems = problemQueue.map((row) => {
+      const classified = classifyQueueError(row.error_message);
+      return row.error_category ? { ...classified, category: row.error_category } : classified;
+    });
+    const failedCount = problemQueue.filter((row) => (row.error_category || classifyQueueError(row.error_message).category) !== 'reply_warning').length;
+    const replyWarningCount = problemQueue.filter((row) => (row.error_category || classifyQueueError(row.error_message).category) === 'reply_warning').length;
     const mockCount = accountQueue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length;
     const accountProducts = products.filter((row) => row.account_id === account.id);
     const fallbackCount = accountProducts.filter((row) => row.is_fallback).length;
@@ -100,11 +107,15 @@ export async function operationAccountRows() {
     const customer = await customerLabelFor(account.id, userAccounts, usersById);
     const problems = [];
 
-    if (threads.status === 'error') pushProblem(problems, account, 'error', 'threads', `Threads ${threads.label}`);
+    if (threads.status === 'error') pushProblem(problems, account, 'error', 'threads', threads.label);
     else if (threads.status === 'warn') pushProblem(problems, account, 'warn', 'threads', `Threads ${threads.label}`);
     if (coupang.status === 'error') pushProblem(problems, account, 'error', 'coupang', '쿠팡 API 키 누락', coupang.missing.join(', '));
     if (account.status === 'active' && todayScheduled === 0) pushProblem(problems, account, 'warn', 'no_schedule', '오늘 예약 없음');
-    if (failedCount > 0) pushProblem(problems, account, 'error', 'queue_failed', `실패/검토 ${failedCount}건`);
+    if (failedCount > 0) {
+      const reconnectCount = categorizedProblems.filter((row) => row.category === 'threads_reconnect_required').length;
+      pushProblem(problems, account, 'error', 'queue_failed', reconnectCount ? `재연결 필요 ${reconnectCount}건` : `실패/검토 ${failedCount}건`);
+    }
+    if (replyWarningCount > 0) pushProblem(problems, account, 'warn', 'reply_warning', `댓글/링크 답글 실패 ${replyWarningCount}건`);
     if (mockCount > 0) pushProblem(problems, account, 'warn', 'mock_upload', `테스트 업로드 흔적 ${mockCount}건`);
     if (fallbackRatio >= 0.5 && accountProducts.length >= 5) pushProblem(problems, account, 'warn', 'fallback_products', `fallback 상품 ${Math.round(fallbackRatio * 100)}%`);
     if (lastActivity?.action === 'pipeline_failed' || pipelineRun?.status === 'failed') {
@@ -123,13 +134,16 @@ export async function operationAccountRows() {
       todayScheduled,
       todayPosted,
       failedCount,
+      replyWarningCount,
       mockCount,
       fallbackRatio,
       lastPostedAt: recentPosted?.posted_at || null,
       lastActivity: lastActivity ? {
         action: lastActivity.action,
         level: lastActivity.level,
-        message: lastActivity.message,
+        label: adminActivityLabel(lastActivity.action, lastActivity.message) || null,
+        message: adminActivityMessage(lastActivity.action, lastActivity.message) || lastActivity.message,
+        rawMessage: lastActivity.message,
         createdAt: lastActivity.created_at
       } : null,
       pipelineRun: pipelineRun ? {
@@ -170,6 +184,45 @@ export async function operationSummary() {
       threadsProblems: rows.filter((row) => row.threads.status !== 'ok').length
     },
     problemAccounts
+  };
+}
+
+export async function cleanupQueueErrors({ mode = 'dry-run' } = {}) {
+  const rows = await dbList('post_queue');
+  const targets = rows
+    .filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status))
+    .map((row) => ({ ...row, classification: classifyQueueError(row.error_message) }));
+  if (mode === 'apply') {
+    for (const row of targets) {
+      try {
+        await dbUpdate('post_queue', { id: row.id }, {
+          error_category: row.classification.category,
+          status: row.classification.category === 'reply_warning' ? 'manual_required' : row.status
+        });
+      } catch (error) {
+        if (!/error_category|schema cache|column/i.test(error.message || '')) throw error;
+        await dbUpdate('post_queue', { id: row.id }, {
+          status: row.classification.category === 'reply_warning' ? 'manual_required' : row.status
+        });
+      }
+    }
+  }
+  const counts = targets.reduce((acc, row) => {
+    acc[row.classification.category] = (acc[row.classification.category] || 0) + 1;
+    return acc;
+  }, {});
+  return {
+    mode,
+    updated: mode === 'apply' ? targets.length : 0,
+    counts,
+    targets: targets.map((row) => ({
+      id: row.id,
+      accountId: row.account_id,
+      status: row.status,
+      errorCategory: row.classification.category,
+      title: row.classification.title,
+      message: row.classification.message
+    }))
   };
 }
 

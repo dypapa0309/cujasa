@@ -7,6 +7,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [users, setUsers] = useState([]);
   const [products, setProducts] = useState([]);
   const [conflicts, setConflicts] = useState([]);
+  const [misassignments, setMisassignments] = useState({ separable: [], needsReview: [], healthy: [] });
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ buyerName: '', email: '', password: '', maxAccounts: 2 });
@@ -15,14 +16,16 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [accountDrafts, setAccountDrafts] = useState({});
 
   const load = async () => {
-    const [nextUsers, nextProducts, nextConflicts] = await Promise.all([
+    const [nextUsers, nextProducts, nextConflicts, nextMisassignments] = await Promise.all([
       api.get('/api/admin/users'),
       api.get('/api/admin/products'),
       api.get('/api/admin/account-conflicts'),
+      api.get('/api/admin/account-misassignments'),
     ]);
     setUsers(nextUsers);
     setProducts(nextProducts);
     setConflicts(nextConflicts);
+    setMisassignments(nextMisassignments);
     setBuyerNameDrafts(Object.fromEntries(nextUsers.map((user) => [user.id, user.buyer_name || user.buyerName || ''])));
   };
 
@@ -164,6 +167,54 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     }
   };
 
+  const cleanupMisassignments = async (mode) => {
+    if (mode === 'apply' && !confirm('확정 분리 가능 계정의 고객 할당만 해제합니다. 진행할까요?')) return;
+    try {
+      const result = await api.post('/api/admin/account-misassignments/cleanup', { mode });
+      await load();
+      toast(mode === 'apply' ? `${result.unassigned || 0}개 할당을 해제했습니다.` : `해제 후보 ${result.targets?.length || 0}개를 확인했습니다.`, 'success');
+    } catch (err) {
+      toast(err.message || '잘못 배정 정리에 실패했습니다.', 'error');
+    }
+  };
+
+  const unassignSuspectedAccount = async (row) => {
+    if (!confirm(`${row.userEmail}에서 ${row.accountName} 계정을 해제할까요?`)) return;
+    try {
+      await api.post('/api/admin/account-misassignments/unassign', { userId: row.userId, accountId: row.accountId });
+      await load();
+      toast('계정 할당을 해제했습니다.', 'success');
+    } catch (err) {
+      toast(err.message || '계정 해제에 실패했습니다.', 'error');
+    }
+  };
+
+  const reassignSuspectedAccount = async (row) => {
+    if (!row.recommendedOwner?.userId) return;
+    if (!confirm(`${row.accountName} 계정을 ${row.recommendedOwner.userEmail} 고객에게 옮길까요?`)) return;
+    try {
+      await api.post('/api/admin/account-misassignments/reassign', {
+        fromUserId: row.userId,
+        toUserId: row.recommendedOwner.userId,
+        accountId: row.accountId
+      });
+      await load();
+      toast('계정 소유자를 변경했습니다.', 'success');
+    } catch (err) {
+      toast(err.message || '소유자 변경에 실패했습니다.', 'error');
+    }
+  };
+
+  const markMisassignmentOk = async (row) => {
+    try {
+      await api.post('/api/admin/account-misassignments/mark-ok', { userId: row.userId, accountId: row.accountId, row });
+      await load();
+      toast('정상 항목으로 표시했습니다.', 'success');
+    } catch (err) {
+      toast(err.message || '정상 표시 저장에 실패했습니다.', 'error');
+    }
+  };
+
   const unassignProduct = async (userId, productId) => {
     if (!confirm('제품 권한을 해제하시겠습니까?')) return;
     try {
@@ -232,6 +283,14 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
       )}
 
       <ConflictPanel conflicts={conflicts} onDisconnect={disconnectThreads} />
+      <MisassignmentPanel
+        report={misassignments}
+        onDryRun={() => cleanupMisassignments('dry-run')}
+        onApply={() => cleanupMisassignments('apply')}
+        onUnassign={unassignSuspectedAccount}
+        onReassign={reassignSuspectedAccount}
+        onMarkOk={markMisassignmentOk}
+      />
 
       {loading ? (
         <div className="grid gap-3">{[...Array(3)].map((_, i) => <div key={i} className="h-24 animate-pulse rounded border border-line bg-white" />)}</div>
@@ -410,8 +469,8 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
 }
 
 function connectionText(account) {
-  if (!account.threads_access_token) return '미연결';
-  if (account.threads_token_status === 'refresh_failed') return '갱신 실패';
+  if (!account.threads_access_token) return 'Threads 연결 필요';
+  if (account.threads_token_status === 'refresh_failed') return '다시 연결 필요';
   return `연결됨${account.threads_token_status ? ` · ${account.threads_token_status}` : ''}`;
 }
 
@@ -466,6 +525,87 @@ function ConflictPanel({ conflicts, onDisconnect }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function MisassignmentPanel({ report, onDryRun, onApply, onUnassign, onReassign, onMarkOk }) {
+  const separable = report?.separable || [];
+  const needsReview = report?.needsReview || [];
+  const total = separable.length + needsReview.length;
+  if (!total) {
+    return (
+      <div className="rounded border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        잘못 배정 의심: 현재 고객명/핸들 기준으로 의심되는 계정 노출 문제가 없습니다.
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-3 rounded border border-rose-200 bg-rose-50 p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-black text-rose-900">잘못 배정 의심</div>
+          <div className="text-xs text-rose-700">
+            확정 분리 가능 {separable.length}개 · 검토 필요 {needsReview.length}개
+          </div>
+        </div>
+        <button type="button" onClick={onDryRun} className="rounded border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700 hover:bg-rose-100">
+          dry-run
+        </button>
+        <button type="button" onClick={onApply} className="rounded bg-rose-600 px-3 py-2 text-xs font-bold text-white hover:bg-rose-700">
+          확정 항목 자동 해제
+        </button>
+      </div>
+      <MisassignmentGroup title="확정 분리 가능" rows={separable} tone="error" onUnassign={onUnassign} onReassign={onReassign} onMarkOk={onMarkOk} />
+      <MisassignmentGroup title="검토 필요" rows={needsReview} tone="warn" onUnassign={onUnassign} onReassign={onReassign} onMarkOk={onMarkOk} />
+    </div>
+  );
+}
+
+function MisassignmentGroup({ title, rows, tone, onUnassign, onReassign, onMarkOk }) {
+  if (!rows?.length) return null;
+  const badgeClass = tone === 'error' ? 'bg-rose-50 text-rose-600' : 'bg-amber-100 text-amber-700';
+  return (
+    <div className="grid gap-2">
+      <div className="text-xs font-black text-slate-600">{title}</div>
+      {rows.map((row) => (
+        <div key={`${row.userId}-${row.accountId}`} className="rounded border border-rose-100 bg-white p-3">
+          <div className="flex flex-wrap items-start gap-2">
+            <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${badgeClass}`}>{row.classification}</span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-bold text-slate-800">
+                {row.accountName} <span className="text-xs font-medium text-slate-400">{row.accountHandle || '핸들 없음'}</span>
+              </div>
+              <div className="mt-1 text-xs text-slate-500">
+                현재 고객: {row.userEmail}{row.buyerName ? ` · ${row.buyerName}` : ''} · 점수 {row.currentScore}
+                {row.overAssigned ? ` · 한도 초과 ${row.assignedCount}/${row.maxAccounts}` : ''}
+              </div>
+              {row.recommendedOwner && (
+                <div className="mt-1 text-xs text-slate-500">
+                  추천 소유자: {row.recommendedOwner.userEmail}
+                  {row.recommendedOwner.buyerName ? ` · ${row.recommendedOwner.buyerName}` : ''} · 점수 {row.recommendedOwner.score}
+                </div>
+              )}
+              <div className="mt-1 text-[11px] text-slate-400">
+                근거: {[...(row.currentReasons || []), ...(row.recommendedOwner?.reasons || [])].join(', ') || '매칭 근거 부족'}
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => onUnassign(row)} className="rounded border border-line px-2 py-1 text-xs font-bold text-rose-600 hover:border-rose-300">
+                해제
+              </button>
+              {row.recommendedOwner?.userId && (
+                <button type="button" onClick={() => onReassign(row)} className="rounded border border-line px-2 py-1 text-xs font-bold text-slate-600 hover:border-coupang hover:text-coupang">
+                  소유자 변경
+                </button>
+              )}
+              <button type="button" onClick={() => onMarkOk(row)} className="rounded border border-line px-2 py-1 text-xs font-bold text-slate-500 hover:border-emerald-300 hover:text-emerald-600">
+                정상으로 표시
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
