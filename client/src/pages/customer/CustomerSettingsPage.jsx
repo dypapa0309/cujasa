@@ -92,7 +92,6 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
       setConnectingThreads(false);
     }
   };
-  const linkRatio = Math.min(1, Math.max(0, Number(form.link_post_ratio ?? 0.3)));
   const updateLinkRatio = (value) => {
     const next = Number(value);
     setForm((prev) => ({
@@ -111,6 +110,8 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
       계정 설정을 불러오는 중입니다.
     </div>
   );
+
+  const linkRatio = Math.min(1, Math.max(0, Number(form.link_post_ratio ?? 0.3)));
 
   return (
     <div className="grid gap-5">
