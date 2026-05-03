@@ -70,7 +70,7 @@ export async function createDailyQueue(accountId) {
   }
 
   // link_post_ratio 적용: 링크 있는 것과 없는 것을 비율에 맞게 섞기
-  const linkRatio = account.link_post_ratio ?? 0.7;
+  const linkRatio = Math.min(1, Math.max(0, Number(account.link_post_ratio ?? 0.3)));
   const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
   const withoutLink = allDrafts.filter((p) => !productsPerTopic.has(p.topic_id));
   const times = createDailySchedule(account);

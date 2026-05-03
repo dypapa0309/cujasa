@@ -56,6 +56,25 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     };
   }, [currentUser?.email]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const threads = params.get('threads');
+    if (!threads) return;
+    const accountId = params.get('accountId');
+    if (accountId) {
+      const nextIndex = accounts.findIndex((item) => item.id === accountId);
+      if (nextIndex >= 0) setSelectedIdx(nextIndex);
+    }
+    setTab('settings');
+    if (threads === 'connected') toast('Threads 연결이 완료됐습니다.', 'success');
+    if (threads === 'error') toast(params.get('message') || 'Threads 연결에 실패했습니다.', 'error');
+    params.delete('threads');
+    params.delete('accountId');
+    params.delete('message');
+    const nextSearch = params.toString();
+    window.history.replaceState({}, '', `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`);
+  }, [accounts, toast]);
+
   const dismissAnnouncement = () => {
     if (announcement?.id) localStorage.setItem(`announcement:${announcement.id}:dismissed`, '1');
     setAnnouncement(null);
@@ -169,7 +188,8 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
                   className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-colors
                     ${selectedIdx === i ? 'bg-coupang text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-coupang hover:text-coupang'}`}
                 >
-                  {acc.name}
+                  <span>{acc.name}</span>
+                  <span className={`ml-2 inline-block h-2 w-2 rounded-full align-middle ${acc.threads_access_token ? 'bg-emerald-300' : 'bg-rose-300'}`} />
                 </button>
               ))}
               {canAdd && (

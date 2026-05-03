@@ -8,6 +8,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [connectingThreads, setConnectingThreads] = useState(false);
+  const [confirmingThreads, setConfirmingThreads] = useState(false);
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
@@ -26,6 +27,8 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
       forbidden_words: Array.isArray(account.forbidden_words) ? account.forbidden_words.join('\n') : '',
       daily_post_min: account.daily_post_min ?? 2,
       daily_post_max: account.daily_post_max ?? 4,
+      link_post_ratio: Number(account.link_post_ratio ?? 0.3),
+      no_link_post_ratio: Number(account.no_link_post_ratio ?? 0.7),
       active_time_windows: Array.isArray(account.active_time_windows) && account.active_time_windows.length
         ? account.active_time_windows
         : [{ start: '09:00', end: '22:00' }],
@@ -89,6 +92,19 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
       setConnectingThreads(false);
     }
   };
+  const linkRatio = Math.min(1, Math.max(0, Number(form.link_post_ratio ?? 0.3)));
+  const updateLinkRatio = (value) => {
+    const next = Number(value);
+    setForm((prev) => ({
+      ...prev,
+      link_post_ratio: next,
+      no_link_post_ratio: Number((1 - next).toFixed(2))
+    }));
+  };
+  const connectionLabel = account.threads_access_token
+    ? `연결됨${account.account_handle ? ` · ${account.account_handle}` : ''}`
+    : '미연결';
+  const connectionClass = account.threads_access_token ? 'text-emerald-600' : 'text-rose-500';
 
   if (!form) return (
     <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-400">
@@ -105,13 +121,19 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-sm font-bold text-gray-800">Threads 연결</div>
-              <div className={`mt-0.5 text-xs font-medium ${account.threads_access_token ? 'text-emerald-600' : 'text-rose-500'}`}>
-                {account.threads_access_token ? '연결됨' : '미연결'}
+              <div className={`mt-0.5 text-xs font-medium ${connectionClass}`}>
+                {connectionLabel}
+              </div>
+              {account.threads_token_status === 'refresh_failed' && (
+                <div className="mt-1 text-xs font-semibold text-amber-600">토큰 갱신 실패 · 다시 연결 필요</div>
+              )}
+              <div className="mt-1 text-xs text-gray-400">
+                이 CUJASA 계정에는 {account.account_handle || '입력한 Threads 핸들'} 계정만 연결할 수 있습니다.
               </div>
             </div>
             <button
               type="button"
-              onClick={connectThreads}
+              onClick={() => setConfirmingThreads(true)}
               disabled={connectingThreads}
               className="rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
             >
@@ -187,6 +209,26 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
           </div>
           <p className="text-xs text-gray-400 mt-2">이 시간대 안에서 랜덤하게 발행됩니다</p>
         </Field>
+        <Field label="링크 포함 포스트 비율">
+          <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
+            <div className="mb-2 flex items-center justify-between text-xs">
+              <span className="font-bold text-gray-700">링크 포함 {Math.round(linkRatio * 100)}%</span>
+              <span className="text-gray-400">일반 글 {Math.round((1 - linkRatio) * 100)}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={linkRatio}
+              onChange={(e) => updateLinkRatio(e.target.value)}
+              className="w-full accent-coupang"
+            />
+            <p className="mt-2 text-xs text-gray-400">
+              계정별로 쿠팡 링크가 들어가는 글의 비율을 조절합니다. 기본값은 링크 포함 30%입니다.
+            </p>
+          </div>
+        </Field>
       </Section>
 
       {running && (
@@ -201,6 +243,17 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
         {(saving || running) && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
         {saving ? '저장 중...' : running ? '실행 중 (잠시 기다려주세요)' : '저장하고 시작하기'}
       </button>
+      {confirmingThreads && (
+        <ThreadsConnectModal
+          account={account}
+          connecting={connectingThreads}
+          onCancel={() => setConfirmingThreads(false)}
+          onConfirm={() => {
+            setConfirmingThreads(false);
+            connectThreads();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -239,5 +292,28 @@ function Field({ label, children }) {
       <span className="font-medium text-gray-600">{label}</span>
       {children}
     </label>
+  );
+}
+
+function ThreadsConnectModal({ account, connecting, onCancel, onConfirm }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="text-lg font-black text-gray-900">Threads 계정 확인</div>
+        <div className="mt-3 grid gap-2 text-sm leading-relaxed text-gray-600">
+          <p>지금 연결하려는 CUJASA 계정은 <strong>{account.name}</strong>입니다.</p>
+          <p>현재 브라우저 또는 Threads 앱에서 <strong>{account.account_handle || '이 계정의 Threads 핸들'}</strong>로 로그인되어 있어야 합니다.</p>
+          <p className="text-xs text-gray-400">다른 Threads 계정으로 로그인된 상태라면 Threads에서 로그아웃한 뒤 다시 진행해주세요.</p>
+        </div>
+        <div className="mt-5 flex gap-2">
+          <button type="button" onClick={onCancel} className="flex-1 rounded-xl border border-gray-200 py-3 text-sm font-bold text-gray-500">
+            취소
+          </button>
+          <button type="button" onClick={onConfirm} disabled={connecting} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white disabled:opacity-50">
+            {connecting ? '이동 중...' : '확인하고 연결'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

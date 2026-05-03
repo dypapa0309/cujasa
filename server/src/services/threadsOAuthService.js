@@ -6,6 +6,10 @@ const THREADS_GRAPH_URL = 'https://graph.threads.net';
 const STATE_TTL_MS = 10 * 60 * 1000;
 const REFRESH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 
+function normalizeThreadsHandle(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase();
+}
+
 function getConfig() {
   const appId = process.env.THREADS_APP_ID;
   const appSecret = process.env.THREADS_APP_SECRET;
@@ -100,6 +104,12 @@ export async function completeThreadsOAuth({ code, state }) {
     throw error;
   }
   const { accountId } = verifyThreadsState(state);
+  const accountBeforeConnect = await dbGet('accounts', { id: accountId });
+  if (!accountBeforeConnect) {
+    const error = new Error('Account not found');
+    error.status = 404;
+    throw error;
+  }
   const { appId, appSecret, redirectUri } = getConfig();
 
   const shortToken = await requestJson(`${THREADS_GRAPH_URL}/oauth/access_token`, {
@@ -127,6 +137,23 @@ export async function completeThreadsOAuth({ code, state }) {
     access_token: longToken.access_token
   });
   const me = await requestJson(`${THREADS_GRAPH_URL}/me?${meParams.toString()}`);
+  const connectedHandle = normalizeThreadsHandle(me.username);
+  const expectedHandle = normalizeThreadsHandle(accountBeforeConnect.account_handle);
+  if (expectedHandle && connectedHandle && expectedHandle !== connectedHandle) {
+    const error = new Error(`선택한 계정은 @${expectedHandle}인데, 현재 Threads 로그인은 @${connectedHandle}입니다. Threads에서 올바른 계정으로 로그인한 뒤 다시 연결해주세요.`);
+    error.status = 409;
+    throw error;
+  }
+  if (me.id) {
+    const duplicate = (await dbList('accounts', { threads_user_id: me.id, status: 'active' }))
+      .find((row) => row.id !== accountId);
+    if (duplicate) {
+      const duplicateHandle = duplicate.account_handle || duplicate.name || '다른 계정';
+      const error = new Error(`이 Threads 계정은 이미 ${duplicateHandle}에 연결되어 있습니다. 기존 연결을 해제한 뒤 다시 시도해주세요.`);
+      error.status = 409;
+      throw error;
+    }
+  }
 
   const patch = {
     threads_access_token: longToken.access_token,

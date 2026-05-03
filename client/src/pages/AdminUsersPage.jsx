@@ -6,6 +6,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const toast = useToast();
   const [users, setUsers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [conflicts, setConflicts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ buyerName: '', email: '', password: '', maxAccounts: 2 });
@@ -14,12 +15,14 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [accountDrafts, setAccountDrafts] = useState({});
 
   const load = async () => {
-    const [nextUsers, nextProducts] = await Promise.all([
+    const [nextUsers, nextProducts, nextConflicts] = await Promise.all([
       api.get('/api/admin/users'),
       api.get('/api/admin/products'),
+      api.get('/api/admin/account-conflicts'),
     ]);
     setUsers(nextUsers);
     setProducts(nextProducts);
+    setConflicts(nextConflicts);
     setBuyerNameDrafts(Object.fromEntries(nextUsers.map((user) => [user.id, user.buyer_name || user.buyerName || ''])));
   };
 
@@ -150,6 +153,17 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     }
   };
 
+  const disconnectThreads = async (accountId) => {
+    if (!confirm('이 계정의 Threads 연결을 해제하고 고객에게 다시 연결 요청할까요?')) return;
+    try {
+      await api.post(`/api/admin/accounts/${accountId}/disconnect-threads`, {});
+      await load();
+      toast('Threads 연결을 해제했습니다.', 'success');
+    } catch (err) {
+      toast(err.message || 'Threads 연결 해제에 실패했습니다.', 'error');
+    }
+  };
+
   const unassignProduct = async (userId, productId) => {
     if (!confirm('제품 권한을 해제하시겠습니까?')) return;
     try {
@@ -216,6 +230,8 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
           </div>
         </form>
       )}
+
+      <ConflictPanel conflicts={conflicts} onDisconnect={disconnectThreads} />
 
       {loading ? (
         <div className="grid gap-3">{[...Array(3)].map((_, i) => <div key={i} className="h-24 animate-pulse rounded border border-line bg-white" />)}</div>
@@ -304,7 +320,12 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                       <div key={a.id} className="grid gap-2 rounded border border-line bg-gray-50 p-3 md:grid-cols-[1.4fr_1fr_auto_auto_auto] md:items-center">
                         <div>
                           <div className="text-sm font-semibold">{a.name}</div>
-                          <div className="text-xs text-slate-400">{a.account_handle || '핸들 미입력'} · Threads {a.threads_access_token ? '연결됨' : '미연결'}</div>
+                          <div className="text-xs text-slate-400">{a.account_handle || '핸들 미입력'} · Threads {connectionText(a)}</div>
+                          <div className="mt-1 text-[11px] text-slate-400">
+                            {a.threads_user_id ? `ID ${a.threads_user_id}` : 'Threads ID 없음'}
+                            {a.threads_connected_at ? ` · 연결 ${formatDateTime(a.threads_connected_at)}` : ''}
+                            {a.threads_token_expires_at ? ` · 만료 ${formatDateTime(a.threads_token_expires_at)}` : ''}
+                          </div>
                         </div>
                         <label className="grid gap-1 text-xs">
                           <span className="font-semibold text-slate-500">계정별 Tracking Code</span>
@@ -384,6 +405,67 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function connectionText(account) {
+  if (!account.threads_access_token) return '미연결';
+  if (account.threads_token_status === 'refresh_failed') return '갱신 실패';
+  return `연결됨${account.threads_token_status ? ` · ${account.threads_token_status}` : ''}`;
+}
+
+function formatDateTime(value) {
+  if (!value) return '';
+  try {
+    return new Date(value).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return value;
+  }
+}
+
+function ConflictPanel({ conflicts, onDisconnect }) {
+  if (!conflicts?.length) {
+    return (
+      <div className="rounded border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        계정 충돌 점검: 현재 감지된 중복 연결/다중 할당 문제가 없습니다.
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-3 rounded border border-amber-200 bg-amber-50 p-4">
+      <div>
+        <div className="text-sm font-black text-amber-900">계정 충돌 점검</div>
+        <div className="text-xs text-amber-700">중복 연결은 고객 재연결 전 먼저 해제하는 것이 안전합니다.</div>
+      </div>
+      <div className="grid gap-2">
+        {conflicts.map((conflict, index) => (
+          <div key={`${conflict.type}-${conflict.key}-${index}`} className="rounded border border-amber-200 bg-white p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${conflict.severity === 'error' ? 'bg-rose-50 text-rose-600' : 'bg-amber-100 text-amber-700'}`}>
+                {conflict.severity === 'error' ? '오류' : '주의'}
+              </span>
+              <span className="text-sm font-bold text-slate-800">{conflict.label}</span>
+              <span className="text-xs text-slate-400">{conflict.key}</span>
+            </div>
+            <div className="mt-2 grid gap-1 text-xs text-slate-500">
+              {conflict.accounts?.map((account) => (
+                <div key={account.id} className="flex flex-wrap items-center gap-2">
+                  <span>{account.label || account.name}</span>
+                  {(conflict.type === 'duplicate_threads_user_id' || conflict.type === 'duplicate_account_handle') && (
+                    <button type="button" onClick={() => onDisconnect(account.id)} className="rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-rose-500 hover:border-rose-300">
+                      Threads 해제
+                    </button>
+                  )}
+                </div>
+              ))}
+              {conflict.users?.length > 0 && (
+                <div>고객: {conflict.users.map((user) => user.email).join(', ')}</div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

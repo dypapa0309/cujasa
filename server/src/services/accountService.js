@@ -3,6 +3,10 @@ import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.j
 function normalizeAccount(payload) {
   const next = { ...payload };
   if (next.status && !['active', 'paused', 'archived'].includes(next.status)) next.status = 'paused';
+  if (next.account_handle != null) {
+    const handle = String(next.account_handle).trim();
+    next.account_handle = handle ? `@${handle.replace(/^@/, '')}` : '';
+  }
   if (!Array.isArray(next.forbidden_topics)) next.forbidden_topics = next.forbidden_topics ? [String(next.forbidden_topics)] : [];
   if (!Array.isArray(next.forbidden_words)) next.forbidden_words = next.forbidden_words ? [String(next.forbidden_words)] : [];
   if (!Array.isArray(next.active_time_windows) || next.active_time_windows.length === 0) {

@@ -16,6 +16,79 @@ import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js
 
 const router = Router();
 
+function normalizeHandle(value) {
+  return String(value || '').trim().replace(/^@/, '').toLowerCase();
+}
+
+function accountLabel(account) {
+  return [account?.name, account?.account_handle].filter(Boolean).join(' · ');
+}
+
+async function buildAccountConflicts() {
+  const [accounts, userAccounts, users] = await Promise.all([
+    dbList('accounts'),
+    dbList('user_accounts'),
+    dbList('users')
+  ]);
+  const activeAccounts = accounts.filter((account) => account.status === 'active');
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  const conflicts = [];
+
+  const byThreadsUserId = new Map();
+  activeAccounts.forEach((account) => {
+    if (!account.threads_user_id) return;
+    const key = account.threads_user_id;
+    byThreadsUserId.set(key, [...(byThreadsUserId.get(key) || []), account]);
+  });
+  byThreadsUserId.forEach((rows, key) => {
+    if (rows.length < 2) return;
+    conflicts.push({
+      type: 'duplicate_threads_user_id',
+      label: '같은 Threads 계정 중복 연결',
+      key,
+      severity: 'error',
+      accounts: rows.map((account) => ({ id: account.id, name: account.name, accountHandle: account.account_handle, label: accountLabel(account) }))
+    });
+  });
+
+  const byHandle = new Map();
+  activeAccounts.forEach((account) => {
+    const key = normalizeHandle(account.account_handle);
+    if (!key) return;
+    byHandle.set(key, [...(byHandle.get(key) || []), account]);
+  });
+  byHandle.forEach((rows, key) => {
+    if (rows.length < 2) return;
+    conflicts.push({
+      type: 'duplicate_account_handle',
+      label: '같은 Threads 핸들 중복 등록',
+      key: `@${key}`,
+      severity: 'warn',
+      accounts: rows.map((account) => ({ id: account.id, name: account.name, accountHandle: account.account_handle, label: accountLabel(account) }))
+    });
+  });
+
+  const byAssignedAccount = new Map();
+  userAccounts.forEach((link) => {
+    byAssignedAccount.set(link.account_id, [...(byAssignedAccount.get(link.account_id) || []), link]);
+  });
+  byAssignedAccount.forEach((links, accountId) => {
+    const uniqueUsers = [...new Set(links.map((link) => link.user_id))];
+    if (uniqueUsers.length < 2) return;
+    const account = accounts.find((item) => item.id === accountId);
+    conflicts.push({
+      type: 'account_assigned_to_multiple_users',
+      label: '한 계정이 여러 고객에게 할당됨',
+      key: accountLabel(account) || accountId,
+      severity: 'error',
+      accounts: account ? [{ id: account.id, name: account.name, accountHandle: account.account_handle, label: accountLabel(account) }] : [],
+      users: uniqueUsers.map((userId) => ({ id: userId, email: usersById.get(userId)?.email || userId }))
+    });
+  });
+
+  return conflicts;
+}
+
 // 관리자만 접근 가능
 function adminOnly(req, res, next) {
   if (req.user?.type !== 'admin') return res.status(403).json({ error: 'Admin only' });
@@ -34,6 +107,25 @@ router.get('/operations/accounts', async (req, res, next) => {
 
 router.get('/setup-tasks', async (req, res, next) => {
   try { res.json(await listSetupTasks()); } catch (e) { next(e); }
+});
+
+router.get('/account-conflicts', async (req, res, next) => {
+  try { res.json(await buildAccountConflicts()); } catch (e) { next(e); }
+});
+
+router.post('/accounts/:accountId/disconnect-threads', async (req, res, next) => {
+  try {
+    const [updated] = await dbUpdate('accounts', { id: req.params.accountId }, {
+      threads_access_token: null,
+      threads_user_id: null,
+      threads_token_expires_at: null,
+      threads_token_status: 'not_connected',
+      threads_connected_at: null,
+      last_threads_refresh_at: null
+    });
+    if (!updated) return res.status(404).json({ error: 'Account not found' });
+    res.json(updated);
+  } catch (e) { next(e); }
 });
 
 router.patch('/setup-tasks/:id', async (req, res, next) => {
@@ -149,6 +241,11 @@ router.post('/users/:id/accounts', async (req, res, next) => {
     const existing = await dbList('user_accounts', { user_id: req.params.id });
     if (existing.length >= user.max_accounts) {
       return res.status(403).json({ error: `계정 한도 초과 (최대 ${user.max_accounts}개)` });
+    }
+    const assignedElsewhere = await dbList('user_accounts', { account_id: accountId });
+    const otherOwner = assignedElsewhere.find((row) => row.user_id !== req.params.id);
+    if (otherOwner) {
+      return res.status(409).json({ error: '이미 다른 고객에게 할당된 계정입니다.' });
     }
     const ua = await dbInsert('user_accounts', { user_id: req.params.id, account_id: accountId });
     res.status(201).json(ua);
