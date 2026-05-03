@@ -84,9 +84,14 @@ export async function getProduct(productId) {
 
 export function mapPayment(row) {
   if (!row) return null;
-  const virtualAccount = typeof row.virtual_account_json === 'string'
-    ? JSON.parse(row.virtual_account_json)
-    : row.virtual_account_json;
+  let virtualAccount = row.virtual_account_json;
+  if (typeof virtualAccount === 'string') {
+    try {
+      virtualAccount = JSON.parse(virtualAccount);
+    } catch {
+      virtualAccount = null;
+    }
+  }
   return {
     id: row.id,
     productId: row.product_id,
@@ -217,6 +222,9 @@ router.post('/toss/success', async (req, res, next) => {
     if (!payment || payment.user_id !== user.userId) return res.status(404).json({ error: '결제 주문을 찾을 수 없습니다.' });
     if (Number(amount) !== Number(payment.amount)) return res.status(400).json({ error: '결제 금액이 일치하지 않습니다.' });
     if (payment.status === 'paid') return res.json({ payment: mapPayment(payment), duplicated: true });
+    if (payment.status === 'waiting_for_deposit' && payment.payment_key) {
+      return res.json({ payment: mapPayment(payment), duplicated: true });
+    }
 
     const product = await getProduct(payment.product_id);
     const approved = await tossPost('/v1/payments/confirm', { paymentKey, orderId, amount: Number(amount) });
@@ -395,7 +403,9 @@ export async function tossWebhook(req, res, next) {
     if (!orderId) return res.status(400).json({ error: 'orderId is required' });
     const payment = await dbGet('billing_payments', { order_id: orderId });
     if (!payment) return res.status(404).json({ error: '결제를 찾을 수 없습니다.' });
-    if (payment.secret && payment.secret !== secret) return res.status(403).json({ error: '웹훅 secret이 일치하지 않습니다.' });
+    if (['DONE', 'WAITING_FOR_DEPOSIT'].includes(status) && (!payment.secret || !secret || payment.secret !== secret)) {
+      return res.status(403).json({ error: '웹훅 secret이 일치하지 않습니다.' });
+    }
 
     if (status === 'DONE' && payment.status !== 'paid') {
       const product = await getProduct(payment.product_id);

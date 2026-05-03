@@ -87,6 +87,9 @@ router.post('/toss/success', async (req, res, next) => {
     if (!payment) return res.status(404).json({ error: '결제 주문을 찾을 수 없습니다.' });
     if (Number(amount) !== Number(payment.amount)) return res.status(400).json({ error: '결제 금액이 일치하지 않습니다.' });
     if (payment.status === 'paid') return res.json({ payment: mapPayment(payment), duplicated: true });
+    if (payment.status === 'waiting_for_deposit' && payment.payment_key) {
+      return res.json({ payment: mapPayment(payment), duplicated: true });
+    }
 
     const product = await getProduct(payment.product_id);
     const approved = await tossPost('/v1/payments/confirm', { paymentKey, orderId, amount: Number(amount) });

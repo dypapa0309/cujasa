@@ -16,7 +16,7 @@ function stripLinkCta(text) {
 }
 
 function buildPostText(post) {
-  return stripLinkCta(post.body);
+  return stripLinkCta(post.body) || String(post.body || '').trim();
 }
 
 function buildReplyText(linkUrl) {
@@ -49,6 +49,16 @@ async function postReply(token, postId, text) {
   }
 }
 
+function threadsError(label, body) {
+  const message = `${label}: ${body}`;
+  const error = new Error(message);
+  if (/OAuth|access token|Cannot parse access token|token/i.test(message)) {
+    error.code = 'THREADS_TOKEN_INVALID';
+    error.permanent = true;
+  }
+  return error;
+}
+
 export async function uploadPost({ account, post, cta, trackingLink }) {
   const token = account.threads_access_token;
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
@@ -61,10 +71,19 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
     return { postUrl: url, raw: { mock: true } };
   }
   if (!token) {
-    throw new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');
+    const error = new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');
+    error.code = 'THREADS_TOKEN_MISSING';
+    error.permanent = true;
+    throw error;
   }
 
   const text = buildPostText(post, cta);
+  if (!text) {
+    const error = new Error('Threads post text is empty after content cleanup. 콘텐츠 본문을 다시 생성해주세요.');
+    error.code = 'POST_BODY_EMPTY';
+    error.permanent = true;
+    throw error;
+  }
 
   const containerRes = await fetch(`${THREADS_API}/me/threads`, {
     method: 'POST',
@@ -73,7 +92,7 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   });
   if (!containerRes.ok) {
     const err = await containerRes.text();
-    throw new Error(`Threads container create failed: ${err}`);
+    throw threadsError('Threads container create failed', err);
   }
   const { id: creationId } = await containerRes.json();
 
@@ -86,7 +105,7 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   });
   if (!publishRes.ok) {
     const err = await publishRes.text();
-    throw new Error(`Threads publish failed: ${err}`);
+    throw threadsError('Threads publish failed', err);
   }
   const { id: postId } = await publishRes.json();
 

@@ -77,9 +77,14 @@ export async function createDailyQueue(accountId) {
   const total = times.length;
   const linkCount = Math.round(total * linkRatio);
   const noLinkCount = total - linkCount;
+  const primaryWithLink = withLink.slice(0, linkCount);
+  const primaryWithoutLink = withoutLink.slice(0, noLinkCount);
+  const usedPostIds = new Set([...primaryWithLink, ...primaryWithoutLink].map((post) => post.id));
+  const fill = [...withLink, ...withoutLink].filter((post) => !usedPostIds.has(post.id));
   const drafts = [
-    ...withLink.slice(0, linkCount),
-    ...withoutLink.slice(0, noLinkCount)
+    ...primaryWithLink,
+    ...primaryWithoutLink,
+    ...fill
   ].slice(0, total);
   const queued = [];
   for (const [index, post] of drafts.slice(0, times.length).entries()) {
@@ -104,9 +109,19 @@ export async function processDueQueue() {
 
 export async function uploadQueueItem(queueId) {
   const queue = await dbGet('post_queue', { id: queueId });
+  if (!queue) {
+    const error = new Error('Queue item not found');
+    error.status = 404;
+    throw error;
+  }
   const account = await dbGet('accounts', { id: queue.account_id });
   const post = await dbGet('posts', { id: queue.post_id });
   try {
+    if (!post) {
+      const error = new Error('Post not found for queue item');
+      error.permanent = true;
+      throw error;
+    }
     if (account?.status !== 'active') {
       await logActivity({ account_id: queue.account_id, project_id: queue.project_id, post_id: queue.post_id, action: 'upload_skipped_inactive_account', level: 'warn', message: account?.status || 'missing' });
       return (await dbUpdate('post_queue', { id: queueId }, { status: 'skipped', error_message: `Account is ${account?.status || 'missing'}` }))[0];
@@ -154,7 +169,10 @@ export async function uploadQueueItem(queueId) {
     return updated;
   } catch (error) {
     const retry = (queue.retry_count || 0) + 1;
-    const status = retry >= 3 ? 'manual_required' : 'retry';
+    const status = error.permanent || retry >= 3 ? 'manual_required' : 'retry';
+    if (error.code === 'THREADS_TOKEN_INVALID' || error.code === 'THREADS_TOKEN_MISSING') {
+      await dbUpdate('accounts', { id: queue.account_id }, { threads_token_status: 'refresh_failed' });
+    }
     const [updated] = await dbUpdate('post_queue', { id: queueId }, { status, retry_count: retry, error_message: error.message });
     await logActivity({ account_id: queue.account_id, project_id: queue.project_id, action: 'upload_failed', level: 'error', message: error.message });
     return updated;
