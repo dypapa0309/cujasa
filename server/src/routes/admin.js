@@ -12,6 +12,7 @@ import {
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
 import { hashPassword } from '../utils/password.js';
 import { operationAccountRows, operationSummary } from '../services/operationsService.js';
+import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js';
 
 const router = Router();
 
@@ -29,6 +30,14 @@ router.get('/operations/summary', async (req, res, next) => {
 
 router.get('/operations/accounts', async (req, res, next) => {
   try { res.json(await operationAccountRows()); } catch (e) { next(e); }
+});
+
+router.get('/setup-tasks', async (req, res, next) => {
+  try { res.json(await listSetupTasks()); } catch (e) { next(e); }
+});
+
+router.patch('/setup-tasks/:id', async (req, res, next) => {
+  try { res.json(await updateSetupTask(req.params.id, req.body || {})); } catch (e) { next(e); }
 });
 
 // 구매자 목록

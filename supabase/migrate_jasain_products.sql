@@ -16,7 +16,7 @@ alter table user_accounts add column if not exists updated_at timestamptz not nu
 insert into jasain_products (id, name, description, app_url, landing_url, status)
 values
   ('cujasa', 'CUJASA', '쿠팡 파트너스 자동화 콘솔', 'https://cujasa.jasain.kr', 'https://jasain.kr/cujasa', 'active'),
-  ('dexor', 'DEXOR', '블로그 분석 및 선정 자동화', 'https://dexor.jasain.kr', 'https://jasain.kr/dexor', 'active')
+  ('dexor', 'DEXOR', '블로그 분석 및 선정 자동화', 'https://dexor-pearl.vercel.app/', 'https://jasain.kr/dexor', 'active')
 on conflict (id) do update set
   name = excluded.name,
   description = excluded.description,

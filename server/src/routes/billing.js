@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
+import { ensureSetupTaskForPayment } from '../services/setupTaskService.js';
+import { grantUserProduct } from '../services/authService.js';
 
 const router = Router();
 const BASIC_MAX_ACCOUNTS = 2;
@@ -11,12 +13,12 @@ const addMonths = (date, months) => {
   return next;
 };
 
-const appBaseUrl = () => (process.env.CLIENT_BASE_URL || process.env.APP_BASE_URL || 'http://localhost:5173').split(',')[0].trim();
-const tossClientKey = () => process.env.TOSS_CLIENT_KEY || 'test_ck_dev_placeholder';
-const tossSecretKey = () => process.env.TOSS_SECRET_KEY || '';
+export const appBaseUrl = () => (process.env.CLIENT_BASE_URL || process.env.APP_BASE_URL || 'http://localhost:5173').split(',')[0].trim();
+export const tossClientKey = () => process.env.TOSS_CLIENT_KEY || 'test_ck_dev_placeholder';
+export const tossSecretKey = () => process.env.TOSS_SECRET_KEY || '';
 const tossBillingSecretKey = () => process.env.TOSS_BILLING_SECRET_KEY || tossSecretKey();
-const makeOrderId = (prefix = 'CUJASA') => `${prefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
-const customerKeyFor = (userId) => `cujasa-${userId}`;
+export const makeOrderId = (prefix = 'CUJASA') => `${prefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+export const customerKeyFor = (userId) => `cujasa-${userId}`;
 
 function requireCustomer(req, res) {
   if (req.user?.type !== 'user') {
@@ -30,7 +32,7 @@ function tossAuth(secret = tossSecretKey()) {
   return `Basic ${Buffer.from(`${secret}:`).toString('base64')}`;
 }
 
-async function tossPost(path, body, secret = tossSecretKey()) {
+export async function tossPost(path, body, secret = tossSecretKey()) {
   if (!secret) {
     if (path === '/v1/payments/confirm') {
       return {
@@ -70,7 +72,7 @@ async function activeProducts() {
   return dbList('billing_products', { active: true }, { order: 'amount', ascending: false });
 }
 
-async function getProduct(productId) {
+export async function getProduct(productId) {
   const product = await dbGet('billing_products', { id: productId });
   if (!product?.active) {
     const error = new Error('유효한 결제 상품을 선택해주세요.');
@@ -80,7 +82,7 @@ async function getProduct(productId) {
   return product;
 }
 
-function mapPayment(row) {
+export function mapPayment(row) {
   if (!row) return null;
   const virtualAccount = typeof row.virtual_account_json === 'string'
     ? JSON.parse(row.virtual_account_json)
@@ -117,7 +119,7 @@ function mapSubscription(row) {
   };
 }
 
-async function activateUser({ userId, plan, billingStatus, paidUntil, maxAccounts = BASIC_MAX_ACCOUNTS }) {
+export async function activateUser({ userId, plan, billingStatus, paidUntil, maxAccounts = BASIC_MAX_ACCOUNTS }) {
   const user = await dbGet('users', { id: userId });
   const nextMaxAccounts = Math.max(Number(user?.max_accounts || 0), maxAccounts);
   const [updated] = await dbUpdate('users', { id: userId }, {
@@ -129,7 +131,7 @@ async function activateUser({ userId, plan, billingStatus, paidUntil, maxAccount
   return updated;
 }
 
-async function markPaymentPaid(payment, approved, paidAt = new Date().toISOString()) {
+export async function markPaymentPaid(payment, approved, paidAt = new Date().toISOString()) {
   if (payment.status === 'paid') return payment;
   const [updated] = await dbUpdate('billing_payments', { id: payment.id }, {
     status: 'paid',
@@ -236,6 +238,8 @@ router.post('/toss/success', async (req, res, next) => {
         paidUntil: null,
         maxAccounts: product.max_accounts
       });
+      await grantUserProduct(user.userId, 'cujasa', { status: 'active', role: 'customer' });
+      await ensureSetupTaskForPayment(updated);
     } else {
       await dbUpdate('users', { id: user.userId }, { billing_status: 'pending' });
     }
@@ -403,6 +407,8 @@ export async function tossWebhook(req, res, next) {
         paidUntil: product.billing_cycle === 'monthly' ? addMonths(new Date(), 1).toISOString() : null,
         maxAccounts: product.max_accounts
       });
+      await grantUserProduct(payment.user_id, 'cujasa', { status: 'active', role: 'customer' });
+      await ensureSetupTaskForPayment(updated);
       return res.json({ ok: true, payment: mapPayment(updated) });
     }
 

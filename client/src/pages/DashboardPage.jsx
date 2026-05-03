@@ -108,7 +108,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
         <OpsCard label="계정" value={`${summary?.cards?.accountsActive ?? 0}/${summary?.cards?.accountsTotal ?? 0}`} hint="활성 / 전체" tone="ok" />
         <OpsCard label="오늘 예약" value={summary?.cards?.scheduledToday ?? 0} hint={`오늘 업로드 완료 ${summary?.cards?.postedToday ?? 0}개`} tone="ok" />
         <OpsCard label="실패/검토" value={summary?.cards?.queueProblems ?? 0} hint="failed · retry · manual_required" tone={(summary?.cards?.queueProblems ?? 0) > 0 ? 'error' : 'ok'} />
-        <OpsCard label="연결 문제" value={summary?.cards?.threadsProblems ?? 0} hint={`mock 의심 ${summary?.cards?.mockUploads ?? 0}개`} tone={(summary?.cards?.threadsProblems ?? 0) > 0 ? 'warn' : 'ok'} />
+        <OpsCard label="연결 문제" value={summary?.cards?.threadsProblems ?? 0} hint={`테스트 업로드 ${summary?.cards?.mockUploads ?? 0}개`} tone={(summary?.cards?.threadsProblems ?? 0) > 0 ? 'warn' : 'ok'} />
       </div>
 
       <section className="rounded border border-line bg-white">
@@ -183,15 +183,15 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
                   </td>
                   <td className="px-4 py-3">
                     <div className="font-semibold">예약 {row.todayScheduled} · 완료 {row.todayPosted}</div>
-                    <div className="text-xs text-slate-400">실패/검토 {row.failedCount} · mock {row.mockCount}</div>
+                    <div className="text-xs text-slate-400">실패/검토 {row.failedCount} · 테스트 {row.mockCount}</div>
                   </td>
                   <td className="px-4 py-3">
                     {row.pipelineRun?.status === 'running' ? (
                       <div className="inline-flex items-center gap-1 text-xs font-bold text-blue-600"><Clock3 size={13} />자동화 실행 중</div>
                     ) : row.lastActivity ? (
                       <>
-                        <div className="text-xs font-medium text-slate-600">{row.lastActivity.action}</div>
-                        <div className="mt-0.5 max-w-[220px] truncate text-xs text-slate-400">{row.lastActivity.message || '-'}</div>
+                        <div className="text-xs font-medium text-slate-600">{activityLabel(row.lastActivity.action)}</div>
+                        <div className="mt-0.5 max-w-[220px] truncate text-xs text-slate-400" title={row.lastActivity.message || ''}>{activityMessage(row.lastActivity) || '-'}</div>
                       </>
                     ) : (
                       <span className="text-xs text-slate-400">활동 없음</span>
@@ -247,6 +247,28 @@ function IconButton({ title, onClick, children }) {
 
 function healthLabel(status) {
   return status === 'ok' ? '정상' : status === 'running' ? '실행 중' : status === 'error' ? '오류' : '주의';
+}
+
+function activityLabel(action) {
+  return ({
+    post_style_blocked: '콘텐츠 후보 제외',
+    queue_guardrail_skipped: '콘텐츠 후보 제외',
+    upload_reply_failed: '댓글/링크 답글 실패',
+    upload_failed: '업로드 실패',
+    upload_completed: '업로드 완료',
+    threads_oauth_connected: 'Threads 연결됨',
+    pipeline_queue_created: '예약 큐 생성',
+    account_generated_content_cleared: '생성 산출물 삭제',
+    upload_skipped_inactive_account: '비활성 계정 제외'
+  })[action] || action;
+}
+
+function activityMessage(activity) {
+  if (!activity) return '';
+  if (activity.action === 'post_style_blocked') return `톤 불일치: ${activity.message || '계정 톤 규칙에 맞지 않아 제외'}`;
+  if (activity.action === 'queue_guardrail_skipped') return activity.message || '콘텐츠 안전 규칙에 맞지 않아 제외';
+  if (activity.action === 'upload_reply_failed') return '본문 업로드 완료, 댓글/링크 답글은 재시도 필요';
+  return activity.message || '';
 }
 
 function Spinner() {

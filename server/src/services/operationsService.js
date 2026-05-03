@@ -105,7 +105,7 @@ export async function operationAccountRows() {
     if (coupang.status === 'error') pushProblem(problems, account, 'error', 'coupang', '쿠팡 API 키 누락', coupang.missing.join(', '));
     if (account.status === 'active' && todayScheduled === 0) pushProblem(problems, account, 'warn', 'no_schedule', '오늘 예약 없음');
     if (failedCount > 0) pushProblem(problems, account, 'error', 'queue_failed', `실패/검토 ${failedCount}건`);
-    if (mockCount > 0) pushProblem(problems, account, 'warn', 'mock_upload', `Mock 업로드 ${mockCount}건`);
+    if (mockCount > 0) pushProblem(problems, account, 'warn', 'mock_upload', `테스트 업로드 흔적 ${mockCount}건`);
     if (fallbackRatio >= 0.5 && accountProducts.length >= 5) pushProblem(problems, account, 'warn', 'fallback_products', `fallback 상품 ${Math.round(fallbackRatio * 100)}%`);
     if (lastActivity?.action === 'pipeline_failed' || pipelineRun?.status === 'failed') {
       pushProblem(problems, account, 'error', 'pipeline_failed', '최근 파이프라인 실패', pipelineRun?.error_message || lastActivity?.message || '');

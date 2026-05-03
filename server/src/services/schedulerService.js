@@ -140,6 +140,17 @@ export async function uploadQueueItem(queueId) {
     await dbUpdate('posts', { id: post.id }, { status: 'posted' });
     await createMetricJobs(updated);
     await logActivity({ account_id: account.id, project_id: account.project_id, post_id: post.id, action: 'upload_completed', message: uploaded.postUrl });
+    if (uploaded.raw?.replyWarning) {
+      await logActivity({
+        account_id: account.id,
+        project_id: account.project_id,
+        post_id: post.id,
+        action: 'upload_reply_failed',
+        level: 'warn',
+        message: uploaded.raw.replyWarning,
+        payload: { postUrl: uploaded.postUrl }
+      });
+    }
     return updated;
   } catch (error) {
     const retry = (queue.retry_count || 0) + 1;

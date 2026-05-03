@@ -55,10 +55,13 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   const linkUrl = trackingLink ? `${baseUrl}/r/${trackingLink.code}` : null;
   const replyText = buildReplyText(linkUrl);
 
-  if (!token || process.env.MOCK_UPLOAD === 'true') {
+  if (process.env.MOCK_UPLOAD === 'true') {
     const url = `${baseUrl}/mock/threads/${post.id}`;
     console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: buildPostText(post, cta), comment: replyText });
     return { postUrl: url, raw: { mock: true } };
+  }
+  if (!token) {
+    throw new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');
   }
 
   const text = buildPostText(post, cta);
@@ -87,9 +90,17 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   }
   const { id: postId } = await publishRes.json();
 
-  if (!hasDisclosure(text) || linkUrl) await postReply(token, postId, replyText);
+  let replyWarning = null;
+  if (!hasDisclosure(text) || linkUrl) {
+    try {
+      await postReply(token, postId, replyText);
+    } catch (error) {
+      replyWarning = error.message;
+      console.warn('[THREADS REPLY WARNING]', { account: account.name, postId, error: error.message });
+    }
+  }
 
   const handle = account.account_handle?.replace('@', '') || 'unknown';
   const postUrl = `https://www.threads.net/@${handle}/post/${postId}`;
-  return { postUrl, raw: { creationId, postId } };
+  return { postUrl, raw: { creationId, postId, ...(replyWarning ? { replyWarning } : {}) } };
 }

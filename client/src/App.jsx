@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ToastProvider } from './lib/toast.jsx';
-import { LayoutDashboard, Settings, Users, Wand2, Boxes, ListChecks, BarChart3, ShieldCheck, Megaphone } from 'lucide-react';
+import { LayoutDashboard, Settings, Users, Wand2, Boxes, ListChecks, BarChart3, ShieldCheck, Megaphone, ClipboardCheck } from 'lucide-react';
 import DashboardPage from './pages/DashboardPage.jsx';
 import AccountListPage from './pages/AccountListPage.jsx';
 import AccountSettingsPage from './pages/AccountSettingsPage.jsx';
@@ -12,6 +12,7 @@ import SettingsPage from './pages/SettingsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import AdminUsersPage from './pages/AdminUsersPage.jsx';
 import AdminAnnouncementsPage from './pages/AdminAnnouncementsPage.jsx';
+import AdminSetupPage from './pages/AdminSetupPage.jsx';
 import CustomerApp from './pages/customer/CustomerApp.jsx';
 import { api, getAuthToken, setAuthToken } from './lib/api.js';
 import { CURRENT_PRODUCT, JASAIN_BRAND } from './config/products.js';
@@ -25,6 +26,7 @@ const adminTabs = [
   ['analytics', '애널리틱스', BarChart3],
   ['settings', '설정', Settings],
   ['admin-users', '고객/권한 관리', ShieldCheck],
+  ['admin-setup', '셋업 대기', ClipboardCheck],
   ['admin-announcements', '공지 관리', Megaphone],
 ];
 
@@ -47,6 +49,7 @@ const pages = {
   analytics: AnalyticsPage,
   settings: SettingsPage,
   'admin-users': AdminUsersPage,
+  'admin-setup': AdminSetupPage,
   'admin-announcements': AdminAnnouncementsPage,
 };
 

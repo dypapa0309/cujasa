@@ -212,7 +212,7 @@ export async function loginUser(email, password) {
   return { token, type: 'user', email: user.email, userId: user.id, maxAccounts: user.max_accounts, products };
 }
 
-export async function createUser(email, password, maxAccounts = 2, buyerName = '') {
+export async function createUser(email, password, maxAccounts = 2, buyerName = '', options = {}) {
   const existing = await dbGet('users', { email: email.trim().toLowerCase() });
   if (existing) {
     const error = new Error('이미 존재하는 이메일입니다.');
@@ -227,10 +227,12 @@ export async function createUser(email, password, maxAccounts = 2, buyerName = '
     status: 'active',
     billing_status: 'none'
   });
-  try {
-    await grantUserProduct(user.id, DEFAULT_PRODUCT_ID);
-  } catch {
-    // Product grants depend on the JASAIN migration. Do not block account creation if it has not been applied yet.
+  if (options.grantDefault !== false) {
+    try {
+      await grantUserProduct(user.id, DEFAULT_PRODUCT_ID);
+    } catch {
+      // Product grants depend on the JASAIN migration. Do not block account creation if it has not been applied yet.
+    }
   }
   return user;
 }

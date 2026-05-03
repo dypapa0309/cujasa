@@ -19,6 +19,7 @@ import blogRouter from './routes/blog.js';
 import adminRouter from './routes/admin.js';
 import inquiriesRouter from './routes/inquiries.js';
 import billingRouter, { tossWebhook } from './routes/billing.js';
+import publicCheckoutRouter from './routes/publicCheckout.js';
 import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { processDueQueue } from './services/schedulerService.js';
@@ -36,6 +37,7 @@ const allowedOrigins = new Set([
   'https://app.jasain.kr',
   'https://cujasa.jasain.kr',
   'https://dexor.jasain.kr',
+  'https://dexor-pearl.vercel.app',
   'https://cujasa.vercel.app',
   'https://cujasa.onrender.com'
 ]);
@@ -92,6 +94,7 @@ app.use('/blog', blogRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/inquiries', inquiriesRouter);
 app.use('/api/billing', billingRouter);
+app.use('/api/public/checkout', publicCheckoutRouter);
 app.post('/api/webhooks/toss', tossWebhook);
 
 // sitemap.xml (블로그 글 포함 자동 생성)

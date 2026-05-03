@@ -1,7 +1,15 @@
 import { isTokenConfigured, listUserProducts, shouldBypassAuth, verifyToken } from '../services/authService.js';
 import { dbList } from '../services/supabaseService.js';
 
-const publicPaths = ['/api/health', '/api/auth/login', '/api/auth/threads/callback', '/api/inquiries', '/api/webhooks/toss'];
+const publicPaths = [
+  '/api/health',
+  '/api/auth/login',
+  '/api/auth/threads/callback',
+  '/api/inquiries',
+  '/api/webhooks/toss',
+  '/api/public/checkout/virtual-account',
+  '/api/public/checkout/toss/success'
+];
 
 export async function requireAuth(req, res, next) {
   try {

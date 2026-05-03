@@ -74,7 +74,7 @@ const tables = {
       id: 'dexor',
       name: 'DEXOR',
       description: '블로그 분석 및 선정 자동화',
-      app_url: 'https://dexor.jasain.kr',
+      app_url: 'https://dexor-pearl.vercel.app/',
       landing_url: 'https://jasain.kr/dexor',
       status: 'active',
       created_at: now(),
@@ -105,7 +105,8 @@ const tables = {
     }
   ],
   billing_payments: [],
-  billing_subscriptions: []
+  billing_subscriptions: [],
+  setup_tasks: []
 };
 
 const matches = (row, filters) => Object.entries(filters).every(([key, value]) => row[key] === value);

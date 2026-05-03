@@ -261,6 +261,7 @@ create table if not exists users (
   email text not null unique,
   password_hash text not null,
   buyer_name text,
+  phone text,
   status text not null default 'active' check (status in ('active', 'suspended')),
   max_accounts int not null default 2,
   plan text,
@@ -272,6 +273,7 @@ create table if not exists users (
 
 alter table users alter column max_accounts set default 2;
 alter table users add column if not exists buyer_name text;
+alter table users add column if not exists phone text;
 alter table users add column if not exists plan text;
 alter table users add column if not exists billing_status text not null default 'none';
 alter table users add column if not exists paid_until timestamptz;
@@ -299,7 +301,7 @@ create table if not exists jasain_products (
 insert into jasain_products (id, name, description, app_url, landing_url, status)
 values
   ('cujasa', 'CUJASA', '쿠팡 파트너스 자동화 콘솔', 'https://cujasa.jasain.kr', 'https://jasain.kr/cujasa', 'active'),
-  ('dexor', 'DEXOR', '블로그 분석 및 선정 자동화', 'https://dexor.jasain.kr', 'https://jasain.kr/dexor', 'active')
+  ('dexor', 'DEXOR', '블로그 분석 및 선정 자동화', 'https://dexor-pearl.vercel.app/', 'https://jasain.kr/dexor', 'active')
 on conflict (id) do update set
   name = excluded.name,
   description = excluded.description,
@@ -409,3 +411,28 @@ create index if not exists idx_user_products_product on user_products(product_id
 create index if not exists idx_billing_payments_user on billing_payments(user_id, created_at desc);
 create index if not exists idx_billing_payments_order on billing_payments(order_id);
 create index if not exists idx_billing_subscriptions_user on billing_subscriptions(user_id, status);
+
+create table if not exists setup_tasks (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  payment_id uuid references billing_payments(id) on delete set null,
+  product_id text not null default 'onetime_590000',
+  app_product_id text not null default 'cujasa',
+  buyer_name text,
+  email text,
+  phone text,
+  amount int,
+  paid_at timestamptz,
+  status text not null default 'pending' check (status in ('pending', 'in_progress', 'completed', 'canceled')),
+  source text not null default 'payment',
+  notes text,
+  notified_at timestamptz,
+  started_at timestamptz,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(payment_id)
+);
+
+create index if not exists idx_setup_tasks_status on setup_tasks(status, created_at desc);
+create index if not exists idx_setup_tasks_user on setup_tasks(user_id, created_at desc);
