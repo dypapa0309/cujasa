@@ -72,6 +72,9 @@ export default function AccountSettingsPage({ selectedAccount, reloadAccounts })
             <div className={`mt-1 text-xs font-medium ${selectedAccount.has_threads_access_token ? 'text-emerald-600' : 'text-rose-500'}`}>
               {selectedAccount.has_threads_access_token ? '연결됨' : '미연결'} · {selectedAccount.account_handle || '핸들 미입력'}
             </div>
+            <div className="mt-1 text-xs leading-relaxed text-amber-600">
+              연결은 Threads 앱이 아니라 Chrome/Safari 브라우저의 threads.net 로그인 상태를 기준으로 진행됩니다.
+            </div>
           </div>
           <button
             type="button"

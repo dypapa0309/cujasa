@@ -391,6 +391,9 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                             {a.threads_connected_at ? ` · 연결 ${formatDateTime(a.threads_connected_at)}` : ''}
                             {a.threads_token_expires_at ? ` · 만료 ${formatDateTime(a.threads_token_expires_at)}` : ''}
                           </div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-amber-600">
+                            Threads 연결은 고객 브라우저 Chrome/Safari에서 해당 계정으로 threads.net에 로그인한 상태로 진행해야 합니다.
+                          </div>
                         </div>
                         <label className="grid gap-1 text-xs">
                           <span className="font-semibold text-slate-500">계정별 Tracking Code</span>

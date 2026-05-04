@@ -133,6 +133,11 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
               <div className="mt-1 text-xs text-gray-400">
                 이 CUJASA 계정에는 {account.account_handle || '입력한 Threads 핸들'} 계정만 연결할 수 있습니다.
               </div>
+              {!account.has_threads_access_token && (
+                <div className="mt-1 text-xs text-amber-600">
+                  Threads 앱만 로그인되어 있으면 실패할 수 있습니다. Chrome/Safari에서 threads.net 로그인 상태를 확인해주세요.
+                </div>
+              )}
             </div>
             <button
               type="button"
@@ -353,8 +358,9 @@ function ThreadsConnectModal({ account, connecting, onCancel, onConfirm }) {
         <div className="text-lg font-black text-gray-900">Threads 계정 확인</div>
         <div className="mt-3 grid gap-2 text-sm leading-relaxed text-gray-600">
           <p>지금 연결하려는 CUJASA 계정은 <strong>{account.name}</strong>입니다.</p>
-          <p>현재 브라우저 또는 Threads 앱에서 <strong>{account.account_handle || '이 계정의 Threads 핸들'}</strong>로 로그인되어 있어야 합니다.</p>
-          <p className="text-xs text-gray-400">다른 Threads 계정으로 로그인된 상태라면 Threads에서 로그아웃한 뒤 다시 진행해주세요.</p>
+          <p>연결 버튼을 누르면 브라우저에서 threads.net이 열립니다. <strong>Chrome/Safari 브라우저</strong>에 <strong>{account.account_handle || '이 계정의 Threads 핸들'}</strong>로 로그인되어 있어야 합니다.</p>
+          <p className="text-xs text-amber-600">Threads 앱만 로그인되어 있으면 연결되지 않을 수 있습니다. 모바일에서 Threads 앱이 자동으로 열리면 Chrome/Safari에서 threads.net에 먼저 로그인한 뒤 다시 진행해주세요.</p>
+          <p className="text-xs text-gray-400">다른 Threads 계정이 뜨면 브라우저에서 로그아웃 후 올바른 계정으로 다시 로그인해주세요.</p>
         </div>
         <div className="mt-5 flex gap-2">
           <button type="button" onClick={onCancel} className="flex-1 rounded-xl border border-gray-200 py-3 text-sm font-bold text-gray-500">
