@@ -4,15 +4,12 @@ import { useToast } from '../../lib/toast.jsx';
 import SensitiveInput from '../../components/SensitiveInput.jsx';
 import TrialStatusCard from './TrialStatusCard.jsx';
 
-export default function CustomerSettingsPage({ account, reloadAccounts, onPipelineDone, onPipelineRunningChange, trialStatus, reloadTrialStatus, reloadSetupStatus, setTab }) {
+export default function CustomerSettingsPage({ account, reloadAccounts, trialStatus, reloadSetupStatus, setTab }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [running, setRunning] = useState(false);
   const [connectingThreads, setConnectingThreads] = useState(false);
   const [confirmingThreads, setConfirmingThreads] = useState(false);
-  const [checking, setChecking] = useState(false);
-  const [preflight, setPreflight] = useState(null);
   const [errors, setErrors] = useState({});
 
   useEffect(() => {
@@ -64,36 +61,11 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
       });
       await reloadAccounts();
       await reloadSetupStatus?.();
-      toast('설정이 변경되었습니다. 자동화를 시작합니다.', 'success');
+      toast('설정이 저장되었습니다.', 'success');
     } catch {
       toast('저장에 실패했습니다.', 'error');
-      return;
     } finally {
       setSaving(false);
-    }
-
-    const check = await runPreflight({ silent: true });
-    if (!check?.canPublish) {
-      toast('자동화 전에 확인할 항목이 있습니다.', 'error');
-      return;
-    }
-
-    setRunning(true);
-    onPipelineRunningChange?.(true, {
-      percent: 0,
-      stage: 'starting',
-      label: '예약 작업을 준비하고 있습니다'
-    });
-    try {
-      const result = await api.post(`/api/accounts/${account.id}/run-pipeline`, {});
-      onPipelineDone?.(result);
-      reloadTrialStatus?.();
-    } catch (err) {
-      if (err.preflight) setPreflight(err.preflight);
-      toast(err.preflight ? '자동화 전에 확인할 항목이 있습니다.' : '자동화 실행에 실패했습니다. 잠시 후 자동으로 재시도됩니다.', 'error');
-    } finally {
-      setRunning(false);
-      onPipelineRunningChange?.(false);
     }
   };
 
@@ -113,29 +85,6 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
     } catch (err) {
       toast(err.message || 'Threads 연결을 시작하지 못했습니다.', 'error');
       setConnectingThreads(false);
-    }
-  };
-  const runPreflight = async ({ silent = false } = {}) => {
-    if (!account?.id) return null;
-    setChecking(true);
-    try {
-      const result = await api.get(`/api/accounts/${account.id}/preflight`);
-      setPreflight(result);
-      if (!silent) {
-        toast(result.canPublish ? '작동 점검이 완료되었습니다.' : '확인할 항목이 있습니다.', result.canPublish ? 'success' : 'error');
-      }
-      return result;
-    } catch (err) {
-      const fallback = err.preflight || {
-        canPublish: false,
-        severity: 'error',
-        checks: [{ status: 'error', title: '점검에 실패했습니다', message: err.message || '잠시 후 다시 시도해주세요.' }]
-      };
-      setPreflight(fallback);
-      if (!silent) toast('작동 점검에 실패했습니다.', 'error');
-      return fallback;
-    } finally {
-      setChecking(false);
     }
   };
   const updateLinkRatio = (value) => {
@@ -195,11 +144,10 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
             </button>
             <button
               type="button"
-              onClick={() => runPreflight()}
-              disabled={checking}
+              onClick={() => setTab?.('run')}
               className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-xs font-bold text-gray-700 disabled:opacity-50"
             >
-              {checking ? '점검 중...' : '테스트 포스팅 점검'}
+              자동화 실행 탭으로
             </button>
           </div>
         </div>
@@ -340,17 +288,11 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
         </Field>
       </Section>
 
-      {running && (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm text-blue-700">
-          <div className="font-bold mb-0.5">자동화 실행 중입니다</div>
-          <div className="text-xs opacity-80">주제 생성 → 상품 검색 → 콘텐츠 작성 → 예약 순으로 진행됩니다. 완료까지 약 1~2분 소요됩니다.</div>
-        </div>
-      )}
-      <button onClick={save} disabled={saving || running || trialBlocked}
+      <button onClick={save} disabled={saving || trialBlocked}
         className={`w-full font-black py-4 rounded-2xl transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-white
-          ${running || trialBlocked ? 'bg-gray-400 cursor-not-allowed' : 'bg-coupang hover:bg-coupang-dark'}`}>
-        {(saving || running) && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
-        {saving ? '저장 중...' : running ? '실행 중 (잠시 기다려주세요)' : trialBlocked ? '무료 체험 종료' : '저장하고 시작하기'}
+          ${trialBlocked ? 'bg-gray-400 cursor-not-allowed' : 'bg-coupang hover:bg-coupang-dark'}`}>
+        {saving && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
+        {saving ? '저장 중...' : trialBlocked ? '무료 체험 종료' : '설정 저장'}
       </button>
       {confirmingThreads && (
         <ThreadsConnectModal
@@ -360,16 +302,6 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
           onConfirm={() => {
             setConfirmingThreads(false);
             connectThreads();
-          }}
-        />
-      )}
-      {preflight && (
-        <PreflightModal
-          result={preflight}
-          onClose={() => setPreflight(null)}
-          onReconnect={() => {
-            setPreflight(null);
-            setConfirmingThreads(true);
           }}
         />
       )}
@@ -432,62 +364,6 @@ function ThreadsConnectModal({ account, connecting, onCancel, onConfirm }) {
             {connecting ? '이동 중...' : '확인하고 연결'}
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function PreflightModal({ result, onClose, onReconnect }) {
-  const checks = Array.isArray(result?.checks) ? result.checks : [];
-  const errors = checks.filter((check) => check.status === 'error');
-  const warnings = checks.filter((check) => check.status === 'warn');
-  const oks = checks.filter((check) => check.status === 'ok');
-  const needsReconnect = checks.some((check) => check.action === 'reconnect_threads');
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5">
-      <div className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="shrink-0 border-b border-gray-100 px-6 py-5">
-          <div className="text-lg font-black text-gray-900">테스트 포스팅 점검 결과</div>
-          <div className={`mt-1 text-sm font-semibold ${result.canPublish ? 'text-emerald-600' : 'text-rose-600'}`}>
-            {result.canPublish ? '자동화 실행이 가능합니다' : '자동화 전에 조치가 필요합니다'}
-          </div>
-        </div>
-        <div className="grid gap-4 overflow-y-auto px-6 py-5">
-          {errors.length > 0 && <CheckGroup title="바로 조치 필요" tone="error" checks={errors} />}
-          {warnings.length > 0 && <CheckGroup title="주의" tone="warn" checks={warnings} />}
-          {oks.length > 0 && <CheckGroup title="정상" tone="ok" checks={oks} />}
-        </div>
-        <div className="flex shrink-0 gap-2 border-t border-gray-100 px-6 py-4">
-          <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-gray-200 py-3 text-sm font-bold text-gray-500">
-            닫기
-          </button>
-          {needsReconnect && (
-            <button type="button" onClick={onReconnect} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white">
-              다시 연결하기
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CheckGroup({ title, tone, checks }) {
-  const styles = {
-    error: 'border-rose-100 bg-rose-50 text-rose-700',
-    warn: 'border-amber-100 bg-amber-50 text-amber-700',
-    ok: 'border-emerald-100 bg-emerald-50 text-emerald-700'
-  };
-  return (
-    <div>
-      <div className="mb-2 text-xs font-black uppercase tracking-widest text-gray-400">{title}</div>
-      <div className="grid gap-2">
-        {checks.map((check) => (
-          <div key={`${check.key}-${check.title}`} className={`rounded-xl border px-4 py-3 ${styles[tone]}`}>
-            <div className="text-sm font-black">{check.title}</div>
-            <div className="mt-1 break-words text-xs leading-relaxed opacity-80">{check.message}</div>
-          </div>
-        ))}
       </div>
     </div>
   );

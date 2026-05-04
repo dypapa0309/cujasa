@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
-import { CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2, PlayCircle } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import CustomerHomePage from './CustomerHomePage.jsx';
 import CustomerPostsPage from './CustomerPostsPage.jsx';
 import CustomerSettingsPage from './CustomerSettingsPage.jsx';
 import CustomerBillingPage from './CustomerBillingPage.jsx';
+import CustomerRunPage from './CustomerRunPage.jsx';
 import { CURRENT_PRODUCT, JASAIN_BRAND } from '../../config/products.js';
 
 const tabs = [
   ['home', '홈', Home],
+  ['run', '자동화 실행', PlayCircle],
   ['posts', '포스팅 현황', FileText],
   ['billing', '결제', CreditCard],
   ['settings', '설정', Settings],
@@ -17,6 +19,7 @@ const tabs = [
 
 const pages = {
   home: CustomerHomePage,
+  run: CustomerRunPage,
   posts: CustomerPostsPage,
   billing: CustomerBillingPage,
   settings: CustomerSettingsPage,
@@ -209,7 +212,18 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
           navigateTab('posts');
           setPipelineRunning(false);
         } else if (payload.run.status === 'failed') {
-          toast(payload.run.errorMessage || '자동화 실행에 실패했습니다.', 'error');
+          const result = payload.run.result || {};
+          const nextResult = {
+            ok: false,
+            status: 'error',
+            code: result.code || 'PIPELINE_FAILED',
+            stage: result.stage || 'pipeline',
+            message: payload.run.errorMessage || result.message || result.error || '예약 작업 중 오류가 발생했습니다.',
+            blocking: result.blocking || []
+          };
+          setPipelineResult(nextResult);
+          navigateTab('run');
+          toast(nextResult.message, 'error');
           setPipelineRunning(false);
         }
       } catch {
@@ -401,10 +415,10 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
 
       {/* 하단 탭 */}
       <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-100 safe-area-bottom">
-        <div className="max-w-2xl mx-auto grid grid-cols-4">
+        <div className="max-w-2xl mx-auto grid" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
           {tabs.map(([key, label, Icon]) => (
             <button key={key} onClick={() => { if (!guardDuringPipeline()) navigateTab(key); }}
-              className={`flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors
+              className={`flex flex-col items-center gap-1 py-3 text-[11px] font-medium transition-colors sm:text-xs
                 ${tab === key ? 'text-coupang' : 'text-gray-400 hover:text-gray-600'}`}>
               <Icon size={20} strokeWidth={tab === key ? 2.5 : 1.8} />
               {label}

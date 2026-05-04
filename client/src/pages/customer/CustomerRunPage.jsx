@@ -1,0 +1,230 @@
+import { useState } from 'react';
+import { AlertTriangle, CheckCircle2, ClipboardCheck, PlayCircle } from 'lucide-react';
+import { api } from '../../lib/api.js';
+import { useToast } from '../../lib/toast.jsx';
+import TrialStatusCard from './TrialStatusCard.jsx';
+import PreflightModal from './PreflightModal.jsx';
+
+export default function CustomerRunPage({
+  account,
+  trialStatus,
+  reloadTrialStatus,
+  onPipelineDone,
+  onPipelineRunningChange,
+  setTab
+}) {
+  const toast = useToast();
+  const [checking, setChecking] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [preflight, setPreflight] = useState(null);
+  const [lastCheck, setLastCheck] = useState(null);
+  const [runError, setRunError] = useState(null);
+
+  const trialBlocked = trialStatus?.plan === 'free' && trialStatus.blocked;
+
+  const runPreflight = async ({ showModal = true } = {}) => {
+    if (!account?.id) return null;
+    setChecking(true);
+    setRunError(null);
+    try {
+      const result = await api.get(`/api/accounts/${account.id}/preflight`);
+      setLastCheck(result);
+      if (showModal) setPreflight(result);
+      toast(result.canPublish ? '현재 설정 점검을 통과했습니다.' : '자동화 전에 조치할 항목이 있습니다.', result.canPublish ? 'success' : 'error');
+      return result;
+    } catch (err) {
+      const fallback = err.preflight || {
+        canPublish: false,
+        severity: 'error',
+        checks: [{ status: 'error', title: '점검에 실패했습니다', message: err.message || '잠시 후 다시 시도해주세요.' }]
+      };
+      setLastCheck(fallback);
+      if (showModal) setPreflight(fallback);
+      toast('사전 점검에 실패했습니다.', 'error');
+      return fallback;
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const startAutomation = async () => {
+    if (trialBlocked) {
+      toast('무료 체험 포스팅 3회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
+      setTab?.('billing');
+      return;
+    }
+
+    const check = await runPreflight({ showModal: false });
+    if (!check?.canPublish) {
+      setPreflight(check);
+      toast('자동화 실행 전에 조치할 항목이 있습니다.', 'error');
+      return;
+    }
+
+    setRunning(true);
+    setRunError(null);
+    onPipelineRunningChange?.(true, {
+      percent: 0,
+      stage: 'starting',
+      label: '예약 작업을 준비하고 있습니다'
+    });
+    try {
+      const result = await api.post(`/api/accounts/${account.id}/run-pipeline`, {});
+      if (result?.ok === false || result?.status === 'error') {
+        const normalized = normalizeRunError(result);
+        setRunError(normalized);
+        toast(normalized.message, 'error');
+        return;
+      }
+      toast('예약 생성이 완료됐습니다.', 'success');
+      onPipelineDone?.(result);
+      reloadTrialStatus?.();
+    } catch (err) {
+      if (err.preflight) {
+        setPreflight(err.preflight);
+        toast('자동화 실행 전에 조치할 항목이 있습니다.', 'error');
+        return;
+      }
+      const normalized = normalizeRunError(err);
+      setRunError(normalized);
+      toast(normalized.message, 'error');
+    } finally {
+      setRunning(false);
+      onPipelineRunningChange?.(false);
+    }
+  };
+
+  const warningCount = (lastCheck?.checks || []).filter((check) => check.status === 'warn').length;
+  const blockingCount = (lastCheck?.checks || []).filter((check) => check.status === 'error').length;
+
+  return (
+    <div className="grid gap-5">
+      <TrialStatusCard trialStatus={trialStatus} onUpgrade={() => setTab?.('billing')} />
+
+      <div className="rounded-2xl border border-gray-100 bg-white p-5">
+        <div className="flex items-start gap-3">
+          <div className="rounded-2xl bg-blue-50 p-3 text-coupang">
+            <PlayCircle size={24} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-lg font-black text-gray-900">자동화 실행</div>
+            <p className="mt-1 text-sm leading-relaxed text-gray-500">
+              설정 저장과 분리해서, 여기서 현재 계정 상태를 점검한 뒤 예약을 생성합니다.
+            </p>
+            <div className="mt-3 rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
+              <span className="font-bold text-gray-800">{account?.name}</span>
+              {account?.account_handle && <span className="ml-1 text-gray-400">{account.account_handle}</span>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-gray-100 bg-white p-5">
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <div className="font-black text-gray-900">현재 점검 상태</div>
+            <p className="mt-1 text-sm text-gray-400">사전 점검은 글을 올리지 않고 현재 설정과 토큰만 확인합니다.</p>
+          </div>
+          <StatusPill lastCheck={lastCheck} />
+        </div>
+
+        {lastCheck && (
+          <div className="mb-4 grid gap-2 text-sm">
+            {lastCheck.canPublish ? (
+              <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-emerald-700">
+                <CheckCircle2 size={18} />
+                <span className="font-bold">현재 설정 점검을 통과했습니다.</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-rose-700">
+                <AlertTriangle size={18} />
+                <span className="font-bold">현재 실행을 막는 항목 {blockingCount}개가 있습니다.</span>
+              </div>
+            )}
+            {warningCount > 0 && (
+              <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-700">
+                과거 실패 기록이나 댓글 실패 같은 경고 {warningCount}개가 있습니다. 현재 실행은 막지 않습니다.
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => runPreflight()}
+            disabled={checking || running}
+            className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-black text-gray-700 disabled:opacity-50"
+          >
+            {checking ? '점검 중...' : '사전 점검'}
+          </button>
+          <button
+            type="button"
+            onClick={startAutomation}
+            disabled={checking || running || trialBlocked}
+            className="rounded-xl bg-coupang px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {running ? '예약 생성 중...' : trialBlocked ? '무료 체험 종료' : '예약 생성/자동화 시작'}
+          </button>
+        </div>
+      </div>
+
+      {runError && (
+        <div className="rounded-2xl border border-rose-100 bg-rose-50 p-5 text-rose-700">
+          <div className="font-black">자동화 실행이 중단됐습니다</div>
+          <p className="mt-2 text-sm leading-relaxed">{runError.message}</p>
+          <div className="mt-3 rounded-xl bg-white/70 px-4 py-3 text-xs leading-relaxed">
+            <div><span className="font-bold">단계</span> {runError.stage || 'pipeline'}</div>
+            <div><span className="font-bold">코드</span> {runError.code || 'PIPELINE_FAILED'}</div>
+          </div>
+          <div className="mt-4 flex gap-2">
+            <button type="button" onClick={() => setTab?.('settings')} className="rounded-xl bg-white px-4 py-3 text-xs font-bold text-rose-700">
+              설정 확인
+            </button>
+            <button type="button" onClick={() => runPreflight()} className="rounded-xl border border-rose-200 px-4 py-3 text-xs font-bold text-rose-700">
+              다시 점검
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-gray-100 bg-white p-5">
+        <div className="flex items-center gap-2 font-black text-gray-900">
+          <ClipboardCheck size={18} />
+          실행 전 확인
+        </div>
+        <ul className="mt-3 grid gap-2 text-sm leading-relaxed text-gray-500">
+          <li>설정 탭에서 저장한 기본 정보와 링크 비율을 기준으로 예약합니다.</li>
+          <li>과거 실패 기록은 경고로만 표시하고, 현재 토큰이 정상이면 실행을 막지 않습니다.</li>
+          <li>Threads 토큰, 결제 권한, 쿠팡 링크 글 필수값처럼 현재 문제가 있을 때만 차단합니다.</li>
+        </ul>
+      </div>
+
+      {preflight && (
+        <PreflightModal
+          result={preflight}
+          onClose={() => setPreflight(null)}
+          onReconnect={() => {
+            setPreflight(null);
+            setTab?.('settings');
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function StatusPill({ lastCheck }) {
+  if (!lastCheck) return <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-400">점검 전</span>;
+  if (lastCheck.canPublish) return <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-600">실행 가능</span>;
+  return <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-600">조치 필요</span>;
+}
+
+function normalizeRunError(error) {
+  return {
+    code: error?.code || error?.error || 'PIPELINE_FAILED',
+    stage: error?.stage || error?.result?.stage || 'pipeline',
+    message: error?.message || error?.errorMessage || '예약 생성 중 오류가 발생했습니다. 사전 점검 결과를 확인해주세요.',
+    blocking: error?.blocking || []
+  };
+}

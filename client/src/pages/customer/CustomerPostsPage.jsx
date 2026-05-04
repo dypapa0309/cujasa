@@ -76,6 +76,10 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
   const needsAttention = queue
     .filter((r) => ['failed', 'retry', 'manual_required', 'skipped'].includes(r.status))
     .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+  const pipelineSucceeded = pipelineResult?.ok === true || pipelineResult?.status === 'ok';
+  const pipelineTopics = pipelineResult?.topicsCount ?? pipelineResult?.steps?.topics ?? 0;
+  const pipelinePosts = pipelineResult?.postsCount ?? pipelineResult?.steps?.posts ?? 0;
+  const pipelineQueued = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? 0;
 
   if (loading) return (
     <div className="grid gap-3">
@@ -89,21 +93,29 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
 
       {/* 파이프라인 실행 결과 */}
       {pipelineResult && (
-        <div className={`rounded-2xl px-5 py-4 text-sm font-medium ${pipelineResult.status === 'ok' ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
-          {pipelineResult.status === 'ok' ? (
+        <div className={`rounded-2xl px-5 py-4 text-sm font-medium ${pipelineSucceeded ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+          {pipelineSucceeded ? (
             <div className="grid gap-1">
               <div className="font-bold flex items-center gap-2">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
-                자동화 실행 완료
+                예약 생성 완료
               </div>
               <div className="text-xs opacity-80">
-                주제 {pipelineResult.steps?.topics ?? 0}개 · 콘텐츠 {pipelineResult.steps?.posts ?? 0}개 · {pipelineResult.steps?.queued ?? 0}개 예약 완료
+                주제 {pipelineTopics}개 · 콘텐츠 {pipelinePosts}개 · {pipelineQueued}개 예약 완료
               </div>
+              {(pipelineResult.warnings || []).length > 0 && (
+                <div className="mt-1 text-xs opacity-80">
+                  과거 실패 기록 등 경고 {pipelineResult.warnings.length}개가 있었지만 현재 실행은 완료됐습니다.
+                </div>
+              )}
             </div>
           ) : (
             <div>
-              <div className="font-bold">실행 중 오류 발생</div>
-              <div className="text-xs mt-1 opacity-80">{pipelineResult.error}</div>
+              <div className="font-bold">예약 생성 중 오류 발생</div>
+              <div className="text-xs mt-1 opacity-80">{pipelineResult.message || pipelineResult.error}</div>
+              {pipelineResult.stage && (
+                <div className="mt-2 text-[11px] opacity-70">단계: {pipelineResult.stage}</div>
+              )}
             </div>
           )}
         </div>
