@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
+import SensitiveInput from '../components/SensitiveInput.jsx';
 
 export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const toast = useToast();
@@ -268,7 +269,12 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
           </label>
           <label className="grid gap-1 text-sm">
             <span className="font-medium">비밀번호</span>
-            <input type="password" required className="rounded border border-line px-3 py-2" value={form.password} onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))} />
+            <SensitiveInput
+              required
+              value={form.password}
+              inputClassName="w-full rounded border border-line px-3 py-2 pr-10"
+              onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
+            />
           </label>
           <label className="grid gap-1 text-sm">
             <span className="font-medium">계정 한도</span>
@@ -388,10 +394,10 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                         </div>
                         <label className="grid gap-1 text-xs">
                           <span className="font-semibold text-slate-500">계정별 Tracking Code</span>
-                          <input
-                            className="rounded border border-line bg-white px-2 py-1.5"
-                            defaultValue={a.coupang_tracking_code || ''}
-                            placeholder="없으면 고객 기본값 사용"
+                          <SensitiveInput
+                            defaultValue=""
+                            placeholder={a.has_coupang_tracking_code ? (a.masked_coupang_tracking_code || '저장됨 - 변경 시에만 입력') : '없으면 고객 기본값 사용'}
+                            inputClassName="w-full rounded border border-line bg-white px-2 py-1.5 pr-9"
                             onBlur={(e) => updateAccountTrackingCode(a, e.target.value)}
                           />
                         </label>
@@ -399,7 +405,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                           설정 열기
                         </button>
                         <button onClick={() => connectThreads(a)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-gray-900 hover:text-gray-900">
-                          {a.threads_access_token ? '재연결' : 'Threads 연결'}
+                          {a.has_threads_access_token ? '재연결' : 'Threads 연결'}
                         </button>
                         <button onClick={() => unassignAccount(user.id, a.id)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-red-500 hover:border-red-300">
                           해제
@@ -441,10 +447,10 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                         </label>
                         <label className="grid gap-1 text-xs">
                           <span className="font-semibold text-slate-500">Tracking Code</span>
-                          <input
-                            className="rounded border border-line px-2 py-1.5"
+                          <SensitiveInput
                             value={accountDrafts[user.id]?.coupang_tracking_code || ''}
                             placeholder="없으면 고객 기본값"
+                            inputClassName="w-full rounded border border-line px-2 py-1.5 pr-9"
                             onChange={(e) => setAccountDrafts((prev) => ({ ...prev, [user.id]: { ...(prev[user.id] || {}), coupang_tracking_code: e.target.value } }))}
                           />
                         </label>
@@ -469,7 +475,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
 }
 
 function connectionText(account) {
-  if (!account.threads_access_token) return 'Threads 연결 필요';
+  if (!account.has_threads_access_token) return 'Threads 연결 필요';
   if (account.threads_token_status === 'refresh_failed') return '다시 연결 필요';
   return `연결됨${account.threads_token_status ? ` · ${account.threads_token_status}` : ''}`;
 }
@@ -613,20 +619,20 @@ function MisassignmentGroup({ title, rows, tone, onUnassign, onReassign, onMarkO
 function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
   const settings = product.settings || {};
   const [draft, setDraft] = useState({
-    coupangAccessKey: settings.coupangAccessKey || '',
+    coupangAccessKey: '',
     coupangSecretKey: '',
-    coupangPartnerId: settings.coupangPartnerId || '',
-    defaultTrackingCode: settings.defaultTrackingCode || ''
+    coupangPartnerId: '',
+    defaultTrackingCode: ''
   });
 
   useEffect(() => {
     setDraft({
-      coupangAccessKey: settings.coupangAccessKey || '',
+      coupangAccessKey: '',
       coupangSecretKey: '',
-      coupangPartnerId: settings.coupangPartnerId || '',
-      defaultTrackingCode: settings.defaultTrackingCode || ''
+      coupangPartnerId: '',
+      defaultTrackingCode: ''
     });
-  }, [settings.coupangAccessKey, settings.coupangPartnerId, settings.defaultTrackingCode]);
+  }, [settings.hasCoupangAccessKey, settings.hasCoupangPartnerId, settings.hasDefaultTrackingCode]);
 
   const update = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
   const save = () => onSaveSettings(userId, product.productId, draft);
@@ -645,25 +651,39 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
           <div className="md:col-span-2 text-xs font-semibold text-slate-500">쿠팡 파트너스 설정</div>
           <label className="grid gap-1 text-xs">
             <span className="font-medium">Access Key</span>
-            <input className="rounded border border-line px-2 py-2" value={draft.coupangAccessKey} onChange={(e) => update('coupangAccessKey', e.target.value)} />
+            <SensitiveInput
+              value={draft.coupangAccessKey}
+              placeholder={settings.hasCoupangAccessKey ? (settings.maskedCoupangAccessKey || '저장됨 - 변경 시에만 입력') : ''}
+              inputClassName="w-full rounded border border-line px-2 py-2 pr-9"
+              onChange={(e) => update('coupangAccessKey', e.target.value)}
+            />
           </label>
           <label className="grid gap-1 text-xs">
             <span className="font-medium">Secret Key</span>
-            <input
-              type="password"
-              className="rounded border border-line px-2 py-2"
+            <SensitiveInput
               value={draft.coupangSecretKey}
               onChange={(e) => update('coupangSecretKey', e.target.value)}
               placeholder={settings.hasCoupangSecretKey ? '저장됨 - 변경 시에만 입력' : ''}
+              inputClassName="w-full rounded border border-line px-2 py-2 pr-9"
             />
           </label>
           <label className="grid gap-1 text-xs">
             <span className="font-medium">Partner ID</span>
-            <input className="rounded border border-line px-2 py-2" value={draft.coupangPartnerId} onChange={(e) => update('coupangPartnerId', e.target.value)} />
+            <SensitiveInput
+              value={draft.coupangPartnerId}
+              placeholder={settings.hasCoupangPartnerId ? (settings.maskedCoupangPartnerId || '저장됨 - 변경 시에만 입력') : ''}
+              inputClassName="w-full rounded border border-line px-2 py-2 pr-9"
+              onChange={(e) => update('coupangPartnerId', e.target.value)}
+            />
           </label>
           <label className="grid gap-1 text-xs">
             <span className="font-medium">기본 Tracking Code</span>
-            <input className="rounded border border-line px-2 py-2" value={draft.defaultTrackingCode} onChange={(e) => update('defaultTrackingCode', e.target.value)} />
+            <SensitiveInput
+              value={draft.defaultTrackingCode}
+              placeholder={settings.hasDefaultTrackingCode ? (settings.maskedDefaultTrackingCode || '저장됨 - 변경 시에만 입력') : ''}
+              inputClassName="w-full rounded border border-line px-2 py-2 pr-9"
+              onChange={(e) => update('defaultTrackingCode', e.target.value)}
+            />
           </label>
           <div className="md:col-span-2 flex flex-wrap items-center gap-2">
             <button type="button" onClick={save} className="rounded bg-coupang px-3 py-2 text-xs font-bold text-white">쿠팡 설정 저장</button>

@@ -1,6 +1,7 @@
 import { isTokenConfigured, listUserProducts, shouldBypassAuth, verifyToken } from '../services/authService.js';
 import { dbList } from '../services/supabaseService.js';
 import { markedOkKeysFromAudits, shouldHideAssignment, suspiciousAssignmentsForUser } from '../services/accountOwnershipService.js';
+import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
 
 const publicPaths = [
   '/api/health',
@@ -37,6 +38,7 @@ export async function requireAuth(req, res, next) {
       req.user = { type: 'admin', email: payload.sub };
       req.admin = { email: payload.sub };
     } else if (payload.role === 'user') {
+      await refreshUserEntitlement(payload.userId);
       const [userAccounts, users, accounts, allUserAccounts, audits] = await Promise.all([
         dbList('user_accounts', { user_id: payload.userId }),
         dbList('users'),

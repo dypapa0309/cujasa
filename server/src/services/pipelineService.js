@@ -8,9 +8,11 @@ import { generateBlogPost } from './blogService.js';
 import { logActivity } from './supabaseService.js';
 import { finishPipelineRun, getRunningPipeline, startPipelineRun, updatePipelineRunProgress } from './pipelineRunService.js';
 import { assertPreflightCanPublish, preflightAccount } from './accountPreflightService.js';
+import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 
 export async function runPipelineForAccount(accountId, options = {}) {
   const account = await getAccount(accountId);
+  await assertAccountOwnerCanOperate(account.id);
   const run = await startPipelineRun(account, options.requestedBy || 'manual');
   const result = { accountId: account.id, accountName: account.name, steps: {}, percent: 0, stage: 'starting', label: '예약 작업을 준비하고 있습니다' };
   const progress = async (patch) => {

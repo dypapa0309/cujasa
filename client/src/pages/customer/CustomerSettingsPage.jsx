@@ -132,10 +132,10 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
       no_link_post_ratio: Number((1 - next).toFixed(2))
     }));
   };
-  const connectionLabel = account.threads_access_token
+  const connectionLabel = account.has_threads_access_token
     ? `연결됨${account.account_handle ? ` · ${account.account_handle}` : ''}`
     : '미연결';
-  const connectionClass = account.threads_access_token ? 'text-emerald-600' : 'text-rose-500';
+  const connectionClass = account.has_threads_access_token ? 'text-emerald-600' : 'text-rose-500';
 
   if (!form) return (
     <div className="rounded-2xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-400">
@@ -170,7 +170,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
               disabled={connectingThreads}
               className="rounded-xl bg-gray-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50"
             >
-              {connectingThreads ? '연결 이동 중...' : account.threads_access_token ? '다시 연결하기' : 'Threads 연결하기'}
+              {connectingThreads ? '연결 이동 중...' : account.has_threads_access_token ? '다시 연결하기' : 'Threads 연결하기'}
             </button>
             <button
               type="button"

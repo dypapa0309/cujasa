@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { verifyPassword, hashPassword } from '../utils/password.js';
 import { DEFAULT_PRODUCT_ID, PRODUCTS } from '../config/products.js';
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
+import { redactBillingSettings } from './redactionService.js';
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
 
@@ -114,6 +115,7 @@ export async function listUserProducts(userId, { includeSettings = false } = {})
     return activeGrants.map((grant) => {
       const product = productById[grant.product_id] || {};
       const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+      const settingsSummary = redactBillingSettings(settings);
       const mapped = {
         productId: grant.product_id,
         status: grant.status,
@@ -122,20 +124,10 @@ export async function listUserProducts(userId, { includeSettings = false } = {})
         description: product.description,
         appUrl: product.app_url,
         landingUrl: product.landing_url,
-        settingsSummary: {
-          hasCoupangAccessKey: Boolean(settings.coupangAccessKey),
-          hasCoupangSecretKey: Boolean(settings.coupangSecretKey),
-          hasCoupangPartnerId: Boolean(settings.coupangPartnerId),
-          defaultTrackingCode: settings.defaultTrackingCode || ''
-        }
+        settingsSummary
       };
       if (includeSettings) {
-        mapped.settings = {
-          coupangAccessKey: settings.coupangAccessKey || '',
-          coupangPartnerId: settings.coupangPartnerId || '',
-          defaultTrackingCode: settings.defaultTrackingCode || '',
-          hasCoupangSecretKey: Boolean(settings.coupangSecretKey)
-        };
+        mapped.settings = settingsSummary;
       }
       return mapped;
     });
@@ -176,7 +168,7 @@ export async function updateUserProductSettings(userId, productId, settingsPatch
   for (const key of allowed) {
     if (Object.prototype.hasOwnProperty.call(settingsPatch, key)) {
       const value = String(settingsPatch[key] ?? '').trim();
-      if (key === 'coupangSecretKey' && !value) continue;
+      if (!value) continue;
       next[key] = value;
     }
   }

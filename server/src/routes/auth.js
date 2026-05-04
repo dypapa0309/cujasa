@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { isAuthConfigured, loginAdmin, loginUser, shouldBypassAuth } from '../services/authService.js';
+import { isAuthConfigured, listUserProducts, loginAdmin, loginUser, shouldBypassAuth } from '../services/authService.js';
 import { createRateLimit } from '../middleware/rateLimit.js';
 import { completeThreadsOAuth, createThreadsAuthUrl } from '../services/threadsOAuthService.js';
+import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
 
 const loginRateLimit = createRateLimit({ scope: 'login', windowMs: 10 * 60 * 1000, maxRequests: 10 });
 
@@ -16,7 +17,13 @@ router.post('/login', loginRateLimit, async (req, res, next) => {
         if (adminErr.status !== 401) throw adminErr;
       }
     }
-    return res.json(await loginUser(req.body.email, req.body.password));
+    const result = await loginUser(req.body.email, req.body.password);
+    if (result.type === 'user') {
+      const entitlement = await refreshUserEntitlement(result.userId);
+      result.products = await listUserProducts(result.userId);
+      result.billing = entitlement.billing;
+    }
+    return res.json(result);
   } catch (error) {
     next(error);
   }
@@ -29,6 +36,7 @@ router.get('/me', async (req, res, next) => {
     if (user.type === 'admin') {
       return res.json({ type: 'admin', admin: { email: user.email }, authConfigured: true });
     }
+    const entitlement = await refreshUserEntitlement(user.userId);
     return res.json({
       type: 'user',
       user: {
@@ -36,7 +44,8 @@ router.get('/me', async (req, res, next) => {
         userId: user.userId,
         maxAccounts: user.maxAccounts,
         allowedAccountIds: user.allowedAccountIds,
-        products: user.products || []
+        products: await listUserProducts(user.userId),
+        billing: entitlement.billing
       },
       authConfigured: true
     });

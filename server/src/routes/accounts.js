@@ -5,6 +5,8 @@ import { runPipelineForAccount } from '../services/pipelineService.js';
 import { latestPipelineRun } from '../services/pipelineRunService.js';
 import { markedOkKeysFromAudits, shouldHideAssignment, suspiciousAssignmentsForUser } from '../services/accountOwnershipService.js';
 import { preflightAccount } from '../services/accountPreflightService.js';
+import { assertUserCanOperate } from '../services/billingEntitlementService.js';
+import { redactAccount, redactAccounts, stripBlankSensitiveAccountFields } from '../services/redactionService.js';
 
 const router = Router();
 
@@ -56,15 +58,16 @@ router.get('/', async (req, res, next) => {
           payload: { userId: req.user.userId, accountIds: [...hiddenIds], suspicious }
         }).catch(() => {});
       }
-      return res.json(assigned.filter((account) => !hiddenIds.has(account.id)));
+      return res.json(redactAccounts(assigned.filter((account) => !hiddenIds.has(account.id))));
     }
-    res.json(all);
+    res.json(redactAccounts(all));
   } catch (e) { next(e); }
 });
 
 router.post('/', async (req, res, next) => {
   try {
     if (req.user?.type === 'user') {
+      await assertUserCanOperate(req.user.userId);
       const current = await dbList('user_accounts', { user_id: req.user.userId });
       if (current.length >= req.user.maxAccounts) {
         const error = new Error(`계정은 최대 ${req.user.maxAccounts}개까지 생성할 수 있습니다. 추가 계정은 별도 문의해주세요.`);
@@ -72,11 +75,11 @@ router.post('/', async (req, res, next) => {
         throw error;
       }
     }
-    const account = await createAccount(req.body);
+    const account = await createAccount(stripBlankSensitiveAccountFields(req.body));
     if (req.user?.type === 'user') {
       await dbInsert('user_accounts', { user_id: req.user.userId, account_id: account.id });
     }
-    res.status(201).json(account);
+    res.status(201).json(redactAccount(account));
   } catch (e) { next(e); }
 });
 
@@ -104,7 +107,7 @@ router.get('/:accountId', async (req, res, next) => {
     if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(req.params.accountId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    res.json(account);
+    res.json(redactAccount(account));
   } catch (e) { next(e); }
 });
 
@@ -113,6 +116,7 @@ router.patch('/:accountId', async (req, res, next) => {
     if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(req.params.accountId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
     // 유저는 안전한 필드만 수정 가능
     const body = req.user?.type === 'user'
       ? (({ threads_access_token, daily_post_min, daily_post_max, active_time_windows, min_interval_minutes,
@@ -127,7 +131,7 @@ router.patch('/:accountId', async (req, res, next) => {
              coupang_access_key, coupang_secret_key, coupang_partner_id, coupang_tracking_code })
         )(req.body)
       : req.body;
-    res.json(await updateAccount(req.params.accountId, body));
+    res.json(redactAccount(await updateAccount(req.params.accountId, stripBlankSensitiveAccountFields(body))));
   } catch (e) { next(e); }
 });
 
@@ -136,6 +140,7 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
     if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(req.params.accountId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
     res.json(await runPipelineForAccount(req.params.accountId, { requestedBy: req.user?.email || req.user?.type || 'manual' }));
   } catch (e) { next(e); }
 });

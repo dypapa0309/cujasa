@@ -1,8 +1,7 @@
 import { Router } from 'express';
-import { createUser, grantUserProduct } from '../services/authService.js';
+import { createUser } from '../services/authService.js';
 import { dbGet, dbInsert, dbUpdate } from '../services/supabaseService.js';
 import {
-  activateUser,
   customerKeyFor,
   getProduct,
   makeOrderId,
@@ -10,7 +9,7 @@ import {
   tossClientKey,
   tossPost
 } from './billing.js';
-import { ensureSetupTaskForPayment } from '../services/setupTaskService.js';
+import { applyPaidEntitlement } from '../services/billingEntitlementService.js';
 
 const router = Router();
 
@@ -104,15 +103,7 @@ router.post('/toss/success', async (req, res, next) => {
     });
 
     if (nextStatus === 'paid') {
-      await activateUser({
-        userId: payment.user_id,
-        plan: product.plan,
-        billingStatus: 'paid',
-        paidUntil: null,
-        maxAccounts: product.max_accounts
-      });
-      await grantUserProduct(payment.user_id, 'cujasa', { status: 'active', role: 'customer' });
-      await ensureSetupTaskForPayment(updated);
+      await applyPaidEntitlement({ userId: payment.user_id, product, payment: updated, paidAt: new Date(), source: 'public_toss' });
     } else {
       await dbUpdate('users', { id: payment.user_id }, { billing_status: 'pending' });
     }

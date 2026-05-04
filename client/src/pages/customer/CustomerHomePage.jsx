@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 
-export default function CustomerHomePage({ account }) {
+export default function CustomerHomePage({ account, currentUser }) {
   const [queue, setQueue] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -18,7 +18,8 @@ export default function CustomerHomePage({ account }) {
     }).catch(console.error).finally(() => setLoading(false));
   }, [account?.id]);
 
-  const isActive = account?.status === 'active';
+  const isExpired = currentUser?.billing?.status === 'past_due';
+  const isActive = account?.status === 'active' && !isExpired;
 
   const upcomingScheduled = queue
     .filter((r) => r.status === 'scheduled' && new Date(r.scheduled_at) >= new Date())
@@ -46,10 +47,12 @@ export default function CustomerHomePage({ account }) {
       <div className={`rounded-2xl p-6 ${isActive ? 'bg-gradient-to-br from-emerald-500 to-emerald-600' : 'bg-gradient-to-br from-gray-400 to-gray-500'} text-white`}>
         <div className="flex items-center gap-3 mb-3">
           <div className={`w-3 h-3 rounded-full ${isActive ? 'bg-white animate-pulse' : 'bg-gray-200'}`} />
-          <span className="font-bold text-sm">{isActive ? '자동화 실행 중' : '일시 정지됨'}</span>
+          <span className="font-bold text-sm">{isExpired ? '이용 기간 만료' : isActive ? '자동화 실행 중' : '일시 정지됨'}</span>
         </div>
         <div className="text-2xl font-black mb-1">{account?.name}</div>
-        <div className="text-emerald-100 text-sm">{isActive ? '24시간 자동으로 포스팅하고 있습니다' : '관리자에게 문의해주세요'}</div>
+        <div className="text-sm text-white/80">
+          {isExpired ? '결제 탭에서 월결제를 연장하거나 영구구매로 전환해주세요' : isActive ? '24시간 자동으로 포스팅하고 있습니다' : '관리자에게 문의해주세요'}
+        </div>
       </div>
 
       {/* 오늘 통계 */}

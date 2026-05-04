@@ -7,6 +7,7 @@ import { createTrackingLink } from './trackingService.js';
 import { validatePostCandidate } from '../utils/contentGuardrails.js';
 import { assertPreflightCanPublish, preflightAccount } from './accountPreflightService.js';
 import { classifyQueueError } from './queueErrorService.js';
+import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 
 async function isPostAllowedForQueue(post, account) {
   const topic = post.topic_id ? await dbGet('topics', { id: post.topic_id }) : null;
@@ -29,6 +30,7 @@ async function isPostAllowedForQueue(post, account) {
 export async function addPostToQueue(postId, scheduledAt = null) {
   const post = await dbGet('posts', { id: postId });
   if (!post) throw new Error('Post not found');
+  await assertAccountOwnerCanOperate(post.account_id);
   const account = await dbGet('accounts', { id: post.account_id });
   if (account?.status !== 'active') {
     const error = new Error(`Account is ${account?.status || 'missing'}; cannot add post to queue`);
@@ -54,6 +56,7 @@ export async function addPostToQueue(postId, scheduledAt = null) {
 }
 
 export async function createDailyQueue(accountId) {
+  await assertAccountOwnerCanOperate(accountId);
   const account = await dbGet('accounts', { id: accountId });
   if (account?.status !== 'active') {
     const error = new Error(`Account is ${account?.status || 'missing'}; cannot create daily queue`);
@@ -120,6 +123,7 @@ export async function uploadQueueItem(queueId) {
   const account = await dbGet('accounts', { id: queue.account_id });
   const post = await dbGet('posts', { id: queue.post_id });
   try {
+    await assertAccountOwnerCanOperate(queue.account_id);
     if (!post) {
       const error = new Error('Post not found for queue item');
       error.permanent = true;

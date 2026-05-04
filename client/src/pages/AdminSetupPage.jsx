@@ -21,12 +21,22 @@ const statusClass = {
 export default function AdminSetupPage() {
   const toast = useToast();
   const [tasks, setTasks] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState('');
+  const [manual, setManual] = useState({ userId: '', productId: 'onetime_590000', amount: '', paidAt: '', memo: '' });
+  const [savingManual, setSavingManual] = useState(false);
 
   const load = async () => {
-    const rows = await api.get('/api/admin/setup-tasks');
+    const [rows, nextUsers, nextProducts] = await Promise.all([
+      api.get('/api/admin/setup-tasks'),
+      api.get('/api/admin/users'),
+      api.get('/api/admin/billing/products')
+    ]);
     setTasks(rows);
+    setUsers(nextUsers);
+    setProducts(nextProducts);
   };
 
   useEffect(() => {
@@ -52,6 +62,26 @@ export default function AdminSetupPage() {
     }
   };
 
+  const submitManualPayment = async (e) => {
+    e.preventDefault();
+    if (!manual.userId || !manual.productId) return;
+    setSavingManual(true);
+    try {
+      const product = products.find((item) => item.id === manual.productId);
+      await api.post('/api/admin/billing/manual-payment', {
+        ...manual,
+        amount: Number(manual.amount || product?.amount || 0)
+      });
+      setManual({ userId: '', productId: 'onetime_590000', amount: '', paidAt: '', memo: '' });
+      await load();
+      toast('수동 입금 결제를 반영했습니다.', 'success');
+    } catch (err) {
+      toast(err.message || '수동 결제 입력에 실패했습니다.', 'error');
+    } finally {
+      setSavingManual(false);
+    }
+  };
+
   if (loading) return <div className="rounded border border-line bg-white p-6 text-sm text-slate-500">셋업 대기 확인 중</div>;
 
   return (
@@ -72,6 +102,43 @@ export default function AdminSetupPage() {
         <SummaryCard icon={<Wrench size={18} />} label="셋업 중" value={counts.inProgress} />
         <SummaryCard icon={<CheckCircle2 size={18} />} label="완료" value={counts.completed} />
       </div>
+
+      <section className="rounded border border-line bg-white p-5">
+        <div className="mb-4">
+          <h3 className="font-bold">수동 계좌이체 입력</h3>
+          <p className="mt-0.5 text-xs text-slate-400">내 계좌로 직접 입금한 고객도 여기서 결제로 기록하고 권한을 열 수 있습니다.</p>
+        </div>
+        <form onSubmit={submitManualPayment} className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_1fr_1.4fr_auto] md:items-end">
+          <label className="grid gap-1 text-xs">
+            <span className="font-bold text-slate-500">고객</span>
+            <select required className="rounded border border-line px-3 py-2 text-sm" value={manual.userId} onChange={(e) => setManual((p) => ({ ...p, userId: e.target.value }))}>
+              <option value="">고객 선택</option>
+              {users.map((user) => <option key={user.id} value={user.id}>{user.email}{user.buyerName ? ` · ${user.buyerName}` : ''}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="font-bold text-slate-500">상품</span>
+            <select className="rounded border border-line px-3 py-2 text-sm" value={manual.productId} onChange={(e) => setManual((p) => ({ ...p, productId: e.target.value }))}>
+              {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="font-bold text-slate-500">금액</span>
+            <input className="rounded border border-line px-3 py-2 text-sm" value={manual.amount} placeholder="상품 기본가" onChange={(e) => setManual((p) => ({ ...p, amount: e.target.value }))} />
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="font-bold text-slate-500">입금일</span>
+            <input type="datetime-local" className="rounded border border-line px-3 py-2 text-sm" value={manual.paidAt} onChange={(e) => setManual((p) => ({ ...p, paidAt: e.target.value }))} />
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="font-bold text-slate-500">메모</span>
+            <input className="rounded border border-line px-3 py-2 text-sm" value={manual.memo} placeholder="입금자명/특이사항" onChange={(e) => setManual((p) => ({ ...p, memo: e.target.value }))} />
+          </label>
+          <button disabled={savingManual} className="rounded bg-coupang px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
+            {savingManual ? '반영 중...' : '입금 반영'}
+          </button>
+        </form>
+      </section>
 
       <section className="rounded border border-line bg-white">
         <div className="border-b border-line px-5 py-4">

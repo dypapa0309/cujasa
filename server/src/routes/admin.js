@@ -14,6 +14,8 @@ import { hashPassword } from '../utils/password.js';
 import { cleanupQueueErrors, operationAccountRows, operationSummary } from '../services/operationsService.js';
 import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js';
 import { buildMisassignmentReport } from '../services/accountOwnershipService.js';
+import { createManualPayment, expireDueEntitlements } from '../services/billingEntitlementService.js';
+import { redactAccount, redactAccounts, redactBillingSettings, redactPayment } from '../services/redactionService.js';
 
 const router = Router();
 
@@ -210,7 +212,7 @@ router.post('/accounts/:accountId/disconnect-threads', async (req, res, next) =>
       last_threads_refresh_at: null
     });
     if (!updated) return res.status(404).json({ error: 'Account not found' });
-    res.json(updated);
+    res.json(redactAccount(updated));
   } catch (e) { next(e); }
 });
 
@@ -232,7 +234,7 @@ router.get('/users', async (req, res, next) => {
         ...u,
         buyerName: u.buyer_name || '',
         password_hash: undefined,
-        accounts: accounts.filter(Boolean),
+        accounts: redactAccounts(accounts.filter(Boolean)),
         products
       };
     }));
@@ -243,6 +245,35 @@ router.get('/users', async (req, res, next) => {
 router.get('/products', async (req, res, next) => {
   try {
     res.json(await listAvailableProducts());
+  } catch (e) { next(e); }
+});
+
+router.get('/billing/products', async (req, res, next) => {
+  try {
+    res.json(await dbList('billing_products', { active: true }, { order: 'amount', ascending: false }));
+  } catch (e) { next(e); }
+});
+
+router.get('/billing/payments', async (req, res, next) => {
+  try {
+    const rows = await dbList('billing_payments', {}, { order: 'created_at', ascending: false, limit: 100 });
+    res.json(rows.map(redactPayment));
+  } catch (e) { next(e); }
+});
+
+router.post('/billing/manual-payment', async (req, res, next) => {
+  try {
+    const { userId, productId, amount, paidAt, memo, buyerName, phone } = req.body || {};
+    if (!userId || !productId) return res.status(400).json({ error: 'userId, productId 필수' });
+    const payment = await createManualPayment({ userId, productId, amount, paidAt, memo, buyerName, phone });
+    res.status(201).json(redactPayment(payment));
+  } catch (e) { next(e); }
+});
+
+router.post('/billing/expire-due', async (req, res, next) => {
+  try {
+    const expired = await expireDueEntitlements();
+    res.json({ expiredCount: expired.length, expired });
   } catch (e) { next(e); }
 });
 
@@ -373,18 +404,8 @@ router.patch('/users/:id/products/:productId/settings', async (req, res, next) =
     const settings = updated.settings && typeof updated.settings === 'object' ? updated.settings : {};
     res.json({
       productId: req.params.productId,
-      settingsSummary: {
-        hasCoupangAccessKey: Boolean(settings.coupangAccessKey),
-        hasCoupangSecretKey: Boolean(settings.coupangSecretKey),
-        hasCoupangPartnerId: Boolean(settings.coupangPartnerId),
-        defaultTrackingCode: settings.defaultTrackingCode || ''
-      },
-      settings: {
-        coupangAccessKey: settings.coupangAccessKey || '',
-        coupangPartnerId: settings.coupangPartnerId || '',
-        defaultTrackingCode: settings.defaultTrackingCode || '',
-        hasCoupangSecretKey: Boolean(settings.coupangSecretKey)
-      }
+      settingsSummary: redactBillingSettings(settings),
+      settings: redactBillingSettings(settings)
     });
   } catch (e) { next(e); }
 });

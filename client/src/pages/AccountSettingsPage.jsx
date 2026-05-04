@@ -3,6 +3,24 @@ import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import SettingsForm from '../components/SettingsForm.jsx';
 
+const sensitiveAccountKeys = [
+  'threads_access_token',
+  'coupang_access_key',
+  'coupang_secret_key',
+  'coupang_partner_id',
+  'coupang_tracking_code'
+];
+
+function sanitizeAccountPayload(form) {
+  const payload = { ...form };
+  for (const key of sensitiveAccountKeys) {
+    if (!String(payload[key] || '').trim()) delete payload[key];
+    delete payload[`has_${key}`];
+    delete payload[`masked_${key}`];
+  }
+  return payload;
+}
+
 export default function AccountSettingsPage({ selectedAccount, reloadAccounts }) {
   const toast = useToast();
   const [form, setForm] = useState(selectedAccount || {});
@@ -15,7 +33,7 @@ export default function AccountSettingsPage({ selectedAccount, reloadAccounts })
     e.preventDefault();
     setSaving(true);
     try {
-      const saved = await api.patch(`/api/accounts/${form.id}`, form);
+      const saved = await api.patch(`/api/accounts/${form.id}`, sanitizeAccountPayload(form));
       setForm(saved);
       await reloadAccounts?.();
       toast('설정이 변경되었습니다.', 'success');
@@ -45,8 +63,8 @@ export default function AccountSettingsPage({ selectedAccount, reloadAccounts })
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold text-slate-800">Threads OAuth 연결</div>
-            <div className={`mt-1 text-xs font-medium ${selectedAccount.threads_access_token ? 'text-emerald-600' : 'text-rose-500'}`}>
-              {selectedAccount.threads_access_token ? '연결됨' : '미연결'} · {selectedAccount.account_handle || '핸들 미입력'}
+            <div className={`mt-1 text-xs font-medium ${selectedAccount.has_threads_access_token ? 'text-emerald-600' : 'text-rose-500'}`}>
+              {selectedAccount.has_threads_access_token ? '연결됨' : '미연결'} · {selectedAccount.account_handle || '핸들 미입력'}
             </div>
           </div>
           <button
@@ -55,7 +73,7 @@ export default function AccountSettingsPage({ selectedAccount, reloadAccounts })
             disabled={connectingThreads}
             className="rounded bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
-            {connectingThreads ? '연결 이동 중...' : selectedAccount.threads_access_token ? '다시 연결하기' : 'Threads 연결하기'}
+            {connectingThreads ? '연결 이동 중...' : selectedAccount.has_threads_access_token ? '다시 연결하기' : 'Threads 연결하기'}
           </button>
         </div>
       </div>

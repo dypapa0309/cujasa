@@ -1,8 +1,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
-import { ensureSetupTaskForPayment } from '../services/setupTaskService.js';
-import { grantUserProduct } from '../services/authService.js';
+import { applyPaidEntitlement, refreshUserEntitlement } from '../services/billingEntitlementService.js';
 
 const router = Router();
 const BASIC_MAX_ACCOUNTS = 2;
@@ -101,7 +100,8 @@ export function mapPayment(row) {
     method: row.method,
     amount: row.amount,
     status: row.status,
-    paymentKey: row.payment_key,
+    hasPaymentKey: Boolean(row.payment_key),
+    maskedPaymentKey: row.payment_key ? `••••••${String(row.payment_key).slice(-4)}` : '',
     virtualAccount: virtualAccount || null,
     failedReason: row.failed_reason,
     paidAt: row.paid_at,
@@ -161,6 +161,7 @@ router.get('/status', async (req, res, next) => {
   try {
     const user = requireCustomer(req, res);
     if (!user) return;
+    const entitlement = await refreshUserEntitlement(user.userId);
     const [dbUser, payments, subscriptions] = await Promise.all([
       dbGet('users', { id: user.userId }),
       dbList('billing_payments', { user_id: user.userId }, { order: 'created_at', ascending: false, limit: 10 }),
@@ -169,7 +170,7 @@ router.get('/status', async (req, res, next) => {
     res.json({
       billing: {
         plan: dbUser?.plan || null,
-        status: dbUser?.billing_status || 'none',
+        status: entitlement.billing.status || dbUser?.billing_status || 'none',
         paidUntil: dbUser?.paid_until || null,
         maxAccounts: dbUser?.max_accounts ?? BASIC_MAX_ACCOUNTS
       },
@@ -239,15 +240,7 @@ router.post('/toss/success', async (req, res, next) => {
     });
 
     if (nextStatus === 'paid') {
-      await activateUser({
-        userId: user.userId,
-        plan: product.plan,
-        billingStatus: 'paid',
-        paidUntil: null,
-        maxAccounts: product.max_accounts
-      });
-      await grantUserProduct(user.userId, 'cujasa', { status: 'active', role: 'customer' });
-      await ensureSetupTaskForPayment(updated);
+      await applyPaidEntitlement({ userId: user.userId, product, payment: updated, paidAt: new Date(), source: 'toss' });
     } else {
       await dbUpdate('users', { id: user.userId }, { billing_status: 'pending' });
     }
@@ -326,13 +319,7 @@ router.post('/billing-auth', async (req, res, next) => {
     });
 
     if (charged.status === 'DONE') {
-      await activateUser({
-        userId: user.userId,
-        plan: product.plan,
-        billingStatus: 'active',
-        paidUntil: nextBillingAt,
-        maxAccounts: product.max_accounts
-      });
+      await applyPaidEntitlement({ userId: user.userId, product, payment, paidAt: now, source: 'toss_billing' });
     } else {
       await dbUpdate('users', { id: user.userId }, { billing_status: 'past_due' });
     }
@@ -380,13 +367,7 @@ router.post('/subscriptions/:id/charge', async (req, res, next) => {
       last_payment_id: payment.id
     });
     if (charged.status === 'DONE') {
-      await activateUser({
-        userId: user.userId,
-        plan: product.plan,
-        billingStatus: 'active',
-        paidUntil: nextBillingAt,
-        maxAccounts: product.max_accounts
-      });
+      await applyPaidEntitlement({ userId: user.userId, product, payment, paidAt: now, source: 'toss_billing' });
     } else {
       await dbUpdate('users', { id: user.userId }, { billing_status: 'past_due' });
     }
@@ -410,15 +391,7 @@ export async function tossWebhook(req, res, next) {
     if (status === 'DONE' && payment.status !== 'paid') {
       const product = await getProduct(payment.product_id);
       const updated = await markPaymentPaid(payment, data);
-      await activateUser({
-        userId: payment.user_id,
-        plan: product.plan,
-        billingStatus: product.billing_cycle === 'monthly' ? 'active' : 'paid',
-        paidUntil: product.billing_cycle === 'monthly' ? addMonths(new Date(), 1).toISOString() : null,
-        maxAccounts: product.max_accounts
-      });
-      await grantUserProduct(payment.user_id, 'cujasa', { status: 'active', role: 'customer' });
-      await ensureSetupTaskForPayment(updated);
+      await applyPaidEntitlement({ userId: payment.user_id, product, payment: updated, paidAt: new Date(), source: 'toss_webhook' });
       return res.json({ ok: true, payment: mapPayment(updated) });
     }
 

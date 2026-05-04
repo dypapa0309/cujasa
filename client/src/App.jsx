@@ -82,7 +82,8 @@ export default function App() {
             type: 'user',
             email: result.user?.email,
             maxAccounts: result.user?.maxAccounts,
-            products: result.user?.products || []
+            products: result.user?.products || [],
+            billing: result.user?.billing || null
           });
           return loadAccounts();
         }
@@ -113,7 +114,7 @@ export default function App() {
     return (
       <ToastProvider>
         <LoginPage onLogin={(info) => {
-          setCurrentUser({ type: info.type, email: info.email, maxAccounts: info.maxAccounts, products: info.products || [] });
+          setCurrentUser({ type: info.type, email: info.email, maxAccounts: info.maxAccounts, products: info.products || [], billing: info.billing || null });
           loadAccounts().catch(console.error);
         }} />
       </ToastProvider>

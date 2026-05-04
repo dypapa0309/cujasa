@@ -13,6 +13,15 @@ function formatDate(value) {
   return value ? new Date(value).toLocaleDateString('ko-KR') : '-';
 }
 
+function billingTitle(billing) {
+  if (billing?.plan === 'onetime' && billing?.status === 'paid') return '영구 이용 중';
+  if (billing?.status === 'active') return `${formatDate(billing.paidUntil)}까지 이용 가능`;
+  if (billing?.status === 'past_due') return '이용 기간 만료';
+  if (billing?.status === 'pending') return '입금 대기';
+  if (billing?.status === 'paid') return '이용 가능';
+  return '결제 전';
+}
+
 function loadTossSdk() {
   if (window.TossPayments) return Promise.resolve(window.TossPayments);
   return new Promise((resolve, reject) => {
@@ -175,7 +184,7 @@ export default function CustomerBillingPage({ currentUser }) {
           <div>
             <div className="text-xs font-bold text-gray-400">내 결제 상태</div>
             <h2 className="mt-1 text-xl font-black">
-              {billing?.status === 'active' || billing?.status === 'paid' ? '이용 가능' : billing?.status === 'pending' ? '입금 대기' : '결제 전'}
+              {billingTitle(billing)}
             </h2>
             <p className="mt-1 text-sm text-gray-500">
               {currentUser.email} · Threads 계정 {billing?.maxAccounts ?? currentUser.maxAccounts ?? 2}개
@@ -185,9 +194,14 @@ export default function CustomerBillingPage({ currentUser }) {
             <RefreshCw size={18} />
           </button>
         </div>
-        {billing?.paidUntil && (
+        {billing?.status === 'past_due' && (
+          <div className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+            자동화 실행이 잠시 중지됐습니다. 월결제를 연장하거나 영구구매로 전환해주세요.
+          </div>
+        )}
+        {billing?.paidUntil && billing?.status !== 'past_due' && (
           <div className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            다음 결제 예정일 {formatDate(billing.paidUntil)}
+            이용 가능 기간 {formatDate(billing.paidUntil)}까지
           </div>
         )}
       </div>
@@ -211,7 +225,7 @@ export default function CustomerBillingPage({ currentUser }) {
       <div className="grid gap-4">
         <PlanCard
           icon={Landmark}
-          title="베이직 일시불"
+          title="베이직 영구구매"
           priceText="590,000원"
           caption="가상계좌 결제"
           product={productsById.onetime_590000}
@@ -220,7 +234,7 @@ export default function CustomerBillingPage({ currentUser }) {
         />
         <PlanCard
           icon={CreditCard}
-          title="베이직 월정액"
+          title={billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액'}
           priceText="129,000원 / 월"
           caption={activeSubscription ? `활성 · 다음 결제 ${formatDate(activeSubscription.nextBillingAt)}` : '카드 자동결제'}
           product={productsById.monthly_129000}

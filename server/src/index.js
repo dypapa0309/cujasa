@@ -27,6 +27,7 @@ import { runDueMetricJobs } from './services/metricsJobService.js';
 import { runFullPipeline } from './services/pipelineService.js';
 import { listBlogPosts } from './services/blogService.js';
 import { refreshExpiringThreadsTokens } from './services/threadsOAuthService.js';
+import { expireDueEntitlements } from './services/billingEntitlementService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -174,6 +175,12 @@ cron.schedule('0 2 * * *', async () => {
 cron.schedule('0 3 * * *', async () => {
   const result = await refreshExpiringThreadsTokens();
   console.log('[Threads Token Refresh]', JSON.stringify(result));
+});
+
+// 매시간: 월결제 만료 고객 자동 차단
+cron.schedule('17 * * * *', async () => {
+  const expired = await expireDueEntitlements();
+  if (expired.length > 0) console.log('[Billing Expire]', JSON.stringify({ expiredCount: expired.length }));
 });
 
 app.listen(port, () => {

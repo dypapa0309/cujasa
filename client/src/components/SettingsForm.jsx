@@ -1,3 +1,13 @@
+import SensitiveInput from './SensitiveInput.jsx';
+
+const sensitiveKeys = new Set([
+  'threads_access_token',
+  'coupang_access_key',
+  'coupang_secret_key',
+  'coupang_partner_id',
+  'coupang_tracking_code'
+]);
+
 export default function SettingsForm({ form, setForm, onSubmit, saving }) {
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
   const updateList = (key, value) => update(key, value.split('\n').map((item) => item.trim()).filter(Boolean));
@@ -34,7 +44,15 @@ export default function SettingsForm({ form, setForm, onSubmit, saving }) {
       ].map(([key, label, type]) => (
         <label key={key} className="grid gap-1 text-sm">
           <span className="font-medium">{label}</span>
-          <input type={type} className="rounded border border-line px-3 py-2" value={form[key] || ''} onChange={(e) => update(key, e.target.value)} />
+          {sensitiveKeys.has(key) ? (
+            <SensitiveInput
+              value={form[key] || ''}
+              placeholder={form[`has_${key}`] ? (form[`masked_${key}`] || '저장됨 - 변경 시에만 입력') : ''}
+              onChange={(e) => update(key, e.target.value)}
+            />
+          ) : (
+            <input type={type} className="rounded border border-line px-3 py-2" value={form[key] || ''} onChange={(e) => update(key, e.target.value)} />
+          )}
         </label>
       ))}
       <label className="grid gap-1 text-sm md:col-span-2">

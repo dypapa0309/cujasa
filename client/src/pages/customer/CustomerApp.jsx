@@ -1,21 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Home, FileText, Settings, Plus, X } from 'lucide-react';
+import { CreditCard, Home, FileText, Settings, Plus, X } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import CustomerHomePage from './CustomerHomePage.jsx';
 import CustomerPostsPage from './CustomerPostsPage.jsx';
 import CustomerSettingsPage from './CustomerSettingsPage.jsx';
+import CustomerBillingPage from './CustomerBillingPage.jsx';
 import { CURRENT_PRODUCT, JASAIN_BRAND } from '../../config/products.js';
 
 const tabs = [
   ['home', '홈', Home],
   ['posts', '포스팅 현황', FileText],
+  ['billing', '결제', CreditCard],
   ['settings', '설정', Settings],
 ];
 
 const pages = {
   home: CustomerHomePage,
   posts: CustomerPostsPage,
+  billing: CustomerBillingPage,
   settings: CustomerSettingsPage,
 };
 
@@ -189,7 +192,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
                     ${selectedIdx === i ? 'bg-coupang text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-coupang hover:text-coupang'}`}
                 >
                   <span>{acc.name}</span>
-                  <span className={`ml-2 inline-block h-2 w-2 rounded-full align-middle ${acc.threads_access_token ? 'bg-emerald-300' : 'bg-rose-300'}`} />
+                  <span className={`ml-2 inline-block h-2 w-2 rounded-full align-middle ${acc.has_threads_access_token ? 'bg-emerald-300' : 'bg-rose-300'}`} />
                 </button>
               ))}
               {canAdd && (
@@ -253,7 +256,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
 
       {/* 하단 탭 */}
       <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-100 safe-area-bottom">
-        <div className="max-w-2xl mx-auto grid grid-cols-3">
+        <div className="max-w-2xl mx-auto grid grid-cols-4">
           {tabs.map(([key, label, Icon]) => (
             <button key={key} onClick={() => { if (!guardDuringPipeline()) setTab(key); }}
               className={`flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors
