@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import { dbGet, dbList, dbUpdate } from '../services/supabaseService.js';
-import { createDailyQueue } from '../services/schedulerService.js';
 import { isAutomationRunning } from '../services/accountAutomationService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 
@@ -40,38 +39,32 @@ async function main() {
     if (!impacted.has(account.id)) {
       impacted.set(account.id, {
         account,
-        skippedQueues: [],
+        downgradedQueues: [],
         recreatedQueues: [],
         errors: []
       });
     }
-    impacted.get(account.id).skippedQueues.push(queue);
+    impacted.get(account.id).downgradedQueues.push(queue);
   }
 
   if (apply) {
     for (const item of impacted.values()) {
-      for (const queue of item.skippedQueues) {
-        if (queue.status !== 'skipped') {
+      for (const queue of item.downgradedQueues) {
+        try {
           await dbUpdate('post_queue', { id: queue.id }, {
-            status: 'skipped',
-            error_message: '실상품 연결이 없는 과거 예약이라 자동 복구를 위해 취소됨'
+            status: 'scheduled',
+            post_mode: 'no_link',
+            error_message: '실상품 연결이 없어 fallback 카드 표시 후 일반 업로드로 전환됨'
           });
+          if (queue.post_id) await dbUpdate('posts', { id: queue.post_id }, { status: 'queued' });
+          item.recreatedQueues.push({
+            id: queue.id,
+            postMode: 'no_link',
+            scheduledAt: queue.scheduled_at
+          });
+        } catch (error) {
+          item.errors.push(error.message);
         }
-        if (queue.post_id) await dbUpdate('posts', { id: queue.post_id }, { status: 'draft' });
-      }
-      try {
-        const recreated = await createDailyQueue(item.account.id, {
-          skipPreflight: true,
-          productRepairUseAiKeywords: false
-        });
-        item.recreatedQueues = recreated.map((queue) => ({
-          id: queue.id,
-          postMode: queue.post_mode,
-          scheduledAt: queue.scheduled_at
-        }));
-        item.diagnostics = recreated.diagnostics || null;
-      } catch (error) {
-        item.errors.push(error.message);
       }
     }
   }
@@ -81,8 +74,8 @@ async function main() {
     impactedAccounts: [...impacted.values()].map((item) => ({
       accountId: item.account.id,
       accountName: item.account.name,
-      skippedQueueCount: item.skippedQueues.length,
-      skippedQueues: item.skippedQueues.map((queue) => ({
+      downgradedQueueCount: item.downgradedQueues.length,
+      downgradedQueues: item.downgradedQueues.map((queue) => ({
         id: queue.id,
         postMode: queue.post_mode,
         scheduledAt: queue.scheduled_at,

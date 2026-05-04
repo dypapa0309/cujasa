@@ -1,6 +1,6 @@
 import { getJson } from './openaiService.js';
 import { getAccount } from './accountService.js';
-import { searchProductsForTopic } from './coupangService.js';
+import { ensureFallbackProductForTopic, searchProductsForTopic } from './coupangService.js';
 import { selectProducts } from './productSelectionService.js';
 import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
@@ -143,14 +143,19 @@ export async function repairProductsForTopic(topicId, options = {}) {
     }
   }
 
+  const fallbackProduct = await ensureFallbackProductForTopic(topicId, 'repair_failed');
   await logActivity({
     account_id: account.id,
     project_id: account.project_id,
     topic_id: topicId,
     action: 'product_repair_fallback_to_no_link',
     level: 'warn',
-    message: '실상품 자동 복구 실패로 일반 글로 전환합니다.',
-    payload: { attempts, reasonCode: 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK' }
+    message: '실상품 자동 복구 실패로 fallback 카드를 남기고 링크 없는 업로드로 전환합니다.',
+    payload: {
+      attempts,
+      fallbackProductId: fallbackProduct?.id,
+      reasonCode: 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK'
+    }
   });
 
   return {

@@ -30,7 +30,7 @@ function fallbackProduct(keyword, index = 0, reason = 'fallback') {
   return {
     product_id: `fallback-${keyword}-${index}`,
     product_name: `${keyword} 추천 상품`,
-    product_price: null,
+    product_price: 0,
     product_image: '',
     product_url: `https://www.coupang.com/np/search?q=${q}`,
     partner_url: `https://www.coupang.com/np/search?q=${q}`,
@@ -153,6 +153,21 @@ export async function searchProductsForTopic(topicId, options = {}) {
     if (stopAfterRealCount > 0 && saved.filter((product) => !product.is_fallback).length >= stopAfterRealCount) break;
   }
   return saved;
+}
+
+export async function ensureFallbackProductForTopic(topicId, reason = 'repair_failed') {
+  const topic = await dbGet('topics', { id: topicId });
+  if (!topic) return null;
+  const existing = await dbList('coupang_products', { topic_id: topic.id });
+  const fallback = existing.find((product) => product.is_fallback);
+  if (fallback) return fallback;
+  const keyword = topic.search_keywords?.[0] || topic.title || '상품 추천';
+  return dbInsert('coupang_products', {
+    account_id: topic.account_id,
+    topic_id: topic.id,
+    keyword,
+    ...fallbackProduct(keyword, 0, reason)
+  });
 }
 
 export const listProducts = async (topicId) => (await dbList('coupang_products', { topic_id: topicId }, { order: 'created_at', ascending: true }))
