@@ -3,6 +3,7 @@ import { dbGet, dbList, dbUpdate } from '../services/supabaseService.js';
 import { addPostToQueue, createDailyQueue, processDueQueue, uploadQueueItem } from '../services/schedulerService.js';
 import { requireAccountAccessParam, requireQueueAccess } from '../middleware/accountAccess.js';
 import { assertUserCanOperate } from '../services/billingEntitlementService.js';
+import { decorateQueueRow, decorateQueueRows, postModeLabel } from '../services/queueErrorService.js';
 
 const router = Router();
 
@@ -19,7 +20,10 @@ router.post('/:accountId/create-daily-queue', requireAccountAccessParam(), async
   } catch (e) { next(e); }
 });
 router.get('/:accountId/queue', requireAccountAccessParam(), async (req, res, next) => {
-  try { res.json(await dbList('post_queue', { account_id: req.params.accountId }, { order: 'scheduled_at', ascending: true })); } catch (e) { next(e); }
+  try {
+    const rows = await dbList('post_queue', { account_id: req.params.accountId }, { order: 'scheduled_at', ascending: true });
+    res.json(decorateQueueRows(rows));
+  } catch (e) { next(e); }
 });
 router.patch('/:queueId', async (req, res, next) => {
   try { res.json((await dbUpdate('post_queue', { id: req.params.queueId }, req.body))[0]); } catch (e) { next(e); }
@@ -41,8 +45,9 @@ router.get('/detail/:queueId', requireQueueAccess, async (req, res, next) => {
     if (!queue) return res.status(404).json({ error: 'Not found' });
 
     const post = queue.post_id ? await dbGet('posts', { id: queue.post_id }) : null;
-    const postProducts = queue.topic_id
-      ? await dbList('post_products', { topic_id: queue.topic_id }, { order: 'rank', ascending: true })
+    const topicId = post?.topic_id || queue.topic_id;
+    const postProducts = topicId
+      ? await dbList('post_products', { topic_id: topicId }, { order: 'rank', ascending: true })
       : [];
     const products = await Promise.all(
       postProducts.map(async (pp) => {
@@ -53,9 +58,16 @@ router.get('/detail/:queueId', requireQueueAccess, async (req, res, next) => {
     const trackingLink = queue.tracking_link_id
       ? await dbGet('tracking_links', { id: queue.tracking_link_id })
       : null;
+    const decoratedQueue = decorateQueueRow(queue);
+    const postMode = queue.post_mode || 'auto';
 
     res.json({
-      queue,
+      queue: decoratedQueue,
+      postMode,
+      postModeLabel: postModeLabel(postMode),
+      linkStatus: postMode === 'link'
+        ? (trackingLink ? 'ready' : 'missing')
+        : (postMode === 'no_link' ? 'not_required' : 'unknown'),
       post,
       products: products.filter(Boolean),
       trackingLink

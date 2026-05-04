@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
+import { classifyQueueError } from './queueErrorService.js';
 
 const THREADS_AUTH_URL = 'https://threads.net/oauth/authorize';
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
@@ -97,6 +98,22 @@ async function requestJson(url, options = {}) {
   return json;
 }
 
+async function markPastTokenFailuresRetryable(accountId) {
+  const rows = await dbList('post_queue', { account_id: accountId });
+  const targets = rows.filter((row) => {
+    if (!['failed', 'retry', 'manual_required'].includes(row.status)) return false;
+    const category = row.error_category || classifyQueueError(row.error_message).category;
+    return category === 'threads_reconnect_required';
+  });
+  for (const row of targets) {
+    await dbUpdate('post_queue', { id: row.id }, {
+      error_category: 'retry_available',
+      error_message: row.error_message || 'Threads 재연결 후 재시도 가능'
+    });
+  }
+  return targets.length;
+}
+
 export async function completeThreadsOAuth({ code, state }) {
   if (!code) {
     const error = new Error('Missing Threads OAuth code');
@@ -166,12 +183,13 @@ export async function completeThreadsOAuth({ code, state }) {
   if (me.username) patch.account_handle = `@${String(me.username).replace(/^@/, '')}`;
 
   const [account] = await dbUpdate('accounts', { id: accountId }, patch);
+  const retryableQueueCount = await markPastTokenFailuresRetryable(accountId).catch(() => 0);
   await logActivity({
     account_id: accountId,
     project_id: account?.project_id,
     action: 'threads_oauth_connected',
     message: me.username || me.id,
-    payload: { threadsUserId: me.id, expiresAt }
+    payload: { threadsUserId: me.id, expiresAt, retryableQueueCount }
   });
   return account;
 }

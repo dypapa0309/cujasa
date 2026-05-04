@@ -28,3 +28,22 @@ alter table post_queue
 
 create index if not exists idx_post_queue_error_category
   on post_queue(error_category);
+
+alter table post_queue
+  add column if not exists post_mode text not null default 'auto';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'post_queue_post_mode_check'
+  ) then
+    alter table post_queue
+      add constraint post_queue_post_mode_check
+      check (post_mode in ('auto', 'link', 'no_link'));
+  end if;
+end $$;
+
+create index if not exists idx_post_queue_post_mode
+  on post_queue(post_mode);

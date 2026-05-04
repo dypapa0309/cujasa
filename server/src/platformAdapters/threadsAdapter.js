@@ -1,11 +1,6 @@
 const THREADS_API = 'https://graph.threads.net/v1.0';
 const COUPANG_DISCLOSURE = '[광고] 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
-function hasDisclosure(text) {
-  const value = String(text || '');
-  return /\[?광고\]?/.test(value) || /쿠팡\s*파트너스.*수수료/.test(value) || /파트너스\s*활동.*수수료/.test(value);
-}
-
 function stripLinkCta(text) {
   return String(text || '')
     .split('\n')
@@ -63,11 +58,11 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   const token = account.threads_access_token;
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
   const linkUrl = trackingLink ? `${baseUrl}/r/${trackingLink.code}` : null;
-  const replyText = buildReplyText(linkUrl);
+  const replyText = linkUrl ? buildReplyText(linkUrl) : '';
 
   if (process.env.MOCK_UPLOAD === 'true') {
     const url = `${baseUrl}/mock/threads/${post.id}`;
-    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: buildPostText(post, cta), comment: replyText });
+    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: buildPostText(post, cta), comment: replyText || null });
     return { postUrl: url, raw: { mock: true } };
   }
   if (!token) {
@@ -110,7 +105,7 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   const { id: postId } = await publishRes.json();
 
   let replyWarning = null;
-  if (!hasDisclosure(text) || linkUrl) {
+  if (linkUrl) {
     try {
       await postReply(token, postId, replyText);
     } catch (error) {

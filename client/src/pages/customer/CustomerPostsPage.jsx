@@ -2,37 +2,35 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 
-function friendlyQueueError(message = '') {
-  const value = String(message || '');
-  if (!value) return null;
-  if (/THREADS_TOKEN_MISSING|Threads access token is required|계정 관리에서 Threads 연결/i.test(value)) {
-    return {
-      title: 'Threads 연결이 필요합니다',
-      message: '설정에서 Threads를 연결한 뒤 다시 실행해주세요.'
-    };
-  }
-  if (/OAuth|access token|Cannot parse access token|token|code"?\s*:\s*190|code 190/i.test(value)) {
-    return {
-      title: 'Threads 연결이 만료되었습니다',
-      message: 'Threads 토큰이 만료되었거나 더 이상 사용할 수 없습니다. 설정에서 다시 연결해주세요.'
-    };
-  }
-  if (/reply container failed|reply publish failed/i.test(value)) {
-    return {
-      title: '댓글 등록만 실패했습니다',
-      message: '본문 업로드 이후 링크/고지 댓글 등록 중 문제가 있었습니다. 본문 게시 여부를 먼저 확인해주세요.'
-    };
-  }
-  if (/Post blocked by content guardrails|post_style_blocked|guardrail/i.test(value)) {
-    return {
-      title: '콘텐츠 후보가 제외되었습니다',
-      message: '계정의 톤/금지어/콘텐츠 규칙과 맞지 않아 이 글은 업로드 대상에서 제외되었습니다.'
-    };
-  }
+function postModeLabel(postMode) {
+  if (postMode === 'link') return '쿠팡 링크 글';
+  if (postMode === 'no_link') return '일반 글';
+  return '기존 예약 글';
+}
+
+function queueFriendly(row = {}, detail = null) {
+  const queue = detail?.queue || row;
   return {
-    title: '업로드 확인이 필요합니다',
-    message: value.length > 100 ? `${value.slice(0, 100)}...` : value
+    title: queue.friendly_title || row.friendly_title || '업로드 확인이 필요합니다',
+    message: queue.friendly_message || row.friendly_message || row.error_message || '확인이 필요한 항목입니다.',
+    severity: queue.friendly_severity || row.friendly_severity || 'error'
   };
+}
+
+function ModeBadge({ mode, linkStatus }) {
+  const isLink = mode === 'link';
+  const missing = linkStatus === 'missing';
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${
+      missing
+        ? 'bg-rose-50 text-rose-600'
+        : isLink
+          ? 'bg-blue-50 text-blue-600'
+          : 'bg-gray-100 text-gray-500'
+    }`}>
+      {missing ? '상품 매칭 누락' : postModeLabel(mode)}
+    </span>
+  );
 }
 
 export default function CustomerPostsPage({ account, pipelineResult }) {
@@ -123,7 +121,7 @@ export default function CustomerPostsPage({ account, pipelineResult }) {
                 manual_required: '수동 검토',
                 skipped: '취소됨',
               }[r.status] || r.status;
-              const friendly = friendlyQueueError(r.error_message);
+              const friendly = queueFriendly(r);
               return (
                 <div key={r.id} className="bg-white rounded-2xl border border-rose-100 overflow-hidden">
                   <button onClick={() => toggleDetail(r.id)} className="w-full px-5 py-4 flex items-center gap-3 text-left">
@@ -139,23 +137,32 @@ export default function CustomerPostsPage({ account, pipelineResult }) {
                       {loadingDetailId === r.id ? (
                         <div className="text-xs text-gray-400">불러오는 중...</div>
                       ) : d ? (
+                        (() => {
+                          const detailFriendly = queueFriendly(r, d);
+                          return (
                         <>
                           {d.post?.body && (
                             <pre className="whitespace-pre-wrap break-words font-sans text-sm text-gray-700 leading-relaxed">{d.post.body}</pre>
                           )}
-                          {r.error_message && (
+                          <div>
+                            <ModeBadge mode={d.postMode || r.post_mode} linkStatus={d.linkStatus} />
+                          </div>
+                          {(r.error_message || d.queue?.friendly_title) && (
                             <div className="grid gap-3 rounded-xl bg-rose-50 px-4 py-3 text-xs text-rose-600">
                               <div>
-                                <div className="font-black">{friendly?.title || '업로드 오류'}</div>
-                                <div className="mt-1 leading-relaxed">{friendly?.message || r.error_message}</div>
+                                <div className="font-black">{detailFriendly.title || '업로드 오류'}</div>
+                                <div className="mt-1 leading-relaxed">{detailFriendly.message || r.error_message}</div>
                               </div>
-                              <details className="rounded-lg bg-white/70 px-3 py-2">
-                                <summary className="cursor-pointer font-bold">기술 정보 보기</summary>
-                                <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">{r.error_message}</pre>
-                              </details>
+                              {(r.error_category || d.queue?.error_category) && (
+                                <div className="rounded-lg bg-white/70 px-3 py-2 font-bold">
+                                  관리자 전달 코드: {d.queue?.error_category || r.error_category}
+                                </div>
+                              )}
                             </div>
                           )}
                         </>
+                          );
+                        })()
                       ) : null}
                     </div>
                   )}
@@ -194,6 +201,9 @@ export default function CustomerPostsPage({ account, pipelineResult }) {
                           {d.post?.body && (
                             <pre className="whitespace-pre-wrap break-words font-sans text-sm text-gray-700 leading-relaxed">{d.post.body}</pre>
                           )}
+                          <div>
+                            <ModeBadge mode={d.postMode || r.post_mode} linkStatus={d.linkStatus} />
+                          </div>
                           {d.products?.length > 0 && (
                             <div className="grid gap-2">
                               <div className="text-xs font-bold text-gray-400">연결 상품</div>
@@ -257,6 +267,12 @@ export default function CustomerPostsPage({ account, pipelineResult }) {
                           {d.post?.body && (
                             <pre className="whitespace-pre-wrap break-words font-sans text-sm text-gray-700 leading-relaxed">{d.post.body}</pre>
                           )}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <ModeBadge mode={d.postMode || r.post_mode} linkStatus={d.linkStatus} />
+                            {d.trackingLink && (
+                              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-600">트래킹 링크 생성됨</span>
+                            )}
+                          </div>
                           {d.products?.length > 0 && (
                             <div className="grid gap-2">
                               <div className="text-xs font-bold text-gray-400">연결 상품</div>

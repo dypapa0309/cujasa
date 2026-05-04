@@ -9,6 +9,12 @@ import { assertPreflightCanPublish, preflightAccount } from './accountPreflightS
 import { classifyQueueError } from './queueErrorService.js';
 import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 
+async function hasProductsForTopic(topicId) {
+  if (!topicId) return false;
+  const rows = await dbList('post_products', { topic_id: topicId }, { limit: 1 });
+  return rows.length > 0;
+}
+
 async function isPostAllowedForQueue(post, account) {
   const topic = post.topic_id ? await dbGet('topics', { id: post.topic_id }) : null;
   const guardrail = validatePostCandidate(post.body, account, topic);
@@ -27,7 +33,7 @@ async function isPostAllowedForQueue(post, account) {
   return false;
 }
 
-export async function addPostToQueue(postId, scheduledAt = null) {
+export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
   const post = await dbGet('posts', { id: postId });
   if (!post) throw new Error('Post not found');
   await assertAccountOwnerCanOperate(post.account_id);
@@ -43,6 +49,9 @@ export async function addPostToQueue(postId, scheduledAt = null) {
     throw error;
   }
   const status = post.status === 'manual_required' || post.risk_level === 'high' ? 'manual_required' : 'scheduled';
+  const postMode = ['link', 'no_link'].includes(options.postMode)
+    ? options.postMode
+    : ((await hasProductsForTopic(post.topic_id)) ? 'link' : 'no_link');
   return dbInsert('post_queue', {
     project_id: post.project_id,
     account_id: post.account_id,
@@ -51,6 +60,7 @@ export async function addPostToQueue(postId, scheduledAt = null) {
     platform: 'threads',
     scheduled_at: scheduledAt || new Date(Date.now() + 5 * 60 * 1000).toISOString(),
     status,
+    post_mode: postMode,
     retry_count: 0
   });
 }
@@ -88,14 +98,14 @@ export async function createDailyQueue(accountId) {
   const usedPostIds = new Set([...primaryWithLink, ...primaryWithoutLink].map((post) => post.id));
   const fill = [...withLink, ...withoutLink].filter((post) => !usedPostIds.has(post.id));
   const drafts = [
-    ...primaryWithLink,
-    ...primaryWithoutLink,
-    ...fill
+    ...primaryWithLink.map((post) => ({ post, postMode: 'link' })),
+    ...primaryWithoutLink.map((post) => ({ post, postMode: 'no_link' })),
+    ...fill.map((post) => ({ post, postMode: productsPerTopic.has(post.topic_id) ? 'link' : 'no_link' }))
   ].slice(0, total);
   const queued = [];
-  for (const [index, post] of drafts.slice(0, times.length).entries()) {
-    queued.push(await addPostToQueue(post.id, times[index]));
-    await dbUpdate('posts', { id: post.id }, { status: 'queued' });
+  for (const [index, item] of drafts.slice(0, times.length).entries()) {
+    queued.push(await addPostToQueue(item.post.id, times[index], { postMode: item.postMode }));
+    await dbUpdate('posts', { id: item.post.id }, { status: 'queued' });
   }
   return queued;
 }
@@ -143,6 +153,14 @@ export async function uploadQueueItem(queueId) {
     const existingLink = queue.tracking_link_id
       ? await dbGet('tracking_links', { id: queue.tracking_link_id })
       : null;
+    const postMode = queue.post_mode || 'auto';
+    const requiresLink = postMode === 'link';
+    if (requiresLink && !product) {
+      const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글로 예약됐지만 연결된 쿠팡 상품이 없습니다.');
+      error.status = 422;
+      error.permanent = true;
+      throw error;
+    }
     const trackingLink = existingLink || (product ? await createTrackingLink({
       project_id: post.project_id,
       account_id: post.account_id,
@@ -152,14 +170,36 @@ export async function uploadQueueItem(queueId) {
       destination_url: product.partner_url || product.product_url,
       link_type: product.is_fallback ? 'fallback' : 'coupang'
     }) : null);
+    if (requiresLink && !trackingLink) {
+      const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글의 트래킹 링크를 만들 수 없습니다.');
+      error.status = 422;
+      error.permanent = true;
+      throw error;
+    }
     const uploaded = await uploadThreads({ account, post, cta, trackingLink });
-    const [updated] = await dbUpdate('post_queue', { id: queueId }, {
-      status: 'posted',
-      posted_at: new Date().toISOString(),
-      post_url: uploaded.postUrl,
-      selected_cta_id: cta?.id,
-      tracking_link_id: trackingLink?.id
-    });
+    let postedRows;
+    try {
+      postedRows = await dbUpdate('post_queue', { id: queueId }, {
+        status: 'posted',
+        posted_at: new Date().toISOString(),
+        post_url: uploaded.postUrl,
+        selected_cta_id: cta?.id,
+        tracking_link_id: trackingLink?.id,
+        error_message: null,
+        error_category: null
+      });
+    } catch (updateError) {
+      if (!/error_category|schema cache|column/i.test(updateError.message || '')) throw updateError;
+      postedRows = await dbUpdate('post_queue', { id: queueId }, {
+        status: 'posted',
+        posted_at: new Date().toISOString(),
+        post_url: uploaded.postUrl,
+        selected_cta_id: cta?.id,
+        tracking_link_id: trackingLink?.id,
+        error_message: null
+      });
+    }
+    const [updated] = postedRows;
     await dbUpdate('posts', { id: post.id }, { status: 'posted' });
     await createMetricJobs(updated);
     await logActivity({ account_id: account.id, project_id: account.project_id, post_id: post.id, action: 'upload_completed', message: uploaded.postUrl });

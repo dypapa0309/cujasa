@@ -1,10 +1,11 @@
 import { dbGet, dbList, dbUpdate } from './supabaseService.js';
 import { latestPipelineRun } from './pipelineRunService.js';
 import { resolveCoupangCredentialsForAccount } from './coupangService.js';
-import { adminActivityLabel, adminActivityMessage, classifyQueueError } from './queueErrorService.js';
+import { adminActivityLabel, adminActivityMessage, classificationForCategory, classifyQueueError } from './queueErrorService.js';
 
 const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const NON_FATAL_QUEUE_CATEGORIES = new Set(['reply_warning', 'content_blocked', 'retry_available', 'recheck_required']);
 
 function kstDayRange(date = new Date()) {
   const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -88,11 +89,14 @@ export async function operationAccountRows() {
     const todayPosted = accountQueue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length;
     const problemQueue = accountQueue.filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status));
     const categorizedProblems = problemQueue.map((row) => {
-      const classified = classifyQueueError(row.error_message);
-      return row.error_category ? { ...classified, category: row.error_category } : classified;
+      return row.error_category
+        ? classificationForCategory(row.error_category, row.error_message)
+        : classifyQueueError(row.error_message);
     });
-    const failedCount = problemQueue.filter((row) => (row.error_category || classifyQueueError(row.error_message).category) !== 'reply_warning').length;
-    const replyWarningCount = problemQueue.filter((row) => (row.error_category || classifyQueueError(row.error_message).category) === 'reply_warning').length;
+    const failedCount = categorizedProblems.filter((row) => !NON_FATAL_QUEUE_CATEGORIES.has(row.category)).length;
+    const replyWarningCount = categorizedProblems.filter((row) => row.category === 'reply_warning').length;
+    const retryAvailableCount = categorizedProblems.filter((row) => row.category === 'retry_available' || row.category === 'recheck_required').length;
+    const contentBlockedCount = categorizedProblems.filter((row) => row.category === 'content_blocked').length;
     const mockCount = accountQueue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length;
     const accountProducts = products.filter((row) => row.account_id === account.id);
     const fallbackCount = accountProducts.filter((row) => row.is_fallback).length;
@@ -115,7 +119,9 @@ export async function operationAccountRows() {
       const reconnectCount = categorizedProblems.filter((row) => row.category === 'threads_reconnect_required').length;
       pushProblem(problems, account, 'error', 'queue_failed', reconnectCount ? `재연결 필요 ${reconnectCount}건` : `실패/검토 ${failedCount}건`);
     }
+    if (retryAvailableCount > 0) pushProblem(problems, account, 'warn', 'retry_available', `재연결 후 재시도 가능 ${retryAvailableCount}건`);
     if (replyWarningCount > 0) pushProblem(problems, account, 'warn', 'reply_warning', `댓글/링크 답글 실패 ${replyWarningCount}건`);
+    if (contentBlockedCount > 0) pushProblem(problems, account, 'warn', 'content_blocked', `콘텐츠 후보 제외 ${contentBlockedCount}건`);
     if (mockCount > 0) pushProblem(problems, account, 'warn', 'mock_upload', `테스트 업로드 흔적 ${mockCount}건`);
     if (fallbackRatio >= 0.5 && accountProducts.length >= 5) pushProblem(problems, account, 'warn', 'fallback_products', `fallback 상품 ${Math.round(fallbackRatio * 100)}%`);
     if (lastActivity?.action === 'pipeline_failed' || pipelineRun?.status === 'failed') {
@@ -179,7 +185,13 @@ export async function operationSummary() {
       accountsActive: accounts.filter((account) => account.status === 'active').length,
       scheduledToday: todayQueue.filter((row) => row.status === 'scheduled').length,
       postedToday: activeQueue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length,
-      queueProblems: activeQueue.filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status)).length,
+      queueProblems: activeQueue.filter((row) => {
+        if (!QUEUE_PROBLEM_STATUSES.includes(row.status)) return false;
+        const category = row.error_category
+          ? classificationForCategory(row.error_category, row.error_message).category
+          : classifyQueueError(row.error_message).category;
+        return !NON_FATAL_QUEUE_CATEGORIES.has(category);
+      }).length,
       mockUploads: activeQueue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length,
       threadsProblems: rows.filter((row) => row.threads.status !== 'ok').length
     },
@@ -191,7 +203,12 @@ export async function cleanupQueueErrors({ mode = 'dry-run' } = {}) {
   const rows = await dbList('post_queue');
   const targets = rows
     .filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status))
-    .map((row) => ({ ...row, classification: classifyQueueError(row.error_message) }));
+    .map((row) => ({
+      ...row,
+      classification: row.error_category
+        ? classificationForCategory(row.error_category, row.error_message)
+        : classifyQueueError(row.error_message)
+    }));
   if (mode === 'apply') {
     for (const row of targets) {
       try {
