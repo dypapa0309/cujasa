@@ -15,7 +15,7 @@ function buildPostText(post) {
 }
 
 function buildReplyText(linkUrl) {
-  if (!linkUrl) return COUPANG_DISCLOSURE;
+  if (!linkUrl) return '';
   return `${COUPANG_DISCLOSURE}\n\n${linkUrl}`;
 }
 

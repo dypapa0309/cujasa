@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Clock3, RefreshCw, Wrench } from 'lucide-react';
+import { CheckCircle2, Clock3, Pencil, RefreshCw, Wrench } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import { dateTime } from '../lib/format.js';
@@ -27,6 +27,11 @@ export default function AdminSetupPage() {
   const [savingId, setSavingId] = useState('');
   const [manual, setManual] = useState({ userId: '', productId: 'onetime_590000', amount: '', paidAt: '', memo: '' });
   const [savingManual, setSavingManual] = useState(false);
+  const [taskFilter, setTaskFilter] = useState('open');
+  const [customerFilter, setCustomerFilter] = useState('open');
+  const [editingTask, setEditingTask] = useState(null);
+  const [editForm, setEditForm] = useState(null);
+  const [normalizing, setNormalizing] = useState(false);
 
   const load = async () => {
     const [rows, nextUsers, nextProducts] = await Promise.all([
@@ -49,6 +54,30 @@ export default function AdminSetupPage() {
     completed: tasks.filter((task) => task.status === 'completed').length
   }), [tasks]);
 
+  const taskUserIdsByStatus = useMemo(() => {
+    const result = { pending: new Set(), in_progress: new Set(), completed: new Set(), canceled: new Set(), open: new Set(), all: new Set() };
+    tasks.forEach((task) => {
+      if (!task.user_id) return;
+      result.all.add(task.user_id);
+      result[task.status]?.add(task.user_id);
+      if (['pending', 'in_progress'].includes(task.status)) result.open.add(task.user_id);
+    });
+    return result;
+  }, [tasks]);
+
+  const visibleTasks = useMemo(() => {
+    if (taskFilter === 'all') return tasks;
+    if (taskFilter === 'open') return tasks.filter((task) => ['pending', 'in_progress'].includes(task.status));
+    return tasks.filter((task) => task.status === taskFilter);
+  }, [taskFilter, tasks]);
+
+  const selectableUsers = useMemo(() => {
+    const statusSet = taskUserIdsByStatus[customerFilter];
+    if (customerFilter === 'all') return users;
+    if (customerFilter === 'open') return users.filter((user) => !taskUserIdsByStatus.completed.has(user.id));
+    return users.filter((user) => statusSet?.has(user.id));
+  }, [customerFilter, taskUserIdsByStatus, users]);
+
   const updateStatus = async (task, status) => {
     setSavingId(task.id);
     try {
@@ -59,6 +88,58 @@ export default function AdminSetupPage() {
       toast(err.message || '셋업 상태 변경에 실패했습니다.', 'error');
     } finally {
       setSavingId('');
+    }
+  };
+
+  const openEdit = (task) => {
+    setEditingTask(task);
+    setEditForm({
+      status: task.status || 'pending',
+      buyer_name: task.buyer_name || '',
+      email: task.email || '',
+      phone: task.phone || '',
+      product_id: task.product_id || 'onetime_590000',
+      amount: task.amount || '',
+      paid_at: task.paid_at ? new Date(task.paid_at).toISOString().slice(0, 16) : '',
+      notes: task.notes || ''
+    });
+  };
+
+  const closeEdit = () => {
+    setEditingTask(null);
+    setEditForm(null);
+  };
+
+  const submitEdit = async (e) => {
+    e.preventDefault();
+    if (!editingTask || !editForm) return;
+    setSavingId(editingTask.id);
+    try {
+      await api.patch(`/api/admin/setup-tasks/${editingTask.id}`, {
+        ...editForm,
+        amount: editForm.amount ? Number(editForm.amount) : null
+      });
+      toast('셋업 정보를 수정했습니다.', 'success');
+      closeEdit();
+      await load();
+    } catch (err) {
+      toast(err.message || '셋업 정보 수정에 실패했습니다.', 'error');
+    } finally {
+      setSavingId('');
+    }
+  };
+
+  const normalizeSetupCustomers = async () => {
+    if (!window.confirm('셋업 화면에 잡힌 고객을 베이직 일시불 paid 상태로 보정할까요?')) return;
+    setNormalizing(true);
+    try {
+      const result = await api.post('/api/admin/setup-tasks/normalize-onetime', {});
+      toast(`${result.count || 0}명의 고객을 베이직 일시불로 보정했습니다.`, 'success');
+      await load();
+    } catch (err) {
+      toast(err.message || '베이직 일시불 보정에 실패했습니다.', 'error');
+    } finally {
+      setNormalizing(false);
     }
   };
 
@@ -95,6 +176,9 @@ export default function AdminSetupPage() {
           <RefreshCw size={16} />
           새로고침
         </button>
+        <button disabled={normalizing} onClick={normalizeSetupCustomers} className="inline-flex items-center gap-2 rounded bg-slate-900 px-3 py-2 text-sm font-bold text-white disabled:opacity-50">
+          {normalizing ? '보정 중...' : '셋업 고객 일시불 보정'}
+        </button>
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
@@ -109,11 +193,21 @@ export default function AdminSetupPage() {
           <p className="mt-0.5 text-xs text-slate-400">내 계좌로 직접 입금한 고객도 여기서 결제로 기록하고 권한을 열 수 있습니다.</p>
         </div>
         <form onSubmit={submitManualPayment} className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_1fr_1.4fr_auto] md:items-end">
+          <label className="grid gap-1 text-xs md:col-span-6">
+            <span className="font-bold text-slate-500">고객 선택 필터</span>
+            <select className="max-w-xs rounded border border-line px-3 py-2 text-sm" value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)}>
+              <option value="open">완료 고객 제외</option>
+              <option value="pending">셋업 대기 고객</option>
+              <option value="in_progress">셋업 중 고객</option>
+              <option value="completed">셋업 완료 고객</option>
+              <option value="all">전체 고객</option>
+            </select>
+          </label>
           <label className="grid gap-1 text-xs">
             <span className="font-bold text-slate-500">고객</span>
             <select required className="rounded border border-line px-3 py-2 text-sm" value={manual.userId} onChange={(e) => setManual((p) => ({ ...p, userId: e.target.value }))}>
               <option value="">고객 선택</option>
-              {users.map((user) => <option key={user.id} value={user.id}>{user.email}{user.buyerName ? ` · ${user.buyerName}` : ''}</option>)}
+              {selectableUsers.map((user) => <option key={user.id} value={user.id}>{user.email}{user.buyerName ? ` · ${user.buyerName}` : ''}</option>)}
             </select>
           </label>
           <label className="grid gap-1 text-xs">
@@ -141,11 +235,20 @@ export default function AdminSetupPage() {
       </section>
 
       <section className="rounded border border-line bg-white">
-        <div className="border-b border-line px-5 py-4">
-          <h3 className="font-bold">결제 완료 고객</h3>
-          <p className="mt-0.5 text-xs text-slate-400">입금 완료 후 자동 생성된 셋업 작업입니다.</p>
+        <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="font-bold">결제 완료 고객</h3>
+            <p className="mt-0.5 text-xs text-slate-400">입금 완료 후 자동 생성된 셋업 작업입니다. 기본값은 완료 고객을 숨깁니다.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-bold">
+            <FilterButton active={taskFilter === 'open'} onClick={() => setTaskFilter('open')}>대기+진행</FilterButton>
+            <FilterButton active={taskFilter === 'pending'} onClick={() => setTaskFilter('pending')}>대기</FilterButton>
+            <FilterButton active={taskFilter === 'in_progress'} onClick={() => setTaskFilter('in_progress')}>셋업 중</FilterButton>
+            <FilterButton active={taskFilter === 'completed'} onClick={() => setTaskFilter('completed')}>완료</FilterButton>
+            <FilterButton active={taskFilter === 'all'} onClick={() => setTaskFilter('all')}>전체</FilterButton>
+          </div>
         </div>
-        {tasks.length === 0 ? (
+        {visibleTasks.length === 0 ? (
           <div className="px-5 py-10 text-center text-sm text-slate-400">현재 셋업 대기 고객이 없습니다.</div>
         ) : (
           <div className="overflow-x-auto">
@@ -161,7 +264,7 @@ export default function AdminSetupPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {tasks.map((task) => (
+                {visibleTasks.map((task) => (
                   <tr key={task.id}>
                     <td className="px-4 py-3"><StatusPill status={task.status} /></td>
                     <td className="px-4 py-3">
@@ -176,6 +279,10 @@ export default function AdminSetupPage() {
                     <td className="px-4 py-3 text-slate-500">{dateTime(task.paid_at || task.created_at)}</td>
                     <td className="px-4 py-3">
                       <div className="flex justify-end gap-2">
+                        <button disabled={savingId === task.id} onClick={() => openEdit(task)} className="inline-flex items-center gap-1 rounded border border-line px-3 py-1.5 text-xs font-bold hover:bg-panel disabled:opacity-50">
+                          <Pencil size={13} />
+                          수정
+                        </button>
                         {task.status === 'pending' && (
                           <button disabled={savingId === task.id} onClick={() => updateStatus(task, 'in_progress')} className="rounded border border-line px-3 py-1.5 text-xs font-bold hover:bg-panel disabled:opacity-50">셋업 시작</button>
                         )}
@@ -191,7 +298,66 @@ export default function AdminSetupPage() {
           </div>
         )}
       </section>
+      {editingTask && editForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(e) => { if (e.target === e.currentTarget) closeEdit(); }}>
+          <form onSubmit={submitEdit} className="grid max-h-[88vh] w-full max-w-2xl gap-4 overflow-y-auto rounded-2xl bg-white p-6 shadow-xl">
+            <div>
+              <h3 className="text-lg font-black">셋업 정보 수정</h3>
+              <p className="mt-1 text-xs text-slate-400">완료된 고객도 연락처, 메모, 상태를 다시 수정할 수 있습니다.</p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <EditField label="구매자명" value={editForm.buyer_name} onChange={(value) => setEditForm((p) => ({ ...p, buyer_name: value }))} />
+              <EditField label="이메일" value={editForm.email} onChange={(value) => setEditForm((p) => ({ ...p, email: value }))} />
+              <EditField label="전화번호" value={editForm.phone} onChange={(value) => setEditForm((p) => ({ ...p, phone: value }))} />
+              <label className="grid gap-1 text-xs">
+                <span className="font-bold text-slate-500">상태</span>
+                <select className="rounded border border-line px-3 py-2 text-sm" value={editForm.status} onChange={(e) => setEditForm((p) => ({ ...p, status: e.target.value }))}>
+                  {Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs">
+                <span className="font-bold text-slate-500">상품</span>
+                <select className="rounded border border-line px-3 py-2 text-sm" value={editForm.product_id} onChange={(e) => setEditForm((p) => ({ ...p, product_id: e.target.value }))}>
+                  {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+                </select>
+              </label>
+              <EditField label="금액" value={editForm.amount} onChange={(value) => setEditForm((p) => ({ ...p, amount: value }))} />
+              <label className="grid gap-1 text-xs md:col-span-2">
+                <span className="font-bold text-slate-500">입금일</span>
+                <input type="datetime-local" className="rounded border border-line px-3 py-2 text-sm" value={editForm.paid_at} onChange={(e) => setEditForm((p) => ({ ...p, paid_at: e.target.value }))} />
+              </label>
+              <label className="grid gap-1 text-xs md:col-span-2">
+                <span className="font-bold text-slate-500">메모</span>
+                <textarea className="min-h-24 rounded border border-line px-3 py-2 text-sm" value={editForm.notes} onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))} />
+              </label>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={closeEdit} className="rounded border border-line px-4 py-2 text-sm font-bold">닫기</button>
+              <button disabled={savingId === editingTask.id} className="rounded bg-coupang px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
+                {savingId === editingTask.id ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
+  );
+}
+
+function FilterButton({ active, onClick, children }) {
+  return (
+    <button type="button" onClick={onClick} className={`rounded-full border px-3 py-1.5 ${active ? 'border-coupang bg-red-50 text-coupang' : 'border-line bg-white text-slate-500 hover:bg-panel'}`}>
+      {children}
+    </button>
+  );
+}
+
+function EditField({ label, value, onChange }) {
+  return (
+    <label className="grid gap-1 text-xs">
+      <span className="font-bold text-slate-500">{label}</span>
+      <input className="rounded border border-line px-3 py-2 text-sm" value={value ?? ''} onChange={(e) => onChange(e.target.value)} />
+    </label>
   );
 }
 

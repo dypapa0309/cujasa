@@ -33,11 +33,13 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
   const [adding, setAdding] = useState(false);
   const [newAccount, setNewAccount] = useState({ name: '', account_handle: '' });
   const [announcement, setAnnouncement] = useState(null);
+  const [trialStatus, setTrialStatus] = useState(null);
 
   const maxAccounts = currentUser?.maxAccounts ?? 2;
   const account = accounts[selectedIdx] ?? accounts[0];
   const Page = pages[tab];
   const canAdd = accounts.length < maxAccounts;
+  const displayLogin = currentUser.username || currentUser.email;
 
   const guardDuringPipeline = () => {
     if (!pipelineRunning) return false;
@@ -57,6 +59,18 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     return () => {
       cancelled = true;
     };
+  }, [currentUser?.email]);
+
+  const loadTrialStatus = async () => {
+    try {
+      setTrialStatus(await api.get('/api/me/trial-status'));
+    } catch {
+      setTrialStatus(null);
+    }
+  };
+
+  useEffect(() => {
+    loadTrialStatus();
   }, [currentUser?.email]);
 
   useEffect(() => {
@@ -169,7 +183,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div>
             <div className="font-black text-lg text-coupang tracking-tight">{JASAIN_BRAND.name}</div>
-            <div className="text-xs text-gray-400 mt-0.5">{CURRENT_PRODUCT.name} · {currentUser.email}</div>
+            <div className="text-xs text-gray-400 mt-0.5">{CURRENT_PRODUCT.name} · {displayLogin}</div>
           </div>
           <button onClick={() => { if (!guardDuringPipeline()) onLogout(); }} className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5">
             로그아웃
@@ -245,6 +259,9 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
               account={account}
               accounts={accounts}
               currentUser={currentUser}
+              trialStatus={trialStatus}
+              reloadTrialStatus={loadTrialStatus}
+              setTab={setTab}
               reloadAccounts={reloadAccounts}
               pipelineResult={pipelineResult}
               onPipelineDone={(result) => { setPipelineResult(result); setTab('posts'); }}

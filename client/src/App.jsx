@@ -81,6 +81,7 @@ export default function App() {
           setCurrentUser({
             type: 'user',
             email: result.user?.email,
+            username: result.user?.username,
             maxAccounts: result.user?.maxAccounts,
             products: result.user?.products || [],
             billing: result.user?.billing || null
@@ -114,7 +115,7 @@ export default function App() {
     return (
       <ToastProvider>
         <LoginPage onLogin={(info) => {
-          setCurrentUser({ type: info.type, email: info.email, maxAccounts: info.maxAccounts, products: info.products || [], billing: info.billing || null });
+          setCurrentUser({ type: info.type, email: info.email, username: info.username, maxAccounts: info.maxAccounts, products: info.products || [], billing: info.billing || null });
           loadAccounts().catch(console.error);
         }} />
       </ToastProvider>

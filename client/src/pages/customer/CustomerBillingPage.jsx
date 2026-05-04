@@ -128,7 +128,7 @@ export default function CustomerBillingPage({ currentUser }) {
         } else if (authKey) {
           const pending = JSON.parse(localStorage.getItem(pendingSubscriptionKey) || '{}');
           await api.post('/api/billing/billing-auth', {
-            productId: 'monthly_129000',
+            productId: 'monthly_59000',
             subscriptionId: pending.subscriptionId,
             authKey,
             customerKey: customerKey || pending.customerKey
@@ -163,7 +163,7 @@ export default function CustomerBillingPage({ currentUser }) {
   const startMonthly = async () => {
     setBusy('monthly');
     try {
-      const payload = await api.post('/api/billing/billing-auth', { productId: 'monthly_129000' });
+      const payload = await api.post('/api/billing/billing-auth', { productId: 'monthly_59000' });
       localStorage.setItem(pendingSubscriptionKey, JSON.stringify({
         subscriptionId: payload.subscription.id,
         customerKey: payload.toss.customerKey
@@ -235,9 +235,9 @@ export default function CustomerBillingPage({ currentUser }) {
         <PlanCard
           icon={CreditCard}
           title={billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액'}
-          priceText="129,000원 / 월"
+          priceText="59,000원 / 월"
           caption={activeSubscription ? `활성 · 다음 결제 ${formatDate(activeSubscription.nextBillingAt)}` : '카드 자동결제'}
-          product={productsById.monthly_129000}
+          product={productsById.monthly_59000}
           busy={busy === 'monthly'}
           onClick={startMonthly}
         />

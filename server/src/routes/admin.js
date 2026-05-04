@@ -119,6 +119,27 @@ router.get('/setup-tasks', async (req, res, next) => {
   try { res.json(await listSetupTasks()); } catch (e) { next(e); }
 });
 
+router.post('/setup-tasks/normalize-onetime', async (req, res, next) => {
+  try {
+    const tasks = await listSetupTasks();
+    const userIds = [...new Set(tasks.map((task) => task.user_id).filter(Boolean))];
+    const updated = [];
+    for (const userId of userIds) {
+      const user = await dbGet('users', { id: userId });
+      if (!user) continue;
+      const [nextUser] = await dbUpdate('users', { id: userId }, {
+        plan: 'onetime',
+        billing_status: 'paid',
+        paid_until: null,
+        max_accounts: Math.max(Number(user.max_accounts || 0), 2)
+      });
+      await grantUserProduct(userId, 'cujasa', { status: 'active', role: 'customer' });
+      updated.push({ id: userId, email: user.email, plan: nextUser?.plan || 'onetime', billingStatus: nextUser?.billing_status || 'paid' });
+    }
+    res.json({ ok: true, count: updated.length, users: updated });
+  } catch (e) { next(e); }
+});
+
 router.get('/account-conflicts', async (req, res, next) => {
   try { res.json(await buildAccountConflicts()); } catch (e) { next(e); }
 });

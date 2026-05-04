@@ -3,8 +3,10 @@ import { verifyPassword, hashPassword } from '../utils/password.js';
 import { DEFAULT_PRODUCT_ID, PRODUCTS } from '../config/products.js';
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { redactBillingSettings } from './redactionService.js';
+import { createAccount } from './accountService.js';
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
+const REGISTER_USERNAME_RE = /^[a-zA-Z0-9._-]{3,30}$/;
 
 function base64url(input) {
   return Buffer.from(JSON.stringify(input)).toString('base64url');
@@ -35,6 +37,51 @@ function makeToken(payload) {
   });
   const unsigned = `${header}.${body}`;
   return `${unsigned}.${sign(unsigned)}`;
+}
+
+function normalizeUsername(username = '') {
+  return String(username).trim().toLowerCase();
+}
+
+function internalEmailForUsername(username) {
+  return `${username}@local.cujasa`;
+}
+
+async function findUserByLogin(login = '') {
+  const normalized = String(login || '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes('@')) {
+    const byEmail = await dbGet('users', { email: normalized });
+    if (byEmail) return byEmail;
+  }
+  try {
+    const byUsername = await dbGet('users', { username: normalized });
+    if (byUsername) return byUsername;
+  } catch {
+    // username column may not exist until the free-trial migration is applied.
+  }
+  return normalized.includes('@') ? null : dbGet('users', { email: normalized });
+}
+
+async function sessionForUser(user) {
+  const products = await listUserProducts(user.id);
+  const token = makeToken({
+    sub: user.email,
+    username: user.username || null,
+    role: 'user',
+    userId: user.id,
+    maxAccounts: user.max_accounts,
+    products: products.map((product) => product.productId)
+  });
+  return {
+    token,
+    type: 'user',
+    email: user.email,
+    username: user.username || null,
+    userId: user.id,
+    maxAccounts: user.max_accounts,
+    products
+  };
 }
 
 export function verifyToken(token = '') {
@@ -177,7 +224,7 @@ export async function updateUserProductSettings(userId, productId, settingsPatch
 }
 
 export async function loginUser(email, password) {
-  const user = await dbGet('users', { email: email?.trim().toLowerCase() });
+  const user = await findUserByLogin(email);
   if (!user) {
     const error = new Error('Invalid email or password');
     error.status = 401;
@@ -193,15 +240,7 @@ export async function loginUser(email, password) {
     error.status = 401;
     throw error;
   }
-  const products = await listUserProducts(user.id);
-  const token = makeToken({
-    sub: user.email,
-    role: 'user',
-    userId: user.id,
-    maxAccounts: user.max_accounts,
-    products: products.map((product) => product.productId)
-  });
-  return { token, type: 'user', email: user.email, userId: user.id, maxAccounts: user.max_accounts, products };
+  return sessionForUser(user);
 }
 
 export async function createUser(email, password, maxAccounts = 2, buyerName = '', options = {}) {
@@ -227,6 +266,68 @@ export async function createUser(email, password, maxAccounts = 2, buyerName = '
     }
   }
   return user;
+}
+
+export async function registerFreeUser({ username, password, passwordConfirm }) {
+  const normalizedUsername = normalizeUsername(username);
+  if (!REGISTER_USERNAME_RE.test(normalizedUsername)) {
+    const error = new Error('아이디는 3~30자의 영문, 숫자, 점, 밑줄, 하이픈만 사용할 수 있습니다.');
+    error.status = 400;
+    throw error;
+  }
+  if (!password || String(password).length < 8) {
+    const error = new Error('비밀번호는 8자 이상이어야 합니다.');
+    error.status = 400;
+    throw error;
+  }
+  if (password !== passwordConfirm) {
+    const error = new Error('비밀번호 확인이 일치하지 않습니다.');
+    error.status = 400;
+    throw error;
+  }
+  const existingUsername = await dbGet('users', { username: normalizedUsername }).catch(() => null);
+  if (existingUsername) {
+    const error = new Error('이미 사용 중인 아이디입니다.');
+    error.status = 409;
+    throw error;
+  }
+  const internalEmail = internalEmailForUsername(normalizedUsername);
+  const existingEmail = await dbGet('users', { email: internalEmail });
+  if (existingEmail) {
+    const error = new Error('이미 사용 중인 아이디입니다.');
+    error.status = 409;
+    throw error;
+  }
+
+  const user = await dbInsert('users', {
+    email: internalEmail,
+    username: normalizedUsername,
+    password_hash: hashPassword(password),
+    buyer_name: normalizedUsername,
+    max_accounts: 2,
+    status: 'active',
+    plan: 'free',
+    billing_status: 'none',
+    free_post_limit: 3,
+    free_post_used: 0
+  });
+
+  await grantUserProduct(user.id, DEFAULT_PRODUCT_ID, { status: 'active', role: 'customer' });
+  const account = await createAccount({
+    name: normalizedUsername,
+    account_handle: '',
+    target_audience: '',
+    content_scope: '',
+    tone: '',
+    cta_style: ''
+  });
+  await dbInsert('user_accounts', { user_id: user.id, account_id: account.id });
+
+  return {
+    ok: true,
+    message: '회원가입이 완료되었습니다.',
+    ...(await sessionForUser(user))
+  };
 }
 
 export const listUsers = () => dbList('users', {}, { order: 'created_at', ascending: false });

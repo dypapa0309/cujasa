@@ -19,6 +19,25 @@ const tossBillingSecretKey = () => process.env.TOSS_BILLING_SECRET_KEY || tossSe
 export const makeOrderId = (prefix = 'CUJASA') => `${prefix}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
 export const customerKeyFor = (userId) => `cujasa-${userId}`;
 
+function isProductionRuntime() {
+  return process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
+}
+
+function tossMockAllowed() {
+  return process.env.TOSS_ALLOW_MOCK === 'true' || !isProductionRuntime();
+}
+
+export function assertTossConfigured({ billing = false } = {}) {
+  const clientKey = tossClientKey();
+  const secretKey = billing ? tossBillingSecretKey() : tossSecretKey();
+  if (clientKey !== 'test_ck_dev_placeholder' && secretKey) return;
+  if (tossMockAllowed()) return;
+  const error = new Error('Toss 라이브 키가 설정되지 않았습니다. API 개별 연동 키의 Client Key와 Secret Key를 Render 환경변수에 등록해주세요.');
+  error.status = 503;
+  error.code = 'TOSS_LIVE_KEYS_MISSING';
+  throw error;
+}
+
 function requireCustomer(req, res) {
   if (req.user?.type !== 'user') {
     res.status(403).json({ error: 'Customer only' });
@@ -33,6 +52,12 @@ function tossAuth(secret = tossSecretKey()) {
 
 export async function tossPost(path, body, secret = tossSecretKey()) {
   if (!secret) {
+    if (!tossMockAllowed()) {
+      const error = new Error('Toss 라이브 Secret Key가 설정되지 않았습니다.');
+      error.status = 503;
+      error.code = 'TOSS_LIVE_KEYS_MISSING';
+      throw error;
+    }
     if (path === '/v1/payments/confirm') {
       return {
         ...body,
@@ -186,6 +211,7 @@ router.post('/checkout/virtual-account', async (req, res, next) => {
     if (!user) return;
     const product = await getProduct(req.body.productId || 'onetime_590000');
     if (product.billing_cycle !== 'once') return res.status(400).json({ error: '일시불 상품만 가상계좌 결제가 가능합니다.' });
+    assertTossConfigured();
 
     const orderId = makeOrderId('CUJASA-ONETIME');
     const payment = await dbInsert('billing_payments', {
@@ -253,8 +279,9 @@ router.post('/billing-auth', async (req, res, next) => {
   try {
     const user = requireCustomer(req, res);
     if (!user) return;
-    const product = await getProduct(req.body.productId || 'monthly_129000');
+    const product = await getProduct(req.body.productId || 'monthly_59000');
     if (product.billing_cycle !== 'monthly') return res.status(400).json({ error: '월정액 상품만 자동결제 등록이 가능합니다.' });
+    assertTossConfigured({ billing: true });
     const customerKey = req.body.customerKey || customerKeyFor(user.userId);
 
     if (!req.body.authKey) {
@@ -335,6 +362,7 @@ router.post('/subscriptions/:id/charge', async (req, res, next) => {
     const subscription = await dbGet('billing_subscriptions', { id: req.params.id });
     if (!subscription || subscription.user_id !== user.userId) return res.status(404).json({ error: '구독을 찾을 수 없습니다.' });
     if (!subscription.billing_key) return res.status(409).json({ error: '등록된 빌링키가 없습니다.' });
+    assertTossConfigured({ billing: true });
     const product = await getProduct(subscription.product_id);
     const orderId = makeOrderId('CUJASA-MONTHLY');
     const charged = await tossPost(`/v1/billing/${subscription.billing_key}`, {

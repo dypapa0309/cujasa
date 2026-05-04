@@ -17,7 +17,7 @@
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://jasain.kr">
   <meta property="og:title" content="CUJASA — 쿠팡 파트너스 Threads 자동 포스팅">
-  <meta property="og:description" content="AI가 주제부터 상품 검색, 글 작성, Threads 업로드까지 전부 자동. 일시불 ₩590,000 또는 월 ₩129,000으로 시작하세요.">
+  <meta property="og:description" content="AI가 주제부터 상품 검색, 글 작성, Threads 업로드까지 전부 자동. 일시불 ₩590,000 또는 월 ₩59,000으로 시작하세요.">
   <meta property="og:image" content="https://jasain.kr/images/og-image.png">
   <meta property="og:locale" content="ko_KR">
   <meta property="og:site_name" content="CUJASA">
@@ -656,7 +656,7 @@
         <div class="fade-up border-2 border-gray-200 rounded-3xl p-8 flex flex-col">
           <div class="text-sm font-bold text-gray-400 uppercase tracking-wide mb-4">월정액</div>
           <div class="mb-2">
-            <span class="text-5xl font-black text-gray-900">₩129,000</span>
+            <span class="text-5xl font-black text-gray-900">₩59,000</span>
             <span class="text-gray-400 text-base font-medium"> / 월</span>
           </div>
           <p class="text-gray-500 text-sm mb-6">언제든 해지 가능. 부담 없이 시작.</p>
@@ -828,7 +828,7 @@
           <button type="button" onclick="selectPlan('monthly')" id="btn-monthly"
             class="plan-btn rounded-xl border-2 p-4 text-left transition-all border-gray-200 bg-white">
             <div class="text-xs font-black text-gray-400 mb-1">월정액</div>
-            <div class="text-xl font-black text-gray-700">₩129,000</div>
+            <div class="text-xl font-black text-gray-700">₩59,000</div>
             <div class="text-xs text-gray-500 mt-0.5">/ 월 · 언제든 해지</div>
           </button>
         </div>
@@ -1071,12 +1071,12 @@
       } else {
         summary.className = 'bg-gray-50 border-2 border-gray-900 rounded-2xl p-4 mb-6 flex items-center justify-between';
         priceEl.className = 'text-2xl font-black text-gray-900';
-        priceEl.textContent = '₩129,000 / 월';
+        priceEl.textContent = '₩59,000 / 월';
         labelEl.textContent = '월정액';
         badgeEl.textContent = '언제든 해지 가능';
         badgeEl.className = 'text-xs text-gray-700 font-black bg-gray-200 px-3 py-1 rounded-full';
         submitBtn.className = 'w-full bg-gray-900 hover:bg-gray-700 text-white font-black py-4 rounded-xl transition-all text-base shadow-lg hover:scale-105 active:scale-100';
-        submitBtn.textContent = '신청하기 (₩129,000/월) →';
+        submitBtn.textContent = '신청하기 (₩59,000/월) →';
         document.getElementById('countdown2').style.display = 'none';
       }
     }
@@ -1088,7 +1088,7 @@
       const phone = document.getElementById('buyerPhone').value.trim();
       if (!name || !phone) return;
 
-      const planText = selectedPlan === 'onetime' ? '일시불 ₩590,000' : '월정액 ₩129,000/월';
+      const planText = selectedPlan === 'onetime' ? '일시불 ₩590,000' : '월정액 ₩59,000/월';
       const message = encodeURIComponent(
         '[CUJASA 구매 신청]\n구매자명: ' + name + '\n전화번호: ' + phone + '\n플랜: ' + planText
       );

@@ -394,7 +394,7 @@
         <div class="grid sm:grid-cols-2 gap-6">
           <div class="fade-up border-2 border-gray-200 rounded-3xl p-8 flex flex-col bg-white">
             <div class="text-sm font-bold text-gray-400 uppercase tracking-wide mb-4">월정액</div>
-            <div class="mb-2"><span class="text-5xl font-black text-gray-900">₩129,000</span><span class="text-gray-400 text-base font-medium"> / 월</span></div>
+            <div class="mb-2"><span class="text-5xl font-black text-gray-900">₩59,000</span><span class="text-gray-400 text-base font-medium"> / 월</span></div>
             <p class="text-gray-500 text-sm mb-6">언제든 해지 가능. 부담 없이 시작.</p>
             <ul class="space-y-3 text-sm text-gray-600 mb-8 flex-1">
               <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>Threads 계정 4개</li>
@@ -467,7 +467,7 @@
             </button>
             <button type="button" onclick="cjSelectPlan('monthly')" id="cj-btn-monthly" class="rounded-xl border-2 p-4 text-left transition-all border-gray-200 bg-white">
               <div class="text-xs font-black text-gray-400 mb-1">월정액</div>
-              <div class="text-xl font-black text-gray-700">₩129,000</div>
+              <div class="text-xl font-black text-gray-700">₩59,000</div>
               <div class="text-xs text-gray-500 mt-0.5">/ 월</div>
             </button>
           </div>
@@ -739,7 +739,7 @@
       document.getElementById('cj-btn-monthly').className = 'rounded-xl border-2 p-4 text-left transition-all ' + (!isOnetime ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white');
       const btn = document.getElementById('cj-submitBtn');
       btn.className = 'w-full text-white font-black py-4 rounded-xl transition-all text-base shadow-lg hover:scale-105 active:scale-100 ' + (isOnetime ? 'bg-coupang hover:bg-coupang-dark' : 'bg-gray-900 hover:bg-gray-700');
-      btn.textContent = isOnetime ? '문자로 신청하기 (₩590,000 일시불) →' : '문자로 신청하기 (₩129,000/월) →';
+      btn.textContent = isOnetime ? '문자로 신청하기 (₩590,000 일시불) →' : '문자로 신청하기 (₩59,000/월) →';
     }
 
     document.getElementById('cj-buyForm').addEventListener('submit', function(e) {
@@ -747,7 +747,7 @@
       const name = document.getElementById('cj-buyerName').value.trim();
       const phone = document.getElementById('cj-buyerPhone').value.trim();
       if (!name || !phone) return;
-      const planText = cjPlan === 'onetime' ? '일시불 ₩590,000' : '월정액 ₩129,000/월';
+      const planText = cjPlan === 'onetime' ? '일시불 ₩590,000' : '월정액 ₩59,000/월';
       const msgText = '[CUJASA 구매 신청]\n구매자명: ' + name + '\n전화번호: ' + phone + '\n플랜: ' + planText;
       const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
+import TrialStatusCard from './TrialStatusCard.jsx';
 
-export default function CustomerHomePage({ account, currentUser }) {
+export default function CustomerHomePage({ account, currentUser, trialStatus, setTab }) {
   const [queue, setQueue] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +43,7 @@ export default function CustomerHomePage({ account, currentUser }) {
 
   return (
     <div className="grid gap-5">
+      <TrialStatusCard trialStatus={trialStatus} onUpgrade={() => setTab?.('billing')} />
 
       {/* 자동화 상태 카드 */}
       <div className={`rounded-2xl p-6 ${isActive ? 'bg-gradient-to-br from-emerald-500 to-emerald-600' : 'bg-gradient-to-br from-gray-400 to-gray-500'} text-white`}>

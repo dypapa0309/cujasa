@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { isAuthConfigured, listUserProducts, loginAdmin, loginUser, shouldBypassAuth } from '../services/authService.js';
+import { isAuthConfigured, listUserProducts, loginAdmin, loginUser, registerFreeUser, shouldBypassAuth } from '../services/authService.js';
 import { createRateLimit } from '../middleware/rateLimit.js';
 import { completeThreadsOAuth, createThreadsAuthUrl } from '../services/threadsOAuthService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
@@ -7,6 +7,18 @@ import { refreshUserEntitlement } from '../services/billingEntitlementService.js
 const loginRateLimit = createRateLimit({ scope: 'login', windowMs: 10 * 60 * 1000, maxRequests: 10 });
 
 const router = Router();
+
+router.post('/register', loginRateLimit, async (req, res, next) => {
+  try {
+    const result = await registerFreeUser(req.body || {});
+    const entitlement = await refreshUserEntitlement(result.userId);
+    result.products = await listUserProducts(result.userId);
+    result.billing = entitlement.billing;
+    return res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.post('/login', loginRateLimit, async (req, res, next) => {
   try {
@@ -41,6 +53,7 @@ router.get('/me', async (req, res, next) => {
       type: 'user',
       user: {
         email: user.email,
+        username: entitlement.user?.username || user.username || null,
         userId: user.userId,
         maxAccounts: user.maxAccounts,
         allowedAccountIds: user.allowedAccountIds,

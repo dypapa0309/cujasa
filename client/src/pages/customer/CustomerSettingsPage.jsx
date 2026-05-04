@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
+import TrialStatusCard from './TrialStatusCard.jsx';
 
-export default function CustomerSettingsPage({ account, reloadAccounts, onPipelineDone, onPipelineRunningChange }) {
+export default function CustomerSettingsPage({ account, reloadAccounts, onPipelineDone, onPipelineRunningChange, trialStatus, reloadTrialStatus, setTab }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -38,6 +39,12 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
   }, [account]);
 
   const save = async () => {
+    const trialBlocked = trialStatus?.plan === 'free' && trialStatus.blocked;
+    if (trialBlocked) {
+      toast('무료 체험 포스팅 3회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
+      setTab?.('billing');
+      return;
+    }
     const errs = {};
     if (!form.target_audience?.trim()) errs.target_audience = '타겟 오디언스를 입력해주세요.';
     if (!form.content_scope?.trim()) errs.content_scope = '다룰 카테고리를 입력해주세요.';
@@ -74,6 +81,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
     try {
       const result = await api.post(`/api/accounts/${account.id}/run-pipeline`, {});
       onPipelineDone?.(result);
+      reloadTrialStatus?.();
     } catch (err) {
       if (err.preflight) setPreflight(err.preflight);
       toast(err.preflight ? '자동화 전에 확인할 항목이 있습니다.' : '자동화 실행에 실패했습니다. 잠시 후 자동으로 재시도됩니다.', 'error');
@@ -144,9 +152,11 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
   );
 
   const linkRatio = Math.min(1, Math.max(0, Number(form.link_post_ratio ?? 0.3)));
+  const trialBlocked = trialStatus?.plan === 'free' && trialStatus.blocked;
 
   return (
     <div className="grid gap-5">
+      <TrialStatusCard trialStatus={trialStatus} onUpgrade={() => setTab?.('billing')} />
 
       {/* 계정 기본 정보 */}
       <Section title="계정 기본 정보">
@@ -278,11 +288,11 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
           <div className="text-xs opacity-80">주제 생성 → 상품 검색 → 콘텐츠 작성 → 예약 순으로 진행됩니다. 완료까지 약 1~2분 소요됩니다.</div>
         </div>
       )}
-      <button onClick={save} disabled={saving || running}
+      <button onClick={save} disabled={saving || running || trialBlocked}
         className={`w-full font-black py-4 rounded-2xl transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-white
-          ${running ? 'bg-gray-400 cursor-not-allowed' : 'bg-coupang hover:bg-coupang-dark'}`}>
+          ${running || trialBlocked ? 'bg-gray-400 cursor-not-allowed' : 'bg-coupang hover:bg-coupang-dark'}`}>
         {(saving || running) && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
-        {saving ? '저장 중...' : running ? '실행 중 (잠시 기다려주세요)' : '저장하고 시작하기'}
+        {saving ? '저장 중...' : running ? '실행 중 (잠시 기다려주세요)' : trialBlocked ? '무료 체험 종료' : '저장하고 시작하기'}
       </button>
       {confirmingThreads && (
         <ThreadsConnectModal

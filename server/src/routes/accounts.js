@@ -7,6 +7,7 @@ import { markedOkKeysFromAudits, shouldHideAssignment, suspiciousAssignmentsForU
 import { preflightAccount } from '../services/accountPreflightService.js';
 import { assertUserCanOperate } from '../services/billingEntitlementService.js';
 import { redactAccount, redactAccounts, stripBlankSensitiveAccountFields } from '../services/redactionService.js';
+import { assertUserCanStartTrialAction } from '../services/trialEntitlementService.js';
 
 const router = Router();
 
@@ -141,6 +142,7 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
       return res.status(403).json({ error: 'Access denied' });
     }
     if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
+    if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
     res.json(await runPipelineForAccount(req.params.accountId, { requestedBy: req.user?.email || req.user?.type || 'manual' }));
   } catch (e) { next(e); }
 });

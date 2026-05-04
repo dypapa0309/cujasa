@@ -6,6 +6,7 @@ import { refreshUserEntitlement } from '../services/billingEntitlementService.js
 const publicPaths = [
   '/api/health',
   '/api/auth/login',
+  '/api/auth/register',
   '/api/auth/threads/callback',
   '/api/inquiries',
   '/api/webhooks/toss',
@@ -56,6 +57,7 @@ export async function requireAuth(req, res, next) {
         type: 'user',
         userId: payload.userId,
         email: payload.sub,
+        username: payload.username || null,
         maxAccounts: payload.maxAccounts ?? 2,
         allowedAccountIds: userAccounts.map((ua) => ua.account_id).filter((accountId) => !hiddenIds.has(accountId)),
         products: await listUserProducts(payload.userId)

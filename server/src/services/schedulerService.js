@@ -8,6 +8,7 @@ import { validatePostCandidate } from '../utils/contentGuardrails.js';
 import { assertPreflightCanPublish, preflightAccount } from './accountPreflightService.js';
 import { classifyQueueError } from './queueErrorService.js';
 import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
+import { assertAccountCanUpload, recordSuccessfulUpload } from './trialEntitlementService.js';
 
 async function hasProductsForTopic(topicId) {
   if (!topicId) return false;
@@ -37,6 +38,7 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
   const post = await dbGet('posts', { id: postId });
   if (!post) throw new Error('Post not found');
   await assertAccountOwnerCanOperate(post.account_id);
+  await assertAccountCanUpload(post.account_id);
   const account = await dbGet('accounts', { id: post.account_id });
   if (account?.status !== 'active') {
     const error = new Error(`Account is ${account?.status || 'missing'}; cannot add post to queue`);
@@ -74,6 +76,7 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
 
 export async function createDailyQueue(accountId) {
   await assertAccountOwnerCanOperate(accountId);
+  await assertAccountCanUpload(accountId);
   const account = await dbGet('accounts', { id: accountId });
   if (account?.status !== 'active') {
     const error = new Error(`Account is ${account?.status || 'missing'}; cannot create daily queue`);
@@ -95,20 +98,27 @@ export async function createDailyQueue(accountId) {
   // link_post_ratio 적용: 링크 있는 것과 없는 것을 비율에 맞게 섞기
   const linkRatio = Math.min(1, Math.max(0, Number(account.link_post_ratio ?? 0.3)));
   const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
-  const withoutLink = allDrafts.filter((p) => !productsPerTopic.has(p.topic_id));
   const times = createDailySchedule(account);
   const total = times.length;
   const linkCount = Math.round(total * linkRatio);
   const noLinkCount = total - linkCount;
   const primaryWithLink = withLink.slice(0, linkCount);
-  const primaryWithoutLink = withoutLink.slice(0, noLinkCount);
-  const usedPostIds = new Set([...primaryWithLink, ...primaryWithoutLink].map((post) => post.id));
-  const fill = [...withLink, ...withoutLink].filter((post) => !usedPostIds.has(post.id));
+  const usedLinkPostIds = new Set(primaryWithLink.map((post) => post.id));
+  const primaryWithoutLink = allDrafts.filter((post) => !usedLinkPostIds.has(post.id)).slice(0, noLinkCount);
   const drafts = [
     ...primaryWithLink.map((post) => ({ post, postMode: 'link' })),
-    ...primaryWithoutLink.map((post) => ({ post, postMode: 'no_link' })),
-    ...fill.map((post) => ({ post, postMode: productsPerTopic.has(post.topic_id) ? 'link' : 'no_link' }))
-  ].slice(0, total);
+    ...primaryWithoutLink.map((post) => ({ post, postMode: 'no_link' }))
+  ];
+  if (primaryWithLink.length < linkCount) {
+    await logActivity({
+      account_id: account.id,
+      project_id: account.project_id,
+      action: 'queue_link_slots_shortage',
+      level: 'warn',
+      message: `링크 글 후보 부족: 목표 ${linkCount}개, 가능 ${primaryWithLink.length}개`,
+      payload: { linkRatio, total, linkCount, availableLinkPosts: withLink.length }
+    });
+  }
   const queued = [];
   for (const [index, item] of drafts.slice(0, times.length).entries()) {
     queued.push(await addPostToQueue(item.post.id, times[index], { postMode: item.postMode }));
@@ -141,6 +151,7 @@ export async function uploadQueueItem(queueId) {
   const post = await dbGet('posts', { id: queue.post_id });
   try {
     await assertAccountOwnerCanOperate(queue.account_id);
+    await assertAccountCanUpload(queue.account_id);
     if (!post) {
       const error = new Error('Post not found for queue item');
       error.permanent = true;
@@ -152,8 +163,6 @@ export async function uploadQueueItem(queueId) {
     }
     assertPreflightCanPublish(await preflightAccount(account.id, { includeQueue: false }));
     await dbUpdate('post_queue', { id: queueId }, { status: 'posting' });
-    const ctas = await listCtas(post.id);
-    const cta = ctas[Math.floor(Math.random() * Math.max(1, ctas.length))] || null;
     const postProduct = (await dbList('post_products', { topic_id: post.topic_id }, { order: 'rank', ascending: true }))[0];
     const product = postProduct ? await dbGet('coupang_products', { id: postProduct.product_id }) : null;
     // retry 시 기존 tracking_link 재사용 — 중복 생성 방지
@@ -162,13 +171,15 @@ export async function uploadQueueItem(queueId) {
       : null;
     const postMode = queue.post_mode || 'auto';
     const requiresLink = postMode === 'link';
+    const ctas = requiresLink ? await listCtas(post.id) : [];
+    const cta = requiresLink ? (ctas[Math.floor(Math.random() * Math.max(1, ctas.length))] || null) : null;
     if (requiresLink && !product) {
       const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글로 예약됐지만 연결된 쿠팡 상품이 없습니다.');
       error.status = 422;
       error.permanent = true;
       throw error;
     }
-    const trackingLink = existingLink || (product ? await createTrackingLink({
+    const trackingLink = requiresLink ? (existingLink || (product ? await createTrackingLink({
       project_id: post.project_id,
       account_id: post.account_id,
       topic_id: post.topic_id,
@@ -176,7 +187,7 @@ export async function uploadQueueItem(queueId) {
       product_id: product.id,
       destination_url: product.partner_url || product.product_url,
       link_type: product.is_fallback ? 'fallback' : 'coupang'
-    }) : null);
+    }) : null)) : null;
     if (requiresLink && !trackingLink) {
       const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글의 트래킹 링크를 만들 수 없습니다.');
       error.status = 422;
@@ -208,6 +219,7 @@ export async function uploadQueueItem(queueId) {
     }
     const [updated] = postedRows;
     await dbUpdate('posts', { id: post.id }, { status: 'posted' });
+    await recordSuccessfulUpload(account.id);
     await createMetricJobs(updated);
     await logActivity({ account_id: account.id, project_id: account.project_id, post_id: post.id, action: 'upload_completed', message: uploaded.postUrl });
     if (uploaded.raw?.replyWarning) {

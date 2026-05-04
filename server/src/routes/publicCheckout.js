@@ -6,6 +6,7 @@ import {
   getProduct,
   makeOrderId,
   mapPayment,
+  assertTossConfigured,
   tossClientKey,
   tossPost
 } from './billing.js';
@@ -48,6 +49,7 @@ router.post('/virtual-account', async (req, res, next) => {
     if (product.billing_cycle !== 'once') {
       return res.status(400).json({ error: '현재 공개 결제는 일시불 가상계좌만 지원합니다.' });
     }
+    assertTossConfigured();
 
     const user = await upsertBuyer({ email: cleanEmail, password: cleanPassword, buyerName: cleanName, phone: cleanPhone });
     const orderId = makeOrderId('CUJASA-PUBLIC-ONETIME');

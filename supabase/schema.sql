@@ -261,24 +261,41 @@ create index if not exists idx_announcements_active on announcements(status, cre
 create table if not exists users (
   id uuid primary key default gen_random_uuid(),
   email text not null unique,
+  username text,
   password_hash text not null,
   buyer_name text,
   phone text,
   status text not null default 'active' check (status in ('active', 'suspended')),
   max_accounts int not null default 2,
-  plan text,
+  plan text default 'free',
   billing_status text not null default 'none' check (billing_status in ('none', 'pending', 'paid', 'active', 'past_due', 'canceled')),
   paid_until timestamptz,
+  free_post_limit integer not null default 3,
+  free_post_used integer not null default 0,
+  trial_blocked_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table users alter column max_accounts set default 2;
+alter table users add column if not exists username text;
 alter table users add column if not exists buyer_name text;
 alter table users add column if not exists phone text;
 alter table users add column if not exists plan text;
+alter table users alter column plan set default 'free';
 alter table users add column if not exists billing_status text not null default 'none';
 alter table users add column if not exists paid_until timestamptz;
+alter table users add column if not exists free_post_limit integer not null default 3;
+alter table users add column if not exists free_post_used integer not null default 0;
+alter table users add column if not exists trial_blocked_at timestamptz;
+
+create unique index if not exists idx_users_username_unique
+  on users(lower(username))
+  where username is not null and username <> '';
+
+alter table users drop constraint if exists users_plan_check;
+alter table users add constraint users_plan_check
+  check (plan is null or plan in ('free', 'onetime', 'monthly'));
 
 create table if not exists user_accounts (
   id uuid primary key default gen_random_uuid(),
@@ -346,17 +363,18 @@ create table if not exists billing_products (
 
 alter table billing_products add column if not exists app_product_id text not null default 'cujasa';
 
-insert into billing_products (id, name, plan, amount, billing_cycle, max_accounts)
+insert into billing_products (id, name, plan, amount, billing_cycle, max_accounts, active)
 values
-  ('onetime_590000', 'CUJASA 베이직 일시불', 'onetime', 590000, 'once', 2),
-  ('monthly_129000', 'CUJASA 베이직 월정액', 'monthly', 129000, 'monthly', 2)
+  ('onetime_590000', 'CUJASA 베이직 일시불', 'onetime', 590000, 'once', 2, true),
+  ('monthly_59000', 'CUJASA 베이직 월정액', 'monthly', 59000, 'monthly', 2, true),
+  ('monthly_129000', 'CUJASA 베이직 월정액(판매 중단)', 'monthly', 129000, 'monthly', 2, false)
 on conflict (id) do update set
   name = excluded.name,
   plan = excluded.plan,
   amount = excluded.amount,
   billing_cycle = excluded.billing_cycle,
   max_accounts = excluded.max_accounts,
-  active = true;
+  active = excluded.active;
 
 create table if not exists billing_payments (
   id uuid primary key default gen_random_uuid(),

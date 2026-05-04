@@ -95,13 +95,23 @@ const tables = {
       created_at: now()
     },
     {
-      id: 'monthly_129000',
+      id: 'monthly_59000',
       name: 'CUJASA 베이직 월정액',
+      plan: 'monthly',
+      amount: 59000,
+      billing_cycle: 'monthly',
+      max_accounts: 2,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'monthly_129000',
+      name: 'CUJASA 베이직 월정액(판매 중단)',
       plan: 'monthly',
       amount: 129000,
       billing_cycle: 'monthly',
       max_accounts: 2,
-      active: true,
+      active: false,
       created_at: now()
     }
   ],

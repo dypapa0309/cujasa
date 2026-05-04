@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
+import TrialStatusCard from './TrialStatusCard.jsx';
 
 function postModeLabel(postMode) {
   if (postMode === 'link') return '쿠팡 링크 글';
@@ -33,7 +34,7 @@ function ModeBadge({ mode, linkStatus }) {
   );
 }
 
-export default function CustomerPostsPage({ account, pipelineResult }) {
+export default function CustomerPostsPage({ account, pipelineResult, trialStatus, setTab }) {
   const [queue, setQueue] = useState([]);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -84,6 +85,7 @@ export default function CustomerPostsPage({ account, pipelineResult }) {
 
   return (
     <div className="grid gap-5">
+      <TrialStatusCard trialStatus={trialStatus} onUpgrade={() => setTab?.('billing')} />
 
       {/* 파이프라인 실행 결과 */}
       {pipelineResult && (

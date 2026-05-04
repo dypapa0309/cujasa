@@ -4,18 +4,21 @@ import { addPostToQueue, createDailyQueue, processDueQueue, uploadQueueItem } fr
 import { requireAccountAccessParam, requireQueueAccess } from '../middleware/accountAccess.js';
 import { assertUserCanOperate } from '../services/billingEntitlementService.js';
 import { decorateQueueRow, decorateQueueRows, postModeLabel } from '../services/queueErrorService.js';
+import { assertUserCanStartTrialAction } from '../services/trialEntitlementService.js';
 
 const router = Router();
 
 router.post('/:postId/add-to-queue', async (req, res, next) => {
   try {
     if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
+    if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
     res.status(201).json(await addPostToQueue(req.params.postId, req.body.scheduled_at));
   } catch (e) { next(e); }
 });
 router.post('/:accountId/create-daily-queue', requireAccountAccessParam(), async (req, res, next) => {
   try {
     if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
+    if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
     res.status(201).json(await createDailyQueue(req.params.accountId));
   } catch (e) { next(e); }
 });
@@ -31,6 +34,7 @@ router.patch('/:queueId', async (req, res, next) => {
 router.post('/:queueId/upload-now', requireQueueAccess, async (req, res, next) => {
   try {
     if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
+    if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
     res.json(await uploadQueueItem(req.params.queueId));
   } catch (e) { next(e); }
 });
@@ -60,13 +64,14 @@ router.get('/detail/:queueId', requireQueueAccess, async (req, res, next) => {
       : null;
     const decoratedQueue = decorateQueueRow(queue);
     const postMode = queue.post_mode || 'auto';
+    const hasLinkCandidate = products.filter(Boolean).length > 0;
 
     res.json({
       queue: decoratedQueue,
       postMode,
       postModeLabel: postModeLabel(postMode),
       linkStatus: postMode === 'link'
-        ? (trackingLink ? 'ready' : 'missing')
+        ? (trackingLink || hasLinkCandidate ? 'ready' : 'missing')
         : (postMode === 'no_link' ? 'not_required' : 'unknown'),
       post,
       products: products.filter(Boolean),

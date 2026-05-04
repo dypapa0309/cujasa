@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import cron from 'node-cron';
 import authRouter from './routes/auth.js';
+import meRouter from './routes/me.js';
 import projectsRouter from './routes/projects.js';
 import accountsRouter from './routes/accounts.js';
 import topicsRouter from './routes/topics.js';
@@ -74,6 +75,7 @@ app.use(requireAuth);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'jasain-api', product: 'cujasa' }));
 app.use('/api/auth', authRouter);
+app.use('/api/me', meRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/accounts', accountsRouter);
 app.use('/api/accounts', topicsRouter);
@@ -154,7 +156,11 @@ app.use((error, req, res, next) => {
   res.status(error.status || 500).json({
     error: error.message || 'Internal server error',
     ...(error.code ? { code: error.code } : {}),
-    ...(error.preflight ? { preflight: error.preflight } : {})
+    ...(error.preflight ? { preflight: error.preflight } : {}),
+    ...(error.limit != null ? { limit: error.limit } : {}),
+    ...(error.used != null ? { used: error.used } : {}),
+    ...(error.remaining != null ? { remaining: error.remaining } : {}),
+    ...(error.upgradeRequired != null ? { upgradeRequired: error.upgradeRequired } : {})
   });
 });
 

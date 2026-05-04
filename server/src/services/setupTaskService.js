@@ -2,13 +2,33 @@ import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { sendSlackMessage } from './slackService.js';
 
 const SETUP_STATUSES = new Set(['pending', 'in_progress', 'completed', 'canceled']);
+const EDITABLE_FIELDS = new Set(['buyer_name', 'email', 'phone', 'product_id', 'amount', 'paid_at']);
+
+function normalizeEditablePatch(patch = {}) {
+  const next = {};
+  for (const field of EDITABLE_FIELDS) {
+    if (patch[field] === undefined) continue;
+    if (field === 'amount') {
+      const value = Number(patch[field] || 0);
+      next[field] = Number.isFinite(value) && value > 0 ? value : null;
+      continue;
+    }
+    if (field === 'paid_at') {
+      next[field] = patch[field] ? new Date(patch[field]).toISOString() : null;
+      continue;
+    }
+    next[field] = String(patch[field] || '').trim() || null;
+  }
+  if (patch.buyerName !== undefined) next.buyer_name = String(patch.buyerName || '').trim() || null;
+  return next;
+}
 
 export async function listSetupTasks() {
   return dbList('setup_tasks', {}, { order: 'created_at', ascending: false });
 }
 
 export async function updateSetupTask(id, patch = {}) {
-  const next = {};
+  const next = normalizeEditablePatch(patch);
   if (patch.status !== undefined) {
     if (!SETUP_STATUSES.has(patch.status)) {
       const error = new Error('유효하지 않은 셋업 상태입니다.');
@@ -20,6 +40,7 @@ export async function updateSetupTask(id, patch = {}) {
     if (patch.status === 'completed') next.completed_at = new Date().toISOString();
   }
   if (patch.notes !== undefined) next.notes = String(patch.notes || '').trim() || null;
+  next.updated_at = new Date().toISOString();
   const [updated] = await dbUpdate('setup_tasks', { id }, next);
   if (!updated) {
     const error = new Error('셋업 작업을 찾을 수 없습니다.');

@@ -37,7 +37,7 @@ function cujasaBanner() {
     <p style="font-size:15px;color:#ccc;margin:0 0 24px;line-height:1.6;">AI가 주제 선정부터 상품 검색, 글 작성, Threads 업로드까지<br>전부 자동으로 해드립니다. 지금 신청하세요.</p>
     <a href="${LANDING_URL}#purchase-form" target="_blank"
       style="display:inline-block;background:#C00000;color:#fff;font-weight:900;font-size:15px;padding:14px 36px;border-radius:10px;text-decoration:none;">
-      지금 신청하기 (일시불 ₩590,000 / 월 ₩129,000) →
+      지금 신청하기 (일시불 ₩590,000 / 월 ₩59,000) →
     </a>
     <div style="font-size:12px;color:#888;margin-top:12px;">베이직 플랜: Threads 계정 2개까지 운영</div>
   </div>`;

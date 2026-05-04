@@ -88,17 +88,18 @@ create table if not exists billing_products (
 
 alter table billing_products add column if not exists app_product_id text not null default 'cujasa';
 
-insert into billing_products (id, name, plan, amount, billing_cycle, max_accounts)
+insert into billing_products (id, name, plan, amount, billing_cycle, max_accounts, active)
 values
-  ('onetime_590000', 'CUJASA 베이직 일시불', 'onetime', 590000, 'once', 2),
-  ('monthly_129000', 'CUJASA 베이직 월정액', 'monthly', 129000, 'monthly', 2)
+  ('onetime_590000', 'CUJASA 베이직 일시불', 'onetime', 590000, 'once', 2, true),
+  ('monthly_59000', 'CUJASA 베이직 월정액', 'monthly', 59000, 'monthly', 2, true),
+  ('monthly_129000', 'CUJASA 베이직 월정액(판매 중단)', 'monthly', 129000, 'monthly', 2, false)
 on conflict (id) do update set
   name = excluded.name,
   plan = excluded.plan,
   amount = excluded.amount,
   billing_cycle = excluded.billing_cycle,
   max_accounts = excluded.max_accounts,
-  active = true;
+  active = excluded.active;
 
 create table if not exists billing_payments (
   id uuid primary key default gen_random_uuid(),
