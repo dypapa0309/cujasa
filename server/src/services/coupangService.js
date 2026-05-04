@@ -43,7 +43,17 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
       throw new Error(`Coupang API ${response.status}: ${body.slice(0, 300)}`);
     }
     const json = await response.json();
-    return (json.data?.productData || []).map((item) => ({
+    const productData = json.data?.productData || [];
+    if (productData.length === 0) {
+      await logActivity({
+        action: 'coupang_empty_result',
+        level: 'warn',
+        message: '쿠팡 검색 결과가 없어 fallback 상품을 사용합니다.',
+        payload: { keyword }
+      });
+      return [fallbackProduct(keyword)];
+    }
+    return productData.map((item) => ({
       product_id: String(item.productId),
       product_name: item.productName,
       product_price: item.productPrice,

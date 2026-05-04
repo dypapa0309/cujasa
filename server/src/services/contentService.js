@@ -5,6 +5,7 @@ import { generatePostsPrompt } from '../prompts/generatePostsPrompt.js';
 import { checkAndRewriteRisk } from './riskService.js';
 import { validatePostCandidate } from '../utils/contentGuardrails.js';
 import { buildFallbackPostBody, validatePostStyleFit } from '../utils/accountStyle.js';
+import { prepareGeneratedPostBody } from '../utils/koreanContentQuality.js';
 
 export async function generatePosts(topicId) {
   const topic = await dbGet('topics', { id: topicId });
@@ -25,7 +26,20 @@ export async function generatePosts(topicId) {
   const posts = [];
   for (const item of result.posts || []) {
     const risk = checkAndRewriteRisk(item.body);
-    const guardrail = validatePostCandidate(risk.body, account, topic);
+    const prepared = prepareGeneratedPostBody(risk.body);
+    if (prepared.warnings.length) {
+      await logActivity({
+        account_id: topic.account_id,
+        project_id: topic.project_id,
+        topic_id: topic.id,
+        action: 'post_quality_adjusted',
+        level: 'info',
+        message: prepared.warnings.join(', '),
+        payload: { contentType: item.contentType, warnings: prepared.warnings }
+      });
+    }
+
+    const guardrail = validatePostCandidate(prepared.body, account, topic);
     if (!guardrail.allowed) {
       await logActivity({
         account_id: topic.account_id,
@@ -34,29 +48,28 @@ export async function generatePosts(topicId) {
         action: 'post_guardrail_blocked',
         level: 'warn',
         message: guardrail.reasons.join('; '),
-        payload: { contentType: item.contentType, body: risk.body, context: guardrail.context }
+        payload: { contentType: item.contentType, body: prepared.body, context: guardrail.context }
       });
       continue;
     }
-    const styleFit = validatePostStyleFit(risk.body, account);
+    const styleFit = validatePostStyleFit(prepared.body, account);
     if (!styleFit.allowed) {
       await logActivity({
         account_id: topic.account_id,
         project_id: topic.project_id,
         topic_id: topic.id,
-        action: 'post_style_blocked',
-        level: 'warn',
+        action: 'post_style_warning',
+        level: 'info',
         message: styleFit.reasons.join('; '),
-        payload: { contentType: item.contentType, body: risk.body, tone: styleFit.profile.tone }
+        payload: { contentType: item.contentType, body: prepared.body, tone: styleFit.profile.tone }
       });
-      continue;
     }
     posts.push(await dbInsert('posts', {
       project_id: topic.project_id,
       account_id: topic.account_id,
       topic_id: topic.id,
       content_type: item.contentType,
-      body: risk.body,
+      body: prepared.body,
       risk_level: risk.riskLevel === 'high' ? 'high' : item.riskLevel || risk.riskLevel,
       status: risk.riskLevel === 'high' ? 'manual_required' : 'draft'
     }));

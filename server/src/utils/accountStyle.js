@@ -16,9 +16,11 @@ export function getAccountStyleProfile(account = {}) {
   const rules = [
     `Target audience is mandatory: write for "${targetAudience}".`,
     `Content scope is mandatory: stay inside "${contentScope}".`,
-    `Tone is mandatory: every topic and post must visibly feel like "${tone}".`,
+    `Tone guides word choice and situation framing: keep it natural instead of forcing "${tone}" keywords.`,
     `CTA style is mandatory when a CTA is needed: "${ctaStyle}".`,
-    'Do not fall back to a generic conversational tone when tone is specific.',
+    'Natural Korean readability is more important than visibly proving the tone in every sentence.',
+    'Use at most one light emoji only when it fits the account style; do not decorate every post.',
+    'Do not become generic when tone is specific.',
     'Do not introduce categories outside contentScope just because they are common affiliate topics.'
   ];
   const examples = [];
@@ -30,7 +32,7 @@ export function getAccountStyleProfile(account = {}) {
   ];
 
   if (includesAny(toneKey, ['설레', '감성'])) {
-    rules.push('Use light anticipation, small delight, gift-like discovery, and warm emotional wording.');
+    rules.push('Use light anticipation or warm wording only when it fits the situation; do not force decorative wording.');
     examples.push('괜히 기분 좋아지는', '받는 순간 살짝 설레는', '고르는 재미가 있는', '마음에 남는');
   }
 
@@ -68,7 +70,7 @@ export function buildFallbackPostBody(topic, account = {}) {
   const toneKey = profile.tone.replace(/\s+/g, '');
 
   if (includesAny(toneKey, ['설레', '감성', '후기', '리뷰'])) {
-    return `${title}, 고를 때 은근 설레는 포인트가 있어요.\n\n${angle} 같은 기준으로 보면 받는 순간 기분 좋아질 만한지 더 잘 보이더라고요.\n\n너무 과한 것보다 오래 두고 쓰기 좋은 느낌인지 먼저 체크해보세요.`;
+    return `${title}, 고를 때 작은 기준 하나만 있어도 선택이 쉬워져요.\n\n${angle} 같은 부분을 보면 오래 두고 쓰기 좋은지 더 잘 보입니다.\n\n처음 눈에 띄는 것보다 자주 손이 갈 만한지를 먼저 체크해보세요.`;
   }
 
   if (includesAny(toneKey, ['전문', '신뢰'])) {

@@ -14,6 +14,61 @@ function normalizeText(value) {
   return String(value || '').toLowerCase();
 }
 
+function tokenize(value) {
+  return normalizeText(value)
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+}
+
+function productSearchText(product) {
+  return normalizeText([
+    product?.product_name,
+    product?.category_name,
+    product?.keyword,
+    product?.product_group,
+    getProductGroup(product)
+  ].filter(Boolean).join(' '));
+}
+
+function topicSearchText(topic = {}, account = {}) {
+  return [
+    topic?.title,
+    topic?.angle,
+    topic?.keyword,
+    topic?.search_keyword,
+    account?.target_audience,
+    account?.content_scope
+  ].filter(Boolean).join(' ');
+}
+
+export function scoreProductTopicRelevance(product, topic = {}, account = {}) {
+  const productText = productSearchText(product);
+  const tokens = [...new Set(tokenize(topicSearchText(topic, account)))];
+  const group = getProductGroup(product);
+  let score = 0;
+  const matched = [];
+
+  for (const token of tokens) {
+    if (productText.includes(token)) {
+      score += token.length >= 4 ? 12 : 8;
+      matched.push(token);
+    }
+  }
+
+  if (topic?.angle && productText.includes(normalizeText(topic.angle))) score += 12;
+  if (topic?.title && productText.includes(normalizeText(topic.title))) score += 14;
+  if (group !== '기타' && normalizeText(topicSearchText(topic, account)).includes(normalizeText(group.split('/')[0]))) {
+    score += 10;
+  }
+
+  return {
+    score: Math.min(100, score),
+    matched
+  };
+}
+
 export function getProductGroup(product) {
   const text = normalizeText([
     product?.product_name,
@@ -37,11 +92,14 @@ export function enrichProductsWithDiversity(products) {
 }
 
 function defaultSelectionItem(product, topic, index = 0) {
+  const relevance = scoreProductTopicRelevance(product, topic);
+  const fitScore = Math.max(35, Math.min(90, relevance.score + 45 - index * 4));
   return {
     productId: product.product_id,
-    fitScore: Math.max(70, 90 - index * 5),
+    fitScore,
     reason: `${topic.angle || topic.title}와 자연스럽게 연결되는 ${getProductGroup(product)} 상품`,
-    recommendedUse: index === 0 ? '메인 추천' : '보완 추천'
+    recommendedUse: index === 0 ? '메인 추천' : '보완 추천',
+    relevanceScore: relevance.score
   };
 }
 
@@ -60,7 +118,7 @@ function addCandidate(chosen, seenIds, groupCounts, candidate, strictGroupLimit,
   return true;
 }
 
-export function buildDiverseProductSelection(aiItems, products, topic, limit = 3) {
+export function buildDiverseProductSelection(aiItems, products, topic, limit = 3, account = {}) {
   const productById = new Map(products.map((product) => [String(product.product_id), product]));
   const aiCandidates = [];
   const seenAi = new Set();
@@ -69,13 +127,24 @@ export function buildDiverseProductSelection(aiItems, products, topic, limit = 3
     const product = productById.get(String(item?.productId));
     if (!product || seenAi.has(String(product.product_id))) continue;
     seenAi.add(String(product.product_id));
-    aiCandidates.push({ product, item });
+    const relevance = scoreProductTopicRelevance(product, topic, account);
+    const aiFit = Number(item?.fitScore || 0);
+    if (relevance.score < 15 && aiFit < 60) continue;
+    aiCandidates.push({
+      product,
+      item: {
+        ...item,
+        fitScore: Math.max(aiFit, Math.min(95, relevance.score + 50)),
+        productGroup: item?.productGroup || getProductGroup(product),
+        relevanceScore: relevance.score
+      }
+    });
   }
 
   const allCandidates = products.map((product, index) => ({
     product,
     item: defaultSelectionItem(product, topic, index)
-  }));
+  })).sort((a, b) => (b.item.fitScore || 0) - (a.item.fitScore || 0));
 
   const chosen = [];
   const seenIds = new Set();
@@ -93,15 +162,8 @@ export function buildDiverseProductSelection(aiItems, products, topic, limit = 3
 
   for (const candidate of [...aiCandidates, ...allCandidates]) {
     if (chosen.length >= limit) break;
+    if ((candidate.item.fitScore || 0) < 50) continue;
     addCandidate(chosen, seenIds, groupCounts, candidate, false, 2);
-  }
-
-  for (const candidate of allCandidates) {
-    if (chosen.length >= limit) break;
-    const productId = String(candidate.product.product_id);
-    if (seenIds.has(productId)) continue;
-    chosen.push(candidate);
-    seenIds.add(productId);
   }
 
   return {

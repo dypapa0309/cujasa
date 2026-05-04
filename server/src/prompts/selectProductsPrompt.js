@@ -5,7 +5,7 @@ export function selectProductsPrompt(topic, products, account = null) {
   const contentContext = getContentGuardrailContext();
   const accountProfile = account ? getAccountStyleProfile(account) : null;
   return [
-    { role: 'system', content: 'You evaluate Coupang products for Korean social commerce posts. Return strict JSON only. Account target, content scope, tone, season fit, and product diversity are hard requirements.' },
+    { role: 'system', content: 'You evaluate Coupang products for Korean social commerce posts. Return strict JSON only. Account target, content scope, tone, season fit, and product diversity are hard requirements. It is better to select fewer products than to force a weak match.' },
     {
       role: 'user',
       content: JSON.stringify({
@@ -37,6 +37,9 @@ export function selectProductsPrompt(topic, products, account = null) {
           'account target audience fit',
           'account content scope fit',
           'account tone fit',
+          'only select products whose name, category, or keyword naturally matches the topic title, angle, search keyword, and account content scope',
+          'if the product would feel random under the generated post, exclude it',
+          'it is better to return fewer than three products than to fill weak products',
           'no diet/supplement/medicine/guaranteed-effect products',
           'choose a balanced set, not three near-identical items',
           'avoid selecting more than one item from the same productGroup when alternatives exist',

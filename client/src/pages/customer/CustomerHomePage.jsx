@@ -21,6 +21,21 @@ export default function CustomerHomePage({ account, currentUser, trialStatus, se
 
   const isExpired = currentUser?.billing?.status === 'past_due';
   const isActive = account?.status === 'active' && !isExpired;
+  const automationRunning = isActive && account?.automation_status === 'running';
+  const statusLabel = isExpired
+    ? '이용 기간 만료'
+    : !isActive
+      ? '일시 정지됨'
+      : automationRunning
+        ? '자동화 실행 중'
+        : '자동화 중지됨';
+  const statusMessage = isExpired
+    ? '결제 탭에서 월결제를 연장하거나 영구구매로 전환해주세요'
+    : !isActive
+      ? '계정 상태를 확인해주세요'
+      : automationRunning
+        ? '설정한 스케줄에 따라 매일 예약을 생성합니다'
+        : '자동화 실행 탭에서 시작하면 매일 예약이 생성됩니다';
 
   const upcomingScheduled = queue
     .filter((r) => r.status === 'scheduled' && new Date(r.scheduled_at) >= new Date())
@@ -46,14 +61,14 @@ export default function CustomerHomePage({ account, currentUser, trialStatus, se
       <TrialStatusCard trialStatus={trialStatus} onUpgrade={() => setTab?.('billing')} />
 
       {/* 자동화 상태 카드 */}
-      <div className={`rounded-2xl p-6 ${isActive ? 'bg-gradient-to-br from-emerald-500 to-emerald-600' : 'bg-gradient-to-br from-gray-400 to-gray-500'} text-white`}>
+      <div className={`rounded-2xl p-6 ${automationRunning ? 'bg-gradient-to-br from-emerald-500 to-emerald-600' : 'bg-gradient-to-br from-gray-400 to-gray-500'} text-white`}>
         <div className="flex items-center gap-3 mb-3">
-          <div className={`w-3 h-3 rounded-full ${isActive ? 'bg-white animate-pulse' : 'bg-gray-200'}`} />
-          <span className="font-bold text-sm">{isExpired ? '이용 기간 만료' : isActive ? '자동화 실행 중' : '일시 정지됨'}</span>
+          <div className={`w-3 h-3 rounded-full ${automationRunning ? 'bg-white animate-pulse' : 'bg-gray-200'}`} />
+          <span className="font-bold text-sm">{statusLabel}</span>
         </div>
         <div className="text-2xl font-black mb-1">{account?.name}</div>
         <div className="text-sm text-white/80">
-          {isExpired ? '결제 탭에서 월결제를 연장하거나 영구구매로 전환해주세요' : isActive ? '24시간 자동으로 포스팅하고 있습니다' : '관리자에게 문의해주세요'}
+          {statusMessage}
         </div>
       </div>
 

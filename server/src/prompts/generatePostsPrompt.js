@@ -5,7 +5,7 @@ export function generatePostsPrompt(topic, products, account) {
   const contentContext = getContentGuardrailContext();
   const accountProfile = getAccountStyleProfile(account);
   return [
-    { role: 'system', content: 'You write short Korean Threads posts. Return strict JSON only. Account tone is a hard style contract. Do not write generic conversational Korean when a specific tone is provided.' },
+    { role: 'system', content: 'You write short, natural Korean Threads posts. Return strict JSON only. Account tone is a style guide, not a keyword checklist. Natural readability comes first.' },
     {
       role: 'user',
       content: JSON.stringify({
@@ -27,14 +27,16 @@ export function generatePostsPrompt(topic, products, account) {
           'Do not mention off-season winter/cold-wave/thermal/padded/glove/hot-pack themes unless seasonKST is winter.',
           'Do not write diet, supplement, medicine, treatment, prevention, or guaranteed-effect content.',
           'stayWithinContentScope: keep every post inside the account contentScope.',
-          'Make the first sentence clearly reflect accountProfile.tone.',
+          'Make the first sentence naturally reflect the target reader and situation.',
           'Write for accountProfile.targetAudience, not a generic reader.',
           'Only use product/category situations inside accountProfile.contentScope.',
           'If tone contains 후기/review, use review-like observation without pretending actual personal use.',
-          'If tone contains 설레/emotional, include subtle anticipation or gift-like discovery wording.',
+          'If tone contains 설레/emotional, use subtle anticipation only when it fits. Do not force emotional keywords.',
+          'Use natural Korean spacing and line breaks. Avoid awkward machine-translated phrasing.',
+          'Use zero or one emoji at most. Never decorate every sentence with emoji.',
           'Do not use bland generic phrases if preferredExpressions are provided.',
           'Do not mention links, comments, profile links, prices, cheapest price, or where to buy in the post body.',
-          'The post body must read like a normal standalone Threads post. Link and ad disclosure are handled separately in a reply.',
+          'The post body must read like a normal standalone Threads post. CTA, link, and ad disclosure are handled separately in a reply.',
           'Strong first sentence',
           'Short sentences',
           'Minimize ad tone',

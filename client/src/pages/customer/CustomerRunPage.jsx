@@ -104,7 +104,8 @@ export default function CustomerRunPage({
       }
 
       const pipelineResult = result?.pipelineResult || result;
-      if (pipelineResult?.ok === false || pipelineResult?.status === 'error') {
+      const queuedCount = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? null;
+      if (pipelineResult?.ok === false || pipelineResult?.status === 'error' || queuedCount === 0) {
         const normalized = normalizeRunError(pipelineResult);
         setRunError(normalized);
         toast(normalized.message, 'error');
@@ -226,10 +227,15 @@ export default function CustomerRunPage({
           <div className="mt-3 rounded-xl bg-white/70 px-4 py-3 text-xs leading-relaxed">
             <div><span className="font-bold">단계</span> {runError.stage || 'pipeline'}</div>
             <div><span className="font-bold">코드</span> {runError.code || 'PIPELINE_FAILED'}</div>
+            {runError.diagnostics && (
+              <div className="mt-2">
+                예약 시간 {runError.diagnostics.scheduleCount ?? 0}개 · 링크 후보 {runError.diagnostics.availableLinkPosts ?? 0}개 · 일반 후보 {runError.diagnostics.availableNoLinkPosts ?? 0}개
+              </div>
+            )}
           </div>
           <div className="mt-4 flex gap-2">
             <button type="button" onClick={() => setTab?.('settings')} className="rounded-xl bg-white px-4 py-3 text-xs font-bold text-rose-700">
-              설정 확인
+              링크 비율 확인
             </button>
             <button type="button" onClick={() => runPreflight()} className="rounded-xl border border-rose-200 px-4 py-3 text-xs font-bold text-rose-700">
               다시 점검
@@ -272,11 +278,16 @@ function StatusPill({ lastCheck }) {
 }
 
 function normalizeRunError(error) {
+  const queuedCount = error?.queuedCount ?? error?.steps?.queued;
+  const noQueue = queuedCount === 0;
   return {
-    code: error?.code || error?.error || 'PIPELINE_FAILED',
+    code: error?.code || error?.error || (noQueue ? 'NO_QUEUE_CREATED' : 'PIPELINE_FAILED'),
     stage: error?.stage || error?.result?.stage || 'pipeline',
-    message: error?.message || error?.errorMessage || '예약 생성 중 오류가 발생했습니다. 사전 점검 결과를 확인해주세요.',
-    blocking: error?.blocking || []
+    message: error?.message || error?.errorMessage || (noQueue
+      ? '예약 큐가 0개로 생성됐습니다. 쿠팡 상품 매칭 또는 링크 비율 설정을 확인해주세요.'
+      : '예약 생성 중 오류가 발생했습니다. 사전 점검 결과를 확인해주세요.'),
+    blocking: error?.blocking || [],
+    diagnostics: error?.queueDiagnostics || error?.diagnostics || null
   };
 }
 

@@ -11,6 +11,19 @@ import { assertPreflightCanPublish, preflightAccount } from './accountPreflightS
 import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 import { assertAutomationRunning, isAutomationRunning } from './accountAutomationService.js';
 
+function createNoQueueMessage(diagnostics = {}) {
+  if (diagnostics.reasonCode === 'NO_LINK_CANDIDATES') {
+    return '쿠팡 상품이 매칭된 링크 글 후보가 없어 예약을 만들지 못했습니다. 상품 후보를 다시 생성하거나 링크 비율을 낮춰주세요.';
+  }
+  if (diagnostics.reasonCode === 'NO_DRAFT_POSTS') {
+    return '예약 가능한 초안 글이 없어 예약을 만들지 못했습니다. 콘텐츠를 다시 생성해주세요.';
+  }
+  if (diagnostics.reasonCode === 'NO_SCHEDULE_TIMES') {
+    return '오늘 예약 가능한 시간이 없어 예약을 만들지 못했습니다. 운영 시간과 예약 개수를 확인해주세요.';
+  }
+  return '예약 큐가 0개로 생성되어 자동화 실행을 완료하지 않았습니다. 설정과 생성 결과를 확인해주세요.';
+}
+
 export async function runPipelineForAccount(accountId, options = {}) {
   const account = await getAccount(accountId);
   await assertAccountOwnerCanOperate(account.id);
@@ -110,8 +123,39 @@ export async function runPipelineForAccount(accountId, options = {}) {
     result.topicsCount = topics.length;
     result.postsCount = totalPosts;
     result.queuedCount = queued.length;
-    await progress({ percent: 100, stage: 'completed', label: `${queued.length}개 예약이 완료됐습니다`, topicsTotal: topics.length, topicsDone: topics.length, postsCreated: totalPosts, queuedCount: queued.length });
-    await logActivity({ account_id: account.id, project_id: account.project_id, action: 'pipeline_queue_created', message: `${queued.length}개 예약 완료` });
+    result.queueDiagnostics = queued.diagnostics || null;
+    if (queued.length === 0) {
+      const message = createNoQueueMessage(queued.diagnostics);
+      result.ok = false;
+      result.status = 'error';
+      result.code = 'NO_QUEUE_CREATED';
+      result.message = message;
+      result.error = message;
+      await progress({
+        percent: 100,
+        stage: 'queue_empty',
+        label: message,
+        topicsTotal: topics.length,
+        topicsDone: topics.length,
+        postsCreated: totalPosts,
+        queuedCount: 0,
+        queueDiagnostics: result.queueDiagnostics,
+        code: result.code,
+        message
+      });
+      await finishPipelineRun(run.id, 'failed', { result, error_message: message });
+      await logActivity({
+        account_id: account.id,
+        project_id: account.project_id,
+        action: 'pipeline_queue_empty',
+        level: 'warn',
+        message,
+        payload: result.queueDiagnostics
+      });
+      return result;
+    }
+    await progress({ percent: 100, stage: 'completed', label: `${queued.length}개 예약이 완료됐습니다`, topicsTotal: topics.length, topicsDone: topics.length, postsCreated: totalPosts, queuedCount: queued.length, queueDiagnostics: result.queueDiagnostics });
+    await logActivity({ account_id: account.id, project_id: account.project_id, action: 'pipeline_queue_created', message: `${queued.length}개 예약 완료`, payload: result.queueDiagnostics });
 
     result.ok = true;
     result.status = 'ok';

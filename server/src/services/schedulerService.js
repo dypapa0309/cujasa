@@ -35,6 +35,14 @@ async function isPostAllowedForQueue(post, account) {
   return false;
 }
 
+function attachQueueDiagnostics(queued, diagnostics) {
+  Object.defineProperty(queued, 'diagnostics', {
+    value: diagnostics,
+    enumerable: false
+  });
+  return queued;
+}
+
 export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
   const post = await dbGet('posts', { id: postId });
   if (!post) throw new Error('Post not found');
@@ -112,6 +120,23 @@ export async function createDailyQueue(accountId) {
     ...primaryWithLink.map((post) => ({ post, postMode: 'link' })),
     ...primaryWithoutLink.map((post) => ({ post, postMode: 'no_link' }))
   ];
+  const diagnostics = {
+    scheduleCount: total,
+    linkRatio,
+    requiredLinkCount: linkCount,
+    requiredNoLinkCount: noLinkCount,
+    availableDraftPosts: allDrafts.length,
+    availableLinkPosts: withLink.length,
+    availableNoLinkPosts: allDrafts.length - withLink.length,
+    selectedLinkPosts: primaryWithLink.length,
+    selectedNoLinkPosts: primaryWithoutLink.length,
+    reasonCode: null
+  };
+  if (total === 0) diagnostics.reasonCode = 'NO_SCHEDULE_TIMES';
+  else if (allDrafts.length === 0) diagnostics.reasonCode = 'NO_DRAFT_POSTS';
+  else if (linkCount > 0 && withLink.length === 0) diagnostics.reasonCode = 'NO_LINK_CANDIDATES';
+  else if (drafts.length === 0) diagnostics.reasonCode = 'NO_QUEUE_CANDIDATES';
+
   if (primaryWithLink.length < linkCount) {
     await logActivity({
       account_id: account.id,
@@ -119,7 +144,7 @@ export async function createDailyQueue(accountId) {
       action: 'queue_link_slots_shortage',
       level: 'warn',
       message: `링크 글 후보 부족: 목표 ${linkCount}개, 가능 ${primaryWithLink.length}개`,
-      payload: { linkRatio, total, linkCount, availableLinkPosts: withLink.length }
+      payload: diagnostics
     });
   }
   const queued = [];
@@ -127,7 +152,8 @@ export async function createDailyQueue(accountId) {
     queued.push(await addPostToQueue(item.post.id, times[index], { postMode: item.postMode }));
     await dbUpdate('posts', { id: item.post.id }, { status: 'queued' });
   }
-  return queued;
+  diagnostics.queuedCount = queued.length;
+  return attachQueueDiagnostics(queued, diagnostics);
 }
 
 export async function processDueQueue() {

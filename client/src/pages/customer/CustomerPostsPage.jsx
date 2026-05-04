@@ -76,10 +76,10 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
   const needsAttention = queue
     .filter((r) => ['failed', 'retry', 'manual_required', 'skipped'].includes(r.status))
     .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
-  const pipelineSucceeded = pipelineResult?.ok === true || pipelineResult?.status === 'ok';
+  const pipelineQueued = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? 0;
+  const pipelineSucceeded = (pipelineResult?.ok === true || pipelineResult?.status === 'ok') && pipelineQueued > 0;
   const pipelineTopics = pipelineResult?.topicsCount ?? pipelineResult?.steps?.topics ?? 0;
   const pipelinePosts = pipelineResult?.postsCount ?? pipelineResult?.steps?.posts ?? 0;
-  const pipelineQueued = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? 0;
 
   if (loading) return (
     <div className="grid gap-3">
@@ -113,6 +113,11 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
             <div>
               <div className="font-bold">예약 생성 중 오류 발생</div>
               <div className="text-xs mt-1 opacity-80">{pipelineResult.message || pipelineResult.error}</div>
+              {pipelineResult.queueDiagnostics && (
+                <div className="mt-2 text-[11px] opacity-70">
+                  예약 시간 {pipelineResult.queueDiagnostics.scheduleCount ?? 0}개 · 링크 후보 {pipelineResult.queueDiagnostics.availableLinkPosts ?? 0}개 · 일반 후보 {pipelineResult.queueDiagnostics.availableNoLinkPosts ?? 0}개
+                </div>
+              )}
               {pipelineResult.stage && (
                 <div className="mt-2 text-[11px] opacity-70">단계: {pipelineResult.stage}</div>
               )}
@@ -327,7 +332,11 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
             </svg>
           </div>
           <div className="font-bold text-gray-700 mb-1">아직 포스팅이 없어요</div>
-          <div className="text-sm text-gray-400">설정을 완료하고 시작하면 여기에 기록됩니다</div>
+          <div className="text-sm text-gray-400">
+            {pipelineResult?.queuedCount === 0
+              ? '최근 실행에서 예약이 만들어지지 않았습니다. 자동화 실행 탭에서 원인을 확인해주세요.'
+              : '설정을 완료하고 시작하면 여기에 기록됩니다'}
+          </div>
         </div>
       )}
     </div>

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2, PlayCircle } from 'lucide-react';
+import { Beaker, CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2, PlayCircle } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import CustomerHomePage from './CustomerHomePage.jsx';
@@ -7,9 +7,10 @@ import CustomerPostsPage from './CustomerPostsPage.jsx';
 import CustomerSettingsPage from './CustomerSettingsPage.jsx';
 import CustomerBillingPage from './CustomerBillingPage.jsx';
 import CustomerRunPage from './CustomerRunPage.jsx';
+import CustomerBetaPage from './CustomerBetaPage.jsx';
 import { CURRENT_PRODUCT, JASAIN_BRAND } from '../../config/products.js';
 
-const tabs = [
+const baseTabs = [
   ['home', '홈', Home],
   ['run', '자동화 실행', PlayCircle],
   ['posts', '포스팅 현황', FileText],
@@ -17,13 +18,18 @@ const tabs = [
   ['settings', '설정', Settings],
 ];
 
-const pages = {
+const basePages = {
   home: CustomerHomePage,
   run: CustomerRunPage,
   posts: CustomerPostsPage,
   billing: CustomerBillingPage,
   settings: CustomerSettingsPage,
 };
+
+function pipelineHasReservations(result = {}) {
+  const queuedCount = result?.queuedCount ?? result?.steps?.queued;
+  return (result.ok === true || result.status === 'ok') && Number(queuedCount || 0) > 0;
+}
 
 export default function CustomerApp({ accounts, currentUser, reloadAccounts, onLogout }) {
   const toast = useToast();
@@ -42,9 +48,14 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
 
   const maxAccounts = currentUser?.maxAccounts ?? 2;
   const account = accounts[selectedIdx] ?? accounts[0];
-  const Page = pages[tab];
   const canAdd = accounts.length < maxAccounts;
   const displayLogin = currentUser.username || currentUser.email;
+  const isBetaTester = [currentUser?.email, currentUser?.username]
+    .map((value) => String(value || '').toLowerCase())
+    .includes('test1@test.com');
+  const tabs = isBetaTester ? [...baseTabs, ['beta', '베타', Beaker]] : baseTabs;
+  const pages = isBetaTester ? { ...basePages, beta: CustomerBetaPage } : basePages;
+  const Page = pages[tab] || pages.home;
 
   const parseRoute = () => {
     const raw = window.location.hash.replace(/^#/, '');
@@ -93,20 +104,21 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     toast('예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.', 'info');
     return true;
   };
+  const announcementDismissKey = (id) => `announcement:${currentUser?.email || currentUser?.username || 'user'}:${id}:dismissed`;
 
   useEffect(() => {
     let cancelled = false;
     api.get('/api/announcements/active')
       .then((row) => {
         if (cancelled || !row?.id) return;
-        if (localStorage.getItem(`announcement:${row.id}:dismissed`) === '1') return;
+        if (localStorage.getItem(announcementDismissKey(row.id)) === '1') return;
         setAnnouncement(row);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [currentUser?.email]);
+  }, [currentUser?.email, currentUser?.username]);
 
   const loadTrialStatus = async () => {
     try {
@@ -182,7 +194,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
   }, [accounts, pipelineRunning, tab, selectedIdx, toast]);
 
   const dismissAnnouncement = () => {
-    if (announcement?.id) localStorage.setItem(`announcement:${announcement.id}:dismissed`, '1');
+    if (announcement?.id) localStorage.setItem(announcementDismissKey(announcement.id), '1');
     setAnnouncement(null);
   };
 
@@ -209,7 +221,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
         setPipelineProgress(payload.run.progress);
         if (payload.run.status === 'completed') {
           setPipelineResult(payload.run.result);
-          navigateTab('posts');
+          navigateTab(pipelineHasReservations(payload.run.result) ? 'posts' : 'run');
           setPipelineRunning(false);
         } else if (payload.run.status === 'failed') {
           const result = payload.run.result || {};
@@ -406,7 +418,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
               setTab={navigateTab}
               reloadAccounts={reloadAccounts}
               pipelineResult={pipelineResult}
-              onPipelineDone={(result) => { setPipelineResult(result); navigateTab('posts'); }}
+              onPipelineDone={(result) => { setPipelineResult(result); navigateTab(pipelineHasReservations(result) ? 'posts' : 'run'); }}
               onPipelineRunningChange={handlePipelineRunningChange}
             />
           </>
