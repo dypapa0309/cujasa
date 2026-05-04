@@ -56,6 +56,12 @@ export default function AccountSettingsPage({ selectedAccount, reloadAccounts })
     }
   };
 
+  const revealSensitive = async (field) => {
+    if (!selectedAccount?.id) return '';
+    const payload = await api.get(`/api/accounts/${selectedAccount.id}/sensitive/${field}`);
+    return payload?.value || '';
+  };
+
   if (!selectedAccount) return <div className="rounded border border-line bg-white p-5">계정을 먼저 선택하세요.</div>;
   return (
     <div className="grid gap-4">
@@ -77,7 +83,13 @@ export default function AccountSettingsPage({ selectedAccount, reloadAccounts })
           </button>
         </div>
       </div>
-      <SettingsForm form={form} setForm={setForm} onSubmit={submit} saving={saving} />
+      <SettingsForm
+        form={form}
+        setForm={setForm}
+        onSubmit={submit}
+        saving={saving}
+        onRevealSensitive={revealSensitive}
+      />
     </div>
   );
 }

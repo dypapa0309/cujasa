@@ -19,6 +19,13 @@ import { redactAccount, redactAccounts, redactBillingSettings, redactPayment } f
 
 const router = Router();
 
+const revealableProductSettingFields = new Set([
+  'coupangAccessKey',
+  'coupangSecretKey',
+  'coupangPartnerId',
+  'defaultTrackingCode'
+]);
+
 function normalizeHandle(value) {
   return String(value || '').trim().replace(/^@/, '').toLowerCase();
 }
@@ -413,6 +420,21 @@ router.delete('/users/:id/products/:productId', async (req, res, next) => {
   try {
     await revokeUserProduct(req.params.id, req.params.productId);
     res.status(204).end();
+  } catch (e) { next(e); }
+});
+
+router.get('/users/:id/products/:productId/settings/:field', async (req, res, next) => {
+  try {
+    if (req.params.productId !== 'cujasa') {
+      return res.status(400).json({ error: 'CUJASA 제품 설정만 지원합니다.' });
+    }
+    if (!revealableProductSettingFields.has(req.params.field)) {
+      return res.status(400).json({ error: '지원하지 않는 민감 필드입니다.' });
+    }
+    const grant = await dbGet('user_products', { user_id: req.params.id, product_id: req.params.productId });
+    if (!grant) return res.status(404).json({ error: 'Product grant not found' });
+    const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+    res.json({ field: req.params.field, value: settings[req.params.field] || '' });
   } catch (e) { next(e); }
 });
 

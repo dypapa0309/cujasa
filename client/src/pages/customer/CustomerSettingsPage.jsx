@@ -146,6 +146,11 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
       no_link_post_ratio: Number((1 - next).toFixed(2))
     }));
   };
+  const revealSensitiveAccountField = async (field) => {
+    if (!account?.id) return '';
+    const payload = await api.get(`/api/accounts/${account.id}/sensitive/${field}`);
+    return payload?.value || '';
+  };
   const connectionLabel = account.has_threads_access_token
     ? `연결됨${account.account_handle ? ` · ${account.account_handle}` : ''}`
     : '미연결';
@@ -217,6 +222,8 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
             value={form.coupang_access_key}
             onChange={(e) => setForm((p) => ({ ...p, coupang_access_key: e.target.value }))}
             placeholder={account.has_coupang_access_key ? '저장됨 - 변경 시에만 입력' : '쿠팡 Access Key'}
+            hasStoredValue={account.has_coupang_access_key}
+            onRevealStored={() => revealSensitiveAccountField('coupang_access_key')}
             inputClassName={`${input} pr-10`}
           />
         </Field>
@@ -225,6 +232,8 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
             value={form.coupang_secret_key}
             onChange={(e) => setForm((p) => ({ ...p, coupang_secret_key: e.target.value }))}
             placeholder={account.has_coupang_secret_key ? '저장됨 - 변경 시에만 입력' : '쿠팡 Secret Key'}
+            hasStoredValue={account.has_coupang_secret_key}
+            onRevealStored={() => revealSensitiveAccountField('coupang_secret_key')}
             inputClassName={`${input} pr-10`}
           />
         </Field>
@@ -233,6 +242,8 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
             value={form.coupang_partner_id}
             onChange={(e) => setForm((p) => ({ ...p, coupang_partner_id: e.target.value }))}
             placeholder={account.has_coupang_partner_id ? '저장됨 - 변경 시에만 입력' : 'AF로 시작하는 Partner ID'}
+            hasStoredValue={account.has_coupang_partner_id}
+            onRevealStored={() => revealSensitiveAccountField('coupang_partner_id')}
             inputClassName={`${input} pr-10`}
           />
         </Field>
@@ -241,6 +252,8 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
             value={form.coupang_tracking_code}
             onChange={(e) => setForm((p) => ({ ...p, coupang_tracking_code: e.target.value }))}
             placeholder={account.has_coupang_tracking_code ? '저장됨 - 변경 시에만 입력' : '계정별 Tracking Code'}
+            hasStoredValue={account.has_coupang_tracking_code}
+            onRevealStored={() => revealSensitiveAccountField('coupang_tracking_code')}
             inputClassName={`${input} pr-10`}
           />
           <span className="text-xs text-gray-400">비워두면 고객 기본값 또는 계정 기본값을 사용합니다.</span>

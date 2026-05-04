@@ -11,6 +11,14 @@ import { assertUserCanStartTrialAction } from '../services/trialEntitlementServi
 
 const router = Router();
 
+const revealableAccountFields = new Set([
+  'threads_access_token',
+  'coupang_access_key',
+  'coupang_secret_key',
+  'coupang_partner_id',
+  'coupang_tracking_code'
+]);
+
 function mapPipelineRun(run) {
   if (!run) return null;
   const result = run.result && typeof run.result === 'object' ? run.result : {};
@@ -106,6 +114,21 @@ router.get('/:accountId/preflight', async (req, res, next) => {
       return res.status(403).json({ error: 'Access denied' });
     }
     res.json(await preflightAccount(req.params.accountId));
+  } catch (e) { next(e); }
+});
+
+router.get('/:accountId/sensitive/:field', async (req, res, next) => {
+  try {
+    const { accountId, field } = req.params;
+    if (!revealableAccountFields.has(field)) {
+      return res.status(400).json({ error: '지원하지 않는 민감 필드입니다.' });
+    }
+    if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const account = await getAccount(accountId);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+    res.json({ field, value: account[field] || '' });
   } catch (e) { next(e); }
 });
 

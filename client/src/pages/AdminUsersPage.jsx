@@ -394,12 +394,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                         </div>
                         <label className="grid gap-1 text-xs">
                           <span className="font-semibold text-slate-500">계정별 Tracking Code</span>
-                          <SensitiveInput
-                            defaultValue=""
-                            placeholder={a.has_coupang_tracking_code ? (a.masked_coupang_tracking_code || '저장됨 - 변경 시에만 입력') : '없으면 고객 기본값 사용'}
-                            inputClassName="w-full rounded border border-line bg-white px-2 py-1.5 pr-9"
-                            onBlur={(e) => updateAccountTrackingCode(a, e.target.value)}
-                          />
+                          <AccountTrackingCodeInput account={a} onSave={updateAccountTrackingCode} />
                         </label>
                         <button onClick={() => openAccountSettings?.(a.id)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-coupang hover:text-coupang">
                           설정 열기
@@ -632,11 +627,15 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
       coupangPartnerId: '',
       defaultTrackingCode: ''
     });
-  }, [settings.hasCoupangAccessKey, settings.hasCoupangPartnerId, settings.hasDefaultTrackingCode]);
+  }, [settings.hasCoupangAccessKey, settings.hasCoupangSecretKey, settings.hasCoupangPartnerId, settings.hasDefaultTrackingCode]);
 
   const update = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
   const save = () => onSaveSettings(userId, product.productId, draft);
   const isCujasa = product.productId === 'cujasa';
+  const revealProductSetting = async (field) => {
+    const payload = await api.get(`/api/admin/users/${userId}/products/${product.productId}/settings/${field}`);
+    return payload?.value || '';
+  };
 
   return (
     <div className="rounded border border-blue-100 bg-blue-50/50 p-3">
@@ -654,6 +653,8 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
             <SensitiveInput
               value={draft.coupangAccessKey}
               placeholder={settings.hasCoupangAccessKey ? (settings.maskedCoupangAccessKey || '저장됨 - 변경 시에만 입력') : ''}
+              hasStoredValue={Boolean(settings.hasCoupangAccessKey)}
+              onRevealStored={() => revealProductSetting('coupangAccessKey')}
               inputClassName="w-full rounded border border-line px-2 py-2 pr-9"
               onChange={(e) => update('coupangAccessKey', e.target.value)}
             />
@@ -664,6 +665,8 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
               value={draft.coupangSecretKey}
               onChange={(e) => update('coupangSecretKey', e.target.value)}
               placeholder={settings.hasCoupangSecretKey ? '저장됨 - 변경 시에만 입력' : ''}
+              hasStoredValue={Boolean(settings.hasCoupangSecretKey)}
+              onRevealStored={() => revealProductSetting('coupangSecretKey')}
               inputClassName="w-full rounded border border-line px-2 py-2 pr-9"
             />
           </label>
@@ -672,6 +675,8 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
             <SensitiveInput
               value={draft.coupangPartnerId}
               placeholder={settings.hasCoupangPartnerId ? (settings.maskedCoupangPartnerId || '저장됨 - 변경 시에만 입력') : ''}
+              hasStoredValue={Boolean(settings.hasCoupangPartnerId)}
+              onRevealStored={() => revealProductSetting('coupangPartnerId')}
               inputClassName="w-full rounded border border-line px-2 py-2 pr-9"
               onChange={(e) => update('coupangPartnerId', e.target.value)}
             />
@@ -681,6 +686,8 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
             <SensitiveInput
               value={draft.defaultTrackingCode}
               placeholder={settings.hasDefaultTrackingCode ? (settings.maskedDefaultTrackingCode || '저장됨 - 변경 시에만 입력') : ''}
+              hasStoredValue={Boolean(settings.hasDefaultTrackingCode)}
+              onRevealStored={() => revealProductSetting('defaultTrackingCode')}
               inputClassName="w-full rounded border border-line px-2 py-2 pr-9"
               onChange={(e) => update('defaultTrackingCode', e.target.value)}
             />
@@ -692,5 +699,30 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
         </div>
       )}
     </div>
+  );
+}
+
+function AccountTrackingCodeInput({ account, onSave }) {
+  const [value, setValue] = useState('');
+
+  useEffect(() => {
+    setValue('');
+  }, [account.id, account.has_coupang_tracking_code, account.masked_coupang_tracking_code]);
+
+  const reveal = async () => {
+    const payload = await api.get(`/api/accounts/${account.id}/sensitive/coupang_tracking_code`);
+    return payload?.value || '';
+  };
+
+  return (
+    <SensitiveInput
+      value={value}
+      placeholder={account.has_coupang_tracking_code ? (account.masked_coupang_tracking_code || '저장됨 - 변경 시에만 입력') : '없으면 고객 기본값 사용'}
+      hasStoredValue={Boolean(account.has_coupang_tracking_code)}
+      onRevealStored={reveal}
+      inputClassName="w-full rounded border border-line bg-white px-2 py-1.5 pr-9"
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={(e) => onSave(account, e.target.value)}
+    />
   );
 }

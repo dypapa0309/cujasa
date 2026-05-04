@@ -8,7 +8,7 @@ const sensitiveKeys = new Set([
   'coupang_tracking_code'
 ]);
 
-export default function SettingsForm({ form, setForm, onSubmit, saving }) {
+export default function SettingsForm({ form, setForm, onSubmit, saving, onRevealSensitive }) {
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
   const updateList = (key, value) => update(key, value.split('\n').map((item) => item.trim()).filter(Boolean));
   const windows = form.active_time_windows?.length ? form.active_time_windows : [{ start: '09:00', end: '11:00' }];
@@ -21,6 +21,20 @@ export default function SettingsForm({ form, setForm, onSubmit, saving }) {
 
   return (
     <form onSubmit={onSubmit} className="grid gap-4 rounded border border-line bg-white p-5 md:grid-cols-2">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4 md:col-span-2">
+        <div>
+          <div className="text-sm font-bold text-slate-800">계정 설정 수정</div>
+          <div className="mt-1 text-xs text-slate-400">필요한 값을 고친 뒤 저장하면 이 계정에 바로 반영됩니다.</div>
+        </div>
+        <button
+          type="submit"
+          disabled={saving}
+          className="focus-ring flex items-center gap-2 rounded bg-coupang px-4 py-2 text-sm font-bold text-white disabled:opacity-60"
+        >
+          {saving && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
+          {saving ? '저장 중...' : '수정 저장'}
+        </button>
+      </div>
       <label className="grid gap-1 text-sm">
         <span className="font-medium">상태</span>
         <select className="rounded border border-line px-3 py-2" value={form.status || 'active'} onChange={(e) => update('status', e.target.value)}>
@@ -48,6 +62,8 @@ export default function SettingsForm({ form, setForm, onSubmit, saving }) {
             <SensitiveInput
               value={form[key] || ''}
               placeholder={form[`has_${key}`] ? (form[`masked_${key}`] || '저장됨 - 변경 시에만 입력') : ''}
+              hasStoredValue={Boolean(form[`has_${key}`])}
+              onRevealStored={() => onRevealSensitive?.(key)}
               onChange={(e) => update(key, e.target.value)}
             />
           ) : (
