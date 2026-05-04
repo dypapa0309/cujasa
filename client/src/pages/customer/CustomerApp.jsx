@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CreditCard, Home, FileText, Settings, Plus, X } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
@@ -24,6 +24,7 @@ const pages = {
 
 export default function CustomerApp({ accounts, currentUser, reloadAccounts, onLogout }) {
   const toast = useToast();
+  const routingReadyRef = useRef(false);
   const [tab, setTab] = useState('home');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [pipelineResult, setPipelineResult] = useState(null);
@@ -40,6 +41,48 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
   const Page = pages[tab];
   const canAdd = accounts.length < maxAccounts;
   const displayLogin = currentUser.username || currentUser.email;
+
+  const parseRoute = () => {
+    const raw = window.location.hash.replace(/^#/, '');
+    const params = new URLSearchParams(raw);
+    const nextTab = pages[params.get('tab')] ? params.get('tab') : 'home';
+    const accountId = params.get('account');
+    return { tab: nextTab, accountId };
+  };
+
+  const routeUrl = (nextTab, accountId) => {
+    const params = new URLSearchParams();
+    params.set('tab', nextTab);
+    if (accountId) params.set('account', accountId);
+    return `${window.location.pathname}${window.location.search}#${params.toString()}`;
+  };
+
+  const applyRoute = () => {
+    const next = parseRoute();
+    setTab(next.tab);
+    if (next.accountId) {
+      const nextIndex = accounts.findIndex((item) => item.id === next.accountId);
+      if (nextIndex >= 0) setSelectedIdx(nextIndex);
+    }
+  };
+
+  const writeRoute = (nextTab = tab, nextIndex = selectedIdx, { replace = false } = {}) => {
+    const accountId = accounts[nextIndex]?.id || accounts[0]?.id || '';
+    const nextUrl = routeUrl(nextTab, accountId);
+    if (`${window.location.pathname}${window.location.search}${window.location.hash}` === nextUrl) return;
+    const method = replace ? 'replaceState' : 'pushState';
+    window.history[method]({ cujasa: true, tab: nextTab, accountId }, '', nextUrl);
+  };
+
+  const navigateTab = (nextTab, options) => {
+    setTab(nextTab);
+    writeRoute(nextTab, selectedIdx, options);
+  };
+
+  const navigateAccount = (nextIndex, options) => {
+    setSelectedIdx(nextIndex);
+    writeRoute(tab, nextIndex, options);
+  };
 
   const guardDuringPipeline = () => {
     if (!pipelineRunning) return false;
@@ -89,8 +132,37 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     params.delete('accountId');
     params.delete('message');
     const nextSearch = params.toString();
-    window.history.replaceState({}, '', `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`);
+    const nextAccountId = accountId || account?.id || accounts[0]?.id || '';
+    window.history.replaceState(
+      { cujasa: true, tab: 'settings', accountId: nextAccountId },
+      '',
+      `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}#tab=settings${nextAccountId ? `&account=${encodeURIComponent(nextAccountId)}` : ''}`
+    );
   }, [accounts, toast]);
+
+  useEffect(() => {
+    if (accounts.length === 0) return undefined;
+    if (!routingReadyRef.current) {
+      routingReadyRef.current = true;
+      if (window.location.hash) {
+        applyRoute();
+      } else {
+        writeRoute(tab, selectedIdx, { replace: true });
+      }
+    }
+
+    const handlePopState = () => {
+      if (pipelineRunning) {
+        toast('예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.', 'info');
+        writeRoute(tab, selectedIdx, { replace: true });
+        return;
+      }
+      applyRoute();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [accounts, pipelineRunning, tab, selectedIdx, toast]);
 
   const dismissAnnouncement = () => {
     if (announcement?.id) localStorage.setItem(`announcement:${announcement.id}:dismissed`, '1');
@@ -120,7 +192,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
         setPipelineProgress(payload.run.progress);
         if (payload.run.status === 'completed') {
           setPipelineResult(payload.run.result);
-          setTab('posts');
+          navigateTab('posts');
           setPipelineRunning(false);
         } else if (payload.run.status === 'failed') {
           toast(payload.run.errorMessage || '자동화 실행에 실패했습니다.', 'error');
@@ -201,7 +273,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
               {accounts.map((acc, i) => (
                 <button
                   key={acc.id}
-                  onClick={() => { if (!guardDuringPipeline()) setSelectedIdx(i); }}
+                  onClick={() => { if (!guardDuringPipeline()) navigateAccount(i); }}
                   className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-colors
                     ${selectedIdx === i ? 'bg-coupang text-white' : 'bg-white border border-gray-200 text-gray-600 hover:border-coupang hover:text-coupang'}`}
                 >
@@ -261,10 +333,10 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
               currentUser={currentUser}
               trialStatus={trialStatus}
               reloadTrialStatus={loadTrialStatus}
-              setTab={setTab}
+              setTab={navigateTab}
               reloadAccounts={reloadAccounts}
               pipelineResult={pipelineResult}
-              onPipelineDone={(result) => { setPipelineResult(result); setTab('posts'); }}
+              onPipelineDone={(result) => { setPipelineResult(result); navigateTab('posts'); }}
               onPipelineRunningChange={handlePipelineRunningChange}
             />
           </>
@@ -275,7 +347,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
       <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-100 safe-area-bottom">
         <div className="max-w-2xl mx-auto grid grid-cols-4">
           {tabs.map(([key, label, Icon]) => (
-            <button key={key} onClick={() => { if (!guardDuringPipeline()) setTab(key); }}
+            <button key={key} onClick={() => { if (!guardDuringPipeline()) navigateTab(key); }}
               className={`flex flex-col items-center gap-1 py-3 text-xs font-medium transition-colors
                 ${tab === key ? 'text-coupang' : 'text-gray-400 hover:text-gray-600'}`}>
               <Icon size={20} strokeWidth={tab === key ? 2.5 : 1.8} />

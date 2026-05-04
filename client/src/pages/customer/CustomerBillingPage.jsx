@@ -141,7 +141,7 @@ export default function CustomerBillingPage({ currentUser }) {
         toast(err.message || '결제 처리에 실패했습니다.', 'error');
       } finally {
         setBusy('');
-        window.history.replaceState({}, '', '/');
+        window.history.replaceState({}, '', `${window.location.pathname}${window.location.hash || '#tab=billing'}`);
       }
     };
     finish();
