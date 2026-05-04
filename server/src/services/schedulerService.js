@@ -52,7 +52,7 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
   const postMode = ['link', 'no_link'].includes(options.postMode)
     ? options.postMode
     : ((await hasProductsForTopic(post.topic_id)) ? 'link' : 'no_link');
-  return dbInsert('post_queue', {
+  const payload = {
     project_id: post.project_id,
     account_id: post.account_id,
     topic_id: post.topic_id,
@@ -62,7 +62,14 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
     status,
     post_mode: postMode,
     retry_count: 0
-  });
+  };
+  try {
+    return await dbInsert('post_queue', payload);
+  } catch (error) {
+    if (!/post_mode|schema cache|column/i.test(error.message || '')) throw error;
+    const { post_mode, ...fallbackPayload } = payload;
+    return dbInsert('post_queue', fallbackPayload);
+  }
 }
 
 export async function createDailyQueue(accountId) {
