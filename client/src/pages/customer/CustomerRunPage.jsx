@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { AlertTriangle, CheckCircle2, ClipboardCheck, PlayCircle } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { AlertTriangle, CheckCircle2, ClipboardCheck, PauseCircle, PlayCircle, RotateCw } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import TrialStatusCard from './TrialStatusCard.jsx';
@@ -9,18 +9,23 @@ export default function CustomerRunPage({
   account,
   trialStatus,
   reloadTrialStatus,
+  reloadAccounts,
   onPipelineDone,
   onPipelineRunningChange,
   setTab
 }) {
   const toast = useToast();
+  const actionRef = useRef(false);
   const [checking, setChecking] = useState(false);
-  const [running, setRunning] = useState(false);
+  const [actioning, setActioning] = useState(false);
   const [preflight, setPreflight] = useState(null);
   const [lastCheck, setLastCheck] = useState(null);
   const [runError, setRunError] = useState(null);
 
   const trialBlocked = trialStatus?.plan === 'free' && trialStatus.blocked;
+  const automationStatus = account?.automation_status === 'paused' ? 'paused' : 'running';
+  const automationRunning = automationStatus === 'running';
+  const scheduleText = formatSchedule(account);
 
   const runPreflight = async ({ showModal = true } = {}) => {
     if (!account?.id) return null;
@@ -47,50 +52,82 @@ export default function CustomerRunPage({
     }
   };
 
-  const startAutomation = async () => {
-    if (trialBlocked) {
+  const setAutomation = async (nextStatus) => {
+    if (!account?.id || actionRef.current) return;
+    if (nextStatus === 'running' && trialBlocked) {
       toast('무료 체험 포스팅 3회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
       setTab?.('billing');
       return;
     }
 
-    const check = await runPreflight({ showModal: false });
-    if (!check?.canPublish) {
-      setPreflight(check);
-      toast('자동화 실행 전에 조치할 항목이 있습니다.', 'error');
-      return;
-    }
-
-    setRunning(true);
+    actionRef.current = true;
+    setActioning(true);
     setRunError(null);
-    onPipelineRunningChange?.(true, {
-      percent: 0,
-      stage: 'starting',
-      label: '예약 작업을 준비하고 있습니다'
-    });
+
     try {
-      const result = await api.post(`/api/accounts/${account.id}/run-pipeline`, {});
-      if (result?.ok === false || result?.status === 'error') {
-        const normalized = normalizeRunError(result);
-        setRunError(normalized);
-        toast(normalized.message, 'error');
+      if (nextStatus === 'running') {
+        const check = await runPreflight({ showModal: false });
+        if (!check?.canPublish) {
+          setPreflight(check);
+          toast('자동화 실행 전에 조치할 항목이 있습니다.', 'error');
+          return;
+        }
+        onPipelineRunningChange?.(true, {
+          percent: 0,
+          stage: 'starting',
+          label: '예약 작업을 준비하고 있습니다'
+        });
+      }
+
+      const result = await api.patch(`/api/accounts/${account.id}/automation`, {
+        automationStatus: nextStatus,
+        runNow: nextStatus === 'running'
+      });
+
+      reloadAccounts?.();
+      reloadTrialStatus?.();
+
+      if (nextStatus === 'paused') {
+        onPipelineRunningChange?.(false);
+        toast('자동화가 중지됐습니다. 기존 예약은 포스팅 현황에서 확인해주세요.', 'success');
         return;
       }
-      toast('예약 생성이 완료됐습니다.', 'success');
-      onPipelineDone?.(result);
-      reloadTrialStatus?.();
+
+      if (result?.alreadyRunning) {
+        toast(result.message || '이미 예약 작업이 진행 중입니다.', 'info');
+        onPipelineRunningChange?.(true, result.run?.progress || {
+          percent: 10,
+          stage: 'running',
+          label: '예약 작업이 진행 중입니다'
+        });
+        return;
+      }
+
+      const pipelineResult = result?.pipelineResult || result;
+      if (pipelineResult?.ok === false || pipelineResult?.status === 'error') {
+        const normalized = normalizeRunError(pipelineResult);
+        setRunError(normalized);
+        toast(normalized.message, 'error');
+        onPipelineRunningChange?.(false);
+        return;
+      }
+
+      toast('자동화가 켜졌고 오늘 예약을 생성했습니다.', 'success');
+      onPipelineDone?.(pipelineResult);
     } catch (err) {
       if (err.preflight) {
         setPreflight(err.preflight);
         toast('자동화 실행 전에 조치할 항목이 있습니다.', 'error');
+        onPipelineRunningChange?.(false);
         return;
       }
       const normalized = normalizeRunError(err);
       setRunError(normalized);
       toast(normalized.message, 'error');
-    } finally {
-      setRunning(false);
       onPipelineRunningChange?.(false);
+    } finally {
+      actionRef.current = false;
+      setActioning(false);
     }
   };
 
@@ -101,19 +138,24 @@ export default function CustomerRunPage({
     <div className="grid gap-5">
       <TrialStatusCard trialStatus={trialStatus} onUpgrade={() => setTab?.('billing')} />
 
-      <div className="rounded-2xl border border-gray-100 bg-white p-5">
+      <div className={`rounded-2xl border p-5 ${automationRunning ? 'border-emerald-100 bg-emerald-50' : 'border-gray-100 bg-white'}`}>
         <div className="flex items-start gap-3">
-          <div className="rounded-2xl bg-blue-50 p-3 text-coupang">
-            <PlayCircle size={24} />
+          <div className={`rounded-2xl p-3 ${automationRunning ? 'bg-white text-emerald-600' : 'bg-blue-50 text-coupang'}`}>
+            {automationRunning ? <RotateCw size={24} /> : <PlayCircle size={24} />}
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-lg font-black text-gray-900">자동화 실행</div>
-            <p className="mt-1 text-sm leading-relaxed text-gray-500">
-              설정 저장과 분리해서, 여기서 현재 계정 상태를 점검한 뒤 예약을 생성합니다.
+            <div className={`text-lg font-black ${automationRunning ? 'text-emerald-800' : 'text-gray-900'}`}>
+              {automationRunning ? '자동화 진행 중' : '자동화 중지됨'}
+            </div>
+            <p className={`mt-1 text-sm leading-relaxed ${automationRunning ? 'text-emerald-700' : 'text-gray-500'}`}>
+              {automationRunning
+                ? '중지하기 전까지 서버가 매일 설정값 기준으로 예약을 만들고, 예약 시간이 되면 업로드합니다.'
+                : '자동화를 시작하면 오늘 예약을 만들고, 이후 매일 설정값 기준으로 계속 운영합니다.'}
             </p>
-            <div className="mt-3 rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-600">
+            <div className="mt-3 rounded-xl bg-white/75 px-4 py-3 text-sm text-gray-600">
               <span className="font-bold text-gray-800">{account?.name}</span>
               {account?.account_handle && <span className="ml-1 text-gray-400">{account.account_handle}</span>}
+              <div className="mt-1 text-xs text-gray-500">{scheduleText}</div>
             </div>
           </div>
         </div>
@@ -153,18 +195,26 @@ export default function CustomerRunPage({
           <button
             type="button"
             onClick={() => runPreflight()}
-            disabled={checking || running}
+            disabled={checking || actioning}
             className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-black text-gray-700 disabled:opacity-50"
           >
             {checking ? '점검 중...' : '사전 점검'}
           </button>
           <button
             type="button"
-            onClick={startAutomation}
-            disabled={checking || running || trialBlocked}
-            className="rounded-xl bg-coupang px-4 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={() => setAutomation(automationRunning ? 'paused' : 'running')}
+            disabled={checking || actioning || (!automationRunning && trialBlocked)}
+            className={`rounded-xl px-4 py-3 text-sm font-black disabled:cursor-not-allowed disabled:opacity-50 ${
+              automationRunning
+                ? 'border border-rose-200 bg-white text-rose-600'
+                : 'bg-coupang text-white'
+            }`}
           >
-            {running ? '예약 생성 중...' : trialBlocked ? '무료 체험 종료' : '예약 생성/자동화 시작'}
+            {actioning
+              ? '처리 중...'
+              : automationRunning
+                ? <span className="inline-flex items-center justify-center gap-2"><PauseCircle size={18} /> 자동화 중지</span>
+                : trialBlocked ? '무료 체험 종료' : '자동화 시작'}
           </button>
         </div>
       </div>
@@ -191,12 +241,13 @@ export default function CustomerRunPage({
       <div className="rounded-2xl border border-gray-100 bg-white p-5">
         <div className="flex items-center gap-2 font-black text-gray-900">
           <ClipboardCheck size={18} />
-          실행 전 확인
+          운영 방식
         </div>
         <ul className="mt-3 grid gap-2 text-sm leading-relaxed text-gray-500">
-          <li>설정 탭에서 저장한 기본 정보와 링크 비율을 기준으로 예약합니다.</li>
+          <li>자동화 시작은 오늘 예약을 한 번 만들고, 계정을 자동화 진행 중 상태로 유지합니다.</li>
+          <li>서버는 매일 정해진 시간에 진행 중 계정만 다시 예약 생성합니다.</li>
+          <li>하루 최소/최대가 다르면 그 사이에서 랜덤 개수를 예약합니다. 매일 3개가 필요하면 최소 3, 최대 3으로 설정하세요.</li>
           <li>과거 실패 기록은 경고로만 표시하고, 현재 토큰이 정상이면 실행을 막지 않습니다.</li>
-          <li>Threads 토큰, 결제 권한, 쿠팡 링크 글 필수값처럼 현재 문제가 있을 때만 차단합니다.</li>
         </ul>
       </div>
 
@@ -227,4 +278,11 @@ function normalizeRunError(error) {
     message: error?.message || error?.errorMessage || '예약 생성 중 오류가 발생했습니다. 사전 점검 결과를 확인해주세요.',
     blocking: error?.blocking || []
   };
+}
+
+function formatSchedule(account) {
+  const min = Number(account?.daily_post_min || 1);
+  const max = Number(account?.daily_post_max || min);
+  if (min === max) return `매일 ${min}개 예약`;
+  return `매일 ${min}~${max}개 중 랜덤 예약`;
 }

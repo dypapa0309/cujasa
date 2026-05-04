@@ -2,12 +2,13 @@ import { Router } from 'express';
 import { createAccount, deleteAccount, getAccount, listAccounts, updateAccount } from '../services/accountService.js';
 import { dbGet, dbInsert, dbList, logActivity } from '../services/supabaseService.js';
 import { runPipelineForAccount } from '../services/pipelineService.js';
-import { latestPipelineRun } from '../services/pipelineRunService.js';
+import { getRunningPipeline, latestPipelineRun } from '../services/pipelineRunService.js';
 import { markedOkKeysFromAudits, shouldHideAssignment, suspiciousAssignmentsForUser } from '../services/accountOwnershipService.js';
-import { preflightAccount } from '../services/accountPreflightService.js';
+import { assertPreflightCanPublish, preflightAccount } from '../services/accountPreflightService.js';
 import { assertUserCanOperate } from '../services/billingEntitlementService.js';
 import { redactAccount, redactAccounts, stripBlankSensitiveAccountFields } from '../services/redactionService.js';
 import { assertUserCanStartTrialAction } from '../services/trialEntitlementService.js';
+import { AUTOMATION_PAUSED, AUTOMATION_RUNNING, normalizeAutomationStatus, setAutomationStatus } from '../services/accountAutomationService.js';
 
 const router = Router();
 
@@ -166,6 +167,79 @@ router.patch('/:accountId', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.patch('/:accountId/automation', async (req, res, next) => {
+  try {
+    const { accountId } = req.params;
+    if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
+
+    const account = await getAccount(accountId);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+
+    const requestedStatus = req.body.automationStatus || req.body.status;
+    if (![AUTOMATION_RUNNING, AUTOMATION_PAUSED].includes(requestedStatus)) {
+      return res.status(400).json({
+        error: 'automationStatus must be running or paused',
+        code: 'INVALID_AUTOMATION_STATUS'
+      });
+    }
+    const nextStatus = normalizeAutomationStatus(requestedStatus);
+    if (nextStatus === AUTOMATION_PAUSED) {
+      const updated = await setAutomationStatus(accountId, AUTOMATION_PAUSED);
+      await logActivity({
+        accountId,
+        level: 'info',
+        action: 'automation_paused',
+        message: `${account.name} 자동화 중지`,
+        payload: { requestedBy: req.user?.email || req.user?.type || 'manual' }
+      });
+      return res.json({ ok: true, automationStatus: AUTOMATION_PAUSED, account: redactAccount(updated) });
+    }
+
+    if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
+    const preflight = await preflightAccount(accountId);
+    assertPreflightCanPublish(preflight);
+
+    const updated = await setAutomationStatus(accountId, AUTOMATION_RUNNING);
+    await logActivity({
+      accountId,
+      level: 'info',
+      action: 'automation_started',
+      message: `${account.name} 자동화 시작`,
+      payload: { requestedBy: req.user?.email || req.user?.type || 'manual' }
+    });
+
+    if (req.body.runNow === false) {
+      return res.json({ ok: true, automationStatus: AUTOMATION_RUNNING, account: redactAccount(updated), preflight });
+    }
+
+    const runningRun = await getRunningPipeline(accountId);
+    if (runningRun) {
+      return res.status(202).json({
+        ok: true,
+        automationStatus: AUTOMATION_RUNNING,
+        alreadyRunning: true,
+        account: redactAccount(updated),
+        run: mapPipelineRun(runningRun),
+        preflight,
+        message: '이미 예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.'
+      });
+    }
+
+    const pipelineResult = await runPipelineForAccount(accountId, { requestedBy: req.user?.email || req.user?.type || 'manual' });
+    return res.json({
+      ok: true,
+      automationStatus: AUTOMATION_RUNNING,
+      alreadyRunning: false,
+      account: redactAccount(updated),
+      pipelineResult,
+      preflight
+    });
+  } catch (e) { next(e); }
+});
+
 router.post('/:accountId/run-pipeline', async (req, res, next) => {
   try {
     if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(req.params.accountId)) {
@@ -173,6 +247,16 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
     }
     if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
     if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
+    const runningRun = await getRunningPipeline(req.params.accountId);
+    if (runningRun) {
+      return res.status(202).json({
+        ok: true,
+        status: 'running',
+        alreadyRunning: true,
+        run: mapPipelineRun(runningRun),
+        message: '이미 예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.'
+      });
+    }
     res.json(await runPipelineForAccount(req.params.accountId, { requestedBy: req.user?.email || req.user?.type || 'manual' }));
   } catch (e) { next(e); }
 });

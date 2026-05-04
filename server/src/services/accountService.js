@@ -1,8 +1,10 @@
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
+import { normalizeAutomationStatus } from './accountAutomationService.js';
 
 function normalizeAccount(payload) {
   const next = { ...payload };
   if (next.status && !['active', 'paused', 'archived'].includes(next.status)) next.status = 'paused';
+  if (next.automation_status != null) next.automation_status = normalizeAutomationStatus(next.automation_status);
   if (next.account_handle != null) {
     const handle = String(next.account_handle).trim();
     next.account_handle = handle ? `@${handle.replace(/^@/, '')}` : '';
@@ -42,6 +44,7 @@ export function assertAccountActive(account, action = 'run automation') {
 export const createAccount = (payload) => dbInsert('accounts', normalizeAccount({
   platform: 'threads',
   status: 'active',
+  automation_status: 'paused',
   forbidden_topics: [],
   forbidden_words: ['100%', '무조건', '완벽', '보장', '치료', '예방', '다이어트 약', '보조제', '가르시니아', '효과 보장', '체중감량 보장'],
   daily_post_min: 1,

@@ -35,6 +35,9 @@ create table if not exists accounts (
   threads_token_status text not null default 'not_connected',
   threads_connected_at timestamptz,
   last_threads_refresh_at timestamptz,
+  automation_status text not null default 'paused' check (automation_status in ('running', 'paused')),
+  automation_started_at timestamptz,
+  automation_stopped_at timestamptz,
   coupang_access_key text,
   coupang_secret_key text,
   coupang_partner_id text,
@@ -49,6 +52,9 @@ alter table accounts add column if not exists threads_token_expires_at timestamp
 alter table accounts add column if not exists threads_token_status text not null default 'not_connected';
 alter table accounts add column if not exists threads_connected_at timestamptz;
 alter table accounts add column if not exists last_threads_refresh_at timestamptz;
+alter table accounts add column if not exists automation_status text not null default 'paused';
+alter table accounts add column if not exists automation_started_at timestamptz;
+alter table accounts add column if not exists automation_stopped_at timestamptz;
 alter table accounts add column if not exists coupang_access_key text;
 alter table accounts add column if not exists coupang_secret_key text;
 alter table accounts add column if not exists coupang_partner_id text;
@@ -417,6 +423,7 @@ create table if not exists billing_subscriptions (
 alter table billing_subscriptions add column if not exists app_product_id text not null default 'cujasa';
 
 create index if not exists idx_accounts_project on accounts(project_id);
+create index if not exists idx_accounts_automation_status on accounts(status, automation_status);
 create index if not exists idx_topics_account on topics(account_id);
 create index if not exists idx_products_topic on coupang_products(topic_id);
 create index if not exists idx_posts_account on posts(account_id);

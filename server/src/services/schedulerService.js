@@ -9,6 +9,7 @@ import { assertPreflightCanPublish, preflightAccount } from './accountPreflightS
 import { classifyQueueError } from './queueErrorService.js';
 import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 import { assertAccountCanUpload, recordSuccessfulUpload } from './trialEntitlementService.js';
+import { assertAutomationRunning, isAutomationRunning } from './accountAutomationService.js';
 
 async function hasProductsForTopic(topicId) {
   if (!topicId) return false;
@@ -45,6 +46,7 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
     error.status = 409;
     throw error;
   }
+  assertAutomationRunning(account, 'add post to queue');
   if (!(await isPostAllowedForQueue(post, account))) {
     const error = new Error('Post blocked by content guardrails');
     error.status = 422;
@@ -83,6 +85,7 @@ export async function createDailyQueue(accountId) {
     error.status = 409;
     throw error;
   }
+  assertAutomationRunning(account, 'create daily queue');
   assertPreflightCanPublish(await preflightAccount(accountId, { includeQueue: false }));
   const allDrafts = [];
   for (const post of (await dbList('posts', { account_id: accountId })).filter((p) => ['draft', 'ready'].includes(p.status))) {
@@ -134,7 +137,7 @@ export async function processDueQueue() {
   ]);
   const rows = [...scheduled, ...retrying];
   const activeAccounts = await dbList('accounts', { status: 'active' });
-  const activeAccountIds = new Set(activeAccounts.map((account) => account.id));
+  const activeAccountIds = new Set(activeAccounts.filter(isAutomationRunning).map((account) => account.id));
   const due = rows.filter((row) => activeAccountIds.has(row.account_id) && new Date(row.scheduled_at) <= new Date());
   for (const row of due) await uploadQueueItem(row.id);
   return due.length;
@@ -149,6 +152,12 @@ export async function uploadQueueItem(queueId) {
   }
   const account = await dbGet('accounts', { id: queue.account_id });
   const post = await dbGet('posts', { id: queue.post_id });
+  if (!isAutomationRunning(account)) {
+    const error = new Error('자동화가 중지되어 업로드를 보류했습니다.');
+    error.status = 409;
+    error.code = 'AUTOMATION_PAUSED';
+    throw error;
+  }
   try {
     await assertAccountOwnerCanOperate(queue.account_id);
     await assertAccountCanUpload(queue.account_id);

@@ -9,10 +9,12 @@ import { logActivity } from './supabaseService.js';
 import { finishPipelineRun, getRunningPipeline, startPipelineRun, updatePipelineRunProgress } from './pipelineRunService.js';
 import { assertPreflightCanPublish, preflightAccount } from './accountPreflightService.js';
 import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
+import { assertAutomationRunning, isAutomationRunning } from './accountAutomationService.js';
 
 export async function runPipelineForAccount(accountId, options = {}) {
   const account = await getAccount(accountId);
   await assertAccountOwnerCanOperate(account.id);
+  assertAutomationRunning(account, 'create reservations');
   const preflight = await preflightAccount(account.id);
   assertPreflightCanPublish(preflight);
   const run = await startPipelineRun(account, options.requestedBy || 'manual');
@@ -133,7 +135,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
 }
 
 export async function runFullPipeline(options = {}) {
-  const accounts = (await listAccounts()).filter((a) => a.status === 'active');
+  const accounts = (await listAccounts()).filter(isAutomationRunning);
   const results = [];
   for (const account of accounts) {
     const running = await getRunningPipeline(account.id);
