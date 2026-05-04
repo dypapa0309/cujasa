@@ -8,11 +8,11 @@ export function normalizeAutomationStatus(status) {
 }
 
 export function getAutomationStatus(account) {
-  return normalizeAutomationStatus(account?.automation_status || AUTOMATION_RUNNING);
+  return normalizeAutomationStatus(account?.automation_status || AUTOMATION_PAUSED);
 }
 
 export function isAutomationRunning(account) {
-  return account?.status === 'active' && getAutomationStatus(account) === AUTOMATION_RUNNING;
+  return account?.status === 'active' && account?.automation_status === AUTOMATION_RUNNING;
 }
 
 export function assertAutomationRunning(account, action = 'run automation') {

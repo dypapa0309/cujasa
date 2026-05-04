@@ -1,7 +1,17 @@
 alter table accounts
-  add column if not exists automation_status text not null default 'paused',
+  add column if not exists automation_status text default 'paused',
   add column if not exists automation_started_at timestamptz,
   add column if not exists automation_stopped_at timestamptz;
+
+alter table accounts
+  alter column automation_status set default 'paused';
+
+update accounts
+set automation_status = 'paused'
+where automation_status is null;
+
+alter table accounts
+  alter column automation_status set not null;
 
 do $$
 begin
@@ -16,15 +26,8 @@ begin
   end if;
 end $$;
 
--- 기존 운영 방식은 active 계정이 매일 자동 예약 대상이었으므로, 마이그레이션 직후에는 기존 active 계정을 running으로 보정합니다.
--- 이후 신규 계정은 기본 paused로 생성되고, 고객이 자동화 시작을 눌러야 running으로 전환됩니다.
-update accounts
-set
-  automation_status = 'running',
-  automation_started_at = coalesce(automation_started_at, now()),
-  automation_stopped_at = null
-where status = 'active'
-  and automation_status = 'paused';
+-- 신규/기존 계정은 기본 paused로 둡니다.
+-- 고객이 자동화 시작을 눌렀거나 운영자가 명시적으로 켠 계정만 running으로 전환합니다.
 
 create index if not exists idx_accounts_automation_status
   on accounts(status, automation_status);

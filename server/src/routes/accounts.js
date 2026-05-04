@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { createAccount, deleteAccount, getAccount, listAccounts, updateAccount } from '../services/accountService.js';
-import { dbGet, dbInsert, dbList, logActivity } from '../services/supabaseService.js';
+import { dbGet, dbInsert, dbList, logActivity, safeLogActivity } from '../services/supabaseService.js';
 import { runPipelineForAccount } from '../services/pipelineService.js';
 import { getRunningPipeline, latestPipelineRun } from '../services/pipelineRunService.js';
 import { markedOkKeysFromAudits, shouldHideAssignment, suspiciousAssignmentsForUser } from '../services/accountOwnershipService.js';
@@ -188,8 +188,8 @@ router.patch('/:accountId/automation', async (req, res, next) => {
     const nextStatus = normalizeAutomationStatus(requestedStatus);
     if (nextStatus === AUTOMATION_PAUSED) {
       const updated = await setAutomationStatus(accountId, AUTOMATION_PAUSED);
-      await logActivity({
-        accountId,
+      await safeLogActivity({
+        account_id: accountId,
         level: 'info',
         action: 'automation_paused',
         message: `${account.name} 자동화 중지`,
@@ -203,8 +203,8 @@ router.patch('/:accountId/automation', async (req, res, next) => {
     assertPreflightCanPublish(preflight);
 
     const updated = await setAutomationStatus(accountId, AUTOMATION_RUNNING);
-    await logActivity({
-      accountId,
+    await safeLogActivity({
+      account_id: accountId,
       level: 'info',
       action: 'automation_started',
       message: `${account.name} 자동화 시작`,

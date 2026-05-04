@@ -23,7 +23,7 @@ export default function CustomerRunPage({
   const [runError, setRunError] = useState(null);
 
   const trialBlocked = trialStatus?.plan === 'free' && trialStatus.blocked;
-  const automationStatus = account?.automation_status === 'paused' ? 'paused' : 'running';
+  const automationStatus = account?.automation_status === 'running' ? 'running' : 'paused';
   const automationRunning = automationStatus === 'running';
   const scheduleText = formatSchedule(account);
 

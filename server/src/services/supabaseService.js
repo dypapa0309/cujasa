@@ -40,6 +40,7 @@ const tables = {
     no_link_post_ratio: 0.7,
     rest_days_per_week: 1,
     status: 'active',
+    automation_status: 'paused',
     created_at: now(),
     updated_at: now()
   })),
@@ -188,6 +189,32 @@ export async function dbDelete(table, filters) {
   return true;
 }
 
+const activityKeyAliases = {
+  accountId: 'account_id',
+  projectId: 'project_id',
+  postId: 'post_id',
+  queueId: 'queue_id',
+  userId: 'user_id',
+  pipelineRunId: 'pipeline_run_id'
+};
+
+export function normalizeActivityPayload(payload = {}) {
+  const normalized = {};
+  Object.entries(payload).forEach(([key, value]) => {
+    normalized[activityKeyAliases[key] || key] = value;
+  });
+  return normalized;
+}
+
 export async function logActivity(payload) {
-  return dbInsert('activity_logs', { level: 'info', ...payload });
+  return dbInsert('activity_logs', { level: 'info', ...normalizeActivityPayload(payload) });
+}
+
+export async function safeLogActivity(payload) {
+  try {
+    return await logActivity(payload);
+  } catch (error) {
+    console.warn('[activity_logs] failed to write log', error?.message || error);
+    return null;
+  }
 }
