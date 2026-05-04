@@ -1,7 +1,8 @@
 import { dbGet, dbList, dbUpdate } from './supabaseService.js';
 import { latestPipelineRun } from './pipelineRunService.js';
 import { resolveCoupangCredentialsForAccount } from './coupangService.js';
-import { adminActivityLabel, adminActivityMessage, classificationForCategory, classifyQueueError } from './queueErrorService.js';
+import { adminActivityLabel, adminActivityMessage, normalizeQueueClassification } from './queueErrorService.js';
+import { preflightAccount } from './accountPreflightService.js';
 
 const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -27,6 +28,21 @@ function tokenState(account) {
   if (daysLeft <= 0) return { status: 'error', label: '다시 연결 필요' };
   if (daysLeft <= 7) return { status: 'warn', label: `만료 ${Math.ceil(daysLeft)}일 전` };
   return { status: 'ok', label: '연결됨' };
+}
+
+function tokenStateFromPreflight(account, preflight) {
+  if (!preflight) return tokenState(account);
+  const tokenCheck = preflight.checks.find((check) => check.key === 'threads_token');
+  const handleCheck = preflight.checks.find((check) => check.key === 'threads_handle');
+  const expiryCheck = preflight.checks.find((check) => check.key === 'threads_expiry');
+  const fatal = handleCheck?.status === 'error' ? handleCheck : (tokenCheck?.status === 'error' ? tokenCheck : (expiryCheck?.status === 'error' ? expiryCheck : null));
+  if (fatal) return { status: 'error', label: fatal.action === 'reconnect_threads' ? '다시 연결 필요' : fatal.title };
+  if (tokenCheck?.status === 'ok') {
+    if (expiryCheck?.status === 'warn') return { status: 'warn', label: expiryCheck.title };
+    return { status: 'ok', label: '연결됨' };
+  }
+  if (expiryCheck?.status === 'warn') return { status: 'warn', label: expiryCheck.title };
+  return tokenState(account);
 }
 
 async function coupangState(account) {
@@ -88,15 +104,6 @@ export async function operationAccountRows() {
     const todayScheduled = todayQueue.filter((row) => row.status === 'scheduled').length;
     const todayPosted = accountQueue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length;
     const problemQueue = accountQueue.filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status));
-    const categorizedProblems = problemQueue.map((row) => {
-      return row.error_category
-        ? classificationForCategory(row.error_category, row.error_message)
-        : classifyQueueError(row.error_message);
-    });
-    const failedCount = categorizedProblems.filter((row) => !NON_FATAL_QUEUE_CATEGORIES.has(row.category)).length;
-    const replyWarningCount = categorizedProblems.filter((row) => row.category === 'reply_warning').length;
-    const retryAvailableCount = categorizedProblems.filter((row) => row.category === 'retry_available' || row.category === 'recheck_required').length;
-    const contentBlockedCount = categorizedProblems.filter((row) => row.category === 'content_blocked').length;
     const mockCount = accountQueue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length;
     const accountProducts = products.filter((row) => row.account_id === account.id);
     const fallbackCount = accountProducts.filter((row) => row.is_fallback).length;
@@ -106,10 +113,17 @@ export async function operationAccountRows() {
       .sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at))[0];
     const lastActivity = activityLogs.find((row) => row.account_id === account.id) || null;
     const pipelineRun = await latestPipelineRun(account.id);
-    const threads = tokenState(account);
+    const tokenPreflight = await preflightAccount(account.id, { includeQueue: false }).catch(() => null);
+    const threads = tokenStateFromPreflight(account, tokenPreflight);
     const coupang = await coupangState(account);
     const customer = await customerLabelFor(account.id, userAccounts, usersById);
     const problems = [];
+    const currentThreadsOk = threads.status !== 'error';
+    const categorizedProblems = problemQueue.map((row) => normalizeQueueClassification(row, { currentThreadsOk }));
+    const failedCount = categorizedProblems.filter((row) => !NON_FATAL_QUEUE_CATEGORIES.has(row.category)).length;
+    const replyWarningCount = categorizedProblems.filter((row) => row.category === 'reply_warning').length;
+    const retryAvailableCount = categorizedProblems.filter((row) => row.category === 'retry_available' || row.category === 'recheck_required').length;
+    const contentBlockedCount = categorizedProblems.filter((row) => row.category === 'content_blocked').length;
 
     if (threads.status === 'error') pushProblem(problems, account, 'error', 'threads', threads.label);
     else if (threads.status === 'warn') pushProblem(problems, account, 'warn', 'threads', `Threads ${threads.label}`);
@@ -124,7 +138,7 @@ export async function operationAccountRows() {
     if (contentBlockedCount > 0) pushProblem(problems, account, 'warn', 'content_blocked', `콘텐츠 후보 제외 ${contentBlockedCount}건`);
     if (mockCount > 0) pushProblem(problems, account, 'warn', 'mock_upload', `테스트 업로드 흔적 ${mockCount}건`);
     if (fallbackRatio >= 0.5 && accountProducts.length >= 5) pushProblem(problems, account, 'warn', 'fallback_products', `fallback 상품 ${Math.round(fallbackRatio * 100)}%`);
-    if (lastActivity?.action === 'pipeline_failed' || pipelineRun?.status === 'failed') {
+    if ((lastActivity?.action === 'pipeline_failed' || pipelineRun?.status === 'failed') && problems.some((p) => p.severity === 'error')) {
       pushProblem(problems, account, 'error', 'pipeline_failed', '최근 파이프라인 실패', pipelineRun?.error_message || lastActivity?.message || '');
     }
 
@@ -174,6 +188,7 @@ export async function operationSummary() {
   const activeAccountIds = new Set(accounts.filter((account) => account.status === 'active').map((account) => account.id));
   const activeQueue = queue.filter((row) => activeAccountIds.has(row.account_id));
   const todayQueue = activeQueue.filter((row) => inRange(row.scheduled_at, start, end));
+  const threadsOkByAccountId = new Map(rows.map((row) => [row.accountId, row.threads.status !== 'error']));
   const problemAccounts = rows.flatMap((row) => row.problems).sort((a, b) => {
     const rank = { error: 0, warn: 1, ok: 2 };
     return rank[a.severity] - rank[b.severity];
@@ -187,9 +202,11 @@ export async function operationSummary() {
       postedToday: activeQueue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length,
       queueProblems: activeQueue.filter((row) => {
         if (!QUEUE_PROBLEM_STATUSES.includes(row.status)) return false;
-        const category = row.error_category
-          ? classificationForCategory(row.error_category, row.error_message).category
-          : classifyQueueError(row.error_message).category;
+        const account = accounts.find((item) => item.id === row.account_id);
+        const currentThreadsOk = threadsOkByAccountId.has(row.account_id)
+          ? threadsOkByAccountId.get(row.account_id)
+          : tokenState(account || {}).status !== 'error';
+        const category = normalizeQueueClassification(row, { currentThreadsOk }).category;
         return !NON_FATAL_QUEUE_CATEGORIES.has(category);
       }).length,
       mockUploads: activeQueue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length,
@@ -205,9 +222,7 @@ export async function cleanupQueueErrors({ mode = 'dry-run' } = {}) {
     .filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status))
     .map((row) => ({
       ...row,
-      classification: row.error_category
-        ? classificationForCategory(row.error_category, row.error_message)
-        : classifyQueueError(row.error_message)
+      classification: normalizeQueueClassification(row)
     }));
   if (mode === 'apply') {
     for (const row of targets) {

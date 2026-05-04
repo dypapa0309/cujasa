@@ -1,5 +1,6 @@
 import { dbGet, dbList, dbUpdate } from './supabaseService.js';
-import { classificationForCategory, classifyQueueError } from './queueErrorService.js';
+import { normalizeQueueClassification } from './queueErrorService.js';
+import { markPastTokenFailuresRetryable } from './threadsOAuthService.js';
 
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
 
@@ -13,6 +14,10 @@ function makeCheck(key, status, title, message, action = null) {
 
 function isTokenError(message = '') {
   return /OAuth|access token|Cannot parse access token|token|code"?\s*:\s*190|code 190/i.test(message);
+}
+
+function queueTime(row = {}) {
+  return new Date(row.updated_at || row.created_at || row.scheduled_at || 0).getTime() || 0;
 }
 
 async function requestThreadsMe(token) {
@@ -43,6 +48,7 @@ export async function preflightAccount(accountId, options = {}) {
 
   const checks = [];
   let currentThreadsError = false;
+  let currentThreadsOk = false;
   if (account.status !== 'active') {
     checks.push(makeCheck('account_status', 'error', '계정이 비활성 상태입니다', `현재 상태가 ${account.status || 'unknown'}입니다. active 상태에서만 자동화가 실행됩니다.`));
   } else {
@@ -52,9 +58,6 @@ export async function preflightAccount(accountId, options = {}) {
   if (!account.threads_access_token) {
     currentThreadsError = true;
     checks.push(makeCheck('threads_token', 'error', 'Threads 연결이 필요합니다', '이 계정은 Threads 액세스 토큰이 없습니다. 연결을 먼저 완료해주세요.', 'reconnect_threads'));
-  } else if (account.threads_token_status === 'refresh_failed') {
-    currentThreadsError = true;
-    checks.push(makeCheck('threads_token', 'error', 'Threads 연결이 만료되었습니다', '토큰 갱신에 실패한 상태입니다. 다시 연결해주세요.', 'reconnect_threads'));
   } else {
     try {
       const me = await requestThreadsMe(account.threads_access_token);
@@ -70,10 +73,14 @@ export async function preflightAccount(accountId, options = {}) {
           'reconnect_threads'
         ));
       } else {
+        currentThreadsOk = true;
         checks.push(makeCheck('threads_token', 'ok', 'Threads 연결 정상', `@${me.username || account.account_handle || 'Threads'} 계정 토큰이 확인되었습니다.`));
       }
-      if (me.id && me.id !== account.threads_user_id) {
-        await dbUpdate('accounts', { id: account.id }, { threads_user_id: me.id, threads_token_status: 'connected' });
+      if (!currentThreadsError) {
+        const patch = { threads_token_status: 'connected' };
+        if (me.id && me.id !== account.threads_user_id) patch.threads_user_id = me.id;
+        await dbUpdate('accounts', { id: account.id }, patch);
+        await markPastTokenFailuresRetryable(account.id).catch(() => 0);
       }
     } catch (error) {
       if (error.code === 'THREADS_TOKEN_INVALID') {
@@ -94,8 +101,12 @@ export async function preflightAccount(accountId, options = {}) {
   if (expiresAt && Number.isFinite(expiresAt)) {
     const daysLeft = Math.ceil((expiresAt - Date.now()) / (24 * 60 * 60 * 1000));
     if (daysLeft <= 0) {
-      currentThreadsError = true;
-      checks.push(makeCheck('threads_expiry', 'error', 'Threads 토큰 만료일이 지났습니다', '다시 연결이 필요합니다.', 'reconnect_threads'));
+      if (currentThreadsOk) {
+        checks.push(makeCheck('threads_expiry', 'warn', 'Threads 토큰 만료일 정보 확인 필요', '현재 토큰 검증은 성공했습니다. 다음 재연결 때 만료일 정보가 갱신됩니다.'));
+      } else {
+        currentThreadsError = true;
+        checks.push(makeCheck('threads_expiry', 'error', 'Threads 토큰 만료일이 지났습니다', '다시 연결이 필요합니다.', 'reconnect_threads'));
+      }
     } else if (daysLeft <= 7) {
       checks.push(makeCheck('threads_expiry', 'warn', 'Threads 토큰 만료가 임박했습니다', `${daysLeft}일 안에 토큰 갱신이 필요할 수 있습니다.`));
     }
@@ -122,18 +133,20 @@ export async function preflightAccount(accountId, options = {}) {
     const queues = await dbList('post_queue', { account_id: account.id });
     const broken = queues
       .filter((row) => ['retry', 'manual_required', 'failed'].includes(row.status))
-      .slice(-3);
+      .sort((a, b) => queueTime(b) - queueTime(a))
+      .slice(0, 3);
     if (broken.length > 0) {
-      const latest = broken[broken.length - 1];
-      const first = latest?.error_category
-        ? classificationForCategory(latest.error_category, latest.error_message)
-        : classifyQueueError(latest?.error_message);
+      const latest = broken[0];
+      const first = normalizeQueueClassification(latest, { currentThreadsOk });
       const isReconnectProblem = first?.category === 'threads_reconnect_required';
+      const isPastReconnectProblem = ['retry_available', 'recheck_required'].includes(first?.category);
       checks.push(makeCheck(
         'recent_queue_errors',
         isReconnectProblem && currentThreadsError ? 'error' : 'warn',
-        isReconnectProblem && !currentThreadsError ? '과거 토큰 실패 기록이 있습니다' : '최근 업로드 실패가 있습니다',
-        first?.message || `${broken.length}개의 확인 필요한 포스팅이 있습니다.`,
+        (isReconnectProblem && !currentThreadsError) || isPastReconnectProblem ? '과거 업로드 실패 기록이 있습니다' : '최근 업로드 실패가 있습니다',
+        ((isReconnectProblem && !currentThreadsError) || isPastReconnectProblem)
+          ? '현재 Threads 연결은 정상입니다. 과거 실패 항목은 본문 게시 여부를 확인한 뒤 재시도하거나 정리할 수 있습니다.'
+          : (first?.message || `${broken.length}개의 확인 필요한 포스팅이 있습니다.`),
         isReconnectProblem && currentThreadsError ? 'reconnect_threads' : null
       ));
     }

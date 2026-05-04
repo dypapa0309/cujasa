@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
-import { classifyQueueError } from './queueErrorService.js';
+import { normalizeQueueClassification } from './queueErrorService.js';
 
 const THREADS_AUTH_URL = 'https://threads.net/oauth/authorize';
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
@@ -98,12 +98,12 @@ async function requestJson(url, options = {}) {
   return json;
 }
 
-async function markPastTokenFailuresRetryable(accountId) {
+export async function markPastTokenFailuresRetryable(accountId) {
   const rows = await dbList('post_queue', { account_id: accountId });
   const targets = rows.filter((row) => {
     if (!['failed', 'retry', 'manual_required'].includes(row.status)) return false;
-    const category = row.error_category || classifyQueueError(row.error_message).category;
-    return category === 'threads_reconnect_required';
+    const classified = normalizeQueueClassification(row);
+    return classified.category === 'threads_reconnect_required';
   });
   for (const row of targets) {
     await dbUpdate('post_queue', { id: row.id }, {

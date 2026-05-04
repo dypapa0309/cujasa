@@ -13,6 +13,8 @@ import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 export async function runPipelineForAccount(accountId, options = {}) {
   const account = await getAccount(accountId);
   await assertAccountOwnerCanOperate(account.id);
+  const preflight = await preflightAccount(account.id);
+  assertPreflightCanPublish(preflight);
   const run = await startPipelineRun(account, options.requestedBy || 'manual');
   const result = { accountId: account.id, accountName: account.name, steps: {}, percent: 0, stage: 'starting', label: '예약 작업을 준비하고 있습니다' };
   const progress = async (patch) => {
@@ -27,7 +29,6 @@ export async function runPipelineForAccount(accountId, options = {}) {
   try {
     await progress({ percent: 5, stage: 'starting', label: '예약 작업을 준비하고 있습니다' });
     await progress({ percent: 7, stage: 'preflight', label: '계정 연결 상태를 점검하고 있습니다' });
-    assertPreflightCanPublish(await preflightAccount(account.id));
 
     await progress({ percent: 10, stage: 'topics', label: '주제를 생성하고 있습니다' });
     const topics = await generateTopics(account.id);

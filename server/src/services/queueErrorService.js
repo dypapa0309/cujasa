@@ -41,6 +41,16 @@ export function classifyQueueError(message = '') {
 }
 
 export function classificationForCategory(category, fallbackMessage = '') {
+  if (category === 'manual_required') {
+    const classified = classifyQueueError(fallbackMessage);
+    if (classified.category !== 'manual_required') return classified;
+    return {
+      category,
+      severity: 'error',
+      title: '수동 확인 필요',
+      message: fallbackMessage || '원인을 확인해야 하는 실패 항목입니다.'
+    };
+  }
   if (category === 'retry_available') {
     return {
       category,
@@ -92,6 +102,26 @@ export function classificationForCategory(category, fallbackMessage = '') {
   return { ...classifyQueueError(fallbackMessage), category: category || classifyQueueError(fallbackMessage).category };
 }
 
+export function normalizeQueueClassification(row = {}, options = {}) {
+  const fallbackMessage = row.error_message || row.message || '';
+  const messageClassification = classifyQueueError(fallbackMessage);
+  let category = row.error_category || messageClassification.category;
+
+  if (category === 'manual_required' && messageClassification.category !== 'manual_required') {
+    category = messageClassification.category;
+  }
+  if (category === 'threads_reconnect_required' && options.currentThreadsOk) {
+    category = options.reconnectedCategory || 'retry_available';
+  }
+
+  return classificationForCategory(category, fallbackMessage);
+}
+
+export function isThreadsReconnectQueueError(row = {}) {
+  const classified = normalizeQueueClassification(row);
+  return classified.category === 'threads_reconnect_required';
+}
+
 export function decorateQueueRow(row = {}) {
   if (!row.error_message && !row.error_category) {
     return {
@@ -102,12 +132,10 @@ export function decorateQueueRow(row = {}) {
       friendly_severity: null
     };
   }
-  const classified = row.error_category
-    ? classificationForCategory(row.error_category, row.error_message)
-    : classifyQueueError(row.error_message);
+  const classified = normalizeQueueClassification(row);
   return {
     ...row,
-    error_category: row.error_category || classified.category,
+    error_category: classified.category,
     friendly_title: classified.title,
     friendly_message: classified.message,
     friendly_severity: classified.severity
