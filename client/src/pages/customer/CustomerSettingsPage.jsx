@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
+import SensitiveInput from '../../components/SensitiveInput.jsx';
 import TrialStatusCard from './TrialStatusCard.jsx';
 
-export default function CustomerSettingsPage({ account, reloadAccounts, onPipelineDone, onPipelineRunningChange, trialStatus, reloadTrialStatus, setTab }) {
+export default function CustomerSettingsPage({ account, reloadAccounts, onPipelineDone, onPipelineRunningChange, trialStatus, reloadTrialStatus, reloadSetupStatus, setTab }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -32,6 +33,10 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
       daily_post_max: account.daily_post_max ?? 4,
       link_post_ratio: Number(account.link_post_ratio ?? 0.3),
       no_link_post_ratio: Number(account.no_link_post_ratio ?? 0.7),
+      coupang_access_key: '',
+      coupang_secret_key: '',
+      coupang_partner_id: '',
+      coupang_tracking_code: '',
       active_time_windows: Array.isArray(account.active_time_windows) && account.active_time_windows.length
         ? account.active_time_windows
         : [{ start: '09:00', end: '22:00' }],
@@ -58,6 +63,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
         forbidden_words: form.forbidden_words.split('\n').map((s) => s.trim()).filter(Boolean),
       });
       await reloadAccounts();
+      await reloadSetupStatus?.();
       toast('설정이 변경되었습니다. 자동화를 시작합니다.', 'success');
     } catch {
       toast('저장에 실패했습니다.', 'error');
@@ -199,6 +205,45 @@ export default function CustomerSettingsPage({ account, reloadAccounts, onPipeli
         <Field label="Threads 핸들">
           <input type="text" value={form.account_handle} onChange={(e) => setForm((p) => ({ ...p, account_handle: e.target.value }))}
             placeholder="@myhandle" className={input} />
+        </Field>
+      </Section>
+
+      <Section title="쿠팡 파트너스 API 설정" desc="링크 포함 글을 만들 때 필요합니다. 비워두면 기존 저장값은 유지됩니다." collapsible>
+        <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-relaxed text-blue-700">
+          무료 체험은 쿠팡 API 없이도 일반 글로 시작할 수 있습니다. 링크 포함 비율을 1% 이상으로 쓰려면 아래 값을 입력해주세요.
+        </div>
+        <Field label="Access Key">
+          <SensitiveInput
+            value={form.coupang_access_key}
+            onChange={(e) => setForm((p) => ({ ...p, coupang_access_key: e.target.value }))}
+            placeholder={account.has_coupang_access_key ? '저장됨 - 변경 시에만 입력' : '쿠팡 Access Key'}
+            inputClassName={`${input} pr-10`}
+          />
+        </Field>
+        <Field label="Secret Key">
+          <SensitiveInput
+            value={form.coupang_secret_key}
+            onChange={(e) => setForm((p) => ({ ...p, coupang_secret_key: e.target.value }))}
+            placeholder={account.has_coupang_secret_key ? '저장됨 - 변경 시에만 입력' : '쿠팡 Secret Key'}
+            inputClassName={`${input} pr-10`}
+          />
+        </Field>
+        <Field label="Partner ID">
+          <SensitiveInput
+            value={form.coupang_partner_id}
+            onChange={(e) => setForm((p) => ({ ...p, coupang_partner_id: e.target.value }))}
+            placeholder={account.has_coupang_partner_id ? '저장됨 - 변경 시에만 입력' : 'AF로 시작하는 Partner ID'}
+            inputClassName={`${input} pr-10`}
+          />
+        </Field>
+        <Field label="Tracking Code">
+          <SensitiveInput
+            value={form.coupang_tracking_code}
+            onChange={(e) => setForm((p) => ({ ...p, coupang_tracking_code: e.target.value }))}
+            placeholder={account.has_coupang_tracking_code ? '저장됨 - 변경 시에만 입력' : '계정별 Tracking Code'}
+            inputClassName={`${input} pr-10`}
+          />
+          <span className="text-xs text-gray-400">비워두면 고객 기본값 또는 계정 기본값을 사용합니다.</span>
         </Field>
       </Section>
 

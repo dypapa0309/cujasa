@@ -1,5 +1,6 @@
 import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { sendSlackMessage } from './slackService.js';
+import { sendSetupSms } from './smsService.js';
 
 const SETUP_STATUSES = new Set(['pending', 'in_progress', 'completed', 'canceled']);
 const EDITABLE_FIELDS = new Set(['buyer_name', 'email', 'phone', 'product_id', 'amount', 'paid_at']);
@@ -76,8 +77,10 @@ export async function ensureSetupTaskForPayment(payment, { notify = true, source
   });
 
   if (notify) {
-    await notifySetupTask(task, payment, product);
-    await dbUpdate('setup_tasks', { id: task.id }, { notified_at: new Date().toISOString() });
+    const notification = await notifySetupTask(task, payment, product);
+    if (notification.sent) {
+      await dbUpdate('setup_tasks', { id: task.id }, { notified_at: new Date().toISOString() });
+    }
   }
   return task;
 }
@@ -92,5 +95,23 @@ async function notifySetupTask(task, payment, product) {
     `금액: ${amount}원`,
     `주문번호: ${payment.order_id}`
   ].join('\n');
-  return sendSlackMessage(text);
+  const smsText = [
+    '[CUJASA 셋업 필요]',
+    `${task.buyer_name || '구매자'} / ${task.phone || '전화번호 없음'}`,
+    `${task.email || '-'}`,
+    `${product?.name || payment.product_id} ${amount}원`,
+    `주문 ${payment.order_id || payment.id}`
+  ].join('\n');
+
+  const [sms, slack] = await Promise.allSettled([
+    sendSetupSms(smsText),
+    sendSlackMessage(text)
+  ]);
+  const smsResult = sms.status === 'fulfilled' ? sms.value : { ok: false, error: sms.reason?.message || 'SMS failed' };
+  const slackResult = slack.status === 'fulfilled' ? slack.value : { ok: false, error: slack.reason?.message || 'Slack failed' };
+  return {
+    sms: smsResult,
+    slack: slackResult,
+    sent: Boolean(smsResult?.ok || slackResult?.ok)
+  };
 }

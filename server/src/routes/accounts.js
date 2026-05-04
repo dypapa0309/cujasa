@@ -67,8 +67,10 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
+    let user = null;
     if (req.user?.type === 'user') {
       await assertUserCanOperate(req.user.userId);
+      user = await dbGet('users', { id: req.user.userId });
       const current = await dbList('user_accounts', { user_id: req.user.userId });
       if (current.length >= req.user.maxAccounts) {
         const error = new Error(`계정은 최대 ${req.user.maxAccounts}개까지 생성할 수 있습니다. 추가 계정은 별도 문의해주세요.`);
@@ -76,7 +78,12 @@ router.post('/', async (req, res, next) => {
         throw error;
       }
     }
-    const account = await createAccount(stripBlankSensitiveAccountFields(req.body));
+    const payload = stripBlankSensitiveAccountFields(req.body);
+    if (req.user?.type === 'user' && user?.plan === 'free' && payload.link_post_ratio === undefined) {
+      payload.link_post_ratio = 0;
+      payload.no_link_post_ratio = 1;
+    }
+    const account = await createAccount(payload);
     if (req.user?.type === 'user') {
       await dbInsert('user_accounts', { user_id: req.user.userId, account_id: account.id });
     }

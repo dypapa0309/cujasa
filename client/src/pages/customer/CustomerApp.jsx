@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CreditCard, Home, FileText, Settings, Plus, X } from 'lucide-react';
+import { CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import CustomerHomePage from './CustomerHomePage.jsx';
@@ -35,6 +35,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
   const [newAccount, setNewAccount] = useState({ name: '', account_handle: '' });
   const [announcement, setAnnouncement] = useState(null);
   const [trialStatus, setTrialStatus] = useState(null);
+  const [setupStatus, setSetupStatus] = useState(null);
 
   const maxAccounts = currentUser?.maxAccounts ?? 2;
   const account = accounts[selectedIdx] ?? accounts[0];
@@ -112,8 +113,17 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     }
   };
 
+  const loadSetupStatus = async () => {
+    try {
+      setSetupStatus(await api.get('/api/me/setup-status'));
+    } catch {
+      setSetupStatus(null);
+    }
+  };
+
   useEffect(() => {
     loadTrialStatus();
+    loadSetupStatus();
   }, [currentUser?.email]);
 
   useEffect(() => {
@@ -128,6 +138,10 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     setTab('settings');
     if (threads === 'connected') toast('Threads 연결이 완료됐습니다.', 'success');
     if (threads === 'error') toast(params.get('message') || 'Threads 연결에 실패했습니다.', 'error');
+    if (threads === 'connected') {
+      reloadAccounts?.();
+      loadSetupStatus();
+    }
     params.delete('threads');
     params.delete('accountId');
     params.delete('message');
@@ -237,6 +251,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
         project_id: '00000000-0000-0000-0000-000000000001',
       });
       await reloadAccounts();
+      await loadSetupStatus();
       setNewAccount({ name: '', account_handle: '' });
       setShowAddForm(false);
       setSelectedIdx(accounts.length); // 새로 만든 계정 선택
@@ -265,9 +280,48 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
 
       <main className="max-w-2xl mx-auto px-5 py-6 pb-28">
         {accounts.length === 0 ? (
-          <WaitingScreen />
+          <>
+            <WaitingScreen
+              setupStatus={setupStatus}
+              onGoSettings={() => navigateTab('settings')}
+              onGoBilling={() => navigateTab('billing')}
+              onAddAccount={() => setShowAddForm(true)}
+            />
+            {showAddForm && (
+              <form onSubmit={addAccount} className="bg-white border border-gray-200 rounded-2xl p-5 mb-5 grid gap-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-sm">새 계정 추가</span>
+                  <button type="button" onClick={() => setShowAddForm(false)}><X size={16} className="text-gray-400" /></button>
+                </div>
+                <input
+                  type="text"
+                  placeholder="계정 이름 (예: 자취 꿀템)"
+                  value={newAccount.name}
+                  onChange={(e) => setNewAccount((p) => ({ ...p, name: e.target.value }))}
+                  className="border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-coupang"
+                  required
+                />
+                <input
+                  type="text"
+                  placeholder="Threads 핸들 (예: @myhandle)"
+                  value={newAccount.account_handle}
+                  onChange={(e) => setNewAccount((p) => ({ ...p, account_handle: e.target.value }))}
+                  className="border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-coupang"
+                />
+                <button
+                  type="submit"
+                  disabled={adding || !newAccount.name.trim()}
+                  className="bg-coupang text-white font-bold py-3 rounded-xl text-sm disabled:opacity-50"
+                >
+                  {adding ? '추가 중...' : '추가하기'}
+                </button>
+              </form>
+            )}
+          </>
         ) : (
           <>
+            <SetupStatusCard setupStatus={setupStatus} setTab={navigateTab} />
+
             {/* 계정 탭 */}
             <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1">
               {accounts.map((acc, i) => (
@@ -333,6 +387,8 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
               currentUser={currentUser}
               trialStatus={trialStatus}
               reloadTrialStatus={loadTrialStatus}
+              setupStatus={setupStatus}
+              reloadSetupStatus={loadSetupStatus}
               setTab={navigateTab}
               reloadAccounts={reloadAccounts}
               pipelineResult={pipelineResult}
@@ -417,20 +473,77 @@ function PipelineOverlay({ progress }) {
   );
 }
 
-function WaitingScreen() {
+function SetupStatusCard({ setupStatus, setTab }) {
+  if (!setupStatus || setupStatus.ready) return null;
+  const items = [...(setupStatus.blocking || []), ...(setupStatus.warnings || [])].slice(0, 4);
+  if (!items.length) return null;
   return (
-    <div className="text-center py-20">
-      <div className="flex justify-center mb-4">
-        <svg className="w-12 h-12 text-gray-300" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
-          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-        </svg>
+    <div className="mb-5 rounded-2xl border border-amber-100 bg-amber-50 px-5 py-4">
+      <div className="flex items-start gap-3">
+        <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
+        <div className="min-w-0 flex-1">
+          <div className="font-black text-amber-900">셋업 확인이 필요합니다</div>
+          <div className="mt-1 grid gap-1.5">
+            {items.map((entry) => (
+              <div key={`${entry.code}-${entry.accountId || 'all'}`} className="text-xs leading-relaxed text-amber-800">
+                <span className="font-bold">{entry.title}</span>
+                <span className="opacity-80"> · {entry.message}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button type="button" onClick={() => setTab?.('settings')} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white">
+              설정하러 가기
+            </button>
+            {items.some((entry) => entry.action === 'billing') && (
+              <button type="button" onClick={() => setTab?.('billing')} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-amber-700">
+                결제 확인
+              </button>
+            )}
+          </div>
+        </div>
       </div>
-      <h2 className="text-xl font-black mb-2">셋업 준비 중</h2>
-      <p className="text-gray-500 text-sm leading-relaxed">
-        담당자가 계정을 설정하고 있습니다.<br />
-        완료되면 자동으로 포스팅이 시작됩니다.
-      </p>
+    </div>
+  );
+}
+
+function WaitingScreen({ setupStatus, onGoSettings, onGoBilling, onAddAccount }) {
+  const items = [...(setupStatus?.blocking || []), ...(setupStatus?.warnings || [])];
+  const needsAccount = items.some((entry) => entry.code === 'account_required');
+  return (
+    <div className="grid gap-4 py-10">
+      <div className="rounded-2xl border border-gray-100 bg-white p-6">
+        <div className="mb-3 flex items-center gap-2">
+          <CheckCircle2 className="h-5 w-5 text-coupang" />
+          <h2 className="text-xl font-black text-gray-900">셋업 상태 확인</h2>
+        </div>
+        <p className="text-sm leading-relaxed text-gray-500">
+          무료 체험은 고객님이 직접 설정을 완료하면 바로 사용할 수 있습니다. 아래 부족한 항목을 먼저 확인해주세요.
+        </p>
+      </div>
+      <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5">
+        <div className="font-black text-amber-900">부족한 항목</div>
+        <div className="mt-3 grid gap-2">
+          {items.length ? items.map((entry) => (
+            <div key={`${entry.code}-${entry.accountId || 'all'}`} className="rounded-xl bg-white px-4 py-3 text-sm">
+              <div className="font-bold text-gray-900">{entry.title}</div>
+              <div className="mt-1 text-xs leading-relaxed text-gray-500">{entry.message}</div>
+            </div>
+          )) : (
+            <div className="rounded-xl bg-white px-4 py-3 text-sm text-gray-500">계정 정보를 불러오는 중입니다.</div>
+          )}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <button type="button" onClick={needsAccount ? onAddAccount : onGoSettings} className="flex-1 rounded-xl bg-coupang py-3 text-sm font-black text-white">
+            {needsAccount ? '계정 추가하기' : '설정하러 가기'}
+          </button>
+          {items.some((entry) => entry.action === 'billing') && (
+            <button type="button" onClick={onGoBilling} className="flex-1 rounded-xl border border-amber-200 bg-white py-3 text-sm font-black text-amber-700">
+              결제 확인
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

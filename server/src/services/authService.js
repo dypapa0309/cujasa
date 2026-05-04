@@ -319,7 +319,9 @@ export async function registerFreeUser({ username, password, passwordConfirm }) 
     target_audience: '',
     content_scope: '',
     tone: '',
-    cta_style: ''
+    cta_style: '',
+    link_post_ratio: 0,
+    no_link_post_ratio: 1
   });
   await dbInsert('user_accounts', { user_id: user.id, account_id: account.id });
 
