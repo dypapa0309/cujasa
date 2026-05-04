@@ -14,6 +14,7 @@ export default function ProductCard({ product, onSelect, selecting = false }) {
   const isReal = product.is_real_product !== false;
   const issues = product.quality_issues || [];
   const canSelect = isReal && !product.selected && onSelect;
+  const displayPrice = product.is_fallback ? '0원' : price(product.product_price);
   return (
     <div className="rounded border border-line bg-white p-4">
       <div className="aspect-[4/3] rounded bg-panel">
@@ -25,7 +26,7 @@ export default function ProductCard({ product, onSelect, selecting = false }) {
           {isReal ? '실상품' : '사용불가'}
         </span>
       </div>
-      <p className="mt-1 text-sm text-slate-600">{price(product.product_price)}</p>
+      <p className="mt-1 text-sm text-slate-600">{displayPrice}</p>
       <p className="mt-1 text-xs text-slate-500">{product.keyword} · {product.is_fallback ? 'fallback' : 'api'}</p>
       {!isReal && issues.length > 0 && (
         <p className="mt-2 text-xs leading-relaxed text-rose-500">

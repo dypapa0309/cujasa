@@ -112,7 +112,7 @@ export async function repairProductsForTopic(topicId, options = {}) {
 
   for (let attempt = 1; attempt <= attemptLimit; attempt += 1) {
     const keywords = await generateRepairKeywords(topic, account, attempt, options);
-    const products = await searchProductsForTopic(topicId, { keywords, saveFallback: false, stopAfterRealCount: 10 });
+    const products = await searchProductsForTopic(topicId, { keywords, saveFallback: true, stopAfterRealCount: 10 });
     const selected = await selectProducts(topicId, options.postId || null);
     const realSelected = await listRealSelectedProducts(topicId);
     attempts.push({

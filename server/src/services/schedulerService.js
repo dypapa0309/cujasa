@@ -37,7 +37,7 @@ async function isPostAllowedForQueue(post, account) {
     message: guardrail.reasons.join('; '),
     payload: { context: guardrail.context }
   });
-  await dbUpdate('posts', { id: post.id }, { status: 'skipped' });
+  await dbUpdate('posts', { id: post.id }, { status: 'manual_required' });
   return false;
 }
 
@@ -255,7 +255,28 @@ export async function uploadQueueItem(queueId) {
       ? await dbGet('tracking_links', { id: queue.tracking_link_id })
       : null;
     const postMode = queue.post_mode || 'auto';
-    const requiresLink = postMode === 'link';
+    let requiresLink = postMode === 'link';
+    if (requiresLink && !isRealCoupangProduct(product)) {
+      await logActivity({
+        account_id: queue.account_id,
+        project_id: queue.project_id,
+        topic_id: queue.topic_id,
+        post_id: queue.post_id,
+        action: 'upload_link_downgraded_to_no_link',
+        level: 'warn',
+        message: '업로드 직전 실상품 연결이 없어 일반 글로 전환합니다.',
+        payload: { queueId, reasonCode: 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK' }
+      });
+      await dbUpdate('post_queue', { id: queueId }, {
+        post_mode: 'no_link',
+        error_message: '실상품 연결이 없어 일반 글로 자동 전환됨',
+        error_category: null
+      }).catch(async (updateError) => {
+        if (!/post_mode|error_category|schema cache|column/i.test(updateError.message || '')) throw updateError;
+        await dbUpdate('post_queue', { id: queueId }, { error_message: '실상품 연결이 없어 일반 글로 자동 전환됨' });
+      });
+      requiresLink = false;
+    }
     const ctas = requiresLink ? await listCtas(post.id) : [];
     const cta = requiresLink ? (ctas[Math.floor(Math.random() * Math.max(1, ctas.length))] || null) : null;
     if (requiresLink && !isRealCoupangProduct(product)) {

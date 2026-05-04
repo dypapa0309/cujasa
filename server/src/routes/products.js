@@ -8,7 +8,7 @@ import { repairProductsForTopic } from '../services/productRepairService.js';
 const router = Router();
 router.post('/:topicId/search-products', requireTopicAccess, async (req, res, next) => {
   try {
-    const products = await searchProductsForTopic(req.params.topicId, { saveFallback: false });
+    const products = await searchProductsForTopic(req.params.topicId, { saveFallback: true });
     const repair = await repairProductsForTopic(req.params.topicId, { attemptLimit: 3 });
     res.status(201).json({ products, repair });
   } catch (e) { next(e); }
