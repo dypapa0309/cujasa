@@ -5,6 +5,7 @@ import { requireAccountAccessParam, requireQueueAccess } from '../middleware/acc
 import { assertUserCanOperate } from '../services/billingEntitlementService.js';
 import { decorateQueueRow, decorateQueueRows, postModeLabel } from '../services/queueErrorService.js';
 import { assertUserCanStartTrialAction } from '../services/trialEntitlementService.js';
+import { decorateProductQuality, isRealCoupangProduct } from '../utils/productQuality.js';
 
 const router = Router();
 
@@ -56,7 +57,7 @@ router.get('/detail/:queueId', requireQueueAccess, async (req, res, next) => {
     const products = await Promise.all(
       postProducts.map(async (pp) => {
         const p = await dbGet('coupang_products', { id: pp.product_id });
-        return p ? { ...p, rank: pp.rank, reason: pp.recommendation_reason } : null;
+        return p ? decorateProductQuality({ ...p, rank: pp.rank, reason: pp.recommendation_reason }) : null;
       })
     );
     const trackingLink = queue.tracking_link_id
@@ -64,7 +65,7 @@ router.get('/detail/:queueId', requireQueueAccess, async (req, res, next) => {
       : null;
     const decoratedQueue = decorateQueueRow(queue);
     const postMode = queue.post_mode || 'auto';
-    const hasLinkCandidate = products.filter(Boolean).length > 0;
+    const hasLinkCandidate = products.filter(isRealCoupangProduct).length > 0;
 
     res.json({
       queue: decoratedQueue,

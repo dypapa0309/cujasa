@@ -10,8 +10,15 @@ import { finishPipelineRun, getRunningPipeline, startPipelineRun, updatePipeline
 import { assertPreflightCanPublish, preflightAccount } from './accountPreflightService.js';
 import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 import { assertAutomationRunning, isAutomationRunning } from './accountAutomationService.js';
+import { repairProductsForTopic } from './productRepairService.js';
 
 function createNoQueueMessage(diagnostics = {}) {
+  if (diagnostics.reasonCode === 'NO_REAL_PRODUCTS') {
+    return '실제 쿠팡 상품이 매칭된 링크 글 후보가 없어 예약을 만들지 못했습니다. 상품을 다시 검색하거나 관리자 화면에서 실상품을 직접 선택해주세요.';
+  }
+  if (diagnostics.reasonCode === 'REAL_PRODUCTS_INSUFFICIENT') {
+    return '링크 글 목표 개수를 채울 만큼 실제 쿠팡 상품 후보가 부족합니다. 상품 추천 결과에서 실상품을 추가로 선택해주세요.';
+  }
   if (diagnostics.reasonCode === 'NO_LINK_CANDIDATES') {
     return '쿠팡 상품이 매칭된 링크 글 후보가 없어 예약을 만들지 못했습니다. 상품 후보를 다시 생성하거나 링크 비율을 낮춰주세요.';
   }
@@ -90,7 +97,10 @@ export async function runPipelineForAccount(accountId, options = {}) {
           topicsDone: index,
           postsCreated: totalPosts
         });
-        await selectProducts(topic.id);
+        const selectedProducts = await selectProducts(topic.id);
+        if (selectedProducts.length === 0 && Number(account.link_post_ratio || 0) > 0) {
+          await repairProductsForTopic(topic.id, { account, attemptLimit: 3 });
+        }
         await progress({
           percent: Math.min(80, basePercent + 14),
           stage: 'posts',

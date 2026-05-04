@@ -6,6 +6,7 @@ import { checkAndRewriteRisk } from './riskService.js';
 import { validatePostCandidate } from '../utils/contentGuardrails.js';
 import { buildFallbackPostBody, validatePostStyleFit } from '../utils/accountStyle.js';
 import { prepareGeneratedPostBody } from '../utils/koreanContentQuality.js';
+import { isRealCoupangProduct } from '../utils/productQuality.js';
 
 export async function generatePosts(topicId) {
   const topic = await dbGet('topics', { id: topicId });
@@ -13,7 +14,7 @@ export async function generatePosts(topicId) {
   const selectedRows = await dbList('post_products', { topic_id: topicId });
   const selected = (await Promise.all(selectedRows.map(async (row) => {
     const product = await dbGet('coupang_products', { id: row.product_id });
-    return product ? { ...product, recommendation_reason: row.recommendation_reason, fit_score: row.fit_score, rank: row.rank } : null;
+    return product && isRealCoupangProduct(product) ? { ...product, recommendation_reason: row.recommendation_reason, fit_score: row.fit_score, rank: row.rank } : null;
   }))).filter(Boolean);
   const fallback = {
     posts: [{

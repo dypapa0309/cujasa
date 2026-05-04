@@ -1,6 +1,7 @@
 import { getJson } from './openaiService.js';
 import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { generateBlogPrompt } from '../prompts/generateBlogPrompt.js';
+import { isRealCoupangProduct } from '../utils/productQuality.js';
 
 function sanitizeHtml(html = '') {
   return html
@@ -31,7 +32,7 @@ export async function generateBlogPost(topicId) {
   const products = await Promise.all(
     postProducts.map((pp) => dbGet('coupang_products', { id: pp.product_id }))
   );
-  const validProducts = products.filter(Boolean);
+  const validProducts = products.filter(isRealCoupangProduct);
 
   const fallback = {
     title: topic.title,

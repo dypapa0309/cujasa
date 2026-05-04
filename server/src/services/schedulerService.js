@@ -10,11 +10,17 @@ import { classifyQueueError } from './queueErrorService.js';
 import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 import { assertAccountCanUpload, recordSuccessfulUpload } from './trialEntitlementService.js';
 import { assertAutomationRunning, isAutomationRunning } from './accountAutomationService.js';
+import { isRealCoupangProduct } from '../utils/productQuality.js';
+import { repairProductsForTopic } from './productRepairService.js';
 
-async function hasProductsForTopic(topicId) {
+async function hasRealProductsForTopic(topicId) {
   if (!topicId) return false;
-  const rows = await dbList('post_products', { topic_id: topicId }, { limit: 1 });
-  return rows.length > 0;
+  const rows = await dbList('post_products', { topic_id: topicId }, { order: 'rank', ascending: true });
+  for (const row of rows) {
+    const product = row.product_id ? await dbGet('coupang_products', { id: row.product_id }) : null;
+    if (isRealCoupangProduct(product)) return true;
+  }
+  return false;
 }
 
 async function isPostAllowedForQueue(post, account) {
@@ -63,7 +69,7 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
   const status = post.status === 'manual_required' || post.risk_level === 'high' ? 'manual_required' : 'scheduled';
   const postMode = ['link', 'no_link'].includes(options.postMode)
     ? options.postMode
-    : ((await hasProductsForTopic(post.topic_id)) ? 'link' : 'no_link');
+    : ((await hasRealProductsForTopic(post.topic_id)) ? 'link' : 'no_link');
   const payload = {
     project_id: post.project_id,
     account_id: post.account_id,
@@ -84,7 +90,7 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
   }
 }
 
-export async function createDailyQueue(accountId) {
+export async function createDailyQueue(accountId, options = {}) {
   await assertAccountOwnerCanOperate(accountId);
   await assertAccountCanUpload(accountId);
   const account = await dbGet('accounts', { id: accountId });
@@ -94,7 +100,9 @@ export async function createDailyQueue(accountId) {
     throw error;
   }
   assertAutomationRunning(account, 'create daily queue');
-  assertPreflightCanPublish(await preflightAccount(accountId, { includeQueue: false }));
+  if (!options.skipPreflight) {
+    assertPreflightCanPublish(await preflightAccount(accountId, { includeQueue: false }));
+  }
   const allDrafts = [];
   for (const post of (await dbList('posts', { account_id: accountId })).filter((p) => ['draft', 'ready'].includes(p.status))) {
     if (await isPostAllowedForQueue(post, account)) allDrafts.push(post);
@@ -103,19 +111,50 @@ export async function createDailyQueue(accountId) {
   const productsPerTopic = new Set();
   for (const tid of topicIds) {
     const pp = await dbList('post_products', { topic_id: tid });
-    if (pp.length > 0) productsPerTopic.add(tid);
+    for (const row of pp) {
+      const product = row.product_id ? await dbGet('coupang_products', { id: row.product_id }) : null;
+      if (isRealCoupangProduct(product)) {
+        productsPerTopic.add(tid);
+        break;
+      }
+    }
   }
 
   // link_post_ratio 적용: 링크 있는 것과 없는 것을 비율에 맞게 섞기
   const linkRatio = Math.min(1, Math.max(0, Number(account.link_post_ratio ?? 0.3)));
-  const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
   const times = createDailySchedule(account);
   const total = times.length;
   const linkCount = Math.round(total * linkRatio);
-  const noLinkCount = total - linkCount;
+  const repairOutcomes = [];
+  const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
+  const linkPostIds = new Set(withLink.map((post) => post.id));
+
+  if (linkCount > withLink.length) {
+    const repairLimit = Math.max(total, linkCount * 2, 1);
+    const repairCandidates = allDrafts
+      .filter((post) => !linkPostIds.has(post.id))
+      .slice(0, repairLimit);
+    for (const post of repairCandidates) {
+      if (withLink.length >= linkCount) break;
+      const repair = await repairProductsForTopic(post.topic_id, {
+        account,
+        postId: post.id,
+        attemptLimit: 3,
+        useAiKeywords: options.productRepairUseAiKeywords
+      });
+      repairOutcomes.push({ postId: post.id, topicId: post.topic_id, ...repair });
+      if (repair.finalMode === 'link') {
+        productsPerTopic.add(post.topic_id);
+        withLink.push(post);
+        linkPostIds.add(post.id);
+      }
+    }
+  }
+
   const primaryWithLink = withLink.slice(0, linkCount);
   const usedLinkPostIds = new Set(primaryWithLink.map((post) => post.id));
-  const primaryWithoutLink = allDrafts.filter((post) => !usedLinkPostIds.has(post.id)).slice(0, noLinkCount);
+  const finalNoLinkCount = Math.max(0, total - primaryWithLink.length);
+  const primaryWithoutLink = allDrafts.filter((post) => !usedLinkPostIds.has(post.id)).slice(0, finalNoLinkCount);
   const drafts = [
     ...primaryWithLink.map((post) => ({ post, postMode: 'link' })),
     ...primaryWithoutLink.map((post) => ({ post, postMode: 'no_link' }))
@@ -124,17 +163,28 @@ export async function createDailyQueue(accountId) {
     scheduleCount: total,
     linkRatio,
     requiredLinkCount: linkCount,
-    requiredNoLinkCount: noLinkCount,
+    requiredNoLinkCount: total - linkCount,
     availableDraftPosts: allDrafts.length,
     availableLinkPosts: withLink.length,
     availableNoLinkPosts: allDrafts.length - withLink.length,
     selectedLinkPosts: primaryWithLink.length,
     selectedNoLinkPosts: primaryWithoutLink.length,
+    productRepairAttempts: repairOutcomes.length,
+    productRepairFallbacks: repairOutcomes.filter((row) => row.finalMode === 'no_link').length,
+    repairOutcomes: repairOutcomes.map((row) => ({
+      postId: row.postId,
+      topicId: row.topicId,
+      status: row.status,
+      finalMode: row.finalMode,
+      reasonCode: row.reasonCode,
+      attempts: row.attempts?.length || 0
+    })),
     reasonCode: null
   };
   if (total === 0) diagnostics.reasonCode = 'NO_SCHEDULE_TIMES';
   else if (allDrafts.length === 0) diagnostics.reasonCode = 'NO_DRAFT_POSTS';
-  else if (linkCount > 0 && withLink.length === 0) diagnostics.reasonCode = 'NO_LINK_CANDIDATES';
+  else if (linkCount > 0 && primaryWithLink.length === 0 && primaryWithoutLink.length === 0) diagnostics.reasonCode = 'NO_QUEUE_CANDIDATES';
+  else if (diagnostics.productRepairFallbacks > 0) diagnostics.reasonCode = 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
   else if (drafts.length === 0) diagnostics.reasonCode = 'NO_QUEUE_CANDIDATES';
 
   if (primaryWithLink.length < linkCount) {
@@ -208,8 +258,8 @@ export async function uploadQueueItem(queueId) {
     const requiresLink = postMode === 'link';
     const ctas = requiresLink ? await listCtas(post.id) : [];
     const cta = requiresLink ? (ctas[Math.floor(Math.random() * Math.max(1, ctas.length))] || null) : null;
-    if (requiresLink && !product) {
-      const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글로 예약됐지만 연결된 쿠팡 상품이 없습니다.');
+    if (requiresLink && !isRealCoupangProduct(product)) {
+      const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글로 예약됐지만 연결된 실쿠팡 상품이 없습니다.');
       error.status = 422;
       error.permanent = true;
       throw error;
@@ -221,7 +271,7 @@ export async function uploadQueueItem(queueId) {
       post_id: post.id,
       product_id: product.id,
       destination_url: product.partner_url || product.product_url,
-      link_type: product.is_fallback ? 'fallback' : 'coupang'
+      link_type: 'coupang'
     }) : null)) : null;
     if (requiresLink && !trackingLink) {
       const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글의 트래킹 링크를 만들 수 없습니다.');

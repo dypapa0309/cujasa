@@ -9,6 +9,14 @@ import {
   getProductGroup,
   scoreProductTopicRelevance
 } from '../utils/productDiversity.js';
+import { isRealCoupangProduct, realProductIssues } from '../utils/productQuality.js';
+
+function isSelectableProduct(product, topic, account, item = {}) {
+  if (!isRealCoupangProduct(product)) return false;
+  const relevance = scoreProductTopicRelevance(product, topic, account);
+  const fitScore = Number(item.fitScore || 0);
+  return fitScore >= 60 || relevance.score >= 20;
+}
 
 export async function selectProducts(topicId, postId = null) {
   const topic = await dbGet('topics', { id: topicId });
@@ -16,6 +24,18 @@ export async function selectProducts(topicId, postId = null) {
   const candidates = await dbList('coupang_products', { topic_id: topicId });
   const products = [];
   for (const product of candidates) {
+    if (!isRealCoupangProduct(product)) {
+      await logActivity({
+        account_id: topic.account_id,
+        project_id: topic.project_id,
+        topic_id: topic.id,
+        action: 'product_quality_blocked',
+        level: 'warn',
+        message: product.product_name || product.keyword || 'fallback product',
+        payload: { productId: product.product_id, reasons: realProductIssues(product), code: 'NO_REAL_PRODUCTS' }
+      });
+      continue;
+    }
     const guardrail = validateProductCandidate(product, account);
     if (guardrail.allowed) {
       products.push(product);
@@ -31,7 +51,18 @@ export async function selectProducts(topicId, postId = null) {
       });
     }
   }
-  if (products.length === 0) return [];
+  if (products.length === 0) {
+    await logActivity({
+      account_id: topic.account_id,
+      project_id: topic.project_id,
+      topic_id: topic.id,
+      action: 'product_selection_no_real_products',
+      level: 'warn',
+      message: '실제 쿠팡 상품 후보가 없어 상품을 선택하지 않았습니다.',
+      payload: { candidateCount: candidates.length, code: 'NO_REAL_PRODUCTS' }
+    });
+    return [];
+  }
   const diverseProducts = enrichProductsWithDiversity(products);
   const fallback = () => ({
     selectedProducts: buildDiverseProductSelection([], diverseProducts, topic, 3, account).selected.map(({ product, item }) => ({
@@ -42,13 +73,8 @@ export async function selectProducts(topicId, postId = null) {
   });
   const result = await getJson(selectProductsPrompt(topic, diverseProducts, account), fallback);
   const repairedSelection = buildDiverseProductSelection(result.selectedProducts || [], diverseProducts, topic, 3, account);
-  const relevantSelection = repairedSelection.selected.filter(({ product, item }) => {
-    const relevance = scoreProductTopicRelevance(product, topic, account);
-    return Number(item.fitScore || 0) >= 50 || relevance.score >= 20;
-  });
-  const finalSelection = relevantSelection.length > 0
-    ? relevantSelection
-    : repairedSelection.selected.slice(0, 1);
+  const relevantSelection = repairedSelection.selected.filter(({ product, item }) => isSelectableProduct(product, topic, account, item));
+  const finalSelection = relevantSelection;
   if (relevantSelection.length < repairedSelection.selected.length) {
     await logActivity({
       account_id: topic.account_id,
@@ -68,9 +94,9 @@ export async function selectProducts(topicId, postId = null) {
       account_id: topic.account_id,
       project_id: topic.project_id,
       topic_id: topic.id,
-      action: 'product_relevance_fallback_used',
+      action: 'product_relevance_selection_empty',
       level: 'warn',
-      message: '링크 글 예약을 위해 가장 가까운 상품 후보를 연결했습니다.',
+      message: '관련성 기준을 통과한 실상품이 없어 상품을 선택하지 않았습니다.',
       payload: { candidateCount: repairedSelection.selected.length }
     });
   }
@@ -89,7 +115,10 @@ export async function selectProducts(topicId, postId = null) {
     });
   }
   const selected = [];
+  const existing = await dbList('post_products', { topic_id: topicId });
+  const existingProductIds = new Set(existing.map((row) => row.product_id));
   for (const [index, { product, item }] of finalSelection.entries()) {
+    if (existingProductIds.has(product.id)) continue;
     selected.push(await dbInsert('post_products', {
       post_id: postId,
       topic_id: topicId,
@@ -100,4 +129,49 @@ export async function selectProducts(topicId, postId = null) {
     }));
   }
   return selected;
+}
+
+export async function manuallySelectProduct(topicId, productId, options = {}) {
+  const topic = await dbGet('topics', { id: topicId });
+  if (!topic) {
+    const error = new Error('Topic not found');
+    error.status = 404;
+    throw error;
+  }
+  const account = await getAccount(topic.account_id);
+  const product = await dbGet('coupang_products', { id: productId });
+  if (!product || product.topic_id !== topicId) {
+    const error = new Error('Product not found for topic');
+    error.status = 404;
+    throw error;
+  }
+  if (!isRealCoupangProduct(product)) {
+    const error = new Error('NO_REAL_PRODUCTS: 검색 링크 또는 품질 정보가 부족한 상품은 링크 글에 연결할 수 없습니다.');
+    error.status = 422;
+    error.code = 'NO_REAL_PRODUCTS';
+    error.qualityIssues = realProductIssues(product);
+    throw error;
+  }
+
+  const guardrail = validateProductCandidate(product, account);
+  if (!guardrail.allowed) {
+    const error = new Error(`Product blocked by guardrails: ${guardrail.reasons.join(', ')}`);
+    error.status = 422;
+    error.code = 'PRODUCT_GUARDRAIL_BLOCKED';
+    throw error;
+  }
+
+  const existing = await dbList('post_products', { topic_id: topicId });
+  const duplicate = existing.find((row) => row.product_id === product.id);
+  if (duplicate) return duplicate;
+
+  const relevance = scoreProductTopicRelevance(product, topic, account);
+  return dbInsert('post_products', {
+    post_id: options.postId || null,
+    topic_id: topicId,
+    product_id: product.id,
+    fit_score: Math.max(60, Math.min(95, Number(options.fitScore || relevance.score + 55))),
+    recommendation_reason: options.reason || `${topic.angle || topic.title}와 직접 연결되는 실제 쿠팡 상품`,
+    rank: Number(options.rank || existing.length + 1)
+  });
 }

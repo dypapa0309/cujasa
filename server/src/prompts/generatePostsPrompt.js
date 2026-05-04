@@ -21,7 +21,13 @@ export function generatePostsPrompt(topic, products, account) {
           forbiddenWords: account.forbidden_words
         },
         topic,
-        selectedProducts: products.map((p) => ({ name: p.product_name, reason: p.recommendation_reason })),
+        selectedProducts: products.map((p) => ({
+          name: p.product_name,
+          category: p.category_name,
+          price: p.product_price,
+          keyword: p.keyword,
+          reason: p.recommendation_reason
+        })),
         rules: [
           'Use currentDateKST and seasonKST as the seasonal context.',
           'Do not mention off-season winter/cold-wave/thermal/padded/glove/hot-pack themes unless seasonKST is winter.',
@@ -30,6 +36,8 @@ export function generatePostsPrompt(topic, products, account) {
           'Make the first sentence naturally reflect the target reader and situation.',
           'Write for accountProfile.targetAudience, not a generic reader.',
           'Only use product/category situations inside accountProfile.contentScope.',
+          'When selectedProducts exist, make the post situation naturally explain why those product categories solve the reader problem.',
+          'Do not list unrelated generic categories. Anchor the post in the selected product use case.',
           'If tone contains 후기/review, use review-like observation without pretending actual personal use.',
           'If tone contains 설레/emotional, use subtle anticipation only when it fits. Do not force emotional keywords.',
           'Use natural Korean spacing and line breaks. Avoid awkward machine-translated phrasing.',

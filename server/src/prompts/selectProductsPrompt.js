@@ -25,7 +25,9 @@ export function selectProductsPrompt(topic, products, account = null) {
           price: p.product_price,
           category: p.category_name,
           keyword: p.keyword,
-          productGroup: p.product_group
+          productGroup: p.product_group,
+          imagePresent: Boolean(p.product_image),
+          productUrlPresent: Boolean(p.partner_url || p.product_url)
         })),
         criteria: [
           'relevance',
@@ -38,6 +40,7 @@ export function selectProductsPrompt(topic, products, account = null) {
           'account content scope fit',
           'account tone fit',
           'only select products whose name, category, or keyword naturally matches the topic title, angle, search keyword, and account content scope',
+          'reason must mention the concrete product type and the exact use situation in the post',
           'if the product would feel random under the generated post, exclude it',
           'it is better to return fewer than three products than to fill weak products',
           'no diet/supplement/medicine/guaranteed-effect products',

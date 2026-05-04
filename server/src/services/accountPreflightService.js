@@ -3,6 +3,7 @@ import { normalizeQueueClassification } from './queueErrorService.js';
 import { markPastTokenFailuresRetryable } from './threadsOAuthService.js';
 
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
+const THREADS_PREFLIGHT_TIMEOUT_MS = 10000;
 
 function normalizeHandle(value) {
   return String(value || '').trim().replace(/^@/, '').toLowerCase();
@@ -25,7 +26,14 @@ async function requestThreadsMe(token) {
     fields: 'id,username',
     access_token: token
   });
-  const response = await fetch(`${THREADS_GRAPH_URL}/me?${params.toString()}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), THREADS_PREFLIGHT_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(`${THREADS_GRAPH_URL}/me?${params.toString()}`, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
   const text = await response.text();
   let json = {};
   try { json = text ? JSON.parse(text) : {}; } catch { json = { raw: text }; }
