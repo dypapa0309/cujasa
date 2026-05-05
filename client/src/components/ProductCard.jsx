@@ -44,6 +44,11 @@ export default function ProductCard({ product, onSelect, selecting = false, onCo
           선택됨 · rank {product.selected_rank}
         </p>
       )}
+      {product.selected_invalid && (
+        <p className="mt-2 rounded bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600">
+          과거 선택 기록 · 실상품 아님
+        </p>
+      )}
       <div className="mt-3 grid grid-cols-2 gap-2">
         <a
           href={isReal && productLink ? productLink : undefined}

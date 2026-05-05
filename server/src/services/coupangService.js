@@ -6,6 +6,7 @@ const host = 'https://api-gateway.coupang.com';
 const COUPANG_FETCH_TIMEOUT_MS = Number(process.env.COUPANG_FETCH_TIMEOUT_MS || 5000);
 const COUPANG_KEYWORDS_PER_TOPIC = Math.max(1, Number(process.env.COUPANG_KEYWORDS_PER_TOPIC || 1));
 const COUPANG_ACCOUNT_SEARCH_INTERVAL_MS = Math.max(0, Number(process.env.COUPANG_ACCOUNT_SEARCH_INTERVAL_MS || 90000));
+const COUPANG_SEARCH_RESULT_LIMIT = Math.min(10, Math.max(1, Number(process.env.COUPANG_SEARCH_RESULT_LIMIT || 10)));
 const SUCCESS_CODES = new Set(['0', 'SUCCESS']);
 const accountSearchNextAllowedAt = new Map();
 const COUPANG_STATUS = {
@@ -26,9 +27,10 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = COUPANG_FETCH_TIM
 }
 
 function createSearchPath(keyword, limit = 10, trackingCode) {
+  const safeLimit = Math.min(10, Math.max(1, Number(limit || COUPANG_SEARCH_RESULT_LIMIT)));
   const params = new URLSearchParams({
     keyword,
-    limit: String(limit)
+    limit: String(safeLimit)
   });
   const subId = trackingCode || process.env.COUPANG_TRACKING_CODE;
   if (subId) params.set('subId', subId);
@@ -305,7 +307,7 @@ export async function searchProductsForTopic(topicId, options = {}) {
     return [seen.has(fallback.product_id) ? (existingByProductId.get(fallback.product_id) || fallback) : fallback];
   }
   for (const keyword of keywords) {
-    const products = await searchKeyword(keyword, 15, creds);
+    const products = await searchKeyword(keyword, COUPANG_SEARCH_RESULT_LIMIT, creds);
     for (const product of products) {
       if (product.raw_data?.code === 'COUPANG_RATE_LIMIT' || product.raw_data?.code === 'COUPANG_SEARCH_THROTTLED') {
         saved.push(product);

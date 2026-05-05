@@ -39,13 +39,23 @@ router.get('/:topicId/products', requireTopicAccess, async (req, res, next) => {
     const selectedByProductId = new Map(selected.map((row) => [row.product_id, row]));
     res.json(products.map((product) => {
       const row = selectedByProductId.get(product.id);
-      return row ? {
+      if (!row) return product;
+      if (product.is_real_product === false) {
+        return {
+          ...product,
+          selected_invalid: true,
+          selected_rank: row.rank,
+          selected_fit_score: row.fit_score,
+          selected_reason: row.recommendation_reason
+        };
+      }
+      return {
         ...product,
         selected: true,
         selected_rank: row.rank,
         selected_fit_score: row.fit_score,
         selected_reason: row.recommendation_reason
-      } : product;
+      };
     }));
   } catch (e) { next(e); }
 });
