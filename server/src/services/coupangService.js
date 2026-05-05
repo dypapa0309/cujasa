@@ -9,6 +9,8 @@ const COUPANG_ACCOUNT_SEARCH_INTERVAL_MS = Math.max(0, Number(process.env.COUPAN
 const COUPANG_SEARCH_RESULT_LIMIT = Math.min(10, Math.max(1, Number(process.env.COUPANG_SEARCH_RESULT_LIMIT || 10)));
 const SUCCESS_CODES = new Set(['0', 'SUCCESS']);
 const accountSearchNextAllowedAt = new Map();
+let coupangLockHealth = { checkedAt: 0, available: null, message: null };
+const COUPANG_LOCK_HEALTH_TTL_MS = 60 * 1000;
 const COUPANG_STATUS = {
   OK: 'ok',
   RATE_LIMITED: 'rate_limited',
@@ -72,6 +74,31 @@ function createThrottleProduct(keyword, retryAfterMs) {
   });
 }
 
+function createLockUnavailableProduct(keyword, message) {
+  return fallbackProduct(keyword, 0, 'lock_unavailable', 'COUPANG_LOCK_UNAVAILABLE', {
+    message,
+    stopSearch: true
+  });
+}
+
+export async function isCoupangSearchLockAvailable({ force = false } = {}) {
+  if (!supabase) return { available: true };
+  const now = Date.now();
+  if (!force && coupangLockHealth.available !== null && now - coupangLockHealth.checkedAt < COUPANG_LOCK_HEALTH_TTL_MS) {
+    return coupangLockHealth;
+  }
+  const { error } = await supabase
+    .from('coupang_search_locks')
+    .select('account_id')
+    .limit(1);
+  coupangLockHealth = {
+    checkedAt: now,
+    available: !error,
+    message: error?.message || null
+  };
+  return coupangLockHealth;
+}
+
 export function isCoupangCooldownActive(account = {}) {
   if (account.coupang_search_status !== COUPANG_STATUS.RATE_LIMITED) return false;
   const until = new Date(account.coupang_search_cooldown_until || 0).getTime();
@@ -107,6 +134,14 @@ async function acquireCoupangSearchSlot({ accountId, keyword, logContext }) {
   const nextAllowedAt = new Date(now.getTime() + COUPANG_ACCOUNT_SEARCH_INTERVAL_MS).toISOString();
 
   if (supabase) {
+    const lockHealth = await isCoupangSearchLockAvailable();
+    if (!lockHealth.available) {
+      return {
+        ok: false,
+        code: 'COUPANG_LOCK_UNAVAILABLE',
+        message: lockHealth.message || 'coupang_search_locks table is not available'
+      };
+    }
     try {
       const { data: updated, error: updateError } = await supabase
         .from('coupang_search_locks')
@@ -148,7 +183,16 @@ async function acquireCoupangSearchSlot({ accountId, keyword, logContext }) {
       return { ok: false, retryAfterMs, nextAllowedAt: existing.next_allowed_at };
     } catch (error) {
       if (!/coupang_search_locks|schema cache|relation/i.test(error.message || '')) throw error;
-      console.warn('[coupang_search_lock_unavailable]', error.message);
+      coupangLockHealth = {
+        checkedAt: Date.now(),
+        available: false,
+        message: error.message
+      };
+      return {
+        ok: false,
+        code: 'COUPANG_LOCK_UNAVAILABLE',
+        message: error.message
+      };
     }
   }
 
@@ -185,6 +229,20 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
 
   const slot = await acquireCoupangSearchSlot({ accountId: creds.accountId, keyword, logContext });
   if (!slot.ok) {
+    if (slot.code === 'COUPANG_LOCK_UNAVAILABLE') {
+      await logActivity({
+        ...logContext,
+        action: 'coupang_search_lock_unavailable',
+        level: 'error',
+        message: '쿠팡 검색 DB 락 테이블이 없어 검색을 차단했습니다.',
+        payload: {
+          keyword,
+          code: 'COUPANG_LOCK_UNAVAILABLE',
+          error: slot.message
+        }
+      }).catch(() => null);
+      return [createLockUnavailableProduct(keyword, slot.message)];
+    }
     const retryAfterMs = slot.retryAfterMs || COUPANG_ACCOUNT_SEARCH_INTERVAL_MS;
     await logActivity({
       ...logContext,

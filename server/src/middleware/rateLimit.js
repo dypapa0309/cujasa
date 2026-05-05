@@ -1,8 +1,14 @@
 const buckets = new Map();
 
 function clientKey(req, scope) {
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || req.ip || 'unknown';
+  const forwardedFor = req.headers['x-forwarded-for'];
+  const ip = forwardedFor || req.ip || req.socket.remoteAddress || 'unknown';
   return `${scope}:${String(ip).split(',')[0].trim()}`;
+}
+
+export function requireAdmin(req, res, next) {
+  if (req.user?.type !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  return next();
 }
 
 export function createRateLimit({ scope, windowMs, maxRequests }) {

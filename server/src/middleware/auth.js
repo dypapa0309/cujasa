@@ -3,21 +3,25 @@ import { dbList } from '../services/supabaseService.js';
 import { markedOkKeysFromAudits, shouldHideAssignment, suspiciousAssignmentsForUser } from '../services/accountOwnershipService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
 
-const publicPaths = [
-  '/api/health',
-  '/api/auth/login',
-  '/api/auth/register',
-  '/api/auth/threads/callback',
-  '/api/inquiries',
-  '/api/webhooks/toss',
-  '/api/public/checkout/virtual-account',
-  '/api/public/checkout/toss/success'
+const publicRoutes = [
+  { method: 'GET', path: '/api/health' },
+  { method: 'POST', path: '/api/auth/login' },
+  { method: 'POST', path: '/api/auth/register' },
+  { method: 'GET', path: '/api/auth/threads/callback' },
+  { method: 'POST', path: '/api/inquiries' },
+  { method: 'POST', path: '/api/webhooks/toss' },
+  { method: 'POST', path: '/api/public/checkout/virtual-account' },
+  { method: 'POST', path: '/api/public/checkout/toss/success' }
 ];
+
+function isPublicRoute(req) {
+  return publicRoutes.some((route) => route.method === req.method && route.path === req.path);
+}
 
 export async function requireAuth(req, res, next) {
   try {
     if (!req.path.startsWith('/api/')) return next();
-    if (publicPaths.includes(req.path)) return next();
+    if (isPublicRoute(req)) return next();
     if (req.path === '/api/auth/me' && !req.headers.authorization) return next();
 
     if (shouldBypassAuth()) {

@@ -7,6 +7,7 @@ import { decorateQueueRow, decorateQueueRows, postModeLabel } from '../services/
 import { assertUserCanStartTrialAction } from '../services/trialEntitlementService.js';
 import { decorateProductQuality, isRealCoupangProduct } from '../utils/productQuality.js';
 import { dismissQueueForCustomer, isCustomerVisibleQueue } from '../services/queueVisibilityService.js';
+import { requireAdmin } from '../middleware/rateLimit.js';
 
 const router = Router();
 const PATCHABLE_QUEUE_FIELDS = new Set([
@@ -85,7 +86,7 @@ router.post('/:queueId/dismiss', requireQueueAccess, async (req, res, next) => {
     res.json(decorateQueueRow(updated));
   } catch (e) { next(e); }
 });
-router.post('/run', async (req, res, next) => {
+router.post('/run', requireAdmin, async (req, res, next) => {
   try { res.json({ processed: await processDueQueue() }); } catch (e) { next(e); }
 });
 
@@ -112,14 +113,15 @@ router.get('/detail/:queueId', requireQueueAccess, async (req, res, next) => {
     const decoratedQueue = decorateQueueRow(queue);
     const postMode = queue.post_mode || 'auto';
     const hasLinkCandidate = products.filter(isLinkableProduct).length > 0;
+    const linkStatus = postMode === 'link'
+      ? (trackingLink ? 'ready' : (hasLinkCandidate ? 'pending_tracking' : 'missing'))
+      : (postMode === 'no_link' ? 'not_required' : 'unknown');
 
     res.json({
       queue: decoratedQueue,
       postMode,
       postModeLabel: postModeLabel(postMode),
-      linkStatus: postMode === 'link'
-        ? (trackingLink || hasLinkCandidate ? 'ready' : 'missing')
-        : (postMode === 'no_link' ? 'not_required' : 'unknown'),
+      linkStatus,
       post,
       products: products.filter(Boolean),
       trackingLink

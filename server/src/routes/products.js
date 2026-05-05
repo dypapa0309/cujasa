@@ -8,7 +8,7 @@ const router = Router();
 router.post('/:topicId/search-products', requireTopicAccess, async (req, res, next) => {
   try {
     const products = await searchProductsForTopic(req.params.topicId);
-    const blockedProduct = products.find((product) => ['COUPANG_RATE_LIMIT', 'COUPANG_SEARCH_THROTTLED'].includes(product.raw_data?.code || ''));
+    const blockedProduct = products.find((product) => ['COUPANG_RATE_LIMIT', 'COUPANG_SEARCH_THROTTLED', 'COUPANG_LOCK_UNAVAILABLE'].includes(product.raw_data?.code || ''));
     res.status(201).json({
       products,
       realCount: products.filter((product) => !product.is_fallback).length,

@@ -61,6 +61,26 @@ services:
         value: "60000"
       - key: TRACKING_RATE_LIMIT_MAX
         value: "120"
+      - key: INQUIRY_RATE_LIMIT_WINDOW_MS
+        value: "600000"
+      - key: INQUIRY_RATE_LIMIT_MAX
+        value: "5"
+      - key: PUBLIC_CHECKOUT_RATE_LIMIT_WINDOW_MS
+        value: "600000"
+      - key: PUBLIC_CHECKOUT_RATE_LIMIT_MAX
+        value: "10"
+      - key: COUPANG_KEYWORDS_PER_TOPIC
+        value: "1"
+      - key: COUPANG_ACCOUNT_SEARCH_INTERVAL_MS
+        value: "90000"
+      - key: COUPANG_SEARCH_RESULT_LIMIT
+        value: "10"
+      - key: COUPANG_REPAIR_ATTEMPT_LIMIT
+        value: "0"
+      - key: COUPANG_REPAIR_KEYWORDS_PER_ATTEMPT
+        value: "1"
+      - key: THREADS_REPLY_LINK_MODE_ENABLED
+        value: "false"
       - key: TELEGRAM_BOT_TOKEN
         sync: false
       - key: TELEGRAM_CHAT_ID

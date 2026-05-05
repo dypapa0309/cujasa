@@ -2,7 +2,7 @@ import { dbGet, dbList, dbUpdate } from './supabaseService.js';
 import { normalizeQueueClassification } from './queueErrorService.js';
 import { markPastTokenFailuresRetryable } from './threadsOAuthService.js';
 import { autoHidePastTokenFailures } from './queueVisibilityService.js';
-import { isCoupangCooldownActive } from './coupangService.js';
+import { isCoupangCooldownActive, isCoupangSearchLockAvailable } from './coupangService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
@@ -151,7 +151,16 @@ export async function preflightAccount(accountId, options = {}) {
   const linkRatio = Number(account.link_post_ratio ?? 0.3);
   if (linkRatio > 0) {
     const hasCoupang = account.coupang_access_key && account.coupang_secret_key && account.coupang_partner_id;
-    if (isCoupangCooldownActive(account)) {
+    const lockHealth = await isCoupangSearchLockAvailable();
+    if (!lockHealth.available) {
+      checks.push(makeCheck(
+        'coupang_search_lock',
+        'error',
+        '쿠팡 검색 보호 락이 준비되지 않았습니다',
+        '운영 DB의 coupang_search_locks 테이블이 없어 쿠팡 검색과 자동화를 차단했습니다. 관리자에게 문의해주세요.',
+        'admin_apply_coupang_lock_migration'
+      ));
+    } else if (isCoupangCooldownActive(account)) {
       checks.push(makeCheck(
         'coupang_rate_limit',
         'error',

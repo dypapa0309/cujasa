@@ -184,6 +184,7 @@ function DetailPanel({ detail, onClose }) {
   const { post, products, trackingLink, queue, postMode, postModeLabel, linkStatus } = detail;
   const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
   const linkMissing = postMode === 'link' && linkStatus === 'missing';
+  const linkPending = postMode === 'link' && linkStatus === 'pending_tracking';
 
   return (
     <div className="grid gap-4">
@@ -196,8 +197,20 @@ function DetailPanel({ detail, onClose }) {
         <div className="flex flex-wrap gap-2">
           <StatusBadge status={queue.status} />
           <span className="rounded border border-line bg-white px-2 py-1 font-medium">{postModeLabel || postMode || 'post mode unknown'}</span>
-          <span className={`rounded border px-2 py-1 font-medium ${linkMissing ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-line bg-white'}`}>
-            {linkMissing ? '상품/트래킹 링크 확인 필요' : trackingLink ? '트래킹 링크 준비됨' : '트래킹 링크 없음'}
+          <span className={`rounded border px-2 py-1 font-medium ${
+            linkMissing
+              ? 'border-rose-200 bg-rose-50 text-rose-600'
+              : linkPending
+                ? 'border-amber-200 bg-amber-50 text-amber-700'
+                : 'border-line bg-white'
+          }`}>
+            {linkMissing
+              ? '상품/트래킹 링크 확인 필요'
+              : trackingLink
+                ? '트래킹 링크 준비됨'
+                : linkPending
+                  ? '업로드 직전 트래킹 링크 생성 예정'
+                  : '트래킹 링크 없음'}
           </span>
         </div>
         <div>재시도 횟수: <span className="font-semibold">{queue.retry_count ?? 0}</span></div>
@@ -253,6 +266,13 @@ function DetailPanel({ detail, onClose }) {
         <div className="rounded border border-amber-200 bg-amber-50 p-3">
           <div className="text-xs font-semibold text-amber-700 mb-1">링크 글 점검 필요</div>
           <div className="text-xs text-amber-700">링크 글로 예약됐지만 아직 사용할 수 있는 상품 또는 트래킹 링크가 없습니다. 상품 추천/선택 상태를 확인한 뒤 재시도해주세요.</div>
+        </div>
+      )}
+
+      {linkPending && (
+        <div className="rounded border border-amber-200 bg-amber-50 p-3">
+          <div className="text-xs font-semibold text-amber-700 mb-1">링크 생성 대기</div>
+          <div className="text-xs text-amber-700">실제 쿠팡 상품은 연결되어 있습니다. 트래킹 링크는 업로드 직전에 생성되므로, 게시 성공 전까지 최종 링크 확정 상태는 아닙니다.</div>
         </div>
       )}
 

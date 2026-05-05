@@ -2,18 +2,19 @@ import { Router } from 'express';
 import { processDueQueue } from '../services/schedulerService.js';
 import { runFullPipeline } from '../services/pipelineService.js';
 import { generateBlogPost } from '../services/blogService.js';
+import { requireAdmin } from '../middleware/rateLimit.js';
 
 const router = Router();
 
-router.post('/run', async (req, res, next) => {
+router.post('/run', requireAdmin, async (req, res, next) => {
   try { res.json({ processed: await processDueQueue() }); } catch (e) { next(e); }
 });
 
-router.post('/run-pipeline', async (req, res, next) => {
+router.post('/run-pipeline', requireAdmin, async (req, res, next) => {
   try { res.json({ results: await runFullPipeline({ requestedBy: req.user?.email || req.user?.type || 'scheduler' }) }); } catch (e) { next(e); }
 });
 
-router.post('/generate-blog/:topicId', async (req, res, next) => {
+router.post('/generate-blog/:topicId', requireAdmin, async (req, res, next) => {
   try { res.status(201).json(await generateBlogPost(req.params.topicId)); } catch (e) { next(e); }
 });
 

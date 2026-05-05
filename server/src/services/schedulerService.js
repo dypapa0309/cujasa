@@ -11,7 +11,7 @@ import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 import { assertAccountCanUpload, recordSuccessfulUpload } from './trialEntitlementService.js';
 import { assertAutomationRunning, isAutomationRunning } from './accountAutomationService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
-import { createCoupangCooldownError, isCoupangCooldownActive } from './coupangService.js';
+import { createCoupangCooldownError, isCoupangCooldownActive, isCoupangSearchLockAvailable } from './coupangService.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
@@ -147,6 +147,26 @@ export async function createDailyQueue(accountId, options = {}) {
   }
   assertAutomationRunning(account, 'create daily queue');
   const linkRatio = Math.min(1, Math.max(0, Number(account.link_post_ratio ?? 0.3)));
+  if (linkRatio > 0) {
+    const lockHealth = await isCoupangSearchLockAvailable();
+    if (!lockHealth.available) {
+      await logActivity({
+        account_id: account.id,
+        project_id: account.project_id,
+        action: 'daily_queue_blocked_coupang_lock_unavailable',
+        level: 'error',
+        message: '쿠팡 검색 DB 락 테이블이 없어 일일 큐 생성을 차단했습니다.',
+        payload: {
+          reasonCode: 'COUPANG_LOCK_UNAVAILABLE',
+          error: lockHealth.message
+        }
+      }).catch(() => null);
+      const error = new Error('COUPANG_LOCK_UNAVAILABLE: 쿠팡 검색 보호 락이 준비되지 않아 링크 큐를 만들 수 없습니다.');
+      error.status = 503;
+      error.code = 'COUPANG_LOCK_UNAVAILABLE';
+      throw error;
+    }
+  }
   if (linkRatio > 0 && isCoupangCooldownActive(account)) {
     await logActivity({
       account_id: account.id,

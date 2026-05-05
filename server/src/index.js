@@ -51,7 +51,10 @@ function isAllowedOrigin(origin = '') {
   if (allowedOrigins.has(normalized)) return true;
   if (/^https:\/\/([a-z0-9-]+\.)?jasain\.kr$/i.test(normalized)) return true;
   if (/^https:\/\/([a-z0-9-]+\.)?vercel\.app$/i.test(normalized) && process.env.NODE_ENV !== 'production') return true;
-  if (/^http:\/\/localhost:\d+$/i.test(normalized) || /^http:\/\/127\.0\.0\.1:\d+$/i.test(normalized)) return true;
+  if (
+    process.env.NODE_ENV !== 'production'
+    && (/^http:\/\/localhost:\d+$/i.test(normalized) || /^http:\/\/127\.0\.0\.1:\d+$/i.test(normalized))
+  ) return true;
   return false;
 }
 

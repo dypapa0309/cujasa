@@ -1,6 +1,6 @@
 import { getJson } from './openaiService.js';
 import { getAccount } from './accountService.js';
-import { ensureFallbackProductForTopic, isCoupangCooldownActive, searchProductsForTopic } from './coupangService.js';
+import { ensureFallbackProductForTopic, isCoupangCooldownActive, isCoupangSearchLockAvailable, searchProductsForTopic } from './coupangService.js';
 import { selectProducts } from './productSelectionService.js';
 import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
@@ -106,6 +106,29 @@ export async function repairProductsForTopic(topicId, options = {}) {
   const attemptLimit = Number(options.attemptLimit || DEFAULT_ATTEMPT_LIMIT);
   const attempts = [];
 
+  const lockHealth = await isCoupangSearchLockAvailable();
+  if (!lockHealth.available) {
+    await logActivity({
+      account_id: account.id,
+      project_id: account.project_id,
+      topic_id: topicId,
+      action: 'product_repair_skipped_coupang_lock_unavailable',
+      level: 'error',
+      message: '쿠팡 검색 DB 락 테이블이 없어 상품 복구 검색을 실행하지 않았습니다.',
+      payload: {
+        reasonCode: 'COUPANG_LOCK_UNAVAILABLE',
+        error: lockHealth.message
+      }
+    }).catch(() => null);
+    return {
+      status: 'lock_unavailable',
+      finalMode: 'no_link',
+      attempts,
+      selectedProducts: [],
+      reasonCode: 'COUPANG_LOCK_UNAVAILABLE'
+    };
+  }
+
   if (isCoupangCooldownActive(account)) {
     await logActivity({
       account_id: account.id,
@@ -141,6 +164,7 @@ export async function repairProductsForTopic(topicId, options = {}) {
       keywordLimit: REPAIR_KEYWORDS_PER_ATTEMPT
     });
     const rateLimited = products.some((product) => product.raw_data?.code === 'COUPANG_RATE_LIMIT');
+    const lockUnavailable = products.some((product) => product.raw_data?.code === 'COUPANG_LOCK_UNAVAILABLE');
     const selected = await selectProducts(topicId, options.postId || null);
     const realSelected = await listRealSelectedProducts(topicId);
     attempts.push({
@@ -148,7 +172,7 @@ export async function repairProductsForTopic(topicId, options = {}) {
       keywords,
       productsFound: products.filter((product) => !product.is_fallback).length,
       selectedCount: realSelected.length,
-      reasonCode: rateLimited ? 'COUPANG_RATE_LIMIT' : undefined
+      reasonCode: lockUnavailable ? 'COUPANG_LOCK_UNAVAILABLE' : (rateLimited ? 'COUPANG_RATE_LIMIT' : undefined)
     });
 
     await logActivity({
@@ -170,13 +194,15 @@ export async function repairProductsForTopic(topicId, options = {}) {
         reasonCode: null
       };
     }
-    if (rateLimited) break;
+    if (rateLimited || lockUnavailable) break;
   }
 
-  const reasonCode = attempts.some((attempt) => attempt.reasonCode === 'COUPANG_RATE_LIMIT')
-    ? 'COUPANG_RATE_LIMIT'
-    : 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
-  const fallbackProduct = reasonCode === 'COUPANG_RATE_LIMIT'
+  const reasonCode = attempts.some((attempt) => attempt.reasonCode === 'COUPANG_LOCK_UNAVAILABLE')
+    ? 'COUPANG_LOCK_UNAVAILABLE'
+    : attempts.some((attempt) => attempt.reasonCode === 'COUPANG_RATE_LIMIT')
+      ? 'COUPANG_RATE_LIMIT'
+      : 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
+  const fallbackProduct = ['COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE'].includes(reasonCode)
     ? null
     : await ensureFallbackProductForTopic(topicId, 'repair_failed');
   await logActivity({
@@ -185,9 +211,11 @@ export async function repairProductsForTopic(topicId, options = {}) {
     topic_id: topicId,
     action: 'product_repair_fallback_to_no_link',
     level: 'warn',
-    message: reasonCode === 'COUPANG_RATE_LIMIT'
-      ? '쿠팡 검색 제한으로 추가 재검색과 fallback 생성을 멈췄습니다.'
-      : '실상품 자동 복구 실패로 fallback 카드를 남기고 링크 없는 업로드로 전환합니다.',
+    message: reasonCode === 'COUPANG_LOCK_UNAVAILABLE'
+      ? '쿠팡 검색 DB 락이 없어 추가 재검색과 fallback 생성을 멈췄습니다.'
+      : reasonCode === 'COUPANG_RATE_LIMIT'
+        ? '쿠팡 검색 제한으로 추가 재검색과 fallback 생성을 멈췄습니다.'
+        : '실상품 자동 복구 실패로 fallback 카드를 남기고 링크 없는 업로드로 전환합니다.',
     payload: {
       attempts,
       fallbackProductId: fallbackProduct?.id,

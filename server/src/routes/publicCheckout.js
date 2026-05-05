@@ -11,8 +11,14 @@ import {
   tossPost
 } from './billing.js';
 import { applyPaidEntitlement } from '../services/billingEntitlementService.js';
+import { createRateLimit } from '../middleware/rateLimit.js';
 
 const router = Router();
+const checkoutRateLimit = createRateLimit({
+  scope: 'public_checkout',
+  windowMs: Number(process.env.PUBLIC_CHECKOUT_RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000),
+  maxRequests: Number(process.env.PUBLIC_CHECKOUT_RATE_LIMIT_MAX || 10)
+});
 
 const landingBaseUrl = () => String(process.env.LANDING_URL || 'https://jasain.kr')
   .replace(/^LANDING_URL\s*=\s*/i, '')
@@ -34,7 +40,7 @@ async function upsertBuyer({ email, password, buyerName, phone }) {
   return updated || user;
 }
 
-router.post('/virtual-account', async (req, res, next) => {
+router.post('/virtual-account', checkoutRateLimit, async (req, res, next) => {
   try {
     const { buyerName, name, phone, email, password, productId = 'onetime_590000' } = req.body || {};
     const cleanEmail = normalizeEmail(email);
@@ -81,7 +87,7 @@ router.post('/virtual-account', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.post('/toss/success', async (req, res, next) => {
+router.post('/toss/success', checkoutRateLimit, async (req, res, next) => {
   try {
     const { paymentKey, orderId, amount } = req.body || {};
     const payment = await dbGet('billing_payments', { order_id: orderId });

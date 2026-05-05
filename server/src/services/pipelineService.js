@@ -13,6 +13,9 @@ import { assertAutomationRunning, isAutomationRunning } from './accountAutomatio
 import { repairProductsForTopic } from './productRepairService.js';
 
 function createNoQueueMessage(diagnostics = {}) {
+  if (diagnostics.reasonCode === 'COUPANG_LOCK_UNAVAILABLE') {
+    return '쿠팡 검색 보호 락이 준비되지 않아 예약을 만들지 않았습니다. 운영 DB 마이그레이션 적용 후 다시 시도해주세요.';
+  }
   if (diagnostics.reasonCode === 'NO_REAL_PRODUCTS') {
     return '실제 쿠팡 상품이 매칭된 링크 글 후보가 없어 예약을 만들지 못했습니다. 상품을 다시 검색하거나 관리자 화면에서 실상품을 직접 선택해주세요.';
   }
@@ -95,10 +98,13 @@ export async function runPipelineForAccount(accountId, options = {}) {
           postsCreated: totalPosts
         });
         const searchedProducts = await searchProductsForTopic(topic.id);
-        if (searchedProducts.some((product) => product.raw_data?.code === 'COUPANG_RATE_LIMIT')) {
-          const error = new Error('쿠팡 요청 제한 보호 중이라 상품 검색과 예약 생성을 중단했습니다.');
-          error.status = 429;
-          error.code = 'COUPANG_RATE_LIMIT';
+        if (searchedProducts.some((product) => ['COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE'].includes(product.raw_data?.code))) {
+          const lockUnavailable = searchedProducts.some((product) => product.raw_data?.code === 'COUPANG_LOCK_UNAVAILABLE');
+          const error = new Error(lockUnavailable
+            ? '쿠팡 검색 보호 락이 준비되지 않아 상품 검색과 예약 생성을 중단했습니다.'
+            : '쿠팡 요청 제한 보호 중이라 상품 검색과 예약 생성을 중단했습니다.');
+          error.status = lockUnavailable ? 503 : 429;
+          error.code = lockUnavailable ? 'COUPANG_LOCK_UNAVAILABLE' : 'COUPANG_RATE_LIMIT';
           throw error;
         }
         await progress({

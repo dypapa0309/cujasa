@@ -21,15 +21,18 @@ function queueFriendly(row = {}, detail = null) {
 function ModeBadge({ mode, linkStatus }) {
   const isLink = mode === 'link';
   const missing = linkStatus === 'missing';
+  const pending = linkStatus === 'pending_tracking';
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold ${
       missing
         ? 'bg-rose-50 text-rose-600'
-        : isLink
-          ? 'bg-blue-50 text-blue-600'
-          : 'bg-gray-100 text-gray-500'
+        : pending
+          ? 'bg-amber-50 text-amber-600'
+          : isLink
+            ? 'bg-blue-50 text-blue-600'
+            : 'bg-gray-100 text-gray-500'
     }`}>
-      {missing ? '상품 매칭 누락' : postModeLabel(mode)}
+      {missing ? '상품 매칭 누락' : pending ? '업로드 직전 링크 생성' : postModeLabel(mode)}
     </span>
   );
 }
