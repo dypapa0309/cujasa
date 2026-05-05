@@ -4,6 +4,7 @@ import { decorateProductQuality } from '../utils/productQuality.js';
 
 const host = 'https://api-gateway.coupang.com';
 const COUPANG_FETCH_TIMEOUT_MS = Number(process.env.COUPANG_FETCH_TIMEOUT_MS || 5000);
+const COUPANG_KEYWORDS_PER_TOPIC = Math.max(1, Number(process.env.COUPANG_KEYWORDS_PER_TOPIC || 1));
 const SUCCESS_CODES = new Set(['0', 'SUCCESS']);
 const COUPANG_STATUS = {
   OK: 'ok',
@@ -53,6 +54,10 @@ function parseCoupangCooldownUntil(message = '') {
   const normalized = match[0].replace(/(\.\d{3})\d+$/, '$1');
   const parsed = new Date(`${normalized}+09:00`);
   return Number.isNaN(parsed.getTime()) ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : parsed.toISOString();
+}
+
+function isRateLimitMessage(message = '') {
+  return /분당|50회|총\s*\d+회\s*초과|사용 횟수|초과|rate|too many/i.test(String(message || ''));
 }
 
 function isCooldownActive(account = {}) {
@@ -107,7 +112,7 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
     const json = await response.json();
     if (json.rCode && !SUCCESS_CODES.has(String(json.rCode).toUpperCase())) {
       const message = json.rMessage || `Coupang API rejected request with rCode ${json.rCode}`;
-      const isRateLimited = String(json.rCode) === '403' || /사용 횟수|초과|rate/i.test(message);
+      const isRateLimited = String(json.rCode) === '403' || isRateLimitMessage(message);
       const code = isRateLimited ? 'COUPANG_RATE_LIMIT' : 'COUPANG_API_REJECTED';
       const cooldownUntil = isRateLimited ? parseCoupangCooldownUntil(message) : null;
       await logActivity({
@@ -156,22 +161,28 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
     });
     return mapped;
   } catch (error) {
+    const isRateLimited = isRateLimitMessage(error.message);
+    const cooldownUntil = isRateLimited ? parseCoupangCooldownUntil(error.message) : null;
+    const code = isRateLimited ? 'COUPANG_RATE_LIMIT' : 'COUPANG_API_ERROR';
     try {
       await logActivity({
-        action: 'coupang_fallback',
+        action: isRateLimited ? 'coupang_rate_limited' : 'coupang_fallback',
         level: 'warn',
         message: error.message,
-        payload: { keyword, code: 'COUPANG_API_ERROR' },
+        payload: { keyword, code, cooldownUntil },
         ...logContext
       });
     } catch (logError) {
       console.warn('[coupang_fallback_log_failed]', logError.message);
     }
     await updateCoupangSearchState(creds.accountId, {
-      coupang_search_status: COUPANG_STATUS.API_ERROR,
-      coupang_search_cooldown_until: null
+      coupang_search_status: isRateLimited ? COUPANG_STATUS.RATE_LIMITED : COUPANG_STATUS.API_ERROR,
+      coupang_search_cooldown_until: cooldownUntil
     });
-    return [fallbackProduct(keyword, 0, 'api_error', 'COUPANG_API_ERROR')];
+    return [fallbackProduct(keyword, 0, isRateLimited ? 'rate_limited' : 'api_error', code, {
+      cooldownUntil,
+      stopSearch: isRateLimited
+    })];
   }
 }
 
@@ -218,7 +229,9 @@ export async function searchProductsForTopic(topicId, options = {}) {
     projectId: account.project_id,
     topicId: topic.id
   };
-  const keywords = options.keywords?.length ? options.keywords : (topic.search_keywords?.length ? topic.search_keywords : [topic.title]);
+  const rawKeywords = options.keywords?.length ? options.keywords : (topic.search_keywords?.length ? topic.search_keywords : [topic.title]);
+  const keywordLimit = Math.max(1, Number(options.keywordLimit || COUPANG_KEYWORDS_PER_TOPIC));
+  const keywords = rawKeywords.slice(0, keywordLimit);
   const saveFallback = options.saveFallback !== false;
   const stopAfterRealCount = Number(options.stopAfterRealCount || 0);
 

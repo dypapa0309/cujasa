@@ -5,7 +5,8 @@ import { selectProducts } from './productSelectionService.js';
 import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 
-const DEFAULT_ATTEMPT_LIMIT = 3;
+const DEFAULT_ATTEMPT_LIMIT = Math.max(0, Number(process.env.COUPANG_REPAIR_ATTEMPT_LIMIT || 1));
+const REPAIR_KEYWORDS_PER_ATTEMPT = Math.max(1, Number(process.env.COUPANG_REPAIR_KEYWORDS_PER_ATTEMPT || 1));
 
 function normalizeKeyword(value) {
   return String(value || '')
@@ -23,7 +24,7 @@ function uniqueKeywords(values) {
     seen.add(key);
     result.push(value);
   }
-  return result.slice(0, 5);
+  return result.slice(0, REPAIR_KEYWORDS_PER_ATTEMPT);
 }
 
 function extractUsefulTerms(...values) {
@@ -112,7 +113,12 @@ export async function repairProductsForTopic(topicId, options = {}) {
 
   for (let attempt = 1; attempt <= attemptLimit; attempt += 1) {
     const keywords = await generateRepairKeywords(topic, account, attempt, options);
-    const products = await searchProductsForTopic(topicId, { keywords, saveFallback: true, stopAfterRealCount: 10 });
+    const products = await searchProductsForTopic(topicId, {
+      keywords,
+      saveFallback: true,
+      stopAfterRealCount: 3,
+      keywordLimit: REPAIR_KEYWORDS_PER_ATTEMPT
+    });
     const rateLimited = products.some((product) => product.raw_data?.code === 'COUPANG_RATE_LIMIT');
     const selected = await selectProducts(topicId, options.postId || null);
     const realSelected = await listRealSelectedProducts(topicId);

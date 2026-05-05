@@ -99,7 +99,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
         });
         const selectedProducts = await selectProducts(topic.id);
         if (selectedProducts.length === 0 && Number(account.link_post_ratio || 0) > 0) {
-          await repairProductsForTopic(topic.id, { account, attemptLimit: 3 });
+          await repairProductsForTopic(topic.id, { account, attemptLimit: 1 });
         }
         await progress({
           percent: Math.min(80, basePercent + 14),

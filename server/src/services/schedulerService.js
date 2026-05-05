@@ -163,7 +163,7 @@ export async function createDailyQueue(accountId, options = {}) {
       const repair = await repairProductsForTopic(post.topic_id, {
         account,
         postId: post.id,
-        attemptLimit: 3,
+        attemptLimit: 1,
         useAiKeywords: options.productRepairUseAiKeywords
       });
       repairOutcomes.push({ postId: post.id, topicId: post.topic_id, ...repair });
