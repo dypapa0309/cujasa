@@ -32,6 +32,7 @@ import { expireDueEntitlements } from './services/billingEntitlementService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
+const runningCronJobs = new Set();
 const allowedOrigins = new Set([
   ...(process.env.CLIENT_BASE_URL || '').split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean),
   'https://jasain.kr',
@@ -52,6 +53,26 @@ function isAllowedOrigin(origin = '') {
   if (/^https:\/\/([a-z0-9-]+\.)?vercel\.app$/i.test(normalized) && process.env.NODE_ENV !== 'production') return true;
   if (/^http:\/\/localhost:\d+$/i.test(normalized) || /^http:\/\/127\.0\.0\.1:\d+$/i.test(normalized)) return true;
   return false;
+}
+
+async function runCronJob(name, fn) {
+  if (runningCronJobs.has(name)) {
+    console.warn(`[Cron:${name}] skipped because previous run is still active`);
+    return null;
+  }
+  runningCronJobs.add(name);
+  const startedAt = Date.now();
+  console.log(`[Cron:${name}] started`);
+  try {
+    const result = await fn();
+    console.log(`[Cron:${name}] completed`, JSON.stringify({ durationMs: Date.now() - startedAt, result }));
+    return result;
+  } catch (error) {
+    console.error(`[Cron:${name}] failed`, error);
+    return null;
+  } finally {
+    runningCronJobs.delete(name);
+  }
 }
 
 const corsOptions = {
@@ -166,27 +187,29 @@ app.use((error, req, res, next) => {
 
 // 매분: 예약된 포스팅 업로드 + 성과 측정
 cron.schedule('* * * * *', async () => {
-  await processDueQueue();
-  await runDueMetricJobs();
+  await runCronJob('queue-and-metrics', async () => {
+    const processedQueue = await processDueQueue();
+    const metricJobs = await runDueMetricJobs();
+    return { processedQueue, metricJobs };
+  });
 });
 
 // 매일 새벽 2시: 전체 파이프라인 자동 실행 (주제→상품→콘텐츠→큐 등록)
 cron.schedule('0 2 * * *', async () => {
-  console.log('[Pipeline] 일일 자동화 파이프라인 시작');
-  const results = await runFullPipeline();
-  console.log('[Pipeline] 완료', JSON.stringify(results));
+  await runCronJob('daily-pipeline', async () => runFullPipeline());
 });
 
 // 매일 새벽 3시: Threads long-lived token 만료 전 갱신
 cron.schedule('0 3 * * *', async () => {
-  const result = await refreshExpiringThreadsTokens();
-  console.log('[Threads Token Refresh]', JSON.stringify(result));
+  await runCronJob('threads-token-refresh', async () => refreshExpiringThreadsTokens());
 });
 
 // 매시간: 월결제 만료 고객 자동 차단
 cron.schedule('17 * * * *', async () => {
-  const expired = await expireDueEntitlements();
-  if (expired.length > 0) console.log('[Billing Expire]', JSON.stringify({ expiredCount: expired.length }));
+  await runCronJob('billing-expire', async () => {
+    const expired = await expireDueEntitlements();
+    return { expiredCount: expired.length };
+  });
 });
 
 app.listen(port, () => {

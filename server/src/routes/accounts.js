@@ -228,7 +228,52 @@ router.patch('/:accountId/automation', async (req, res, next) => {
       });
     }
 
-    const pipelineResult = await runPipelineForAccount(accountId, { requestedBy: req.user?.email || req.user?.type || 'manual' });
+    let pipelineResult;
+    try {
+      pipelineResult = await runPipelineForAccount(accountId, { requestedBy: req.user?.email || req.user?.type || 'manual' });
+    } catch (pipelineError) {
+      const paused = await setAutomationStatus(accountId, AUTOMATION_PAUSED);
+      await safeLogActivity({
+        account_id: accountId,
+        level: 'error',
+        action: 'automation_start_failed_paused',
+        message: pipelineError.message,
+        payload: { requestedBy: req.user?.email || req.user?.type || 'manual' }
+      });
+      return res.status(pipelineError.status || 500).json({
+        ok: false,
+        error: pipelineError.message,
+        code: pipelineError.code,
+        automationStatus: AUTOMATION_PAUSED,
+        alreadyRunning: false,
+        account: redactAccount(paused),
+        preflight
+      });
+    }
+
+    const queuedCount = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? null;
+    if (pipelineResult?.ok === false || pipelineResult?.status === 'error' || queuedCount === 0) {
+      const paused = await setAutomationStatus(accountId, AUTOMATION_PAUSED);
+      await safeLogActivity({
+        account_id: accountId,
+        level: 'warn',
+        action: 'automation_start_failed_paused',
+        message: pipelineResult?.message || pipelineResult?.error || '예약 생성 실패로 자동화를 일시중지했습니다.',
+        payload: {
+          requestedBy: req.user?.email || req.user?.type || 'manual',
+          pipelineResult
+        }
+      });
+      return res.json({
+        ok: false,
+        automationStatus: AUTOMATION_PAUSED,
+        alreadyRunning: false,
+        account: redactAccount(paused),
+        pipelineResult,
+        preflight
+      });
+    }
+
     return res.json({
       ok: true,
       automationStatus: AUTOMATION_RUNNING,

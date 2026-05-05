@@ -13,8 +13,18 @@ import { assertAutomationRunning, isAutomationRunning } from './accountAutomatio
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { repairProductsForTopic } from './productRepairService.js';
 
+const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
+const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
+
 function isLinkableCoupangProduct(product = {}) {
   return Boolean(product && product.product_name && (product.partner_url || product.product_url));
+}
+
+function createQueueAlreadyClaimedError(queueId, status) {
+  const error = new Error(`Queue item ${queueId} is already claimed or not uploadable: ${status || 'unknown'}`);
+  error.status = 409;
+  error.code = 'QUEUE_ALREADY_CLAIMED';
+  return error;
 }
 
 async function hasRealProductsForTopic(topicId) {
@@ -221,7 +231,43 @@ export async function createDailyQueue(accountId, options = {}) {
   return attachQueueDiagnostics(queued, diagnostics);
 }
 
+export async function recoverStalePostingQueue() {
+  const posting = await dbList('post_queue', { status: 'posting' });
+  const cutoff = Date.now() - QUEUE_POSTING_STALE_MS;
+  let recovered = 0;
+  for (const row of posting) {
+    const updatedAt = new Date(row.updated_at || row.created_at || 0).getTime();
+    if (!updatedAt || updatedAt > cutoff) continue;
+
+    const retry = (row.retry_count || 0) + 1;
+    const status = retry >= 3 ? 'manual_required' : 'retry';
+    const message = `posting 상태가 ${QUEUE_POSTING_STALE_MINUTES}분 이상 지속되어 ${status}로 복구했습니다.`;
+    const classified = classifyQueueError(message);
+    const [updated] = await dbUpdate('post_queue', { id: row.id, status: 'posting' }, {
+      status,
+      retry_count: retry,
+      error_message: message,
+      error_category: classified.category
+    });
+    if (!updated) continue;
+    recovered += 1;
+    await logActivity({
+      account_id: row.account_id,
+      project_id: row.project_id,
+      topic_id: row.topic_id,
+      post_id: row.post_id,
+      queue_id: row.id,
+      action: 'queue_posting_stale_recovered',
+      level: 'warn',
+      message,
+      payload: { retryCount: retry, nextStatus: status, staleMinutes: QUEUE_POSTING_STALE_MINUTES }
+    });
+  }
+  return recovered;
+}
+
 export async function processDueQueue() {
+  await recoverStalePostingQueue();
   const [scheduled, retrying] = await Promise.all([
     dbList('post_queue', { status: 'scheduled' }),
     dbList('post_queue', { status: 'retry' })
@@ -230,7 +276,15 @@ export async function processDueQueue() {
   const activeAccounts = await dbList('accounts', { status: 'active' });
   const activeAccountIds = new Set(activeAccounts.filter(isAutomationRunning).map((account) => account.id));
   const due = rows.filter((row) => activeAccountIds.has(row.account_id) && new Date(row.scheduled_at) <= new Date());
-  for (const row of due) await uploadQueueItem(row.id);
+  for (const row of due) {
+    try {
+      await uploadQueueItem(row.id);
+    } catch (error) {
+      if (error.code !== 'QUEUE_ALREADY_CLAIMED') {
+        console.error('[processDueQueue] queue item failed', { queueId: row.id, error: error.message });
+      }
+    }
+  }
   return due.length;
 }
 
@@ -249,6 +303,13 @@ export async function uploadQueueItem(queueId) {
     error.code = 'AUTOMATION_PAUSED';
     throw error;
   }
+  if (!['scheduled', 'retry'].includes(queue.status)) {
+    throw createQueueAlreadyClaimedError(queueId, queue.status);
+  }
+  const [claimed] = await dbUpdate('post_queue', { id: queueId, status: queue.status }, { status: 'posting' });
+  if (!claimed) {
+    throw createQueueAlreadyClaimedError(queueId, queue.status);
+  }
   try {
     await assertAccountOwnerCanOperate(queue.account_id);
     await assertAccountCanUpload(queue.account_id);
@@ -262,7 +323,6 @@ export async function uploadQueueItem(queueId) {
       return (await dbUpdate('post_queue', { id: queueId }, { status: 'skipped', error_message: `Account is ${account?.status || 'missing'}` }))[0];
     }
     assertPreflightCanPublish(await preflightAccount(account.id, { includeQueue: false }));
-    await dbUpdate('post_queue', { id: queueId }, { status: 'posting' });
     const { product } = await getFirstLinkableProductForTopic(post.topic_id);
     // retry 시 기존 tracking_link 재사용 — 중복 생성 방지
     const existingLink = queue.tracking_link_id

@@ -7,6 +7,7 @@ import { validatePostCandidate } from '../utils/contentGuardrails.js';
 import { buildFallbackPostBody, validatePostStyleFit } from '../utils/accountStyle.js';
 import { prepareGeneratedPostBody } from '../utils/koreanContentQuality.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
+import { validatePostsResponse } from '../utils/aiResponseSchemas.js';
 
 export async function generatePosts(topicId) {
   const topic = await dbGet('topics', { id: topicId });
@@ -23,7 +24,15 @@ export async function generatePosts(topicId) {
       riskLevel: 'low'
     }]
   };
-  const result = await getJson(generatePostsPrompt(topic, selected, account), fallback);
+  const result = await getJson(generatePostsPrompt(topic, selected, account), fallback, {
+    schemaName: 'generate_posts',
+    validate: validatePostsResponse,
+    logContext: {
+      account_id: topic.account_id,
+      project_id: topic.project_id,
+      topic_id: topic.id
+    }
+  });
   const posts = [];
   for (const item of result.posts || []) {
     const risk = checkAndRewriteRisk(item.body);

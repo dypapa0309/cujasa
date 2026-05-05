@@ -9,9 +9,37 @@ import { decorateProductQuality, isRealCoupangProduct } from '../utils/productQu
 import { dismissQueueForCustomer, isCustomerVisibleQueue } from '../services/queueVisibilityService.js';
 
 const router = Router();
+const PATCHABLE_QUEUE_FIELDS = new Set([
+  'scheduled_at',
+  'status',
+  'error_message',
+  'error_category',
+  'customer_hidden_at',
+  'customer_hidden_reason'
+]);
+const PATCHABLE_QUEUE_STATUSES = new Set(['scheduled', 'posting', 'posted', 'failed', 'retry', 'manual_required', 'skipped']);
 
 function isLinkableProduct(product = {}) {
   return isRealCoupangProduct(product) || Boolean(product?.is_fallback && (product.partner_url || product.product_url));
+}
+
+function sanitizeQueuePatch(body = {}) {
+  const patch = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (!PATCHABLE_QUEUE_FIELDS.has(key)) continue;
+    patch[key] = value;
+  }
+  if (patch.status && !PATCHABLE_QUEUE_STATUSES.has(patch.status)) {
+    const error = new Error(`Invalid queue status: ${patch.status}`);
+    error.status = 400;
+    throw error;
+  }
+  if (patch.scheduled_at && Number.isNaN(new Date(patch.scheduled_at).getTime())) {
+    const error = new Error('scheduled_at must be a valid date');
+    error.status = 400;
+    throw error;
+  }
+  return patch;
 }
 
 router.post('/:postId/add-to-queue', async (req, res, next) => {
@@ -35,8 +63,13 @@ router.get('/:accountId/queue', requireAccountAccessParam(), async (req, res, ne
     res.json(decorateQueueRows(visibleRows));
   } catch (e) { next(e); }
 });
-router.patch('/:queueId', async (req, res, next) => {
-  try { res.json((await dbUpdate('post_queue', { id: req.params.queueId }, req.body))[0]); } catch (e) { next(e); }
+router.patch('/:queueId', requireQueueAccess, async (req, res, next) => {
+  try {
+    if (req.user?.type === 'user') return res.status(403).json({ error: 'Admin only' });
+    const patch = sanitizeQueuePatch(req.body);
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'No supported queue fields provided' });
+    res.json(decorateQueueRow((await dbUpdate('post_queue', { id: req.params.queueId }, patch))[0]));
+  } catch (e) { next(e); }
 });
 router.post('/:queueId/upload-now', requireQueueAccess, async (req, res, next) => {
   try {

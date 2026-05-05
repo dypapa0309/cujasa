@@ -2,6 +2,7 @@ import { getJson } from './openaiService.js';
 import { getAccount } from './accountService.js';
 import { generateCtaPrompt } from '../prompts/generateCtaPrompt.js';
 import { dbGet, dbInsert, dbList } from './supabaseService.js';
+import { validateCtasResponse } from '../utils/aiResponseSchemas.js';
 
 export async function generateCtas(postId) {
   const post = await dbGet('posts', { id: postId });
@@ -13,7 +14,16 @@ export async function generateCtas(postId) {
       { variantKey: 'C', ctaText: '필요한 분들만 가볍게 확인해보세요.' }
     ]
   };
-  const result = await getJson(generateCtaPrompt(post, account), fallback);
+  const result = await getJson(generateCtaPrompt(post, account), fallback, {
+    schemaName: 'generate_ctas',
+    validate: validateCtasResponse,
+    logContext: {
+      account_id: post.account_id,
+      project_id: post.project_id,
+      topic_id: post.topic_id,
+      post_id: post.id
+    }
+  });
   const rows = [];
   for (const cta of (result.ctas || fallback.ctas).slice(0, 3)) {
     rows.push(await dbInsert('cta_variants', {

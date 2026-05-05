@@ -10,6 +10,7 @@ import {
   scoreProductTopicRelevance
 } from '../utils/productDiversity.js';
 import { isRealCoupangProduct, realProductIssues } from '../utils/productQuality.js';
+import { validateProductSelectionResponse } from '../utils/aiResponseSchemas.js';
 
 function isSelectableProduct(product, topic, account, item = {}) {
   if (!isRealCoupangProduct(product)) return false;
@@ -71,7 +72,15 @@ export async function selectProducts(topicId, postId = null) {
       productGroup: getProductGroup(product)
     }))
   });
-  const result = await getJson(selectProductsPrompt(topic, diverseProducts, account), fallback);
+  const result = await getJson(selectProductsPrompt(topic, diverseProducts, account), fallback, {
+    schemaName: 'select_products',
+    validate: validateProductSelectionResponse,
+    logContext: {
+      account_id: topic.account_id,
+      project_id: topic.project_id,
+      topic_id: topic.id
+    }
+  });
   const repairedSelection = buildDiverseProductSelection(result.selectedProducts || [], diverseProducts, topic, 3, account);
   const relevantSelection = repairedSelection.selected.filter(({ product, item }) => isSelectableProduct(product, topic, account, item));
   const finalSelection = relevantSelection;

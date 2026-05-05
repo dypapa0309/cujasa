@@ -4,6 +4,7 @@ import { dbInsert, dbList, logActivity } from './supabaseService.js';
 import { generateTopicsPrompt } from '../prompts/generateTopicsPrompt.js';
 import { isDuplicateTopic } from './similarityService.js';
 import { validateTopicCandidate } from '../utils/contentGuardrails.js';
+import { validateTopicsResponse } from '../utils/aiResponseSchemas.js';
 
 const sampleTopics = (account) => ({
   topics: [
@@ -30,7 +31,14 @@ export async function generateTopics(accountId) {
   const account = await getAccount(accountId);
   assertAccountActive(account, 'generate topics');
   const recent = await dbList('topics', { account_id: accountId }, { order: 'created_at', limit: 100 });
-  const generated = await getJson(generateTopicsPrompt(account), () => sampleTopics(account));
+  const generated = await getJson(generateTopicsPrompt(account), () => sampleTopics(account), {
+    schemaName: 'generate_topics',
+    validate: validateTopicsResponse,
+    logContext: {
+      account_id: accountId,
+      project_id: account.project_id
+    }
+  });
   const rows = [];
   for (const topic of generated.topics || []) {
     const guardrail = validateTopicCandidate(topic, account);

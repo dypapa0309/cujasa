@@ -4,6 +4,18 @@ import { useToast } from '../lib/toast.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { dateTime } from '../lib/format.js';
 
+const ATTENTION_STATUSES = new Set(['failed', 'retry', 'manual_required']);
+const FILTERS = [
+  { key: 'attention', label: '주의 필요', match: (row) => ATTENTION_STATUSES.has(row.status) },
+  { key: 'all', label: '전체', match: () => true },
+  { key: 'scheduled', label: '예약', match: (row) => row.status === 'scheduled' },
+  { key: 'retry', label: '재시도', match: (row) => row.status === 'retry' },
+  { key: 'manual_required', label: '수동 검토', match: (row) => row.status === 'manual_required' },
+  { key: 'failed', label: '실패', match: (row) => row.status === 'failed' },
+  { key: 'posted', label: '게시 완료', match: (row) => row.status === 'posted' },
+  { key: 'other', label: '취소/기타', match: (row) => !['scheduled', 'retry', 'manual_required', 'failed', 'posted'].includes(row.status) }
+];
+
 function groupByDate(rows) {
   const today = new Date(); today.setHours(0,0,0,0);
   const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
@@ -22,9 +34,11 @@ function groupByDate(rows) {
 export default function QueuePage({ selectedAccount }) {
   const toast = useToast();
   const [rows, setRows] = useState([]);
+  const [filter, setFilter] = useState('attention');
   const [detail, setDetail] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [cancellingId, setCancellingId] = useState(null);
+  const [runningId, setRunningId] = useState(null);
 
   const load = async () => {
     if (selectedAccount) setRows(await api.get(`/api/accounts/${selectedAccount.id}/queue`));
@@ -59,27 +73,59 @@ export default function QueuePage({ selectedAccount }) {
   };
 
   const run = async (row) => {
-    await api.post(`/api/queue/${row.id}/upload-now`, {});
-    await load();
+    setRunningId(row.id);
+    try {
+      const updated = await api.post(`/api/queue/${row.id}/upload-now`, {});
+      await load();
+      if (detail?.queue?.id === row.id) await openDetail(updated || row);
+      toast(updated?.status === 'posted' ? '업로드가 완료됐습니다.' : '처리 결과를 확인해주세요.', updated?.status === 'posted' ? 'success' : 'info');
+    } catch (error) {
+      await load();
+      toast(error.message || '업로드 실행에 실패했습니다.', 'error');
+    } finally {
+      setRunningId(null);
+    }
   };
 
-  const groups = groupByDate(rows);
+  const selectedFilter = FILTERS.find((item) => item.key === filter) || FILTERS[0];
+  const filteredRows = rows.filter(selectedFilter.match);
+  const groups = groupByDate(filteredRows);
+  const counts = Object.fromEntries(FILTERS.map((item) => [item.key, rows.filter(item.match).length]));
 
   return (
     <div className="grid gap-4">
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-between gap-3">
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setFilter(item.key)}
+              className={`rounded border px-3 py-2 text-xs font-semibold ${
+                filter === item.key
+                  ? 'border-coupang bg-red-50 text-coupang'
+                  : 'border-line bg-white text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              {item.label} {counts[item.key] ?? 0}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
         <button onClick={async () => { await api.post(`/api/accounts/${selectedAccount.id}/create-daily-queue`, {}); await load(); toast('일일 큐가 생성됐습니다.', 'success'); }} className="rounded border border-line bg-white px-4 py-2 text-sm">일일 큐 생성</button>
         <button onClick={async () => { await api.post('/api/scheduler/run', {}); await load(); }} className="rounded bg-coupang px-4 py-2 text-sm font-medium text-white">스케줄러 실행</button>
+        </div>
       </div>
 
       <div className={`grid gap-4 ${detail ? 'lg:grid-cols-2' : ''}`}>
         <div className="grid gap-4">
           {rows.length === 0 && <div className="rounded border border-line bg-white p-8 text-center text-sm text-slate-400">예약된 포스팅이 없습니다</div>}
+          {rows.length > 0 && filteredRows.length === 0 && <div className="rounded border border-line bg-white p-8 text-center text-sm text-slate-400">{selectedFilter.label} 항목이 없습니다</div>}
           {Object.entries(groups).map(([label, items]) => items.length === 0 ? null : (
             <div key={label} className="grid gap-2">
               <div className="text-xs font-semibold text-slate-500 px-1">{label} ({items.length})</div>
               {items.map((row) => (
-                <QueueRow key={row.id} row={row} onDetail={openDetail} onCancel={cancel} onRun={run} cancelling={cancellingId === row.id} active={detail?.queue?.id === row.id} />
+                <QueueRow key={row.id} row={row} onDetail={openDetail} onCancel={cancel} onRun={run} cancelling={cancellingId === row.id} running={runningId === row.id} active={detail?.queue?.id === row.id} />
               ))}
             </div>
           ))}
@@ -100,7 +146,9 @@ export default function QueuePage({ selectedAccount }) {
   );
 }
 
-function QueueRow({ row, onDetail, onCancel, onRun, cancelling, active }) {
+function QueueRow({ row, onDetail, onCancel, onRun, cancelling, running, active }) {
+  const friendlyTitle = row.friendly_title || row.error_message;
+  const canRun = ['scheduled', 'failed', 'retry', 'manual_required'].includes(row.status);
   return (
     <div className={`rounded border bg-white p-4 flex flex-col sm:flex-row sm:items-center gap-3 cursor-pointer transition-colors ${active ? 'border-coupang bg-red-50/30' : 'border-line hover:border-slate-300'}`}
       onClick={() => onDetail(row)}>
@@ -110,19 +158,22 @@ function QueueRow({ row, onDetail, onCancel, onRun, cancelling, active }) {
           <div className="text-xs text-slate-400">{dateTime(row.scheduled_at)}</div>
           {row.posted_at && <div className="text-xs text-slate-400">업로드: {dateTime(row.posted_at)}</div>}
           {row.post_url && <a href={row.post_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs text-coupang truncate block hover:underline">{row.post_url}</a>}
+          {friendlyTitle && <div className="mt-1 truncate text-xs font-medium text-rose-500">{friendlyTitle}</div>}
+          {row.error_category && <div className="mt-0.5 text-[11px] text-slate-400">코드: {row.error_category}</div>}
         </div>
       </div>
       <div className="flex gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+        {canRun && (
+          <button onClick={() => onRun(row)} disabled={running} className={`${row.status === 'scheduled' ? 'rounded border border-line px-3 py-1.5 text-xs hover:bg-panel' : 'rounded bg-coupang px-3 py-1.5 text-xs text-white'} disabled:opacity-50`}>
+            {running ? '실행 중...' : row.status === 'scheduled' ? '지금 실행' : '재시도'}
+          </button>
+        )}
         {row.status === 'scheduled' && (
           <>
-            <button onClick={() => onRun(row)} className="rounded border border-line px-3 py-1.5 text-xs hover:bg-panel">지금 실행</button>
             <button onClick={() => onCancel(row)} disabled={cancelling} className="rounded border border-red-200 text-red-500 px-3 py-1.5 text-xs hover:bg-red-50 disabled:opacity-50">
               {cancelling ? '취소 중...' : '취소'}
             </button>
           </>
-        )}
-        {(row.status === 'failed' || row.status === 'retry') && (
-          <button onClick={() => onRun(row)} className="rounded bg-coupang px-3 py-1.5 text-xs text-white">재시도</button>
         )}
       </div>
     </div>
@@ -130,14 +181,27 @@ function QueueRow({ row, onDetail, onCancel, onRun, cancelling, active }) {
 }
 
 function DetailPanel({ detail, onClose }) {
-  const { post, products, trackingLink, queue } = detail;
+  const { post, products, trackingLink, queue, postMode, postModeLabel, linkStatus } = detail;
   const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
+  const linkMissing = postMode === 'link' && linkStatus === 'missing';
 
   return (
     <div className="grid gap-4">
       <div className="flex items-center justify-between">
         <div className="font-semibold text-sm">포스팅 상세</div>
         <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg leading-none">✕</button>
+      </div>
+
+      <div className="grid gap-2 rounded border border-line bg-gray-50 p-3 text-xs text-slate-600">
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge status={queue.status} />
+          <span className="rounded border border-line bg-white px-2 py-1 font-medium">{postModeLabel || postMode || 'post mode unknown'}</span>
+          <span className={`rounded border px-2 py-1 font-medium ${linkMissing ? 'border-rose-200 bg-rose-50 text-rose-600' : 'border-line bg-white'}`}>
+            {linkMissing ? '상품/트래킹 링크 확인 필요' : trackingLink ? '트래킹 링크 준비됨' : '트래킹 링크 없음'}
+          </span>
+        </div>
+        <div>재시도 횟수: <span className="font-semibold">{queue.retry_count ?? 0}</span></div>
+        {queue.error_category && <div>오류 코드: <span className="font-mono font-semibold">{queue.error_category}</span></div>}
       </div>
 
       {/* 글 내용 */}
@@ -160,7 +224,7 @@ function DetailPanel({ detail, onClose }) {
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="text-xs font-semibold text-slate-700 leading-snug">{p.product_name}</div>
-                    <div className="text-xs text-slate-400 mt-0.5">₩{Number(p.product_price || 0).toLocaleString()}</div>
+                    <div className="text-xs text-slate-400 mt-0.5">{formatProductPrice(p)}</div>
                     {p.reason && <div className="text-xs text-slate-500 mt-1">{p.reason}</div>}
                   </div>
                   <span className="text-[10px] bg-white border border-line rounded px-1.5 py-0.5 text-slate-500 flex-shrink-0">#{p.rank}</span>
@@ -185,15 +249,29 @@ function DetailPanel({ detail, onClose }) {
         </div>
       )}
 
+      {linkMissing && (
+        <div className="rounded border border-amber-200 bg-amber-50 p-3">
+          <div className="text-xs font-semibold text-amber-700 mb-1">링크 글 점검 필요</div>
+          <div className="text-xs text-amber-700">링크 글로 예약됐지만 아직 사용할 수 있는 상품 또는 트래킹 링크가 없습니다. 상품 추천/선택 상태를 확인한 뒤 재시도해주세요.</div>
+        </div>
+      )}
+
       {/* 에러 메시지 */}
-      {queue.error_message && (
+      {(queue.error_message || queue.friendly_message) && (
         <div className="rounded border border-red-200 bg-red-50 p-3">
-          <div className="text-xs font-semibold text-red-600 mb-1">오류</div>
-          <div className="text-xs text-red-500">{queue.error_message}</div>
+          <div className="text-xs font-semibold text-red-600 mb-1">{queue.friendly_title || '오류'}</div>
+          <div className="text-xs text-red-500">{queue.friendly_message || queue.error_message}</div>
         </div>
       )}
     </div>
   );
+}
+
+function formatProductPrice(product) {
+  if (product.is_fallback) return '검색 링크 상품';
+  const price = Number(product.product_price);
+  if (!Number.isFinite(price) || price <= 0) return '가격 정보 없음';
+  return `₩${price.toLocaleString()}`;
 }
 
 function Spinner() {

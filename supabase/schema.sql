@@ -436,6 +436,7 @@ create index if not exists idx_topics_account on topics(account_id);
 create index if not exists idx_products_topic on coupang_products(topic_id);
 create index if not exists idx_posts_account on posts(account_id);
 create index if not exists idx_queue_account_status on post_queue(account_id, status);
+create index if not exists idx_post_queue_status_updated_at on post_queue(status, updated_at);
 create index if not exists idx_pipeline_runs_account_status on pipeline_runs(account_id, status, started_at desc);
 create index if not exists idx_clicks_account on click_events(account_id, created_at);
 create index if not exists idx_tracking_code on tracking_links(code);
