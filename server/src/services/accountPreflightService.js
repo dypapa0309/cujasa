@@ -1,6 +1,7 @@
 import { dbGet, dbList, dbUpdate } from './supabaseService.js';
 import { normalizeQueueClassification } from './queueErrorService.js';
 import { markPastTokenFailuresRetryable } from './threadsOAuthService.js';
+import { autoHidePastTokenFailures } from './queueVisibilityService.js';
 
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
 const THREADS_PREFLIGHT_TIMEOUT_MS = 10000;
@@ -89,6 +90,10 @@ export async function preflightAccount(accountId, options = {}) {
         if (me.id && me.id !== account.threads_user_id) patch.threads_user_id = me.id;
         await dbUpdate('accounts', { id: account.id }, patch);
         await markPastTokenFailuresRetryable(account.id).catch(() => 0);
+        await autoHidePastTokenFailures(account.id, {
+          reason: 'preflight_threads_ok_auto_hidden',
+          includeRecent: false
+        }).catch(() => []);
       }
     } catch (error) {
       if (error.code === 'THREADS_TOKEN_INVALID') {

@@ -41,6 +41,7 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
   const [detail, setDetail] = useState({});
   const [expandedId, setExpandedId] = useState(null);
   const [loadingDetailId, setLoadingDetailId] = useState(null);
+  const [dismissingId, setDismissingId] = useState(null);
 
   const load = () => {
     if (!account) return;
@@ -71,10 +72,29 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
 
   const getPost = (postId) => posts.find((p) => p.id === postId);
 
+  const dismissQueue = async (queueId) => {
+    if (dismissingId) return;
+    setDismissingId(queueId);
+    try {
+      await api.post(`/api/queue/${queueId}/dismiss`, { reason: 'customer_confirmed' });
+      setQueue((rows) => rows.filter((row) => row.id !== queueId));
+      setDetail((prev) => {
+        const next = { ...prev };
+        delete next[queueId];
+        return next;
+      });
+      if (expandedId === queueId) setExpandedId(null);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setDismissingId(null);
+    }
+  };
+
   const scheduled = queue.filter((r) => r.status === 'scheduled').sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
   const posted = queue.filter((r) => r.status === 'posted').sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at));
   const needsAttention = queue
-    .filter((r) => ['failed', 'retry', 'manual_required', 'skipped'].includes(r.status))
+    .filter((r) => ['failed', 'retry', 'manual_required'].includes(r.status))
     .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
   const pipelineQueued = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? 0;
   const pipelineSucceeded = (pipelineResult?.ok === true || pipelineResult?.status === 'ok') && pipelineQueued > 0;
@@ -170,7 +190,11 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
                             <div className="grid gap-3 rounded-xl bg-rose-50 px-4 py-3 text-xs text-rose-600">
                               <div>
                                 <div className="font-black">{detailFriendly.title || '업로드 오류'}</div>
-                                <div className="mt-1 leading-relaxed">{detailFriendly.message || r.error_message}</div>
+                                <div className="mt-1 leading-relaxed">
+                                  {(d.queue?.error_category || r.error_category) === 'retry_available'
+                                    ? '재연결 완료 후 남은 과거 실패 기록입니다. 새 예약은 계속 진행됩니다.'
+                                    : (detailFriendly.message || r.error_message)}
+                                </div>
                               </div>
                               {(r.error_category || d.queue?.error_category) && (
                                 <div className="rounded-lg bg-white/70 px-3 py-2 font-bold">
@@ -179,6 +203,14 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
                               )}
                             </div>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => dismissQueue(r.id)}
+                            disabled={dismissingId === r.id}
+                            className="rounded-xl border border-rose-100 bg-white px-4 py-3 text-xs font-black text-rose-500 disabled:opacity-50"
+                          >
+                            {dismissingId === r.id ? '정리 중...' : '확인 완료'}
+                          </button>
                         </>
                           );
                         })()

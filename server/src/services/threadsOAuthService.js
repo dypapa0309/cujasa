@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
 import { normalizeQueueClassification } from './queueErrorService.js';
+import { autoHidePastTokenFailures } from './queueVisibilityService.js';
 
 const THREADS_AUTH_URL = 'https://threads.net/oauth/authorize';
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
@@ -111,6 +112,10 @@ export async function markPastTokenFailuresRetryable(accountId) {
       error_message: row.error_message || 'Threads 재연결 후 재시도 가능'
     });
   }
+  await autoHidePastTokenFailures(accountId, {
+    reason: 'threads_reconnected_auto_hidden',
+    includeRecent: false
+  }).catch(() => []);
   return targets.length;
 }
 

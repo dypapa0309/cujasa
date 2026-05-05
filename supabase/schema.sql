@@ -167,6 +167,8 @@ create table if not exists post_queue (
   post_mode text not null default 'auto' check (post_mode in ('auto', 'link', 'no_link')),
   error_message text,
   error_category text,
+  customer_hidden_at timestamptz,
+  customer_hidden_reason text,
   selected_cta_id uuid references cta_variants(id) on delete set null,
   tracking_link_id uuid references tracking_links(id) on delete set null,
   created_at timestamptz not null default now(),

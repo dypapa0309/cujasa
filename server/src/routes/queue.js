@@ -6,6 +6,7 @@ import { assertUserCanOperate } from '../services/billingEntitlementService.js';
 import { decorateQueueRow, decorateQueueRows, postModeLabel } from '../services/queueErrorService.js';
 import { assertUserCanStartTrialAction } from '../services/trialEntitlementService.js';
 import { decorateProductQuality, isRealCoupangProduct } from '../utils/productQuality.js';
+import { dismissQueueForCustomer, isCustomerVisibleQueue } from '../services/queueVisibilityService.js';
 
 const router = Router();
 
@@ -26,7 +27,8 @@ router.post('/:accountId/create-daily-queue', requireAccountAccessParam(), async
 router.get('/:accountId/queue', requireAccountAccessParam(), async (req, res, next) => {
   try {
     const rows = await dbList('post_queue', { account_id: req.params.accountId }, { order: 'scheduled_at', ascending: true });
-    res.json(decorateQueueRows(rows));
+    const visibleRows = req.user?.type === 'user' ? rows.filter(isCustomerVisibleQueue) : rows;
+    res.json(decorateQueueRows(visibleRows));
   } catch (e) { next(e); }
 });
 router.patch('/:queueId', async (req, res, next) => {
@@ -37,6 +39,13 @@ router.post('/:queueId/upload-now', requireQueueAccess, async (req, res, next) =
     if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
     if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
     res.json(await uploadQueueItem(req.params.queueId));
+  } catch (e) { next(e); }
+});
+router.post('/:queueId/dismiss', requireQueueAccess, async (req, res, next) => {
+  try {
+    const queue = req.queue || await dbGet('post_queue', { id: req.params.queueId });
+    const updated = await dismissQueueForCustomer(queue, req.body?.reason || 'customer_confirmed');
+    res.json(decorateQueueRow(updated));
   } catch (e) { next(e); }
 });
 router.post('/run', async (req, res, next) => {

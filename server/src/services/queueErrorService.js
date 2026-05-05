@@ -8,7 +8,7 @@ export function classifyQueueError(message = '') {
       message: '링크 포함 글로 예약됐지만 연결된 쿠팡 상품 또는 트래킹 링크가 없습니다. 상품 추천을 다시 실행한 뒤 재시도해주세요.'
     };
   }
-  if (/THREADS_TOKEN_MISSING|Threads access token is required|계정 관리에서 Threads 연결|OAuth|access token|Cannot parse access token|token|code"?\s*:\s*190|code 190/i.test(value)) {
+  if (/THREADS_TOKEN_MISSING|Threads access token is required|계정 관리에서 Threads 연결|OAuth|access token|Cannot parse access token|token|토큰 갱신|다시 연결|재연결|code"?\s*:\s*190|code 190/i.test(value)) {
     return {
       category: 'threads_reconnect_required',
       severity: 'error',
