@@ -13,6 +13,10 @@ import { assertAutomationRunning, isAutomationRunning } from './accountAutomatio
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { repairProductsForTopic } from './productRepairService.js';
 
+function isLinkableCoupangProduct(product = {}) {
+  return Boolean(product && product.product_name && (product.partner_url || product.product_url));
+}
+
 async function hasRealProductsForTopic(topicId) {
   if (!topicId) return false;
   const rows = await dbList('post_products', { topic_id: topicId }, { order: 'rank', ascending: true });
@@ -21,6 +25,16 @@ async function hasRealProductsForTopic(topicId) {
     if (isRealCoupangProduct(product)) return true;
   }
   return false;
+}
+
+async function getFirstLinkableProductForTopic(topicId) {
+  if (!topicId) return { postProduct: null, product: null };
+  const rows = await dbList('post_products', { topic_id: topicId }, { order: 'rank', ascending: true });
+  for (const row of rows) {
+    const product = row.product_id ? await dbGet('coupang_products', { id: row.product_id }) : null;
+    if (isLinkableCoupangProduct(product)) return { postProduct: row, product };
+  }
+  return { postProduct: null, product: null };
 }
 
 async function isPostAllowedForQueue(post, account) {
@@ -248,39 +262,21 @@ export async function uploadQueueItem(queueId) {
     }
     assertPreflightCanPublish(await preflightAccount(account.id, { includeQueue: false }));
     await dbUpdate('post_queue', { id: queueId }, { status: 'posting' });
-    const postProduct = (await dbList('post_products', { topic_id: post.topic_id }, { order: 'rank', ascending: true }))[0];
-    const product = postProduct ? await dbGet('coupang_products', { id: postProduct.product_id }) : null;
+    const { product } = await getFirstLinkableProductForTopic(post.topic_id);
     // retry 시 기존 tracking_link 재사용 — 중복 생성 방지
     const existingLink = queue.tracking_link_id
       ? await dbGet('tracking_links', { id: queue.tracking_link_id })
       : null;
     const postMode = queue.post_mode || 'auto';
-    let requiresLink = postMode === 'link';
-    if (requiresLink && !isRealCoupangProduct(product)) {
-      await logActivity({
-        account_id: queue.account_id,
-        project_id: queue.project_id,
-        topic_id: queue.topic_id,
-        post_id: queue.post_id,
-        action: 'upload_link_downgraded_to_no_link',
-        level: 'warn',
-        message: '업로드 직전 실상품 연결이 없어 일반 글로 전환합니다.',
-        payload: { queueId, reasonCode: 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK' }
-      });
-      await dbUpdate('post_queue', { id: queueId }, {
-        post_mode: 'no_link',
-        error_message: '실상품 연결이 없어 일반 글로 자동 전환됨',
-        error_category: null
-      }).catch(async (updateError) => {
-        if (!/post_mode|error_category|schema cache|column/i.test(updateError.message || '')) throw updateError;
-        await dbUpdate('post_queue', { id: queueId }, { error_message: '실상품 연결이 없어 일반 글로 자동 전환됨' });
-      });
-      requiresLink = false;
+    let requiresLink = postMode === 'link' || (postMode === 'auto' && isLinkableCoupangProduct(product));
+    const resolvedPostMode = requiresLink ? 'link' : 'no_link';
+    if (postMode !== resolvedPostMode) {
+      await dbUpdate('post_queue', { id: queueId }, { post_mode: resolvedPostMode }).catch(() => []);
     }
     const ctas = requiresLink ? await listCtas(post.id) : [];
     const cta = requiresLink ? (ctas[Math.floor(Math.random() * Math.max(1, ctas.length))] || null) : null;
-    if (requiresLink && !isRealCoupangProduct(product)) {
-      const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글로 예약됐지만 연결된 실쿠팡 상품이 없습니다.');
+    if (requiresLink && !isLinkableCoupangProduct(product)) {
+      const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글로 예약됐지만 연결 가능한 쿠팡 상품이 없습니다.');
       error.status = 422;
       error.permanent = true;
       throw error;
@@ -292,7 +288,7 @@ export async function uploadQueueItem(queueId) {
       post_id: post.id,
       product_id: product.id,
       destination_url: product.partner_url || product.product_url,
-      link_type: 'coupang'
+      link_type: product.is_fallback ? 'fallback' : 'coupang'
     }) : null)) : null;
     if (requiresLink && !trackingLink) {
       const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글의 트래킹 링크를 만들 수 없습니다.');
@@ -341,6 +337,9 @@ export async function uploadQueueItem(queueId) {
     }
     return updated;
   } catch (error) {
+    if (error.replyFailed) {
+      await dbUpdate('accounts', { id: queue.account_id }, { threads_link_delivery_mode: 'body_fallback' }).catch(() => []);
+    }
     const retry = (queue.retry_count || 0) + 1;
     const status = error.permanent || retry >= 3 ? 'manual_required' : 'retry';
     const classified = classifyQueueError(error.message);
@@ -353,7 +352,8 @@ export async function uploadQueueItem(queueId) {
         status,
         retry_count: retry,
         error_message: error.message,
-        error_category: classified.category
+        error_category: classified.category,
+        post_url: error.postUrl || queue.post_url || null
       });
     } catch (updateError) {
       if (!/error_category|schema cache|column/i.test(updateError.message || '')) throw updateError;

@@ -99,6 +99,14 @@ export function classificationForCategory(category, fallbackMessage = '') {
       message: '링크 포함 글로 예약됐지만 연결된 쿠팡 상품 또는 트래킹 링크가 없습니다. 상품 추천을 다시 실행한 뒤 재시도해주세요.'
     };
   }
+  if (category === 'link_missing_published') {
+    return {
+      category,
+      severity: 'warn',
+      title: '링크 없이 발행된 과거 기록',
+      message: '과거 업로드에서 본문만 발행되고 쿠팡 링크가 붙지 않은 기록입니다. 새 예약에는 개선된 링크 처리 방식이 적용됩니다.'
+    };
+  }
   return { ...classifyQueueError(fallbackMessage), category: category || classifyQueueError(fallbackMessage).category };
 }
 

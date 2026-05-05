@@ -1,5 +1,5 @@
 const DECORATIVE_EMOJIS = /[🌸🌼🌺💐✨💕💖💗💓❤️😊😍🥰]/gu;
-const CTA_LIKE_LINES = /(댓글|링크|프로필|구매|최저가|특가|할인\s*링크|바로\s*가기)/i;
+const CTA_LIKE_LINES = /(댓글|링크|프로필|구매|최저가|특가|할인\s*(정보|링크)?|바로\s*가기|자세한\s*건|아래\s*확인|확인해?\s*봐)/i;
 
 function collapseRepeatedDecorativeEmojis(text) {
   let count = 0;
@@ -25,6 +25,22 @@ export function normalizeKoreanPostText(value) {
   return normalized;
 }
 
+export function stripBodyCtaLines(value) {
+  return String(value || '')
+    .split('\n')
+    .map((line) => line
+      .replace(/자세한\s*건\s*아래\s*링크\s*확인!?/g, '')
+      .replace(/아래\s*링크\s*확인!?/g, '')
+      .replace(/링크\s*확인!?/g, '')
+      .replace(/더\s*많은\s*(팁|정보|내용)이?\s*궁금하다면\.?/g, '')
+      .replace(/댓글에서?\s*확인!?/g, '')
+      .replace(/최저가|특가|할인\s*(정보|링크)?/g, '')
+      .trim())
+    .filter((line) => line && !/^(링크|댓글|구매|바로\s*가기|확인해?\s*봐)[\s.!?]*$/i.test(line))
+    .join('\n')
+    .trim();
+}
+
 export function inspectKoreanPostQuality(value) {
   const text = String(value || '');
   const warnings = [];
@@ -41,8 +57,10 @@ export function inspectKoreanPostQuality(value) {
 
 export function prepareGeneratedPostBody(value) {
   const before = String(value || '');
-  const body = normalizeKoreanPostText(before);
+  const stripped = stripBodyCtaLines(before);
+  const body = normalizeKoreanPostText(stripped);
   const warnings = inspectKoreanPostQuality(before);
+  if (stripped !== before.trim()) warnings.push('cta_removed_from_body');
   if (body !== before.trim()) warnings.push('normalized_text');
   return { body, warnings: [...new Set(warnings)] };
 }

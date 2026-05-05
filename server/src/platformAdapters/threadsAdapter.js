@@ -1,17 +1,28 @@
 const THREADS_API = 'https://graph.threads.net/v1.0';
 const COUPANG_DISCLOSURE = '[광고] 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 
-function stripLinkCta(text) {
+export function stripLinkCta(text) {
   return String(text || '')
     .split('\n')
-    .filter((line) => !/(링크|댓글|최저가|가격은|제품은\s*댓글|아래\s*링크|프로필에)/.test(line))
+    .map((line) => line
+      .replace(/자세한\s*건\s*아래\s*링크\s*확인!?/g, '')
+      .replace(/아래\s*링크\s*확인!?/g, '')
+      .replace(/링크\s*확인!?/g, '')
+      .replace(/더\s*많은\s*(팁|정보|내용)이?\s*궁금하다면\.?/g, '')
+      .replace(/댓글에서?\s*확인!?/g, '')
+      .replace(/최저가|특가|할인\s*(정보|링크)?/g, '')
+      .trim())
+    .filter((line) => line && !/^(링크|댓글|구매|바로\s*가기|확인해?\s*봐)[\s.!?]*$/i.test(line))
     .join('\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
-function buildPostText(post) {
-  return stripLinkCta(post.body) || String(post.body || '').trim();
+function buildPostText(post, linkUrl = null, deliveryMode = 'reply') {
+  const cleanBody = stripLinkCta(post.body);
+  if (!cleanBody) return '';
+  if (!linkUrl || deliveryMode !== 'body_fallback') return cleanBody;
+  return `${cleanBody}\n\n${COUPANG_DISCLOSURE}\n${linkUrl}`;
 }
 
 function buildReplyText(linkUrl) {
@@ -58,12 +69,13 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   const token = account.threads_access_token;
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
   const linkUrl = trackingLink ? `${baseUrl}/r/${trackingLink.code}` : null;
-  const replyText = linkUrl ? buildReplyText(linkUrl) : '';
+  const deliveryMode = account.threads_link_delivery_mode === 'body_fallback' ? 'body_fallback' : 'reply';
+  const replyText = linkUrl && deliveryMode === 'reply' ? buildReplyText(linkUrl) : '';
 
   if (process.env.MOCK_UPLOAD === 'true') {
     const url = `${baseUrl}/mock/threads/${post.id}`;
-    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: buildPostText(post, cta), comment: replyText || null });
-    return { postUrl: url, raw: { mock: true } };
+    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: buildPostText(post, linkUrl, deliveryMode), comment: replyText || null });
+    return { postUrl: url, raw: { mock: true, linkDeliveryMode: linkUrl ? deliveryMode : 'none' } };
   }
   if (!token) {
     const error = new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');
@@ -72,7 +84,7 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
     throw error;
   }
 
-  const text = buildPostText(post, cta);
+  const text = buildPostText(post, linkUrl, deliveryMode);
   if (!text) {
     const error = new Error('Threads post text is empty after content cleanup. 콘텐츠 본문을 다시 생성해주세요.');
     error.code = 'POST_BODY_EMPTY';
@@ -106,15 +118,26 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
 
   let replyWarning = null;
   if (linkUrl) {
-    try {
-      await postReply(token, postId, replyText);
-    } catch (error) {
-      replyWarning = error.message;
-      console.warn('[THREADS REPLY WARNING]', { account: account.name, postId, error: error.message });
+    if (deliveryMode === 'reply') {
+      try {
+        await postReply(token, postId, replyText);
+      } catch (error) {
+        replyWarning = error.message;
+        console.warn('[THREADS REPLY WARNING]', { account: account.name, postId, error: error.message });
+      }
+    }
+    if (deliveryMode === 'reply' && replyWarning) {
+      const error = new Error(replyWarning);
+      error.code = 'THREADS_REPLY_FAILED';
+      error.replyFailed = true;
+      error.permanent = true;
+      error.postUrl = `https://www.threads.net/@${account.account_handle?.replace('@', '') || 'unknown'}/post/${postId}`;
+      error.postId = postId;
+      throw error;
     }
   }
 
   const handle = account.account_handle?.replace('@', '') || 'unknown';
   const postUrl = `https://www.threads.net/@${handle}/post/${postId}`;
-  return { postUrl, raw: { creationId, postId, ...(replyWarning ? { replyWarning } : {}) } };
+  return { postUrl, raw: { creationId, postId, linkDeliveryMode: linkUrl ? deliveryMode : 'none' } };
 }

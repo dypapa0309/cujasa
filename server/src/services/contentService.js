@@ -27,7 +27,11 @@ export async function generatePosts(topicId) {
   const posts = [];
   for (const item of result.posts || []) {
     const risk = checkAndRewriteRisk(item.body);
-    const prepared = prepareGeneratedPostBody(risk.body);
+    let prepared = prepareGeneratedPostBody(risk.body);
+    if (!prepared.body || prepared.body.length < 20) {
+      prepared = prepareGeneratedPostBody(buildFallbackPostBody(topic, account));
+      prepared.warnings.push('fallback_body_used_after_cta_cleanup');
+    }
     if (prepared.warnings.length) {
       await logActivity({
         account_id: topic.account_id,

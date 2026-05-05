@@ -10,6 +10,10 @@ import { dismissQueueForCustomer, isCustomerVisibleQueue } from '../services/que
 
 const router = Router();
 
+function isLinkableProduct(product = {}) {
+  return isRealCoupangProduct(product) || Boolean(product?.is_fallback && (product.partner_url || product.product_url));
+}
+
 router.post('/:postId/add-to-queue', async (req, res, next) => {
   try {
     if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
@@ -74,7 +78,7 @@ router.get('/detail/:queueId', requireQueueAccess, async (req, res, next) => {
       : null;
     const decoratedQueue = decorateQueueRow(queue);
     const postMode = queue.post_mode || 'auto';
-    const hasLinkCandidate = products.filter(isRealCoupangProduct).length > 0;
+    const hasLinkCandidate = products.filter(isLinkableProduct).length > 0;
 
     res.json({
       queue: decoratedQueue,
