@@ -16,6 +16,9 @@ function createNoQueueMessage(diagnostics = {}) {
   if (diagnostics.reasonCode === 'NO_REAL_PRODUCTS') {
     return '실제 쿠팡 상품이 매칭된 링크 글 후보가 없어 예약을 만들지 못했습니다. 상품을 다시 검색하거나 관리자 화면에서 실상품을 직접 선택해주세요.';
   }
+  if (diagnostics.reasonCode === 'NO_REAL_COUPANG_LINKS') {
+    return '수익화 가능한 실제 쿠팡 상품 링크가 부족해 예약을 만들지 않았습니다. 상품 추천 결과에서 실상품 링크를 먼저 확보해주세요.';
+  }
   if (diagnostics.reasonCode === 'REAL_PRODUCTS_INSUFFICIENT') {
     return '링크 글 목표 개수를 채울 만큼 실제 쿠팡 상품 후보가 부족합니다. 상품 추천 결과에서 실상품을 추가로 선택해주세요.';
   }

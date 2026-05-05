@@ -11,14 +11,13 @@ import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 import { assertAccountCanUpload, recordSuccessfulUpload } from './trialEntitlementService.js';
 import { assertAutomationRunning, isAutomationRunning } from './accountAutomationService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
-import { repairProductsForTopic } from './productRepairService.js';
 import { createCoupangCooldownError, isCoupangCooldownActive } from './coupangService.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
 
 function isLinkableCoupangProduct(product = {}) {
-  return Boolean(product && product.product_name && (product.partner_url || product.product_url));
+  return isRealCoupangProduct(product);
 }
 
 function createQueueAlreadyClaimedError(queueId, status) {
@@ -166,28 +165,6 @@ export async function createDailyQueue(accountId, options = {}) {
   const linkCount = Math.round(total * linkRatio);
   const repairOutcomes = [];
   const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
-  const linkPostIds = new Set(withLink.map((post) => post.id));
-
-  if (linkCount > withLink.length) {
-    const repairLimit = Math.max(total, linkCount * 2, 1);
-    const repairCandidates = allDrafts
-      .filter((post) => !linkPostIds.has(post.id))
-      .slice(0, repairLimit);
-    for (const post of repairCandidates) {
-      if (withLink.length >= linkCount) break;
-      const repair = await repairProductsForTopic(post.topic_id, {
-        account,
-        postId: post.id,
-        useAiKeywords: options.productRepairUseAiKeywords
-      });
-      repairOutcomes.push({ postId: post.id, topicId: post.topic_id, ...repair });
-      if (repair.finalMode === 'link') {
-        productsPerTopic.add(post.topic_id);
-        withLink.push(post);
-        linkPostIds.add(post.id);
-      }
-    }
-  }
 
   const primaryWithLink = withLink.slice(0, linkCount);
   const usedLinkPostIds = new Set(primaryWithLink.map((post) => post.id));
@@ -221,7 +198,7 @@ export async function createDailyQueue(accountId, options = {}) {
   };
   if (total === 0) diagnostics.reasonCode = 'NO_SCHEDULE_TIMES';
   else if (allDrafts.length === 0) diagnostics.reasonCode = 'NO_DRAFT_POSTS';
-  else if (linkCount > 0 && primaryWithLink.length === 0 && primaryWithoutLink.length === 0) diagnostics.reasonCode = 'NO_QUEUE_CANDIDATES';
+  else if (linkCount > 0 && primaryWithLink.length < linkCount) diagnostics.reasonCode = 'NO_REAL_COUPANG_LINKS';
   else if (repairOutcomes.some((row) => row.reasonCode === 'COUPANG_RATE_LIMIT')) diagnostics.reasonCode = 'COUPANG_RATE_LIMIT';
   else if (diagnostics.productRepairFallbacks > 0) diagnostics.reasonCode = 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
   else if (drafts.length === 0) diagnostics.reasonCode = 'NO_QUEUE_CANDIDATES';
@@ -232,9 +209,11 @@ export async function createDailyQueue(accountId, options = {}) {
       project_id: account.project_id,
       action: 'queue_link_slots_shortage',
       level: 'warn',
-      message: `링크 글 후보 부족: 목표 ${linkCount}개, 가능 ${primaryWithLink.length}개`,
+      message: `실제 쿠팡 링크 후보 부족: 목표 ${linkCount}개, 가능 ${primaryWithLink.length}개`,
       payload: diagnostics
     });
+    diagnostics.queuedCount = 0;
+    return attachQueueDiagnostics([], diagnostics);
   }
   const queued = [];
   for (const [index, item] of drafts.slice(0, times.length).entries()) {
@@ -363,7 +342,7 @@ export async function uploadQueueItem(queueId) {
       post_id: post.id,
       product_id: product.id,
       destination_url: product.partner_url || product.product_url,
-      link_type: product.is_fallback ? 'fallback' : 'coupang'
+      link_type: 'coupang'
     }) : null)) : null;
     if (requiresLink && !trackingLink) {
       const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글의 트래킹 링크를 만들 수 없습니다.');

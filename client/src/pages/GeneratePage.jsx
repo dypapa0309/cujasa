@@ -51,8 +51,8 @@ export default function GeneratePage({ selectedAccount }) {
       const selected = await api.post(`/api/topics/${topic.id}/select-products`, {});
       await load();
       toast(`상품 ${selected.length}개 검색 완료`, 'success');
-    } catch {
-      toast('상품 검색에 실패했습니다.', 'error');
+    } catch (error) {
+      toast(error.message || '상품 검색에 실패했습니다.', 'error');
     } finally {
       setBusyTopicId(null);
       setBusyAction(null);
@@ -66,8 +66,8 @@ export default function GeneratePage({ selectedAccount }) {
       const created = await api.post(`/api/topics/${topic.id}/generate-posts`, {});
       await load();
       toast(`콘텐츠 ${created.length}개 생성됐습니다.`, 'success');
-    } catch {
-      toast('콘텐츠 생성에 실패했습니다.', 'error');
+    } catch (error) {
+      toast(error.message || '콘텐츠 생성에 실패했습니다.', 'error');
     } finally {
       setBusyTopicId(null);
       setBusyAction(null);
@@ -79,8 +79,8 @@ export default function GeneratePage({ selectedAccount }) {
       await api.post(`/api/posts/${post.id}/add-to-queue`, {});
       await load();
       toast('큐에 추가됐습니다.', 'success');
-    } catch {
-      toast('큐 추가에 실패했습니다.', 'error');
+    } catch (error) {
+      toast(error.message || '큐 추가에 실패했습니다.', 'error');
     }
   };
 

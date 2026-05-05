@@ -20,7 +20,7 @@ const PATCHABLE_QUEUE_FIELDS = new Set([
 const PATCHABLE_QUEUE_STATUSES = new Set(['scheduled', 'posting', 'posted', 'failed', 'retry', 'manual_required', 'skipped']);
 
 function isLinkableProduct(product = {}) {
-  return isRealCoupangProduct(product) || Boolean(product?.is_fallback && (product.partner_url || product.product_url));
+  return isRealCoupangProduct(product);
 }
 
 function sanitizeQueuePatch(body = {}) {

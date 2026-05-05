@@ -137,7 +137,6 @@ export async function repairProductsForTopic(topicId, options = {}) {
     const keywords = await generateRepairKeywords(topic, account, attempt, options);
     const products = await searchProductsForTopic(topicId, {
       keywords,
-      saveFallback: true,
       stopAfterRealCount: 3,
       keywordLimit: REPAIR_KEYWORDS_PER_ATTEMPT
     });

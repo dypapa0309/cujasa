@@ -10,11 +10,17 @@ const issueLabels = {
   missing_url: 'URL 없음'
 };
 
-export default function ProductCard({ product, onSelect, selecting = false }) {
+export default function ProductCard({ product, onSelect, selecting = false, onCopied }) {
   const isReal = product.is_real_product !== false;
   const issues = product.quality_issues || [];
   const canSelect = isReal && !product.selected && onSelect;
-  const displayPrice = product.is_fallback ? '0원' : price(product.product_price);
+  const productLink = product.partner_url || product.product_url || '';
+  const displayPrice = product.is_fallback ? '수익화 링크 아님' : price(product.product_price);
+  const copyLink = async () => {
+    if (!isReal || !productLink) return;
+    await navigator.clipboard.writeText(productLink);
+    onCopied?.(product);
+  };
   return (
     <div className="rounded border border-line bg-white p-4">
       <div className="aspect-[4/3] rounded bg-panel">
@@ -38,6 +44,33 @@ export default function ProductCard({ product, onSelect, selecting = false }) {
           선택됨 · rank {product.selected_rank}
         </p>
       )}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <a
+          href={isReal && productLink ? productLink : undefined}
+          target="_blank"
+          rel="noreferrer"
+          aria-disabled={!isReal || !productLink}
+          className={`rounded px-3 py-2 text-center text-xs font-bold ${
+            isReal && productLink
+              ? 'border border-line bg-white text-slate-600 hover:bg-slate-50'
+              : 'pointer-events-none bg-slate-100 text-slate-400'
+          }`}
+        >
+          쿠팡 링크 열기
+        </a>
+        <button
+          type="button"
+          onClick={copyLink}
+          disabled={!isReal || !productLink}
+          className={`rounded px-3 py-2 text-xs font-bold ${
+            isReal && productLink
+              ? 'border border-line bg-white text-slate-600 hover:bg-slate-50'
+              : 'bg-slate-100 text-slate-400'
+          }`}
+        >
+          링크 복사
+        </button>
+      </div>
       {onSelect && (
         <button
           type="button"

@@ -5,7 +5,9 @@ import { decorateProductQuality } from '../utils/productQuality.js';
 const host = 'https://api-gateway.coupang.com';
 const COUPANG_FETCH_TIMEOUT_MS = Number(process.env.COUPANG_FETCH_TIMEOUT_MS || 5000);
 const COUPANG_KEYWORDS_PER_TOPIC = Math.max(1, Number(process.env.COUPANG_KEYWORDS_PER_TOPIC || 1));
+const COUPANG_ACCOUNT_SEARCH_INTERVAL_MS = Math.max(0, Number(process.env.COUPANG_ACCOUNT_SEARCH_INTERVAL_MS || 90000));
 const SUCCESS_CODES = new Set(['0', 'SUCCESS']);
+const accountSearchNextAllowedAt = new Map();
 const COUPANG_STATUS = {
   OK: 'ok',
   RATE_LIMITED: 'rate_limited',
@@ -60,6 +62,14 @@ function isRateLimitMessage(message = '') {
   return /분당|50회|총\s*\d+회\s*초과|사용 횟수|초과|rate|too many/i.test(String(message || ''));
 }
 
+function createThrottleProduct(keyword, retryAfterMs) {
+  return fallbackProduct(keyword, 0, 'account_throttled', 'COUPANG_SEARCH_THROTTLED', {
+    retryAfterMs,
+    retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
+    stopSearch: true
+  });
+}
+
 export function isCoupangCooldownActive(account = {}) {
   if (account.coupang_search_status !== COUPANG_STATUS.RATE_LIMITED) return false;
   const until = new Date(account.coupang_search_cooldown_until || 0).getTime();
@@ -109,6 +119,29 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
       coupang_search_cooldown_until: null
     });
     return [fallbackProduct(keyword, 0, 'missing_credentials', 'COUPANG_CREDENTIALS_MISSING')];
+  }
+
+  const throttleKey = creds.accountId || null;
+  if (throttleKey && COUPANG_ACCOUNT_SEARCH_INTERVAL_MS > 0) {
+    const now = Date.now();
+    const nextAllowedAt = accountSearchNextAllowedAt.get(throttleKey) || 0;
+    if (nextAllowedAt > now) {
+      const retryAfterMs = nextAllowedAt - now;
+      await logActivity({
+        ...logContext,
+        action: 'coupang_search_throttled',
+        level: 'warn',
+        message: '계정 단위 쿠팡 검색 간격 보호로 추가 검색을 건너뜁니다.',
+        payload: {
+          keyword,
+          code: 'COUPANG_SEARCH_THROTTLED',
+          retryAfterMs,
+          retryAfterSeconds: Math.ceil(retryAfterMs / 1000)
+        }
+      }).catch(() => null);
+      return [createThrottleProduct(keyword, retryAfterMs)];
+    }
+    accountSearchNextAllowedAt.set(throttleKey, now + COUPANG_ACCOUNT_SEARCH_INTERVAL_MS);
   }
 
   const path = createSearchPath(keyword, limit, creds.trackingCode);
@@ -243,7 +276,6 @@ export async function searchProductsForTopic(topicId, options = {}) {
   const rawKeywords = options.keywords?.length ? options.keywords : (topic.search_keywords?.length ? topic.search_keywords : [topic.title]);
   const keywordLimit = Math.max(1, Number(options.keywordLimit || COUPANG_KEYWORDS_PER_TOPIC));
   const keywords = rawKeywords.slice(0, keywordLimit);
-  const saveFallback = options.saveFallback !== false;
   const stopAfterRealCount = Number(options.stopAfterRealCount || 0);
 
   const existing = await dbList('coupang_products', { topic_id: topic.id });
@@ -275,11 +307,14 @@ export async function searchProductsForTopic(topicId, options = {}) {
   for (const keyword of keywords) {
     const products = await searchKeyword(keyword, 15, creds);
     for (const product of products) {
-      if (product.raw_data?.code === 'COUPANG_RATE_LIMIT') {
+      if (product.raw_data?.code === 'COUPANG_RATE_LIMIT' || product.raw_data?.code === 'COUPANG_SEARCH_THROTTLED') {
         saved.push(product);
         continue;
       }
-      if (product.is_fallback && !saveFallback) continue;
+      if (product.is_fallback) {
+        saved.push(product);
+        continue;
+      }
       if (seen.has(product.product_id)) {
         if (product.raw_data?.stopSearch) saved.push(existingByProductId.get(product.product_id) || product);
         continue;
@@ -306,12 +341,12 @@ export async function ensureFallbackProductForTopic(topicId, reason = 'repair_fa
   const fallback = existing.find((product) => product.is_fallback);
   if (fallback) return fallback;
   const keyword = topic.search_keywords?.[0] || topic.title || '상품 추천';
-  return dbInsert('coupang_products', {
+  return {
     account_id: topic.account_id,
     topic_id: topic.id,
     keyword,
     ...fallbackProduct(keyword, 0, reason)
-  });
+  };
 }
 
 export const listProducts = async (topicId) => (await dbList('coupang_products', { topic_id: topicId }, { order: 'created_at', ascending: true }))
