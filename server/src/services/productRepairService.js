@@ -113,13 +113,15 @@ export async function repairProductsForTopic(topicId, options = {}) {
   for (let attempt = 1; attempt <= attemptLimit; attempt += 1) {
     const keywords = await generateRepairKeywords(topic, account, attempt, options);
     const products = await searchProductsForTopic(topicId, { keywords, saveFallback: true, stopAfterRealCount: 10 });
+    const rateLimited = products.some((product) => product.raw_data?.code === 'COUPANG_RATE_LIMIT');
     const selected = await selectProducts(topicId, options.postId || null);
     const realSelected = await listRealSelectedProducts(topicId);
     attempts.push({
       attempt,
       keywords,
       productsFound: products.filter((product) => !product.is_fallback).length,
-      selectedCount: realSelected.length
+      selectedCount: realSelected.length,
+      reasonCode: rateLimited ? 'COUPANG_RATE_LIMIT' : undefined
     });
 
     await logActivity({
@@ -141,20 +143,26 @@ export async function repairProductsForTopic(topicId, options = {}) {
         reasonCode: null
       };
     }
+    if (rateLimited) break;
   }
 
   const fallbackProduct = await ensureFallbackProductForTopic(topicId, 'repair_failed');
+  const reasonCode = attempts.some((attempt) => attempt.reasonCode === 'COUPANG_RATE_LIMIT')
+    ? 'COUPANG_RATE_LIMIT'
+    : 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
   await logActivity({
     account_id: account.id,
     project_id: account.project_id,
     topic_id: topicId,
     action: 'product_repair_fallback_to_no_link',
     level: 'warn',
-    message: '실상품 자동 복구 실패로 fallback 카드를 남기고 링크 없는 업로드로 전환합니다.',
+    message: reasonCode === 'COUPANG_RATE_LIMIT'
+      ? '쿠팡 검색 제한으로 추가 재검색을 멈추고 fallback 카드를 남깁니다.'
+      : '실상품 자동 복구 실패로 fallback 카드를 남기고 링크 없는 업로드로 전환합니다.',
     payload: {
       attempts,
       fallbackProductId: fallbackProduct?.id,
-      reasonCode: 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK'
+      reasonCode
     }
   });
 
@@ -163,7 +171,7 @@ export async function repairProductsForTopic(topicId, options = {}) {
     finalMode: 'no_link',
     attempts,
     selectedProducts: [],
-    reasonCode: 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK'
+    reasonCode
   };
 }
 

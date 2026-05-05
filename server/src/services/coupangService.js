@@ -4,6 +4,7 @@ import { decorateProductQuality } from '../utils/productQuality.js';
 
 const host = 'https://api-gateway.coupang.com';
 const COUPANG_FETCH_TIMEOUT_MS = Number(process.env.COUPANG_FETCH_TIMEOUT_MS || 5000);
+const SUCCESS_CODES = new Set(['0', 'SUCCESS']);
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = COUPANG_FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -25,7 +26,7 @@ function createSearchPath(keyword, limit = 10, trackingCode) {
   return `/v2/providers/affiliate_open_api/apis/openapi/products/search?${params.toString()}`;
 }
 
-function fallbackProduct(keyword, index = 0, reason = 'fallback') {
+function fallbackProduct(keyword, index = 0, reason = 'fallback', code = 'NO_REAL_PRODUCTS', extra = {}) {
   const q = encodeURIComponent(keyword);
   return {
     product_id: `fallback-${keyword}-${index}`,
@@ -36,14 +37,28 @@ function fallbackProduct(keyword, index = 0, reason = 'fallback') {
     partner_url: `https://www.coupang.com/np/search?q=${q}`,
     category_name: 'fallback',
     is_fallback: true,
-    raw_data: { keyword, reason, code: 'NO_REAL_PRODUCTS' }
+    raw_data: { keyword, reason, code, ...extra }
   };
 }
 
 export async function searchKeyword(keyword, limit = 10, creds = {}) {
   const accessKey = creds.accessKey || process.env.COUPANG_ACCESS_KEY;
   const secretKey = creds.secretKey || process.env.COUPANG_SECRET_KEY;
-  if (!accessKey || !secretKey) return [fallbackProduct(keyword, 0, 'missing_credentials')];
+  const logContext = {
+    account_id: creds.accountId,
+    project_id: creds.projectId,
+    topic_id: creds.topicId
+  };
+  if (!accessKey || !secretKey) {
+    await logActivity({
+      ...logContext,
+      action: 'coupang_credentials_missing',
+      level: 'warn',
+      message: '쿠팡 검색 키가 없어 fallback 상품을 생성합니다.',
+      payload: { keyword, code: 'COUPANG_CREDENTIALS_MISSING' }
+    }).catch(() => null);
+    return [fallbackProduct(keyword, 0, 'missing_credentials', 'COUPANG_CREDENTIALS_MISSING')];
+  }
 
   const path = createSearchPath(keyword, limit, creds.trackingCode);
   try {
@@ -55,9 +70,27 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
       throw new Error(`Coupang API ${response.status}: ${body.slice(0, 300)}`);
     }
     const json = await response.json();
+    if (json.rCode && !SUCCESS_CODES.has(String(json.rCode).toUpperCase())) {
+      const message = json.rMessage || `Coupang API rejected request with rCode ${json.rCode}`;
+      const isRateLimited = String(json.rCode) === '403' || /사용 횟수|초과|rate/i.test(message);
+      const code = isRateLimited ? 'COUPANG_RATE_LIMIT' : 'COUPANG_API_REJECTED';
+      await logActivity({
+        ...logContext,
+        action: isRateLimited ? 'coupang_rate_limited' : 'coupang_api_rejected',
+        level: 'warn',
+        message,
+        payload: { keyword, rCode: json.rCode, code }
+      }).catch(() => null);
+      return [fallbackProduct(keyword, 0, isRateLimited ? 'rate_limited' : 'api_rejected', code, {
+        rCode: json.rCode,
+        rMessage: message,
+        stopSearch: isRateLimited
+      })];
+    }
     const productData = json.data?.productData || [];
     if (productData.length === 0) {
       await logActivity({
+        ...logContext,
         action: 'coupang_empty_result',
         level: 'warn',
         message: '쿠팡 검색 결과가 없어 실상품 후보를 만들지 못했습니다.',
@@ -82,12 +115,13 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
         action: 'coupang_fallback',
         level: 'warn',
         message: error.message,
-        payload: { keyword }
+        payload: { keyword, code: 'COUPANG_API_ERROR' },
+        ...logContext
       });
     } catch (logError) {
       console.warn('[coupang_fallback_log_failed]', logError.message);
     }
-    return [fallbackProduct(keyword, 0, 'api_error')];
+    return [fallbackProduct(keyword, 0, 'api_error', 'COUPANG_API_ERROR')];
   }
 }
 
@@ -127,7 +161,13 @@ export async function resolveCoupangCredentialsForAccount(account) {
 export async function searchProductsForTopic(topicId, options = {}) {
   const topic = await dbGet('topics', { id: topicId });
   const account = await dbGet('accounts', { id: topic.account_id });
-  const creds = await resolveCoupangCredentialsForAccount(account);
+  const resolvedCreds = await resolveCoupangCredentialsForAccount(account);
+  const creds = {
+    ...resolvedCreds,
+    accountId: account.id,
+    projectId: account.project_id,
+    topicId: topic.id
+  };
   const keywords = options.keywords?.length ? options.keywords : (topic.search_keywords?.length ? topic.search_keywords : [topic.title]);
   const saveFallback = options.saveFallback !== false;
   const stopAfterRealCount = Number(options.stopAfterRealCount || 0);
@@ -150,6 +190,7 @@ export async function searchProductsForTopic(topicId, options = {}) {
       });
       saved.push(row);
     }
+    if (products.some((product) => product.raw_data?.stopSearch)) break;
     if (stopAfterRealCount > 0 && saved.filter((product) => !product.is_fallback).length >= stopAfterRealCount) break;
   }
   return saved;
