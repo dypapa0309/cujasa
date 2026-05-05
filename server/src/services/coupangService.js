@@ -1,10 +1,16 @@
 import { createCoupangAuthorization } from '../utils/coupangSignature.js';
-import { dbGet, dbInsert, dbList, logActivity } from './supabaseService.js';
+import { dbGet, dbInsert, dbList, dbUpdate, logActivity } from './supabaseService.js';
 import { decorateProductQuality } from '../utils/productQuality.js';
 
 const host = 'https://api-gateway.coupang.com';
 const COUPANG_FETCH_TIMEOUT_MS = Number(process.env.COUPANG_FETCH_TIMEOUT_MS || 5000);
 const SUCCESS_CODES = new Set(['0', 'SUCCESS']);
+const COUPANG_STATUS = {
+  OK: 'ok',
+  RATE_LIMITED: 'rate_limited',
+  CREDENTIALS_MISSING: 'credentials_missing',
+  API_ERROR: 'api_error'
+};
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = COUPANG_FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -41,6 +47,31 @@ function fallbackProduct(keyword, index = 0, reason = 'fallback', code = 'NO_REA
   };
 }
 
+function parseCoupangCooldownUntil(message = '') {
+  const match = String(message || '').match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?/);
+  if (!match) return new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const normalized = match[0].replace(/(\.\d{3})\d+$/, '$1');
+  const parsed = new Date(`${normalized}+09:00`);
+  return Number.isNaN(parsed.getTime()) ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : parsed.toISOString();
+}
+
+function isCooldownActive(account = {}) {
+  if (account.coupang_search_status !== COUPANG_STATUS.RATE_LIMITED) return false;
+  const until = new Date(account.coupang_search_cooldown_until || 0).getTime();
+  return until > Date.now();
+}
+
+async function updateCoupangSearchState(accountId, patch) {
+  if (!accountId) return null;
+  try {
+    const [updated] = await dbUpdate('accounts', { id: accountId }, patch);
+    return updated || null;
+  } catch (error) {
+    if (!/coupang_search_status|coupang_search_cooldown_until|schema cache|column/i.test(error.message || '')) throw error;
+    return null;
+  }
+}
+
 export async function searchKeyword(keyword, limit = 10, creds = {}) {
   const accessKey = creds.accessKey || process.env.COUPANG_ACCESS_KEY;
   const secretKey = creds.secretKey || process.env.COUPANG_SECRET_KEY;
@@ -57,6 +88,10 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
       message: '쿠팡 검색 키가 없어 fallback 상품을 생성합니다.',
       payload: { keyword, code: 'COUPANG_CREDENTIALS_MISSING' }
     }).catch(() => null);
+    await updateCoupangSearchState(creds.accountId, {
+      coupang_search_status: COUPANG_STATUS.CREDENTIALS_MISSING,
+      coupang_search_cooldown_until: null
+    });
     return [fallbackProduct(keyword, 0, 'missing_credentials', 'COUPANG_CREDENTIALS_MISSING')];
   }
 
@@ -74,16 +109,22 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
       const message = json.rMessage || `Coupang API rejected request with rCode ${json.rCode}`;
       const isRateLimited = String(json.rCode) === '403' || /사용 횟수|초과|rate/i.test(message);
       const code = isRateLimited ? 'COUPANG_RATE_LIMIT' : 'COUPANG_API_REJECTED';
+      const cooldownUntil = isRateLimited ? parseCoupangCooldownUntil(message) : null;
       await logActivity({
         ...logContext,
         action: isRateLimited ? 'coupang_rate_limited' : 'coupang_api_rejected',
         level: 'warn',
         message,
-        payload: { keyword, rCode: json.rCode, code }
+        payload: { keyword, rCode: json.rCode, code, cooldownUntil }
       }).catch(() => null);
+      await updateCoupangSearchState(creds.accountId, {
+        coupang_search_status: isRateLimited ? COUPANG_STATUS.RATE_LIMITED : COUPANG_STATUS.API_ERROR,
+        coupang_search_cooldown_until: cooldownUntil
+      });
       return [fallbackProduct(keyword, 0, isRateLimited ? 'rate_limited' : 'api_rejected', code, {
         rCode: json.rCode,
         rMessage: message,
+        cooldownUntil,
         stopSearch: isRateLimited
       })];
     }
@@ -98,7 +139,7 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
       });
       return [fallbackProduct(keyword, 0, 'empty_result')];
     }
-    return productData.map((item) => ({
+    const mapped = productData.map((item) => ({
       product_id: String(item.productId),
       product_name: item.productName,
       product_price: item.productPrice,
@@ -109,6 +150,11 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
       is_fallback: false,
       raw_data: item
     }));
+    await updateCoupangSearchState(creds.accountId, {
+      coupang_search_status: COUPANG_STATUS.OK,
+      coupang_search_cooldown_until: null
+    });
+    return mapped;
   } catch (error) {
     try {
       await logActivity({
@@ -121,6 +167,10 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
     } catch (logError) {
       console.warn('[coupang_fallback_log_failed]', logError.message);
     }
+    await updateCoupangSearchState(creds.accountId, {
+      coupang_search_status: COUPANG_STATUS.API_ERROR,
+      coupang_search_cooldown_until: null
+    });
     return [fallbackProduct(keyword, 0, 'api_error', 'COUPANG_API_ERROR')];
   }
 }
@@ -174,13 +224,47 @@ export async function searchProductsForTopic(topicId, options = {}) {
 
   const existing = await dbList('coupang_products', { topic_id: topic.id });
   const seen = new Set(existing.map((p) => p.product_id));
+  const existingByProductId = new Map(existing.map((product) => [product.product_id, product]));
 
   const saved = [];
+  if (isCooldownActive(account)) {
+    const keyword = keywords[0] || topic.title || '상품 추천';
+    await logActivity({
+      account_id: account.id,
+      project_id: account.project_id,
+      topic_id: topic.id,
+      action: 'coupang_search_cooldown_active',
+      level: 'warn',
+      message: '쿠팡 검색 제한 중이라 추가 검색을 건너뜁니다.',
+      payload: {
+        keyword,
+        code: 'COUPANG_RATE_LIMIT',
+        cooldownUntil: account.coupang_search_cooldown_until
+      }
+    }).catch(() => null);
+    const fallback = fallbackProduct(keyword, 0, 'rate_limited_cooldown', 'COUPANG_RATE_LIMIT', {
+      cooldownUntil: account.coupang_search_cooldown_until,
+      stopSearch: true
+    });
+    if (seen.has(fallback.product_id)) return [existingByProductId.get(fallback.product_id) || fallback];
+    if (saveFallback && !seen.has(fallback.product_id)) {
+      saved.push(await dbInsert('coupang_products', {
+        account_id: topic.account_id,
+        topic_id: topic.id,
+        keyword,
+        ...fallback
+      }));
+    }
+    return saved;
+  }
   for (const keyword of keywords) {
     const products = await searchKeyword(keyword, 15, creds);
     for (const product of products) {
       if (product.is_fallback && !saveFallback) continue;
-      if (seen.has(product.product_id)) continue;
+      if (seen.has(product.product_id)) {
+        if (product.raw_data?.stopSearch) saved.push(existingByProductId.get(product.product_id) || product);
+        continue;
+      }
       seen.add(product.product_id);
       const row = await dbInsert('coupang_products', {
         account_id: topic.account_id,

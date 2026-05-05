@@ -39,6 +39,8 @@ const tables = {
     link_post_ratio: 0.3,
     no_link_post_ratio: 0.7,
     rest_days_per_week: 1,
+    coupang_search_status: 'ok',
+    coupang_search_cooldown_until: null,
     status: 'active',
     automation_status: 'paused',
     created_at: now(),

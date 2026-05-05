@@ -52,9 +52,21 @@ async function coupangState(account) {
   if (!creds.secretKey) missing.push('Secret Key');
   if (!creds.partnerId) missing.push('Partner ID');
   if (!creds.trackingCode) missing.push('Tracking Code');
+  const cooldownUntil = account.coupang_search_cooldown_until || null;
+  const cooldownActive = account.coupang_search_status === 'rate_limited'
+    && new Date(cooldownUntil || 0).getTime() > Date.now();
+  if (cooldownActive) {
+    return { status: 'warn', label: '검색 제한 중', missing: [], searchStatus: 'rate_limited', cooldownUntil };
+  }
+  if (account.coupang_search_status === 'credentials_missing') {
+    return { status: 'error', label: '키 누락', missing: missing.length ? missing : ['Access Key', 'Secret Key'], searchStatus: 'credentials_missing', cooldownUntil };
+  }
+  if (account.coupang_search_status === 'api_error') {
+    return { status: 'warn', label: 'API 오류', missing, searchStatus: 'api_error', cooldownUntil };
+  }
   return missing.length
-    ? { status: 'error', label: '키 누락', missing }
-    : { status: 'ok', label: '설정됨', missing: [] };
+    ? { status: 'error', label: '키 누락', missing, searchStatus: 'credentials_missing', cooldownUntil }
+    : { status: 'ok', label: '설정됨', missing: [], searchStatus: 'ok', cooldownUntil };
 }
 
 function pushProblem(problems, account, severity, type, label, detail = '') {
@@ -128,6 +140,8 @@ export async function operationAccountRows() {
     if (threads.status === 'error') pushProblem(problems, account, 'error', 'threads', threads.label);
     else if (threads.status === 'warn') pushProblem(problems, account, 'warn', 'threads', `Threads ${threads.label}`);
     if (coupang.status === 'error') pushProblem(problems, account, 'error', 'coupang', '쿠팡 API 키 누락', coupang.missing.join(', '));
+    if (coupang.searchStatus === 'rate_limited') pushProblem(problems, account, 'warn', 'coupang_rate_limit', '쿠팡 검색 제한 중', coupang.cooldownUntil || '');
+    if (coupang.searchStatus === 'api_error') pushProblem(problems, account, 'warn', 'coupang_api_error', '쿠팡 API 오류');
     if (account.status === 'active' && todayScheduled === 0) pushProblem(problems, account, 'warn', 'no_schedule', '오늘 예약 없음');
     if (failedCount > 0) {
       const reconnectCount = categorizedProblems.filter((row) => row.category === 'threads_reconnect_required').length;

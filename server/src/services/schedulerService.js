@@ -198,6 +198,7 @@ export async function createDailyQueue(accountId, options = {}) {
   if (total === 0) diagnostics.reasonCode = 'NO_SCHEDULE_TIMES';
   else if (allDrafts.length === 0) diagnostics.reasonCode = 'NO_DRAFT_POSTS';
   else if (linkCount > 0 && primaryWithLink.length === 0 && primaryWithoutLink.length === 0) diagnostics.reasonCode = 'NO_QUEUE_CANDIDATES';
+  else if (repairOutcomes.some((row) => row.reasonCode === 'COUPANG_RATE_LIMIT')) diagnostics.reasonCode = 'COUPANG_RATE_LIMIT';
   else if (diagnostics.productRepairFallbacks > 0) diagnostics.reasonCode = 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
   else if (drafts.length === 0) diagnostics.reasonCode = 'NO_QUEUE_CANDIDATES';
 

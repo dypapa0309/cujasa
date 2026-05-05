@@ -43,6 +43,8 @@ create table if not exists accounts (
   coupang_secret_key text,
   coupang_partner_id text,
   coupang_tracking_code text,
+  coupang_search_cooldown_until timestamptz,
+  coupang_search_status text default 'ok' check (coupang_search_status in ('ok', 'rate_limited', 'credentials_missing', 'api_error')),
   status text not null default 'active',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -61,6 +63,8 @@ alter table accounts add column if not exists coupang_access_key text;
 alter table accounts add column if not exists coupang_secret_key text;
 alter table accounts add column if not exists coupang_partner_id text;
 alter table accounts add column if not exists coupang_tracking_code text;
+alter table accounts add column if not exists coupang_search_cooldown_until timestamptz;
+alter table accounts add column if not exists coupang_search_status text default 'ok';
 
 create table if not exists topics (
   id uuid primary key default gen_random_uuid(),
