@@ -3,6 +3,7 @@ import { normalizeQueueClassification } from './queueErrorService.js';
 import { markPastTokenFailuresRetryable } from './threadsOAuthService.js';
 import { autoHidePastTokenFailures } from './queueVisibilityService.js';
 import { isCoupangCooldownActive } from './coupangService.js';
+import { isRealCoupangProduct } from '../utils/productQuality.js';
 
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
 const THREADS_PREFLIGHT_TIMEOUT_MS = 10000;
@@ -21,6 +22,20 @@ function isTokenError(message = '') {
 
 function queueTime(row = {}) {
   return new Date(row.updated_at || row.created_at || row.scheduled_at || 0).getTime() || 0;
+}
+
+async function countSelectedRealProducts(accountId) {
+  const [topics, products, postProducts] = await Promise.all([
+    dbList('topics', { account_id: accountId }),
+    dbList('coupang_products', { account_id: accountId }),
+    dbList('post_products')
+  ]);
+  const topicIds = new Set(topics.map((topic) => topic.id));
+  const productsById = new Map(products.map((product) => [product.id, product]));
+  return postProducts.filter((row) => {
+    if (!topicIds.has(row.topic_id)) return false;
+    return isRealCoupangProduct(productsById.get(row.product_id));
+  }).length;
 }
 
 async function requestThreadsMe(token) {
@@ -148,6 +163,18 @@ export async function preflightAccount(accountId, options = {}) {
       checks.push(makeCheck('coupang', 'warn', '쿠팡 API 설정을 확인해주세요', '링크 포함 글을 만들려면 쿠팡 Access Key, Secret Key, Partner ID가 필요합니다.'));
     } else {
       checks.push(makeCheck('coupang', 'ok', '쿠팡 API 설정 확인', '링크 포함 글을 만들 수 있는 기본 설정이 있습니다.'));
+    }
+    const selectedRealCount = await countSelectedRealProducts(account.id);
+    if (selectedRealCount === 0) {
+      checks.push(makeCheck(
+        'real_coupang_links',
+        'error',
+        '실상품 링크 확보가 필요합니다',
+        '링크 포스팅을 시작하려면 상품 추천 결과에서 실제 쿠팡 상품을 먼저 선택해주세요.',
+        'select_real_coupang_product'
+      ));
+    } else {
+      checks.push(makeCheck('real_coupang_links', 'ok', '실상품 링크 확인', `${selectedRealCount}개의 실제 쿠팡 상품 선택이 확인되었습니다.`));
     }
   }
 

@@ -69,7 +69,8 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   const token = account.threads_access_token;
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
   const linkUrl = trackingLink ? `${baseUrl}/r/${trackingLink.code}` : null;
-  const deliveryMode = account.threads_link_delivery_mode === 'body_fallback' ? 'body_fallback' : 'reply';
+  const replyModeEnabled = process.env.THREADS_REPLY_LINK_MODE_ENABLED === 'true';
+  const deliveryMode = replyModeEnabled && account.threads_link_delivery_mode === 'reply' ? 'reply' : 'body_fallback';
   const replyText = linkUrl && deliveryMode === 'reply' ? buildReplyText(linkUrl) : '';
 
   if (process.env.MOCK_UPLOAD === 'true') {

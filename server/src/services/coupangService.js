@@ -1,5 +1,5 @@
 import { createCoupangAuthorization } from '../utils/coupangSignature.js';
-import { dbGet, dbInsert, dbList, dbUpdate, logActivity } from './supabaseService.js';
+import { dbGet, dbInsert, dbList, dbUpdate, logActivity, supabase } from './supabaseService.js';
 import { decorateProductQuality } from '../utils/productQuality.js';
 
 const host = 'https://api-gateway.coupang.com';
@@ -100,6 +100,66 @@ async function updateCoupangSearchState(accountId, patch) {
   }
 }
 
+async function acquireCoupangSearchSlot({ accountId, keyword, logContext }) {
+  if (!accountId || COUPANG_ACCOUNT_SEARCH_INTERVAL_MS <= 0) return { ok: true };
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const nextAllowedAt = new Date(now.getTime() + COUPANG_ACCOUNT_SEARCH_INTERVAL_MS).toISOString();
+
+  if (supabase) {
+    try {
+      const { data: updated, error: updateError } = await supabase
+        .from('coupang_search_locks')
+        .update({
+          next_allowed_at: nextAllowedAt,
+          last_keyword: keyword,
+          last_reason: 'search_started',
+          updated_at: nowIso
+        })
+        .eq('account_id', accountId)
+        .lte('next_allowed_at', nowIso)
+        .select();
+      if (updateError) throw updateError;
+      if (updated?.length) return { ok: true };
+
+      const { data: existing, error: getError } = await supabase
+        .from('coupang_search_locks')
+        .select('*')
+        .eq('account_id', accountId)
+        .maybeSingle();
+      if (getError) throw getError;
+      if (!existing) {
+        const { error: insertError } = await supabase
+          .from('coupang_search_locks')
+          .insert({
+            account_id: accountId,
+            next_allowed_at: nextAllowedAt,
+            last_keyword: keyword,
+            last_reason: 'search_started'
+          });
+        if (!insertError) return { ok: true };
+        if (!/duplicate key|23505/i.test(insertError.message || insertError.code || '')) throw insertError;
+        const retry = await dbGet('coupang_search_locks', { account_id: accountId });
+        const retryAfterMs = Math.max(0, new Date(retry?.next_allowed_at || nextAllowedAt).getTime() - Date.now());
+        return { ok: false, retryAfterMs, nextAllowedAt: retry?.next_allowed_at || nextAllowedAt };
+      }
+
+      const retryAfterMs = Math.max(0, new Date(existing.next_allowed_at || nextAllowedAt).getTime() - Date.now());
+      return { ok: false, retryAfterMs, nextAllowedAt: existing.next_allowed_at };
+    } catch (error) {
+      if (!/coupang_search_locks|schema cache|relation/i.test(error.message || '')) throw error;
+      console.warn('[coupang_search_lock_unavailable]', error.message);
+    }
+  }
+
+  const nextAt = accountSearchNextAllowedAt.get(accountId) || 0;
+  if (nextAt > Date.now()) {
+    return { ok: false, retryAfterMs: nextAt - Date.now(), nextAllowedAt: new Date(nextAt).toISOString() };
+  }
+  accountSearchNextAllowedAt.set(accountId, Date.now() + COUPANG_ACCOUNT_SEARCH_INTERVAL_MS);
+  return { ok: true };
+}
+
 export async function searchKeyword(keyword, limit = 10, creds = {}) {
   const accessKey = creds.accessKey || process.env.COUPANG_ACCESS_KEY;
   const secretKey = creds.secretKey || process.env.COUPANG_SECRET_KEY;
@@ -123,27 +183,23 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
     return [fallbackProduct(keyword, 0, 'missing_credentials', 'COUPANG_CREDENTIALS_MISSING')];
   }
 
-  const throttleKey = creds.accountId || null;
-  if (throttleKey && COUPANG_ACCOUNT_SEARCH_INTERVAL_MS > 0) {
-    const now = Date.now();
-    const nextAllowedAt = accountSearchNextAllowedAt.get(throttleKey) || 0;
-    if (nextAllowedAt > now) {
-      const retryAfterMs = nextAllowedAt - now;
-      await logActivity({
-        ...logContext,
-        action: 'coupang_search_throttled',
-        level: 'warn',
-        message: '계정 단위 쿠팡 검색 간격 보호로 추가 검색을 건너뜁니다.',
-        payload: {
-          keyword,
-          code: 'COUPANG_SEARCH_THROTTLED',
-          retryAfterMs,
-          retryAfterSeconds: Math.ceil(retryAfterMs / 1000)
-        }
-      }).catch(() => null);
-      return [createThrottleProduct(keyword, retryAfterMs)];
-    }
-    accountSearchNextAllowedAt.set(throttleKey, now + COUPANG_ACCOUNT_SEARCH_INTERVAL_MS);
+  const slot = await acquireCoupangSearchSlot({ accountId: creds.accountId, keyword, logContext });
+  if (!slot.ok) {
+    const retryAfterMs = slot.retryAfterMs || COUPANG_ACCOUNT_SEARCH_INTERVAL_MS;
+    await logActivity({
+      ...logContext,
+      action: 'coupang_search_throttled',
+      level: 'warn',
+      message: '계정 단위 쿠팡 검색 간격 보호로 추가 검색을 건너뜁니다.',
+      payload: {
+        keyword,
+        code: 'COUPANG_SEARCH_THROTTLED',
+        retryAfterMs,
+        retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
+        nextAllowedAt: slot.nextAllowedAt
+      }
+    }).catch(() => null);
+    return [createThrottleProduct(keyword, retryAfterMs)];
   }
 
   const path = createSearchPath(keyword, limit, creds.trackingCode);

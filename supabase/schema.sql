@@ -33,7 +33,7 @@ create table if not exists accounts (
   threads_user_id text,
   threads_token_expires_at timestamptz,
   threads_token_status text not null default 'not_connected',
-  threads_link_delivery_mode text default 'reply' check (threads_link_delivery_mode in ('reply', 'body_fallback')),
+  threads_link_delivery_mode text default 'body_fallback' check (threads_link_delivery_mode in ('reply', 'body_fallback')),
   threads_connected_at timestamptz,
   last_threads_refresh_at timestamptz,
   automation_status text not null default 'paused' check (automation_status in ('running', 'paused')),
@@ -53,7 +53,7 @@ create table if not exists accounts (
 alter table accounts add column if not exists threads_user_id text;
 alter table accounts add column if not exists threads_token_expires_at timestamptz;
 alter table accounts add column if not exists threads_token_status text not null default 'not_connected';
-alter table accounts add column if not exists threads_link_delivery_mode text default 'reply';
+alter table accounts add column if not exists threads_link_delivery_mode text default 'body_fallback';
 alter table accounts add column if not exists threads_connected_at timestamptz;
 alter table accounts add column if not exists last_threads_refresh_at timestamptz;
 alter table accounts add column if not exists automation_status text not null default 'paused';
@@ -96,6 +96,18 @@ create table if not exists coupang_products (
   raw_data jsonb not null default '{}',
   created_at timestamptz not null default now()
 );
+
+create table if not exists coupang_search_locks (
+  account_id uuid primary key references accounts(id) on delete cascade,
+  next_allowed_at timestamptz not null default now(),
+  last_keyword text,
+  last_reason text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_coupang_search_locks_next_allowed_at
+  on coupang_search_locks(next_allowed_at);
 
 create table if not exists posts (
   id uuid primary key default gen_random_uuid(),

@@ -302,7 +302,28 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
         message: '이미 예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.'
       });
     }
-    res.json(await runPipelineForAccount(req.params.accountId, { requestedBy: req.user?.email || req.user?.type || 'manual' }));
+    const pipelineResult = await runPipelineForAccount(req.params.accountId, { requestedBy: req.user?.email || req.user?.type || 'manual' });
+    const queuedCount = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? null;
+    if (pipelineResult?.ok === false || pipelineResult?.status === 'error' || queuedCount === 0) {
+      const paused = await setAutomationStatus(req.params.accountId, AUTOMATION_PAUSED);
+      await safeLogActivity({
+        account_id: req.params.accountId,
+        level: 'warn',
+        action: 'manual_pipeline_failed_paused',
+        message: pipelineResult?.message || pipelineResult?.error || '예약 생성 실패로 자동화를 일시중지했습니다.',
+        payload: {
+          requestedBy: req.user?.email || req.user?.type || 'manual',
+          pipelineResult
+        }
+      });
+      return res.json({
+        ok: false,
+        automationStatus: AUTOMATION_PAUSED,
+        account: redactAccount(paused),
+        pipelineResult
+      });
+    }
+    res.json(pipelineResult);
   } catch (e) { next(e); }
 });
 

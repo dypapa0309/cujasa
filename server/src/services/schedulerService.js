@@ -27,14 +27,12 @@ function createQueueAlreadyClaimedError(queueId, status) {
   return error;
 }
 
-async function hasRealProductsForTopic(topicId) {
-  if (!topicId) return false;
-  const rows = await dbList('post_products', { topic_id: topicId }, { order: 'rank', ascending: true });
-  for (const row of rows) {
-    const product = row.product_id ? await dbGet('coupang_products', { id: row.product_id }) : null;
-    if (isRealCoupangProduct(product)) return true;
-  }
-  return false;
+function createNoRealCoupangLinksError(message = '수익화 가능한 실제 쿠팡 상품 링크가 없어 링크 큐를 만들 수 없습니다.') {
+  const error = new Error(`NO_REAL_COUPANG_LINKS: ${message}`);
+  error.status = 422;
+  error.code = 'NO_REAL_COUPANG_LINKS';
+  error.permanent = true;
+  return error;
 }
 
 async function getFirstLinkableProductForTopic(topicId) {
@@ -43,6 +41,26 @@ async function getFirstLinkableProductForTopic(topicId) {
   for (const row of rows) {
     const product = row.product_id ? await dbGet('coupang_products', { id: row.product_id }) : null;
     if (isLinkableCoupangProduct(product)) return { postProduct: row, product };
+  }
+  return { postProduct: null, product: null };
+}
+
+async function assertRealLinkCandidateForPost(post, account, action = 'queue link post') {
+  const { postProduct, product } = await getFirstLinkableProductForTopic(post.topic_id);
+  if (postProduct && product) return { postProduct, product };
+  const linkRatio = Number(account?.link_post_ratio || 0);
+  if (linkRatio > 0) {
+    await logActivity({
+      account_id: post.account_id,
+      project_id: post.project_id,
+      topic_id: post.topic_id,
+      post_id: post.id,
+      action: 'link_queue_blocked_no_real_product',
+      level: 'warn',
+      message: '실제 쿠팡 상품 링크가 없어 링크 큐 생성을 차단했습니다.',
+      payload: { code: 'NO_REAL_COUPANG_LINKS', action }
+    }).catch(() => null);
+    throw createNoRealCoupangLinksError('실상품 선택 후 다시 큐에 추가해주세요.');
   }
   return { postProduct: null, product: null };
 }
@@ -91,9 +109,13 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
     throw error;
   }
   const status = post.status === 'manual_required' || post.risk_level === 'high' ? 'manual_required' : 'scheduled';
+  const linkCandidate = await assertRealLinkCandidateForPost(post, account, 'add post to queue');
   const postMode = ['link', 'no_link'].includes(options.postMode)
     ? options.postMode
-    : ((await hasRealProductsForTopic(post.topic_id)) ? 'link' : 'no_link');
+    : (linkCandidate.product ? 'link' : 'no_link');
+  if (postMode === 'link' && !linkCandidate.product) {
+    throw createNoRealCoupangLinksError('링크 글로 큐에 추가하려면 실제 쿠팡 상품 선택이 필요합니다.');
+  }
   const payload = {
     project_id: post.project_id,
     account_id: post.account_id,
