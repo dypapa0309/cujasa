@@ -2,6 +2,7 @@ import { dbGet, dbList, dbUpdate } from './supabaseService.js';
 import { normalizeQueueClassification } from './queueErrorService.js';
 import { markPastTokenFailuresRetryable } from './threadsOAuthService.js';
 import { autoHidePastTokenFailures } from './queueVisibilityService.js';
+import { isCoupangCooldownActive } from './coupangService.js';
 
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
 const THREADS_PREFLIGHT_TIMEOUT_MS = 10000;
@@ -135,7 +136,15 @@ export async function preflightAccount(accountId, options = {}) {
   const linkRatio = Number(account.link_post_ratio ?? 0.3);
   if (linkRatio > 0) {
     const hasCoupang = account.coupang_access_key && account.coupang_secret_key && account.coupang_partner_id;
-    if (!hasCoupang) {
+    if (isCoupangCooldownActive(account)) {
+      checks.push(makeCheck(
+        'coupang_rate_limit',
+        'error',
+        '쿠팡 요청 제한 보호 중입니다',
+        `쿠팡 파트너스 요청 제한으로 자동화를 멈췄습니다. ${account.coupang_search_cooldown_until || '쿨다운 해제'} 이후 다시 시도해주세요.`,
+        'wait_coupang_cooldown'
+      ));
+    } else if (!hasCoupang) {
       checks.push(makeCheck('coupang', 'warn', '쿠팡 API 설정을 확인해주세요', '링크 포함 글을 만들려면 쿠팡 Access Key, Secret Key, Partner ID가 필요합니다.'));
     } else {
       checks.push(makeCheck('coupang', 'ok', '쿠팡 API 설정 확인', '링크 포함 글을 만들 수 있는 기본 설정이 있습니다.'));

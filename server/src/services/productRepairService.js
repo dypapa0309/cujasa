@@ -1,11 +1,11 @@
 import { getJson } from './openaiService.js';
 import { getAccount } from './accountService.js';
-import { ensureFallbackProductForTopic, searchProductsForTopic } from './coupangService.js';
+import { ensureFallbackProductForTopic, isCoupangCooldownActive, searchProductsForTopic } from './coupangService.js';
 import { selectProducts } from './productSelectionService.js';
 import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 
-const DEFAULT_ATTEMPT_LIMIT = Math.max(0, Number(process.env.COUPANG_REPAIR_ATTEMPT_LIMIT || 1));
+const DEFAULT_ATTEMPT_LIMIT = Math.max(0, Number(process.env.COUPANG_REPAIR_ATTEMPT_LIMIT || 0));
 const REPAIR_KEYWORDS_PER_ATTEMPT = Math.max(1, Number(process.env.COUPANG_REPAIR_KEYWORDS_PER_ATTEMPT || 1));
 
 function normalizeKeyword(value) {
@@ -106,6 +106,28 @@ export async function repairProductsForTopic(topicId, options = {}) {
   const attemptLimit = Number(options.attemptLimit || DEFAULT_ATTEMPT_LIMIT);
   const attempts = [];
 
+  if (isCoupangCooldownActive(account)) {
+    await logActivity({
+      account_id: account.id,
+      project_id: account.project_id,
+      topic_id: topicId,
+      action: 'product_repair_skipped_coupang_cooldown',
+      level: 'warn',
+      message: '쿠팡 요청 제한 보호 중이라 상품 복구 검색을 실행하지 않았습니다.',
+      payload: {
+        reasonCode: 'COUPANG_RATE_LIMIT',
+        cooldownUntil: account.coupang_search_cooldown_until
+      }
+    }).catch(() => null);
+    return {
+      status: 'rate_limited',
+      finalMode: 'no_link',
+      attempts,
+      selectedProducts: [],
+      reasonCode: 'COUPANG_RATE_LIMIT'
+    };
+  }
+
   const existing = await listRealSelectedProducts(topicId);
   if (existing.length > 0) {
     return { status: 'linked', finalMode: 'link', attempts, selectedProducts: existing.map((item) => item.row), reasonCode: null };
@@ -152,10 +174,12 @@ export async function repairProductsForTopic(topicId, options = {}) {
     if (rateLimited) break;
   }
 
-  const fallbackProduct = await ensureFallbackProductForTopic(topicId, 'repair_failed');
   const reasonCode = attempts.some((attempt) => attempt.reasonCode === 'COUPANG_RATE_LIMIT')
     ? 'COUPANG_RATE_LIMIT'
     : 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
+  const fallbackProduct = reasonCode === 'COUPANG_RATE_LIMIT'
+    ? null
+    : await ensureFallbackProductForTopic(topicId, 'repair_failed');
   await logActivity({
     account_id: account.id,
     project_id: account.project_id,
@@ -163,7 +187,7 @@ export async function repairProductsForTopic(topicId, options = {}) {
     action: 'product_repair_fallback_to_no_link',
     level: 'warn',
     message: reasonCode === 'COUPANG_RATE_LIMIT'
-      ? '쿠팡 검색 제한으로 추가 재검색을 멈추고 fallback 카드를 남깁니다.'
+      ? '쿠팡 검색 제한으로 추가 재검색과 fallback 생성을 멈췄습니다.'
       : '실상품 자동 복구 실패로 fallback 카드를 남기고 링크 없는 업로드로 전환합니다.',
     payload: {
       attempts,

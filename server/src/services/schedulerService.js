@@ -12,6 +12,7 @@ import { assertAccountCanUpload, recordSuccessfulUpload } from './trialEntitleme
 import { assertAutomationRunning, isAutomationRunning } from './accountAutomationService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { repairProductsForTopic } from './productRepairService.js';
+import { createCoupangCooldownError, isCoupangCooldownActive } from './coupangService.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
@@ -124,6 +125,21 @@ export async function createDailyQueue(accountId, options = {}) {
     throw error;
   }
   assertAutomationRunning(account, 'create daily queue');
+  const linkRatio = Math.min(1, Math.max(0, Number(account.link_post_ratio ?? 0.3)));
+  if (linkRatio > 0 && isCoupangCooldownActive(account)) {
+    await logActivity({
+      account_id: account.id,
+      project_id: account.project_id,
+      action: 'daily_queue_blocked_coupang_cooldown',
+      level: 'warn',
+      message: '쿠팡 요청 제한 보호 중이라 일일 큐 생성을 차단했습니다.',
+      payload: {
+        reasonCode: 'COUPANG_RATE_LIMIT',
+        cooldownUntil: account.coupang_search_cooldown_until
+      }
+    }).catch(() => null);
+    throw createCoupangCooldownError(account);
+  }
   if (!options.skipPreflight) {
     assertPreflightCanPublish(await preflightAccount(accountId, { includeQueue: false }));
   }
@@ -145,7 +161,6 @@ export async function createDailyQueue(accountId, options = {}) {
   }
 
   // link_post_ratio 적용: 링크 있는 것과 없는 것을 비율에 맞게 섞기
-  const linkRatio = Math.min(1, Math.max(0, Number(account.link_post_ratio ?? 0.3)));
   const times = createDailySchedule(account);
   const total = times.length;
   const linkCount = Math.round(total * linkRatio);
@@ -163,7 +178,6 @@ export async function createDailyQueue(accountId, options = {}) {
       const repair = await repairProductsForTopic(post.topic_id, {
         account,
         postId: post.id,
-        attemptLimit: 1,
         useAiKeywords: options.productRepairUseAiKeywords
       });
       repairOutcomes.push({ postId: post.id, topicId: post.topic_id, ...repair });

@@ -28,6 +28,9 @@ function createNoQueueMessage(diagnostics = {}) {
   if (diagnostics.reasonCode === 'NO_SCHEDULE_TIMES') {
     return '오늘 예약 가능한 시간이 없어 예약을 만들지 못했습니다. 운영 시간과 예약 개수를 확인해주세요.';
   }
+  if (diagnostics.reasonCode === 'COUPANG_RATE_LIMIT') {
+    return '쿠팡 요청 제한 보호 중이라 예약을 만들지 않았습니다. 쿨다운 해제 후 다시 시도해주세요.';
+  }
   return '예약 큐가 0개로 생성되어 자동화 실행을 완료하지 않았습니다. 설정과 생성 결과를 확인해주세요.';
 }
 
@@ -88,7 +91,13 @@ export async function runPipelineForAccount(accountId, options = {}) {
           topicsDone: index,
           postsCreated: totalPosts
         });
-        await searchProductsForTopic(topic.id);
+        const searchedProducts = await searchProductsForTopic(topic.id);
+        if (searchedProducts.some((product) => product.raw_data?.code === 'COUPANG_RATE_LIMIT')) {
+          const error = new Error('쿠팡 요청 제한 보호 중이라 상품 검색과 예약 생성을 중단했습니다.');
+          error.status = 429;
+          error.code = 'COUPANG_RATE_LIMIT';
+          throw error;
+        }
         await progress({
           percent: Math.min(80, basePercent + 8),
           stage: 'select_products',
@@ -99,7 +108,13 @@ export async function runPipelineForAccount(accountId, options = {}) {
         });
         const selectedProducts = await selectProducts(topic.id);
         if (selectedProducts.length === 0 && Number(account.link_post_ratio || 0) > 0) {
-          await repairProductsForTopic(topic.id, { account, attemptLimit: 1 });
+          const repair = await repairProductsForTopic(topic.id, { account });
+          if (repair.reasonCode === 'COUPANG_RATE_LIMIT') {
+            const error = new Error('쿠팡 요청 제한 보호 중이라 상품 복구와 예약 생성을 중단했습니다.');
+            error.status = 429;
+            error.code = 'COUPANG_RATE_LIMIT';
+            throw error;
+          }
         }
         await progress({
           percent: Math.min(80, basePercent + 14),
@@ -121,6 +136,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
         });
         try { await generateBlogPost(topic.id); } catch {}
       } catch (err) {
+        if (err.code === 'COUPANG_RATE_LIMIT') throw err;
         await logActivity({ account_id: account.id, project_id: account.project_id, action: 'pipeline_topic_failed', level: 'warn', message: `topic ${topic.id}: ${err.message}` });
       }
     }

@@ -60,10 +60,21 @@ function isRateLimitMessage(message = '') {
   return /분당|50회|총\s*\d+회\s*초과|사용 횟수|초과|rate|too many/i.test(String(message || ''));
 }
 
-function isCooldownActive(account = {}) {
+export function isCoupangCooldownActive(account = {}) {
   if (account.coupang_search_status !== COUPANG_STATUS.RATE_LIMITED) return false;
   const until = new Date(account.coupang_search_cooldown_until || 0).getTime();
   return until > Date.now();
+}
+
+export function createCoupangCooldownError(account = {}) {
+  const until = account.coupang_search_cooldown_until || null;
+  const error = new Error(until
+    ? `쿠팡 요청 제한 보호 중입니다. ${until} 이후 다시 시도해주세요.`
+    : '쿠팡 요청 제한 보호 중입니다. 쿨다운 해제 후 다시 시도해주세요.');
+  error.status = 429;
+  error.code = 'COUPANG_RATE_LIMIT';
+  error.cooldownUntil = until;
+  return error;
 }
 
 async function updateCoupangSearchState(accountId, patch) {
@@ -240,7 +251,7 @@ export async function searchProductsForTopic(topicId, options = {}) {
   const existingByProductId = new Map(existing.map((product) => [product.product_id, product]));
 
   const saved = [];
-  if (isCooldownActive(account)) {
+  if (isCoupangCooldownActive(account)) {
     const keyword = keywords[0] || topic.title || '상품 추천';
     await logActivity({
       account_id: account.id,
@@ -259,20 +270,15 @@ export async function searchProductsForTopic(topicId, options = {}) {
       cooldownUntil: account.coupang_search_cooldown_until,
       stopSearch: true
     });
-    if (seen.has(fallback.product_id)) return [existingByProductId.get(fallback.product_id) || fallback];
-    if (saveFallback && !seen.has(fallback.product_id)) {
-      saved.push(await dbInsert('coupang_products', {
-        account_id: topic.account_id,
-        topic_id: topic.id,
-        keyword,
-        ...fallback
-      }));
-    }
-    return saved;
+    return [seen.has(fallback.product_id) ? (existingByProductId.get(fallback.product_id) || fallback) : fallback];
   }
   for (const keyword of keywords) {
     const products = await searchKeyword(keyword, 15, creds);
     for (const product of products) {
+      if (product.raw_data?.code === 'COUPANG_RATE_LIMIT') {
+        saved.push(product);
+        continue;
+      }
       if (product.is_fallback && !saveFallback) continue;
       if (seen.has(product.product_id)) {
         if (product.raw_data?.stopSearch) saved.push(existingByProductId.get(product.product_id) || product);
