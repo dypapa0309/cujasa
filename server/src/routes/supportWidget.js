@@ -101,7 +101,7 @@ function widgetScript(config) {
     title.textContent = config.title || 'JASAIN 상담';
     subtitle.textContent = productLabel + ' · ' + (config.subtitle || '');
     const options = (item.options || []).map((option) => {
-      if (option.action === 'phone') return '<a class="jasain-support-action" href="' + (config.phone.tel ? 'tel:' + config.phone.tel : '#') + '">' + option.label + '</a>';
+      if (option.action === 'phone') return '<a class="jasain-support-action" href="' + (config.phone.tel ? 'sms:' + config.phone.tel : '#') + '">' + option.label + '</a>';
       if (option.action === 'link') return '<a class="jasain-support-action secondary" target="_blank" rel="noreferrer" href="' + option.href + '">' + option.label + '</a>';
       if (option.action === 'inquiry') return '<button class="jasain-support-option" type="button" data-inquiry-topic="' + (option.topic || currentNodeId) + '">' + option.label + '</button>';
       return '<button class="jasain-support-option" type="button" data-next="' + option.next + '">' + option.label + '</button>';
@@ -113,7 +113,7 @@ function widgetScript(config) {
       </div>
       <div class="jasain-support-options">\${options}</div>
       \${path.length ? '<button class="jasain-support-back" type="button" data-back="1">이전으로</button>' : ''}
-      <div class="jasain-support-note">전화 상담: \${config.phone.display || '전화 상담'}</div>
+      <div class="jasain-support-note">상담 연결: \${config.phone.display || '문자 상담'}</div>
     \`;
   }
 

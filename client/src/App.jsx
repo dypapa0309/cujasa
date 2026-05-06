@@ -123,16 +123,8 @@ export default function App() {
     );
   }
 
-  // 고객(user)이면 별도 고객 앱 렌더링
+  // 고객(user)이면 솔루션 허브가 포함된 별도 고객 앱 렌더링
   if (currentUser?.type === 'user') {
-    const hasCujasa = (currentUser.products || []).some((product) => product.productId === CURRENT_PRODUCT.id && product.status !== 'suspended');
-    if (!hasCujasa) {
-      return (
-        <ToastProvider>
-          <ProductAccessBlocked currentUser={currentUser} onLogout={() => { setAuthToken(''); setCurrentUser(null); }} />
-        </ToastProvider>
-      );
-    }
     return (
       <ToastProvider>
         <CustomerApp

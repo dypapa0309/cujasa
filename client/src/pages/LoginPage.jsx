@@ -1,19 +1,23 @@
 import { useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { api, setAuthToken } from '../lib/api.js';
-import { CURRENT_PRODUCT, JASAIN_BRAND } from '../config/products.js';
+import { CURRENT_PRODUCT, JASAIN_BRAND, PRODUCTS, productById } from '../config/products.js';
 
 export default function LoginPage({ onLogin }) {
+  const params = new URLSearchParams(window.location.search);
+  const requestedMode = params.get('mode') === 'register' ? 'register' : 'login';
+  const requestedProduct = productById(params.get('product'))?.id || CURRENT_PRODUCT.id;
   const [form, setForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({
     buyerName: '',
     phone: '',
+    productId: requestedProduct,
     username: '',
     password: '',
     passwordConfirm: '',
     privacyConsent: false
   });
-  const [mode, setMode] = useState('login');
+  const [mode, setMode] = useState(requestedMode);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -95,6 +99,20 @@ export default function LoginPage({ onLogin }) {
               />
             </label>
             <label className="mt-6 grid gap-1 text-sm">
+              <span className="font-medium">사용하실 솔루션을 선택해주세요</span>
+              <select
+                className="rounded border border-line px-3 py-2"
+                value={registerForm.productId}
+                onChange={(e) => setRegisterForm((prev) => ({ ...prev, productId: e.target.value }))}
+              >
+                {PRODUCTS.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name} - {product.supportLabel}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-4 grid gap-1 text-sm">
               <span className="font-medium">아이디</span>
               <input
                 className="rounded border border-line px-3 py-2"
@@ -127,7 +145,9 @@ export default function LoginPage({ onLogin }) {
               />
             </label>
             <div className="mt-4 rounded border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-700">
-              가입하면 무료 체험 계정이 자동으로 생성되고, 실제 Threads 업로드 5회까지 사용할 수 있습니다.
+              {registerForm.productId === CURRENT_PRODUCT.id
+                ? '가입하면 CUJASA 무료 체험 계정이 자동으로 생성되고, 실제 Threads 업로드 5회까지 사용할 수 있습니다.'
+                : '가입하면 선택한 솔루션 권한이 JASAIN 계정에 연결되고, 로그인 후 솔루션 허브에서 사용할 수 있습니다.'}
             </div>
             <label className="mt-4 flex items-start gap-2 rounded border border-line bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
               <input

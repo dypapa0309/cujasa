@@ -8,6 +8,7 @@ import { createAccount } from './accountService.js';
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
 const REGISTER_USERNAME_RE = /^[a-zA-Z0-9._-]{3,30}$/;
 const REGISTER_PHONE_RE = /^\+?[0-9]{8,20}$/;
+const REGISTER_PRODUCT_IDS = new Set(PRODUCTS.filter((product) => product.status !== 'inactive').map((product) => product.id));
 
 function base64url(input) {
   return Buffer.from(JSON.stringify(input)).toString('base64url');
@@ -66,6 +67,11 @@ function internalEmailForUsername(username) {
 
 function normalizePhone(phone = '') {
   return String(phone).trim().replace(/[\s-]/g, '');
+}
+
+function normalizeRegisterProductId(productId = DEFAULT_PRODUCT_ID) {
+  const normalized = String(productId || DEFAULT_PRODUCT_ID).trim().toLowerCase();
+  return REGISTER_PRODUCT_IDS.has(normalized) ? normalized : null;
 }
 
 async function findUserByLogin(login = '') {
@@ -295,11 +301,17 @@ export async function createUser(email, password, maxAccounts = 2, buyerName = '
   return user;
 }
 
-export async function registerFreeUser({ username, password, passwordConfirm, buyerName, buyer_name, phone, privacyConsent, privacy_consent }) {
+export async function registerFreeUser({ username, password, passwordConfirm, buyerName, buyer_name, phone, privacyConsent, privacy_consent, productId, product_id }) {
   const normalizedUsername = normalizeUsername(username);
   const normalizedPhone = normalizePhone(phone);
+  const selectedProductId = normalizeRegisterProductId(productId ?? product_id);
   if (!REGISTER_USERNAME_RE.test(normalizedUsername)) {
     const error = new Error('아이디는 3~30자의 영문, 숫자, 점, 밑줄, 하이픈만 사용할 수 있습니다.');
+    error.status = 400;
+    throw error;
+  }
+  if (!selectedProductId) {
+    const error = new Error('사용할 솔루션을 선택해주세요.');
     error.status = 400;
     throw error;
   }
@@ -353,16 +365,18 @@ export async function registerFreeUser({ username, password, passwordConfirm, bu
     privacy_consent_at: new Date().toISOString()
   });
 
-  await grantUserProduct(user.id, DEFAULT_PRODUCT_ID, { status: 'active', role: 'customer' });
-  const account = await createAccount({
-    name: normalizedUsername,
-    account_handle: '',
-    target_audience: '',
-    content_scope: '',
-    tone: '',
-    cta_style: ''
-  });
-  await dbInsert('user_accounts', { user_id: user.id, account_id: account.id });
+  await grantUserProduct(user.id, selectedProductId, { status: 'active', role: 'customer' });
+  if (selectedProductId === DEFAULT_PRODUCT_ID) {
+    const account = await createAccount({
+      name: normalizedUsername,
+      account_handle: '',
+      target_audience: '',
+      content_scope: '',
+      tone: '',
+      cta_style: ''
+    });
+    await dbInsert('user_accounts', { user_id: user.id, account_id: account.id });
+  }
 
   return {
     ok: true,

@@ -57,9 +57,9 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
       coupang_secret_key: '',
       coupang_partner_id: '',
       coupang_tracking_code: '',
-      active_time_windows: Array.isArray(account.active_time_windows) && account.active_time_windows.length
-        ? account.active_time_windows
-        : [{ start: '09:00', end: '22:00' }],
+      first_upload_time: Array.isArray(account.active_time_windows) && account.active_time_windows[0]?.start
+        ? account.active_time_windows[0].start
+        : '09:00',
     });
   }, [account]);
 
@@ -77,10 +77,12 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
     setErrors({});
     setSaving(true);
     try {
+      const { first_upload_time, ...accountPatch } = form;
       await api.patch(`/api/accounts/${account.id}`, {
-        ...form,
+        ...accountPatch,
         daily_post_min: 0,
         daily_post_max: clampDailyPostCount(form.daily_post_max, 5),
+        active_time_windows: [{ start: first_upload_time || '09:00', end: first_upload_time || '09:00' }],
         forbidden_topics: form.forbidden_topics.split('\n').map((s) => s.trim()).filter(Boolean),
         forbidden_words: form.forbidden_words.split('\n').map((s) => s.trim()).filter(Boolean),
       });
@@ -100,13 +102,6 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
     } finally {
       setSaving(false);
     }
-  };
-
-  const updateWindow = (i, key, val) => {
-    setForm((p) => ({
-      ...p,
-      active_time_windows: p.active_time_windows.map((w, idx) => idx === i ? { ...w, [key]: val } : w)
-    }));
   };
 
   const connectThreads = async () => {
@@ -339,19 +334,14 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
             onChange={(e) => setForm((p) => ({ ...p, daily_post_max: clampDailyPostCount(e.target.value, 5) }))}
             className={`${input} text-center font-bold text-lg`} />
         </Field>
-        <Field label="업로드 시간대">
-          <div className="grid gap-3">
-            {form.active_time_windows.map((w, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <input type="time" value={w.start} onChange={(e) => updateWindow(i, 'start', e.target.value)}
-                  className={`flex-1 ${input} text-center`} />
-                <span className="text-gray-400 text-sm">~</span>
-                <input type="time" value={w.end} onChange={(e) => updateWindow(i, 'end', e.target.value)}
-                  className={`flex-1 ${input} text-center`} />
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-gray-400 mt-2">이 시간대 안에서 상품 매칭이 완료된 글만 최대 5개까지 발행됩니다.</p>
+        <Field label="첫 업로드 시각">
+          <input
+            type="time"
+            value={form.first_upload_time}
+            onChange={(e) => setForm((p) => ({ ...p, first_upload_time: e.target.value }))}
+            className={`${input} text-center font-bold`}
+          />
+          <p className="text-xs text-gray-400 mt-2">하루 여러 개를 예약하면 이 시각부터 일정 간격으로 배치됩니다.</p>
         </Field>
         <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs leading-relaxed text-gray-500">
           하루 최대 개수는 보장 수량이 아니라 상한입니다. 실제 쿠팡 상품 매칭이 완료된 콘텐츠가 있을 때만 예약됩니다.

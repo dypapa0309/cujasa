@@ -42,7 +42,7 @@ const tables = {
     content_style_note: '',
     daily_post_min: 0,
     daily_post_max: 5,
-    active_time_windows: [{ start: '09:00', end: '11:00' }, { start: '20:00', end: '23:00' }],
+    active_time_windows: [{ start: '09:00', end: '09:00' }],
     min_interval_minutes: 50,
     link_post_ratio: 1,
     no_link_post_ratio: 0,
@@ -88,8 +88,18 @@ const tables = {
       id: 'dexor',
       name: 'DEXOR',
       description: '블로그 분석 및 선정 자동화',
-      app_url: 'https://dexor-pearl.vercel.app/',
+      app_url: 'https://app.jasain.kr',
       landing_url: 'https://jasain.kr/dexor',
+      status: 'active',
+      created_at: now(),
+      updated_at: now()
+    },
+    {
+      id: 'spread',
+      name: 'SPREAD',
+      description: '추천 캠페인 운영 자동화',
+      app_url: 'https://app.jasain.kr',
+      landing_url: 'https://jasain.kr',
       status: 'active',
       created_at: now(),
       updated_at: now()

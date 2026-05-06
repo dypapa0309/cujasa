@@ -24,7 +24,7 @@ function normalizeAccount(payload) {
   if (!Array.isArray(next.forbidden_topics)) next.forbidden_topics = next.forbidden_topics ? [String(next.forbidden_topics)] : [];
   if (!Array.isArray(next.forbidden_words)) next.forbidden_words = next.forbidden_words ? [String(next.forbidden_words)] : [];
   if (!Array.isArray(next.active_time_windows) || next.active_time_windows.length === 0) {
-    next.active_time_windows = [{ start: '09:00', end: '11:00' }];
+    next.active_time_windows = [{ start: '09:00', end: '09:00' }];
   }
   next.active_time_windows = next.active_time_windows
     .filter((window) => window?.start && window?.end)
@@ -78,7 +78,7 @@ export const createAccount = (payload) => dbInsert('accounts', normalizeAccount(
   content_style_note: '',
   daily_post_min: 0,
   daily_post_max: 5,
-  active_time_windows: [{ start: '09:00', end: '11:00' }, { start: '20:00', end: '23:00' }],
+  active_time_windows: [{ start: '09:00', end: '09:00' }],
   min_interval_minutes: 50,
   link_post_ratio: 1,
   no_link_post_ratio: 0,

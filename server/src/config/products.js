@@ -21,8 +21,17 @@ export const PRODUCTS = [
     name: 'DEXOR',
     description: '블로그 분석 및 선정 자동화',
     supportLabel: '블로그 분석 자동화',
-    appUrl: 'https://dexor-pearl.vercel.app/',
+    appUrl: 'https://app.jasain.kr',
     landingUrl: 'https://jasain.kr/dexor',
+    status: 'active'
+  },
+  {
+    id: 'spread',
+    name: 'SPREAD',
+    description: '추천 캠페인 운영 자동화',
+    supportLabel: '캠페인 운영 자동화',
+    appUrl: 'https://app.jasain.kr',
+    landingUrl: 'https://jasain.kr',
     status: 'active'
   }
 ];

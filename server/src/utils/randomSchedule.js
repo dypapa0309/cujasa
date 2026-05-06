@@ -20,6 +20,21 @@ const fromKstDateTime = ({ year, month, date }, minute) => {
   return new Date(Date.UTC(year, month, date, hour, minutes, 0, 0) - KST_OFFSET_MINUTES * 60 * 1000);
 };
 
+function createFixedStartSchedule({ count, firstMinute, minGap, baseKstDate, now }) {
+  const result = [];
+  for (let i = 0; i < count; i += 1) {
+    const minute = firstMinute + (i * minGap);
+    const dayOffset = Math.floor(minute / (24 * 60));
+    const minuteOfDay = minute % (24 * 60);
+    let candidate = fromKstDateTime({ ...baseKstDate, date: baseKstDate.date + dayOffset }, minuteOfDay);
+    if (candidate < now) {
+      candidate = fromKstDateTime({ ...baseKstDate, date: baseKstDate.date + dayOffset + 1 }, minuteOfDay);
+    }
+    result.push(candidate);
+  }
+  return result.sort((a, b) => a - b).map((d) => d.toISOString());
+}
+
 export function createDailySchedule(account, date = new Date()) {
   const rawMax = Number(account.daily_post_max ?? 5);
   const count = Math.min(5, Math.max(0, Number.isFinite(rawMax) ? rawMax : 5));
@@ -29,6 +44,16 @@ export function createDailySchedule(account, date = new Date()) {
   let attempts = 0;
   const now = new Date();
   const baseKstDate = getKstDateParts(date);
+  const firstWindow = windows[0];
+  if (windows.length === 1 && firstWindow?.start && firstWindow.start === firstWindow.end) {
+    return createFixedStartSchedule({
+      count,
+      firstMinute: minutesOfDay(firstWindow.start),
+      minGap,
+      baseKstDate,
+      now
+    });
+  }
   while (result.length < count && attempts < 200) {
     attempts += 1;
     const w = windows[Math.floor(Math.random() * windows.length)];

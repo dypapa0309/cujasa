@@ -13,7 +13,8 @@ export const supportQaTree = {
         { label: '가격/결제 문의', next: 'pricing' },
         { label: '도입 절차', next: 'onboarding' },
         { label: '오류/세팅 문의', next: 'setup' },
-        { label: '전화 상담', next: 'phone' }
+        { label: 'SPREAD 문의', next: 'spread' },
+        { label: '상담 연결', next: 'phone' }
       ]
     },
     cujasa: {
@@ -65,8 +66,16 @@ export const supportQaTree = {
       options: [
         { label: '블로그 분석 자동화', next: 'dexor-analysis' },
         { label: '키워드/콘텐츠 선정', next: 'dexor-keywords' },
-        { label: 'DEXOR 바로가기', action: 'link', href: 'https://dexor-pearl.vercel.app/' },
+        { label: 'DEXOR 바로가기', action: 'link', href: 'https://app.jasain.kr/?mode=register&product=dexor' },
         { label: '상담 신청하기', action: 'inquiry', topic: 'dexor' }
+      ]
+    },
+    spread: {
+      title: 'SPREAD 문의',
+      body: 'SPREAD는 추천 캠페인, 신청자 선정, 제출물 검수를 한 흐름으로 운영하는 자동화 서비스입니다.',
+      options: [
+        { label: 'SPREAD 시작하기', action: 'link', href: 'https://app.jasain.kr/?mode=register&product=spread' },
+        { label: '상담 신청하기', action: 'inquiry', topic: 'spread' }
       ]
     },
     'dexor-analysis': {
@@ -110,10 +119,11 @@ export const supportQaTree = {
       ]
     },
     phone: {
-      title: '전화 상담',
-      body: '바로 통화가 필요하면 전화상담하기를 눌러주세요. 통화가 어려우면 문의를 남겨주시면 확인 후 연락드립니다.',
+      title: '상담 연결',
+      body: '문자 또는 카카오톡으로 바로 상담할 수 있습니다.',
       options: [
-        { label: '전화상담하기', action: 'phone' },
+        { label: '문자상담하기', action: 'phone' },
+        { label: '카카오톡 상담하기', action: 'link', href: 'https://open.kakao.com/o/sOtaVlsi' },
         { label: '문의 남기기', action: 'inquiry', topic: 'phone_request' }
       ]
     }
@@ -125,13 +135,14 @@ export function publicSupportConfig() {
     version: SUPPORT_QA_VERSION,
     ...supportQaTree,
     phone: {
-      display: process.env.SUPPORT_PHONE_DISPLAY || '전화 상담',
-      tel: process.env.SUPPORT_PHONE_TEL || ''
+      display: process.env.SUPPORT_PHONE_DISPLAY || '문자 상담 010-7541-6143',
+      tel: process.env.SUPPORT_PHONE_TEL || '01075416143'
     },
     products: {
       jasain: 'JASAIN',
       cujasa: 'CUJASA',
-      dexor: 'DEXOR'
+      dexor: 'DEXOR',
+      spread: 'SPREAD'
     }
   };
 }

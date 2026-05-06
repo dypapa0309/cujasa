@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Beaker, CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2, PlayCircle, MessageCircle, Phone } from 'lucide-react';
+import { Beaker, CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2, PlayCircle, MessageCircle, Phone, Search, Sparkles } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import CustomerHomePage from './CustomerHomePage.jsx';
@@ -8,7 +8,7 @@ import CustomerSettingsPage from './CustomerSettingsPage.jsx';
 import CustomerBillingPage from './CustomerBillingPage.jsx';
 import CustomerRunPage from './CustomerRunPage.jsx';
 import CustomerBetaPage from './CustomerBetaPage.jsx';
-import { CURRENT_PRODUCT, JASAIN_BRAND } from '../../config/products.js';
+import { CURRENT_PRODUCT, JASAIN_BRAND, productById } from '../../config/products.js';
 
 const baseTabs = [
   ['home', '홈', Home],
@@ -43,6 +43,22 @@ function todayKstKey() {
 export default function CustomerApp({ accounts, currentUser, reloadAccounts, onLogout }) {
   const toast = useToast();
   const routingReadyRef = useRef(false);
+  const productParam = productById(new URLSearchParams(window.location.search).get('product'))?.id;
+  const activeProducts = (currentUser.products || [])
+    .filter((product) => product.status !== 'suspended')
+    .map((grant) => productById(grant.productId) || {
+      id: grant.productId,
+      name: grant.name || grant.productId,
+      description: grant.description || '',
+      supportLabel: grant.description || ''
+    })
+    .filter((product) => product?.id);
+  const defaultProductId = activeProducts.some((product) => product.id === productParam)
+    ? productParam
+    : activeProducts.some((product) => product.id === CURRENT_PRODUCT.id)
+      ? CURRENT_PRODUCT.id
+      : activeProducts[0]?.id || CURRENT_PRODUCT.id;
+  const [selectedProductId, setSelectedProductId] = useState(defaultProductId);
   const [tab, setTab] = useState('home');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [pipelineResult, setPipelineResult] = useState(null);
@@ -59,12 +75,62 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
   const account = accounts[selectedIdx] ?? accounts[0];
   const canAdd = accounts.length < maxAccounts;
   const displayLogin = currentUser.username || currentUser.email;
+  const selectedProduct = productById(selectedProductId) || activeProducts.find((product) => product.id === selectedProductId) || CURRENT_PRODUCT;
+  const hasCujasa = activeProducts.some((product) => product.id === CURRENT_PRODUCT.id);
   const isBetaTester = [currentUser?.email, currentUser?.username]
     .map((value) => String(value || '').toLowerCase())
     .includes('test1@test.com');
   const tabs = isBetaTester ? [...baseTabs, ['beta', '베타', Beaker]] : baseTabs;
   const pages = isBetaTester ? { ...basePages, beta: CustomerBetaPage } : basePages;
   const Page = pages[tab] || pages.home;
+
+  useEffect(() => {
+    if (activeProducts.length === 0) return;
+    if (!activeProducts.some((product) => product.id === selectedProductId)) {
+      setSelectedProductId(activeProducts[0].id);
+    }
+  }, [currentUser?.products, selectedProductId]);
+
+  const changeProduct = (nextProductId) => {
+    if (guardDuringPipeline()) return;
+    setSelectedProductId(nextProductId);
+    setTab('home');
+    const params = new URLSearchParams(window.location.search);
+    params.set('product', nextProductId);
+    window.history.replaceState(
+      { jasainProduct: nextProductId },
+      '',
+      `${window.location.pathname}?${params.toString()}${nextProductId === CURRENT_PRODUCT.id && accounts[0]?.id ? `#tab=home&account=${encodeURIComponent(accounts[0].id)}` : ''}`
+    );
+  };
+
+  const header = (
+    <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-5 py-4">
+      <div className="max-w-2xl mx-auto flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-black text-lg text-coupang tracking-tight">{JASAIN_BRAND.name}</div>
+          <div className="truncate text-xs text-gray-400 mt-0.5">{selectedProduct.name} · {displayLogin}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          {activeProducts.length > 1 && (
+            <select
+              value={selectedProductId}
+              onChange={(event) => changeProduct(event.target.value)}
+              className="max-w-[132px] rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-bold text-gray-700"
+              aria-label="솔루션 선택"
+            >
+              {activeProducts.map((product) => (
+                <option key={product.id} value={product.id}>{product.name}</option>
+              ))}
+            </select>
+          )}
+          <button onClick={() => { if (!guardDuringPipeline()) onLogout(); }} className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5">
+            로그아웃
+          </button>
+        </div>
+      </div>
+    </header>
+  );
 
   const parseRoute = () => {
     const raw = window.location.hash.replace(/^#/, '');
@@ -311,20 +377,45 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     }
   };
 
+  if (activeProducts.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {header}
+        <main className="mx-auto grid max-w-2xl gap-4 px-5 py-10">
+          <ProductEmptyState onLogout={onLogout} />
+        </main>
+        <SupportContactButton />
+      </div>
+    );
+  }
+
+  if (selectedProductId !== CURRENT_PRODUCT.id) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {header}
+        <main className="mx-auto max-w-2xl px-5 py-6 pb-28">
+          <SolutionHome product={selectedProduct} />
+        </main>
+        <SupportContactButton />
+      </div>
+    );
+  }
+
+  if (!hasCujasa) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {header}
+        <main className="mx-auto grid max-w-2xl gap-4 px-5 py-10">
+          <ProductEmptyState onLogout={onLogout} />
+        </main>
+        <SupportContactButton />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* 헤더 */}
-      <header className="sticky top-0 z-10 bg-white border-b border-gray-100 px-5 py-4">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div>
-            <div className="font-black text-lg text-coupang tracking-tight">{JASAIN_BRAND.name}</div>
-            <div className="text-xs text-gray-400 mt-0.5">{CURRENT_PRODUCT.name} · {displayLogin}</div>
-          </div>
-          <button onClick={() => { if (!guardDuringPipeline()) onLogout(); }} className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5">
-            로그아웃
-          </button>
-        </div>
-      </header>
+      {header}
 
       <main className="max-w-2xl mx-auto px-5 py-6 pb-28">
         {accounts.length === 0 ? (
@@ -506,6 +597,85 @@ function SupportContactButton() {
         <MessageCircle size={18} />
         상담하기
       </button>
+    </div>
+  );
+}
+
+function ProductEmptyState({ onLogout }) {
+  return (
+    <div className="rounded-2xl border border-gray-100 bg-white p-6 text-center">
+      <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-blue-50 text-coupang">
+        <Sparkles size={22} />
+      </div>
+      <div className="mt-4 text-lg font-black text-gray-900">사용 가능한 솔루션이 없습니다</div>
+      <p className="mt-2 text-sm leading-relaxed text-gray-500">
+        회원가입 또는 결제가 완료된 솔루션이 이 계정에 연결되면 이곳에서 선택해 사용할 수 있습니다.
+      </p>
+      <button type="button" onClick={onLogout} className="mt-5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600">
+        로그아웃
+      </button>
+    </div>
+  );
+}
+
+function SolutionHome({ product }) {
+  if (product.id === 'dexor') {
+    return (
+      <div className="grid gap-5">
+        <div className="rounded-2xl bg-gradient-to-br from-blue-600 to-slate-900 p-6 text-white">
+          <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-blue-100">
+            <Search size={14} />
+            블로그 선정 자동화
+          </div>
+          <h1 className="mt-5 text-2xl font-black leading-tight">DEXOR 분석을 시작할 준비가 됐습니다</h1>
+          <p className="mt-3 text-sm leading-relaxed text-blue-100">
+            URL과 엑셀 기반 블로그 후보를 분석해 S/A 후보 중심으로 선정 업무를 줄이는 화면입니다.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[
+            ['1', 'URL 업로드', '블로그 URL 또는 엑셀을 준비합니다.'],
+            ['2', '등급 분석', '활동성, 광고성, 반응성을 기준으로 분류합니다.'],
+            ['3', '후보 다운로드', '선정 후보를 정리해 내려받습니다.']
+          ].map(([step, title, body]) => (
+            <div key={step} className="rounded-2xl border border-gray-100 bg-white p-5">
+              <div className="text-3xl font-black text-blue-100">{step}</div>
+              <div className="mt-3 font-black text-gray-900">{title}</div>
+              <div className="mt-1 text-xs leading-relaxed text-gray-500">{body}</div>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-5 text-sm leading-relaxed text-blue-700">
+          분석 업로드 기능은 JASAIN 통합 화면에 순차적으로 연결됩니다. 지금은 제품 권한과 진입 흐름이 준비된 상태입니다.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-5">
+      <div className="rounded-2xl bg-gradient-to-br from-teal-600 to-slate-900 p-6 text-white">
+        <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-teal-100">
+          <Sparkles size={14} />
+          추천 캠페인
+        </div>
+        <h1 className="mt-5 text-2xl font-black leading-tight">SPREAD 추천 캠페인을 준비 중입니다</h1>
+        <p className="mt-3 text-sm leading-relaxed text-teal-100">
+          브랜드 캠페인, 신청자 선정, 제출물 검수까지 한 흐름으로 운영하는 솔루션입니다.
+        </p>
+      </div>
+      <div className="grid gap-3">
+        {[
+          ['신규 캠페인 추천', '목표 채널과 상품 유형에 맞춰 캠페인 틀을 제안합니다.'],
+          ['참여자 선정', '신청자 정보와 채널 지표를 비교해 후보를 정리합니다.'],
+          ['제출물 검수', 'URL, 필수 키워드, 금지 표현을 먼저 확인합니다.']
+        ].map(([title, body]) => (
+          <div key={title} className="rounded-2xl border border-gray-100 bg-white p-5">
+            <div className="font-black text-gray-900">{title}</div>
+            <div className="mt-1 text-sm leading-relaxed text-gray-500">{body}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
