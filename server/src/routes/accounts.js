@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createAccount, deleteAccount, getAccount, listAccounts, updateAccount } from '../services/accountService.js';
+import { archiveAccount, createAccount, deleteAccount, getAccount, listAccounts, listAllAccounts, updateAccount } from '../services/accountService.js';
 import { dbGet, dbInsert, dbList, logActivity, safeLogActivity } from '../services/supabaseService.js';
 import { getRunningPipeline, latestPipelineRun } from '../services/pipelineRunService.js';
 import { runPipelineForAccountInBackground } from '../services/pipelineBackgroundService.js';
@@ -45,9 +45,37 @@ function mapPipelineRun(run) {
   };
 }
 
+async function attachOwnerLabels(accounts = []) {
+  const [links, users] = await Promise.all([
+    dbList('user_accounts'),
+    dbList('users')
+  ]);
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  return accounts.map((account) => {
+    const owners = links
+      .filter((link) => link.account_id === account.id)
+      .map((link) => usersById.get(link.user_id))
+      .filter(Boolean)
+      .map((user) => ({
+        id: user.id,
+        buyerName: user.buyer_name || '',
+        username: user.username || '',
+        email: user.email || '',
+        plan: user.plan || 'free',
+        status: user.status || 'active'
+      }));
+    return {
+      ...account,
+      owner: owners[0] || null,
+      owner_label: owners.map((user) => user.buyerName || user.username || user.email).filter(Boolean).join(', ')
+    };
+  });
+}
+
 router.get('/', async (req, res, next) => {
   try {
-    const all = await listAccounts();
+    const includeArchived = req.user?.type === 'admin' && req.query.includeArchived === '1';
+    const all = includeArchived ? await listAllAccounts() : await listAccounts();
     if (req.user?.type === 'user') {
       const assigned = all.filter((a) => req.user.allowedAccountIds.includes(a.id));
       const [user, users, userAccounts, audits] = await Promise.all([
@@ -69,7 +97,7 @@ router.get('/', async (req, res, next) => {
       }
       return res.json(redactAccounts(assigned.filter((account) => !hiddenIds.has(account.id))));
     }
-    res.json(redactAccounts(all));
+    res.json(redactAccounts(await attachOwnerLabels(all)));
   } catch (e) { next(e); }
 });
 
@@ -282,9 +310,39 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
 
 router.delete('/:accountId', async (req, res, next) => {
   try {
-    if (req.user?.type === 'user') return res.status(403).json({ error: 'Admin only' });
-    await deleteAccount(req.params.accountId);
-    res.status(204).end();
+    const { accountId } = req.params;
+    if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const account = await getAccount(accountId);
+    if (!account) return res.status(404).json({ error: 'Account not found' });
+
+    if (req.user?.type === 'admin' && req.query.hard === 'true') {
+      if (account.status !== 'archived') {
+        return res.status(409).json({ error: '완전 삭제는 보관 계정에서만 가능합니다. 먼저 보관 처리해주세요.' });
+      }
+      await deleteAccount(accountId);
+      await safeLogActivity({
+        account_id: accountId,
+        project_id: account.project_id,
+        level: 'warn',
+        action: 'account_permanently_deleted',
+        message: `${account.name} 계정 완전 삭제`,
+        payload: { requestedBy: req.user?.email || 'admin' }
+      });
+      return res.status(204).end();
+    }
+
+    const archived = await archiveAccount(accountId);
+    await safeLogActivity({
+      account_id: accountId,
+      project_id: account.project_id,
+      level: 'warn',
+      action: 'account_archived',
+      message: `${account.name} 계정 보관 처리`,
+      payload: { requestedBy: req.user?.email || req.user?.type || 'manual' }
+    });
+    res.json(redactAccount(archived));
   } catch (e) { next(e); }
 });
 

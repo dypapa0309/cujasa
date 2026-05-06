@@ -22,6 +22,8 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
   const toast = useToast();
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [confirmingArchive, setConfirmingArchive] = useState(false);
   const [connectingThreads, setConnectingThreads] = useState(false);
   const [confirmingThreads, setConfirmingThreads] = useState(false);
   const [errors, setErrors] = useState({});
@@ -120,6 +122,22 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
     if (!account?.id) return '';
     const payload = await api.get(`/api/accounts/${account.id}/sensitive/${field}`);
     return payload?.value || '';
+  };
+  const archiveCurrentAccount = async () => {
+    if (!account?.id || archiving) return;
+    setArchiving(true);
+    try {
+      await api.delete(`/api/accounts/${account.id}`);
+      await reloadAccounts?.();
+      await reloadSetupStatus?.();
+      setConfirmingArchive(false);
+      setTab?.('home');
+      toast('계정을 보관했습니다. 예약/게시/분석 기록은 유지됩니다.', 'success');
+    } catch (error) {
+      toast(error.message || '계정 보관에 실패했습니다.', 'error');
+    } finally {
+      setArchiving(false);
+    }
   };
   const connectionLabel = account.has_threads_access_token
     ? `연결됨${account.account_handle ? ` · ${account.account_handle}` : ''}`
@@ -344,6 +362,19 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
         {saving && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
         {saving ? '저장 중...' : trialBlocked ? '무료 체험 종료' : '설정 저장'}
       </button>
+      <Section title="계정 보관/삭제" desc="사용하지 않는 계정은 목록에서 숨기고 자동화를 중지합니다.">
+        <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs leading-relaxed text-rose-700">
+          고객용 계정 삭제는 복구 가능한 보관 처리입니다. 예약/게시/분석 기록은 보관되고, 자동화는 중지됩니다.
+        </div>
+        <button
+          type="button"
+          onClick={() => setConfirmingArchive(true)}
+          disabled={archiving}
+          className="w-full rounded-2xl border border-rose-200 bg-white py-4 text-sm font-black text-rose-600 disabled:opacity-50"
+        >
+          {archiving ? '보관 중...' : '계정 보관하기'}
+        </button>
+      </Section>
       {confirmingThreads && (
         <ThreadsConnectModal
           account={account}
@@ -353,6 +384,14 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
             setConfirmingThreads(false);
             connectThreads();
           }}
+        />
+      )}
+      {confirmingArchive && (
+        <ArchiveAccountModal
+          account={account}
+          archiving={archiving}
+          onCancel={() => setConfirmingArchive(false)}
+          onConfirm={archiveCurrentAccount}
         />
       )}
     </div>
@@ -423,6 +462,28 @@ function ThreadsConnectModal({ account, connecting, onCancel, onConfirm }) {
           </button>
           <button type="button" onClick={onConfirm} disabled={connecting} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white disabled:opacity-50">
             {connecting ? '이동 중...' : '확인하고 연결'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ArchiveAccountModal({ account, archiving, onCancel, onConfirm }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+        <div className="text-lg font-black text-gray-900">계정 보관</div>
+        <div className="mt-3 grid gap-2 text-sm leading-relaxed text-gray-600">
+          <p><strong>{account.name}</strong> 계정을 고객 화면에서 숨기고 자동화를 중지합니다.</p>
+          <p className="text-xs text-gray-500">예약/게시/분석 기록은 보관됩니다. 완전 삭제가 필요하면 관리자에게 요청해주세요.</p>
+        </div>
+        <div className="mt-5 flex gap-2">
+          <button type="button" onClick={onCancel} disabled={archiving} className="flex-1 rounded-xl border border-gray-200 py-3 text-sm font-bold text-gray-500 disabled:opacity-50">
+            취소
+          </button>
+          <button type="button" onClick={onConfirm} disabled={archiving} className="flex-1 rounded-xl bg-rose-600 py-3 text-sm font-bold text-white disabled:opacity-50">
+            {archiving ? '보관 중...' : '보관하기'}
           </button>
         </div>
       </div>

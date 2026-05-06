@@ -14,6 +14,9 @@ export default function GeneratePage({ selectedAccount }) {
   const [showManualForm, setShowManualForm] = useState(false);
   const [manualTitle, setManualTitle] = useState('');
   const [manualAngle, setManualAngle] = useState('');
+  const [tab, setTab] = useState('valid');
+  const [cleanupPreview, setCleanupPreview] = useState(null);
+  const [cleanupLoading, setCleanupLoading] = useState(false);
 
   const load = async () => {
     if (!selectedAccount) return;
@@ -25,9 +28,25 @@ export default function GeneratePage({ selectedAccount }) {
     setPosts(p);
   };
 
+  const loadCleanupPreview = async () => {
+    if (!selectedAccount) return;
+    setCleanupLoading(true);
+    try {
+      setCleanupPreview(await api.post('/api/admin/operations/cleanup-unused-artifacts', {
+        mode: 'dry-run',
+        accountId: selectedAccount.id,
+        retentionDays: 7
+      }));
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
   useEffect(() => {
     setLoading(true);
-    load().catch(() => toast('데이터를 불러오지 못했습니다.', 'error')).finally(() => setLoading(false));
+    Promise.all([load(), loadCleanupPreview()])
+      .catch(() => toast('데이터를 불러오지 못했습니다.', 'error'))
+      .finally(() => setLoading(false));
   }, [selectedAccount?.id]);
 
   const generateTopics = async () => {
@@ -102,7 +121,34 @@ export default function GeneratePage({ selectedAccount }) {
     }
   };
 
+  const applyCleanup = async () => {
+    if (!selectedAccount) return;
+    if (!confirm('삭제 예정 주제/콘텐츠를 정리할까요? 예약/게시 이력이 있는 데이터는 삭제되지 않습니다.')) return;
+    setCleanupLoading(true);
+    try {
+      const result = await api.post('/api/admin/operations/cleanup-unused-artifacts', {
+        mode: 'apply',
+        accountId: selectedAccount.id,
+        retentionDays: 7
+      });
+      toast(`미사용 주제 ${result.topicCount || 0}개를 정리했습니다.`, 'success');
+      await load();
+      await loadCleanupPreview();
+    } catch (error) {
+      toast(error.message || '삭제 예정 정리에 실패했습니다.', 'error');
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
+
   const isGlobalBusy = busyAction === '주제 자동 생성 중';
+  const cleanupTopicIds = new Set(cleanupPreview?.topicIds || []);
+  const validTopics = topics.filter((topic) => !cleanupTopicIds.has(topic.id));
+  const cleanupTopics = topics.filter((topic) => cleanupTopicIds.has(topic.id));
+  const validPosts = posts.filter((post) => !cleanupTopicIds.has(post.topic_id));
+  const cleanupPosts = posts.filter((post) => cleanupTopicIds.has(post.topic_id));
+  const visibleTopics = tab === 'cleanup' ? cleanupTopics : validTopics;
+  const visiblePosts = tab === 'cleanup' ? cleanupPosts : validPosts;
 
   return (
     <div className="grid gap-5">
@@ -172,6 +218,28 @@ export default function GeneratePage({ selectedAccount }) {
         </div>
       )}
 
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-line bg-white p-3">
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setTab('valid')} className={`rounded px-3 py-2 text-sm font-bold ${tab === 'valid' ? 'bg-coupang text-white' : 'bg-panel text-slate-600'}`}>
+            유효 {validTopics.length}
+          </button>
+          <button type="button" onClick={() => setTab('cleanup')} className={`rounded px-3 py-2 text-sm font-bold ${tab === 'cleanup' ? 'bg-coupang text-white' : 'bg-panel text-slate-600'}`}>
+            삭제 예정 {cleanupPreview?.topicCount || 0}
+          </button>
+        </div>
+        {tab === 'cleanup' && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">7일 초과 · 큐 이력 없음</span>
+            <button type="button" onClick={loadCleanupPreview} disabled={cleanupLoading} className="rounded border border-line px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-50">
+              {cleanupLoading ? '확인 중...' : '다시 확인'}
+            </button>
+            <button type="button" onClick={applyCleanup} disabled={cleanupLoading || !cleanupPreview?.topicCount} className="rounded bg-rose-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">
+              삭제 예정 정리 실행
+            </button>
+          </div>
+        )}
+      </div>
+
       {loading ? (
         <div className="grid gap-4 lg:grid-cols-2">
           {[...Array(4)].map((_, i) => <Skeleton key={i} />)}
@@ -179,13 +247,13 @@ export default function GeneratePage({ selectedAccount }) {
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="grid gap-3">
-            <h2 className="font-semibold">주제 ({topics.length})</h2>
-            {topics.length === 0 && !busyAction && (
+            <h2 className="font-semibold">{tab === 'cleanup' ? '삭제 예정 주제' : '유효 주제'} ({visibleTopics.length})</h2>
+            {visibleTopics.length === 0 && !busyAction && (
               <div className="rounded border border-line bg-white p-6 text-center text-sm text-slate-400">
-                주제 자동 생성을 눌러 시작하세요
+                {tab === 'cleanup' ? '삭제 예정 주제가 없습니다' : '주제 자동 생성을 눌러 시작하세요'}
               </div>
             )}
-            {[...topics].reverse().map((topic) => (
+            {[...visibleTopics].reverse().map((topic) => (
               <TopicCard
                 key={topic.id}
                 topic={topic}
@@ -197,13 +265,13 @@ export default function GeneratePage({ selectedAccount }) {
             ))}
           </div>
           <div className="grid gap-3 content-start">
-            <h2 className="font-semibold">콘텐츠 ({posts.length})</h2>
-            {posts.length === 0 && (
+            <h2 className="font-semibold">{tab === 'cleanup' ? '삭제 예정 콘텐츠' : '유효 콘텐츠'} ({visiblePosts.length})</h2>
+            {visiblePosts.length === 0 && (
               <div className="rounded border border-line bg-white p-6 text-center text-sm text-slate-400">
-                주제를 선택하고 콘텐츠 생성을 눌러주세요
+                {tab === 'cleanup' ? '삭제 예정 콘텐츠가 없습니다' : '주제를 선택하고 콘텐츠 생성을 눌러주세요'}
               </div>
             )}
-            {posts.map((post) => (
+            {visiblePosts.map((post) => (
               <PostCard key={post.id} post={post} onQueue={queue} topics={topics} />
             ))}
           </div>

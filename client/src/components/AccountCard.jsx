@@ -7,6 +7,9 @@ export default function AccountCard({ account, onSelect }) {
         <div>
           <h3 className="font-semibold">{account.name}</h3>
           <p className="mt-1 text-sm text-slate-500">{account.target_audience || '타깃 미설정'}</p>
+          <p className="mt-1 text-xs text-slate-400">
+            {account.owner_label || '고객 미할당'}{account.account_handle ? ` · ${account.account_handle}` : ''}
+          </p>
         </div>
         <StatusBadge status={account.status} />
       </div>

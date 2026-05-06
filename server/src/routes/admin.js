@@ -13,6 +13,8 @@ import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from '../services/supabas
 import { hashPassword } from '../utils/password.js';
 import { cleanupQueueErrors, operationAccountRows, operationSummary } from '../services/operationsService.js';
 import { buildOpsHealthSummary, runDailyOpsHealthCheck } from '../services/opsHealthService.js';
+import { cleanupUnusedPipelineArtifacts } from '../services/unusedArtifactCleanupService.js';
+import { dismissPastQueueIssuesForAccount } from '../services/queueVisibilityService.js';
 import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js';
 import { buildMisassignmentReport } from '../services/accountOwnershipService.js';
 import { createManualPayment, expireDueEntitlements } from '../services/billingEntitlementService.js';
@@ -120,6 +122,25 @@ router.post('/operations/cleanup-queue-errors', async (req, res, next) => {
   try {
     const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
     res.json(await cleanupQueueErrors({ mode }));
+  } catch (e) { next(e); }
+});
+
+router.post('/operations/cleanup-unused-artifacts', async (req, res, next) => {
+  try {
+    const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
+    const retentionDays = Number(req.body?.retentionDays || 7);
+    const accountId = req.body?.accountId || null;
+    res.json(await cleanupUnusedPipelineArtifacts({ mode, retentionDays, accountId }));
+  } catch (e) { next(e); }
+});
+
+router.post('/operations/accounts/:accountId/dismiss-past-queue-issues', async (req, res, next) => {
+  try {
+    const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
+    res.json(await dismissPastQueueIssuesForAccount(req.params.accountId, {
+      mode,
+      reason: req.body?.reason || 'admin_past_issue_cleanup'
+    }));
   } catch (e) { next(e); }
 });
 
@@ -285,6 +306,21 @@ router.get('/products', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.patch('/products/:id', async (req, res, next) => {
+  try {
+    const patch = {};
+    if (req.body.name !== undefined) patch.name = String(req.body.name || '').trim();
+    if (req.body.description !== undefined) patch.description = String(req.body.description || '').trim() || null;
+    if (req.body.app_url !== undefined || req.body.appUrl !== undefined) patch.app_url = String(req.body.app_url ?? req.body.appUrl ?? '').trim() || null;
+    if (req.body.landing_url !== undefined || req.body.landingUrl !== undefined) patch.landing_url = String(req.body.landing_url ?? req.body.landingUrl ?? '').trim() || null;
+    if (req.body.status !== undefined && ['active', 'inactive', 'archived'].includes(req.body.status)) patch.status = req.body.status;
+    if (patch.name === '') return res.status(400).json({ error: 'name 필수' });
+    const [updated] = await dbUpdate('jasain_products', { id: req.params.id }, patch);
+    if (!updated) return res.status(404).json({ error: 'Product not found' });
+    res.json(updated);
+  } catch (e) { next(e); }
+});
+
 router.get('/billing/products', async (req, res, next) => {
   try {
     res.json(await dbList('billing_products', { active: true }, { order: 'amount', ascending: false }));
@@ -381,6 +417,31 @@ router.patch('/users/:id', async (req, res, next) => {
     if (buyerNameValue !== undefined) patch.buyer_name = String(buyerNameValue || '').trim() || null;
     if (password) patch.password_hash = hashPassword(password);
     const [updated] = await updateUser(req.params.id, patch);
+    res.json({ ...updated, password_hash: undefined });
+  } catch (e) { next(e); }
+});
+
+router.post('/users/:id/plan', async (req, res, next) => {
+  try {
+    const { plan } = req.body || {};
+    const user = await dbGet('users', { id: req.params.id });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const now = new Date();
+    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const patchByPlan = {
+      free: { status: 'active', plan: 'free', billing_status: 'none', paid_until: null },
+      onetime: { status: 'active', plan: 'onetime', billing_status: 'paid', paid_until: null },
+      monthly: { status: 'active', plan: 'monthly', billing_status: 'active', paid_until: in30Days },
+      suspended: { status: 'suspended' }
+    };
+    const patch = patchByPlan[plan];
+    if (!patch) return res.status(400).json({ error: 'plan must be free, onetime, monthly, or suspended' });
+    const [updated] = await dbUpdate('users', { id: req.params.id }, patch);
+    if (plan === 'suspended') {
+      await grantUserProduct(req.params.id, 'cujasa', { status: 'suspended', role: 'customer' });
+    } else {
+      await grantUserProduct(req.params.id, 'cujasa', { status: 'active', role: 'customer' });
+    }
     res.json({ ...updated, password_hash: undefined });
   } catch (e) { next(e); }
 });

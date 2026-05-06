@@ -5,7 +5,7 @@ import { CURRENT_PRODUCT, JASAIN_BRAND } from '../config/products.js';
 
 export default function LoginPage({ onLogin }) {
   const [form, setForm] = useState({ email: '', password: '' });
-  const [registerForm, setRegisterForm] = useState({ username: '', password: '', passwordConfirm: '' });
+  const [registerForm, setRegisterForm] = useState({ buyerName: '', username: '', password: '', passwordConfirm: '' });
   const [mode, setMode] = useState('login');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -54,7 +54,7 @@ export default function LoginPage({ onLogin }) {
         </div>
         {mode === 'login' ? (
           <>
-            <label className="mt-6 grid gap-1 text-sm">
+            <label className="mt-4 grid gap-1 text-sm">
               <span className="font-medium">아이디 또는 이메일</span>
               <input className="rounded border border-line px-3 py-2" type="text" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} />
             </label>
@@ -65,6 +65,17 @@ export default function LoginPage({ onLogin }) {
           </>
         ) : (
           <>
+            <label className="mt-4 grid gap-1 text-sm">
+              <span className="font-medium">고객명</span>
+              <input
+                className="rounded border border-line px-3 py-2"
+                type="text"
+                autoComplete="name"
+                value={registerForm.buyerName}
+                placeholder="예: 홍길동"
+                onChange={(e) => setRegisterForm((prev) => ({ ...prev, buyerName: e.target.value }))}
+              />
+            </label>
             <label className="mt-6 grid gap-1 text-sm">
               <span className="font-medium">아이디</span>
               <input

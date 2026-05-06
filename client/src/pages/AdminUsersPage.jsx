@@ -15,6 +15,8 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [creating, setCreating] = useState(false);
   const [buyerNameDrafts, setBuyerNameDrafts] = useState({});
   const [accountDrafts, setAccountDrafts] = useState({});
+  const [search, setSearch] = useState('');
+  const [planBusyUserId, setPlanBusyUserId] = useState('');
 
   const load = async () => {
     const [nextUsers, nextProducts, nextConflicts, nextMisassignments] = await Promise.all([
@@ -136,6 +138,21 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     }
   };
 
+  const changePlan = async (user, plan) => {
+    const labels = { free: '무료회원', onetime: '영구구매', monthly: '월회원', suspended: '정지' };
+    if (plan === 'suspended' && !confirm(`${user.buyer_name || user.buyerName || user.username || user.email} 고객을 정지할까요?`)) return;
+    setPlanBusyUserId(user.id);
+    try {
+      await api.post(`/api/admin/users/${user.id}/plan`, { plan });
+      await load();
+      toast(`${labels[plan]}으로 변경했습니다.`, 'success');
+    } catch (err) {
+      toast(err.message || '회원 플랜 변경에 실패했습니다.', 'error');
+    } finally {
+      setPlanBusyUserId('');
+    }
+  };
+
   const updateAccountTrackingCode = async (account, trackingCode) => {
     const next = String(trackingCode || '').trim();
     if (next === (account.coupang_tracking_code || '')) return;
@@ -248,6 +265,21 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     }
   };
 
+  const filteredUsers = users.filter((user) => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return true;
+    const haystack = [
+      user.buyer_name,
+      user.buyerName,
+      user.username,
+      user.email,
+      user.plan,
+      user.billing_status,
+      ...(user.accounts || []).flatMap((account) => [account.name, account.account_handle, account.threads_user_id])
+    ].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(needle);
+  });
+
   return (
     <div className="grid gap-5">
       <div className="flex items-center justify-between">
@@ -255,6 +287,17 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
         <button onClick={() => setShowCreate((v) => !v)} className="rounded bg-coupang px-4 py-2 text-sm font-medium text-white">
           {showCreate ? '취소' : '+ 구매자 생성'}
         </button>
+      </div>
+      <div className="rounded border border-line bg-white p-4">
+        <label className="grid gap-1 text-sm">
+          <span className="font-semibold text-slate-600">고객 검색</span>
+          <input
+            className="rounded border border-line px-3 py-2"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="구매자명, 아이디, 이메일, Threads 계정명/핸들 검색"
+          />
+        </label>
       </div>
 
       {showCreate && (
@@ -302,9 +345,11 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
         <div className="grid gap-3">{[...Array(3)].map((_, i) => <div key={i} className="h-24 animate-pulse rounded border border-line bg-white" />)}</div>
       ) : users.length === 0 ? (
         <div className="rounded border border-line bg-white p-8 text-center text-sm text-slate-400">등록된 구매자가 없습니다</div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="rounded border border-line bg-white p-8 text-center text-sm text-slate-400">검색 결과가 없습니다</div>
       ) : (
         <div className="grid gap-4">
-          {users.map((user) => {
+          {filteredUsers.map((user) => {
             const assignedIds = user.accounts?.map((a) => a.id) || [];
             const unassigned = accounts.filter((a) => !assignedIds.includes(a.id));
             const grantedProductIds = user.products?.map((product) => product.productId) || [];
@@ -332,7 +377,9 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                   </label>
                   <div>
                     <div className="font-semibold text-sm">{user.email}</div>
-                    {(user.buyer_name || user.buyerName) && <div className="text-xs text-slate-400">{user.buyer_name || user.buyerName}</div>}
+                    <div className="text-xs text-slate-400">
+                      {[user.buyer_name || user.buyerName, user.username ? `ID ${user.username}` : '', planLabel(user)].filter(Boolean).join(' · ')}
+                    </div>
                   </div>
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                     {user.status === 'active' ? '활성' : '정지'}
@@ -350,6 +397,31 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                   <button onClick={() => toggleStatus(user)} className="ml-auto text-xs text-slate-500 hover:text-slate-800 border border-line rounded px-2 py-1">
                     {user.status === 'active' ? '정지' : '활성화'}
                   </button>
+                </div>
+                <div className="mb-4 flex flex-wrap gap-2 rounded border border-line bg-gray-50 p-3">
+                  {[
+                    ['free', '무료'],
+                    ['onetime', '영구구매'],
+                    ['monthly', '월회원'],
+                    ['suspended', '정지']
+                  ].map(([plan, label]) => (
+                    <button
+                      key={plan}
+                      type="button"
+                      onClick={() => changePlan(user, plan)}
+                      disabled={planBusyUserId === user.id}
+                      className={`rounded border px-3 py-1.5 text-xs font-bold disabled:opacity-50 ${
+                        isCurrentPlan(user, plan)
+                          ? 'border-coupang bg-blue-50 text-coupang'
+                          : plan === 'suspended'
+                            ? 'border-rose-200 bg-white text-rose-600'
+                            : 'border-line bg-white text-slate-600 hover:border-coupang hover:text-coupang'
+                      }`}
+                    >
+                      {planBusyUserId === user.id ? '처리 중...' : label}
+                    </button>
+                  ))}
+                  {user.paid_until && <span className="self-center text-xs text-slate-400">유효기간 {formatDateTime(user.paid_until)}</span>}
                 </div>
 
                 <div className="grid gap-2 border-t border-line pt-4">
@@ -485,6 +557,19 @@ function formatDateTime(value) {
   } catch {
     return value;
   }
+}
+
+function planLabel(user) {
+  if (user.status === 'suspended') return '정지';
+  if (user.plan === 'onetime') return '영구구매';
+  if (user.plan === 'monthly') return user.billing_status === 'past_due' ? '월회원 연체' : '월회원';
+  return '무료회원';
+}
+
+function isCurrentPlan(user, plan) {
+  if (plan === 'suspended') return user.status === 'suspended';
+  if (user.status === 'suspended') return false;
+  return (user.plan || 'free') === plan;
 }
 
 function ConflictPanel({ conflicts, onDisconnect }) {

@@ -1,9 +1,14 @@
 import { getContentGuardrailContext } from '../utils/contentGuardrails.js';
 import { getAccountStyleProfile } from '../utils/accountStyle.js';
 
-export function generateTopicsPrompt(account) {
+export function generateTopicsPrompt(account, recentTopics = []) {
   const contentContext = getContentGuardrailContext();
   const accountProfile = getAccountStyleProfile(account);
+  const recentTopicMemory = recentTopics.slice(0, 30).map((topic) => ({
+    title: topic.title,
+    angle: topic.angle,
+    keywords: topic.search_keywords || []
+  }));
   return [
     { role: 'system', content: 'You generate Korean affiliate content topics. Return strict JSON only. Account target, content scope, and tone are hard requirements, not optional hints.' },
     {
@@ -21,7 +26,11 @@ export function generateTopicsPrompt(account) {
           tone: account.tone,
           contentStrategy: accountProfile.strategy
         },
+        recentTopicMemory,
         guardrails: [
+          'Avoid repeating recentTopicMemory titles, angles, hooks, and product keyword clusters.',
+          'Distribute topic angles across problem-solving, checklist, comparison, mistake-prevention, small-space/occasion use, and relatable question frames when they fit contentScope.',
+          'Do not generate eight topics with the same sentence pattern or the same purchase trigger.',
           accountProfile.strategy.seasonalityEnabled
             ? 'Use currentDateKST and seasonKST as the only seasonal context.'
             : 'Do not force seasonal context into topic titles or angles.',

@@ -32,6 +32,7 @@ import { refreshExpiringThreadsTokens } from './services/threadsOAuthService.js'
 import { expireDueEntitlements } from './services/billingEntitlementService.js';
 import { sendOpsAlert } from './services/notificationService.js';
 import { runDailyOpsHealthCheck } from './services/opsHealthService.js';
+import { cleanupUnusedPipelineArtifacts } from './services/unusedArtifactCleanupService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -217,7 +218,11 @@ cron.schedule('* * * * *', async () => {
 
 // 매일 새벽 2시: 전체 파이프라인 자동 실행 (주제→상품→콘텐츠→큐 등록)
 cron.schedule('0 2 * * *', async () => {
-  await runCronJob('daily-pipeline', async () => runFullPipeline());
+  await runCronJob('daily-pipeline', async () => {
+    const pipeline = await runFullPipeline();
+    const cleanup = await cleanupUnusedPipelineArtifacts({ mode: 'apply' });
+    return { pipeline, cleanup };
+  });
 }, { timezone: 'Asia/Seoul' });
 
 // 매일 새벽 3시: Threads long-lived token 만료 전 갱신

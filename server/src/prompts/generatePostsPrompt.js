@@ -30,6 +30,10 @@ export function generatePostsPrompt(topic, products, account) {
           reason: p.recommendation_reason
         })),
         rules: [
+          'When returning multiple posts, distribute contentType across the allowed contentTypes instead of using one type repeatedly.',
+          'Use varied angles: one can be empathy, one checklist, one problem-solution, one question, or one mistake-prevention when allowed.',
+          'Optimize the body for saves, replies, and shares: concrete inconvenience, quick recognition, or a useful tiny insight should lead.',
+          'Do not make every post a product recommendation. The body should feel like useful Threads content first.',
           accountProfile.strategy.seasonalityEnabled
             ? 'Use currentDateKST and seasonKST as the seasonal context.'
             : 'Do not force seasonal references.',

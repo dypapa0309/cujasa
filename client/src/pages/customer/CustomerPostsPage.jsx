@@ -18,6 +18,15 @@ function queueFriendly(row = {}, detail = null) {
   };
 }
 
+function startOfTodayKst(date = new Date()) {
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - 9 * 60 * 60 * 1000);
+}
+
+function queueUpdatedTime(row = {}) {
+  return new Date(row.updated_at || row.created_at || row.scheduled_at || 0).getTime() || 0;
+}
+
 function ModeBadge({ mode, linkStatus }) {
   const isLink = mode === 'link';
   const missing = linkStatus === 'missing';
@@ -45,6 +54,7 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
   const [expandedId, setExpandedId] = useState(null);
   const [loadingDetailId, setLoadingDetailId] = useState(null);
   const [dismissingId, setDismissingId] = useState(null);
+  const [bulkDismissing, setBulkDismissing] = useState(false);
 
   const load = () => {
     if (!account) return;
@@ -94,13 +104,35 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
     }
   };
 
+  const dismissPastIssues = async () => {
+    if (bulkDismissing) return;
+    setBulkDismissing(true);
+    try {
+      const result = await api.post(`/api/accounts/${account.id}/dismiss-past-issues`, { reason: 'customer_past_issue_cleanup' });
+      const hiddenIds = new Set(result.hiddenIds || []);
+      setQueue((rows) => rows.filter((row) => !hiddenIds.has(row.id)));
+      setDetail((prev) => {
+        const next = { ...prev };
+        hiddenIds.forEach((id) => { delete next[id]; });
+        return next;
+      });
+      if (hiddenIds.has(expandedId)) setExpandedId(null);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setBulkDismissing(false);
+    }
+  };
+
   const scheduled = queue.filter((r) => r.status === 'scheduled').sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
   const posted = queue.filter((r) => r.status === 'posted').sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at));
   const needsAttention = queue
     .filter((r) => ['failed', 'retry', 'manual_required'].includes(r.status))
     .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+  const pastNeedsAttention = needsAttention.filter((row) => queueUpdatedTime(row) < startOfTodayKst().getTime());
   const pipelineQueued = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? 0;
   const pipelineSucceeded = (pipelineResult?.ok === true || pipelineResult?.status === 'ok') && pipelineQueued > 0;
+  const pipelineSkippedNoCandidates = pipelineResult?.status === 'skipped' || pipelineResult?.code === 'NO_LINK_CANDIDATES';
   const pipelineTopics = pipelineResult?.topicsCount ?? pipelineResult?.steps?.topics ?? 0;
   const pipelinePosts = pipelineResult?.postsCount ?? pipelineResult?.steps?.posts ?? 0;
 
@@ -116,7 +148,13 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
 
       {/* 파이프라인 실행 결과 */}
       {pipelineResult && (
-        <div className={`rounded-2xl px-5 py-4 text-sm font-medium ${pipelineSucceeded ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+        <div className={`rounded-2xl px-5 py-4 text-sm font-medium ${
+          pipelineSucceeded
+            ? 'bg-emerald-50 border border-emerald-200 text-emerald-700'
+            : pipelineSkippedNoCandidates
+              ? 'bg-blue-50 border border-blue-200 text-blue-700'
+              : 'bg-red-50 border border-red-200 text-red-700'
+        }`}>
           {pipelineSucceeded ? (
             <div className="grid gap-1">
               <div className="font-bold flex items-center gap-2">
@@ -136,6 +174,13 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
                   과거 실패 기록 등 경고 {pipelineResult.warnings.length}개가 있었지만 현재 실행은 완료됐습니다.
                 </div>
               )}
+            </div>
+          ) : pipelineSkippedNoCandidates ? (
+            <div>
+              <div className="font-bold">오늘 예약할 상품 링크 후보가 없습니다</div>
+              <div className="mt-1 text-xs opacity-80">
+                상품 매칭이 완료된 글만 업로드합니다. 매칭 가능한 후보가 없는 날은 품질 보호를 위해 업로드하지 않습니다.
+              </div>
             </div>
           ) : (
             <div>
@@ -157,7 +202,24 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
       {/* 예약된 포스팅 */}
       {needsAttention.length > 0 && (
         <div>
-          <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 px-1">확인 필요 ({needsAttention.length})</div>
+          <div className="mb-3 flex items-center justify-between gap-3 px-1">
+            <div className="text-xs font-bold uppercase tracking-widest text-gray-400">확인 필요 ({needsAttention.length})</div>
+            {pastNeedsAttention.length > 0 && (
+              <button
+                type="button"
+                onClick={dismissPastIssues}
+                disabled={bulkDismissing}
+                className="rounded-lg border border-rose-100 bg-white px-3 py-1.5 text-[11px] font-bold text-rose-500 disabled:opacity-50"
+              >
+                {bulkDismissing ? '정리 중...' : '지난 실패 기록 정리'}
+              </button>
+            )}
+          </div>
+          {pastNeedsAttention.length > 0 && (
+            <div className="mb-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-700">
+              지난 실패 기록은 현재 예약 생성 여부와 별개입니다. 확인이 끝난 항목은 한 번에 숨길 수 있습니다.
+            </div>
+          )}
           <div className="grid gap-2">
             {needsAttention.map((r) => {
               const isExpanded = expandedId === r.id;
@@ -235,6 +297,9 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
       {scheduled.length > 0 && (
         <div>
           <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 px-1">예약됨 ({scheduled.length})</div>
+          <div className="mb-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-relaxed text-blue-700">
+            예약됨에는 현재 DB에 생성된 예약만 표시됩니다. 다다음날 이후 예약은 매일 새벽 02시 자동 생성 후 보입니다.
+          </div>
           <div className="grid gap-2">
             {scheduled.map((r) => {
               const isExpanded = expandedId === r.id;
@@ -375,7 +440,7 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
           <div className="text-sm text-gray-400">
             {pipelineResult?.queuedCount === 0
               ? '최근 실행에서 예약이 만들어지지 않았습니다. 자동화 실행 탭에서 원인을 확인해주세요.'
-              : '설정을 완료하고 시작하면 여기에 기록됩니다'}
+              : '현재 생성된 예약이 없습니다. 다음 예약은 매일 새벽 02시 자동 생성 후 표시됩니다.'}
           </div>
         </div>
       )}

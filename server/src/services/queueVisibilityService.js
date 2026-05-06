@@ -6,6 +6,11 @@ const CUSTOMER_DISMISSIBLE_STATUSES = new Set(['failed', 'retry', 'manual_requir
 const PAST_TOKEN_CATEGORIES = new Set(['threads_reconnect_required', 'retry_available', 'recheck_required']);
 const DEFAULT_RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+function startOfTodayKst(date = new Date()) {
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  return new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - 9 * 60 * 60 * 1000);
+}
+
 function queueTime(row = {}) {
   return new Date(row.updated_at || row.created_at || row.scheduled_at || 0).getTime() || 0;
 }
@@ -86,4 +91,45 @@ export async function autoHidePastTokenFailures(accountId, options = {}) {
     }).catch(() => null);
   }
   return hidden;
+}
+
+export async function dismissPastQueueIssuesForAccount(accountId, options = {}) {
+  const apply = options.mode === 'apply' || options.apply === true;
+  const cutoff = options.before ? new Date(options.before) : startOfTodayKst();
+  const rows = await dbList('post_queue', { account_id: accountId });
+  const targets = rows.filter((row) => {
+    if (row.customer_hidden_at) return false;
+    if (!CUSTOMER_VISIBLE_PROBLEM_STATUSES.has(row.status)) return false;
+    return queueTime(row) < cutoff.getTime();
+  });
+  const hidden = [];
+  if (apply) {
+    for (const row of targets) {
+      const [updated] = await dbUpdate('post_queue', { id: row.id }, {
+        customer_hidden_at: new Date().toISOString(),
+        customer_hidden_reason: options.reason || 'customer_past_issue_cleanup'
+      });
+      hidden.push(updated || row);
+    }
+  }
+  if (apply && hidden.length > 0) {
+    await logActivity({
+      account_id: accountId,
+      action: 'past_queue_issues_hidden',
+      level: 'info',
+      message: `${hidden.length}개의 지난 확인 필요 항목을 고객 화면에서 숨겼습니다.`,
+      payload: {
+        count: hidden.length,
+        cutoff: cutoff.toISOString(),
+        reason: options.reason || 'customer_past_issue_cleanup'
+      }
+    }).catch(() => null);
+  }
+  return {
+    mode: apply ? 'apply' : 'dry-run',
+    targetCount: targets.length,
+    hiddenCount: apply ? hidden.length : 0,
+    hiddenIds: (apply ? hidden : targets).map((row) => row.id),
+    cutoff: cutoff.toISOString()
+  };
 }

@@ -217,7 +217,8 @@ async function customerLabelFor(accountId, userAccounts, usersById) {
   const links = userAccounts.filter((ua) => ua.account_id === accountId);
   const labels = links.map((link) => {
     const user = usersById.get(link.user_id);
-    return user?.buyer_name || user?.email;
+    const primary = user?.buyer_name || user?.username || user?.email;
+    return [primary, user?.username && primary !== user.username ? `ID ${user.username}` : ''].filter(Boolean).join(' · ');
   }).filter(Boolean);
   return labels.join(', ');
 }

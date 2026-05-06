@@ -290,7 +290,7 @@ export async function createUser(email, password, maxAccounts = 2, buyerName = '
   return user;
 }
 
-export async function registerFreeUser({ username, password, passwordConfirm }) {
+export async function registerFreeUser({ username, password, passwordConfirm, buyerName, buyer_name }) {
   const normalizedUsername = normalizeUsername(username);
   if (!REGISTER_USERNAME_RE.test(normalizedUsername)) {
     const error = new Error('아이디는 3~30자의 영문, 숫자, 점, 밑줄, 하이픈만 사용할 수 있습니다.');
@@ -321,11 +321,12 @@ export async function registerFreeUser({ username, password, passwordConfirm }) 
     throw error;
   }
 
+  const displayName = String(buyerName ?? buyer_name ?? normalizedUsername).trim() || normalizedUsername;
   const user = await dbInsert('users', {
     email: internalEmail,
     username: normalizedUsername,
     password_hash: hashPassword(password),
-    buyer_name: normalizedUsername,
+    buyer_name: displayName,
     max_accounts: 2,
     status: 'active',
     plan: 'free',

@@ -52,6 +52,7 @@ const pages = {
   'admin-setup': AdminSetupPage,
   'admin-announcements': AdminAnnouncementsPage,
 };
+const accountScopedPages = new Set(['accounts', 'generate', 'products', 'queue', 'analytics', 'settings']);
 
 export default function App() {
   const [page, setPage] = useState('dashboard');
@@ -67,7 +68,7 @@ export default function App() {
   const loadAccounts = async () => {
     const rows = await api.get('/api/accounts');
     setAccounts(rows);
-    if (!selectedAccountId && rows[0]) setSelectedAccountId(rows[0].id);
+    if (!rows.some((row) => row.id === selectedAccountId)) setSelectedAccountId(rows[0]?.id || '');
   };
 
   useEffect(() => {
@@ -154,6 +155,7 @@ export default function App() {
     setSelectedAccountId(accountId);
     setPage('queue');
   };
+  const showAccountSelector = accountScopedPages.has(page);
 
   return (
     <ToastProvider>
@@ -186,9 +188,13 @@ export default function App() {
                   {currentUser?.email} · {CURRENT_PRODUCT.name} · {isAdmin ? '관리자' : `계정 ${accounts.length}/${currentUser?.maxAccounts ?? 2}`}
                 </p>
               </div>
-              <select className="rounded border border-line px-3 py-2 text-sm" value={selectedAccount?.id || ''} onChange={(e) => setSelectedAccountId(e.target.value)}>
-                {accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
+              {showAccountSelector && (
+                <AccountSearchSelect
+                  accounts={accounts}
+                  value={selectedAccount?.id || ''}
+                  onChange={setSelectedAccountId}
+                />
+              )}
               <button onClick={() => { setAuthToken(''); setCurrentUser(null); }} className="rounded border border-line px-3 py-2 text-sm">로그아웃</button>
             </div>
             <div className="mt-3 flex gap-2 overflow-x-auto md:hidden">
@@ -212,6 +218,61 @@ export default function App() {
         </main>
       </div>
     </ToastProvider>
+  );
+}
+
+function accountSearchText(account = {}) {
+  return [
+    account.name,
+    account.account_handle,
+    account.owner_label,
+    account.owner?.buyerName,
+    account.owner?.username,
+    account.owner?.email
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function AccountSearchSelect({ accounts, value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const selected = accounts.find((account) => account.id === value);
+  const filtered = accounts
+    .filter((account) => !query.trim() || accountSearchText(account).includes(query.trim().toLowerCase()))
+    .slice(0, 12);
+
+  return (
+    <div className="relative min-w-[240px]">
+      <input
+        className="w-full rounded border border-line px-3 py-2 text-sm"
+        value={open ? query : (selected ? `${selected.name}${selected.owner_label ? ` · ${selected.owner_label}` : ''}` : '')}
+        onFocus={() => { setOpen(true); setQuery(''); }}
+        onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
+        placeholder="계정/고객/아이디 검색"
+      />
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 max-h-72 w-full overflow-y-auto rounded border border-line bg-white shadow-lg">
+          {filtered.length === 0 ? (
+            <div className="px-3 py-3 text-sm text-slate-400">검색 결과 없음</div>
+          ) : filtered.map((account) => (
+            <button
+              key={account.id}
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => { onChange(account.id); setOpen(false); setQuery(''); }}
+              className={`block w-full px-3 py-2 text-left text-sm hover:bg-panel ${account.id === value ? 'bg-blue-50 text-coupang' : ''}`}
+            >
+              <div className="font-semibold">{account.name}</div>
+              <div className="text-xs text-slate-400">
+                {[account.account_handle, account.owner_label || '고객 미할당'].filter(Boolean).join(' · ')}
+              </div>
+            </button>
+          ))}
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setOpen(false)} className="block w-full border-t border-line px-3 py-2 text-left text-xs text-slate-400">
+            닫기
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

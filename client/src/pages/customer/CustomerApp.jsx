@@ -31,6 +31,15 @@ function pipelineHasReservations(result = {}) {
   return (result.ok === true || result.status === 'ok') && Number(queuedCount || 0) > 0;
 }
 
+function todayKstKey() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date());
+}
+
 export default function CustomerApp({ accounts, currentUser, reloadAccounts, onLogout }) {
   const toast = useToast();
   const routingReadyRef = useRef(false);
@@ -104,7 +113,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     toast('예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.', 'info');
     return true;
   };
-  const announcementDismissKey = (id) => `announcement:${currentUser?.email || currentUser?.username || 'user'}:${id}:dismissed`;
+  const announcementDismissKey = (id, date = todayKstKey()) => `announcement:${currentUser?.email || currentUser?.username || 'user'}:${id}:${date}:dismissed`;
 
   useEffect(() => {
     let cancelled = false;
@@ -193,7 +202,11 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     return () => window.removeEventListener('popstate', handlePopState);
   }, [accounts, pipelineRunning, tab, selectedIdx, toast]);
 
-  const dismissAnnouncement = () => {
+  const closeAnnouncement = () => {
+    setAnnouncement(null);
+  };
+
+  const hideAnnouncementToday = () => {
     if (announcement?.id) localStorage.setItem(announcementDismissKey(announcement.id), '1');
     setAnnouncement(null);
   };
@@ -448,14 +461,14 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
         </div>
       </nav>
       {announcement && (
-        <AnnouncementModal announcement={announcement} onClose={dismissAnnouncement} />
+        <AnnouncementModal announcement={announcement} onClose={closeAnnouncement} onHideToday={hideAnnouncementToday} />
       )}
       {pipelineRunning && <PipelineOverlay progress={pipelineProgress} />}
     </div>
   );
 }
 
-function AnnouncementModal({ announcement, onClose }) {
+function AnnouncementModal({ announcement, onClose, onHideToday }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5 backdrop-blur-sm">
       <div className="flex max-h-[85vh] w-full max-w-sm flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -470,8 +483,8 @@ function AnnouncementModal({ announcement, onClose }) {
           <button type="button" onClick={onClose} className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-gray-600">
             닫기
           </button>
-          <button type="button" onClick={onClose} className="rounded-xl bg-coupang px-4 py-3 text-sm font-bold text-white">
-            확인
+          <button type="button" onClick={onHideToday} className="rounded-xl bg-coupang px-4 py-3 text-sm font-bold text-white">
+            오늘 하루 보지 않기
           </button>
         </div>
       </div>

@@ -18,6 +18,8 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
   const [loading, setLoading] = useState(true);
   const [runningAll, setRunningAll] = useState(false);
   const [runningAccountId, setRunningAccountId] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [accountSearch, setAccountSearch] = useState('');
   const [conflicts, setConflicts] = useState([]);
   const [misassignments, setMisassignments] = useState(null);
   const [preflightModal, setPreflightModal] = useState(null);
@@ -35,6 +37,18 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
     setRows(nextRows);
     setConflicts(nextConflicts || []);
     setMisassignments(nextMisassignments);
+  };
+
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      await load();
+      toast('대시보드를 새로고침했습니다.', 'success');
+    } catch {
+      toast('새로고침에 실패했습니다.', 'error');
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   useEffect(() => {
@@ -94,10 +108,10 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
         toast(`${row.accountName} 실행 전 확인이 필요합니다.`, 'error');
         return;
       }
-      const result = await api.post(`/api/accounts/${row.accountId}/run-pipeline`, {});
-      toast(result.status === 'accepted'
-        ? `${row.accountName} 예약 작업을 시작했습니다.`
-        : `${row.accountName} 자동화가 완료됐습니다.`, 'success');
+      const result = await api.patch(`/api/accounts/${row.accountId}/automation`, { automationStatus: 'running', runNow: true });
+      toast(result.alreadyRunning
+        ? `${row.accountName} 예약 작업을 이미 확인 중입니다.`
+        : (result.message || `${row.accountName} 자동화를 켜고 예약 작업을 시작했습니다.`), 'success');
       await load();
     } catch (err) {
       toast(err.message || '자동화 실행에 실패했습니다.', 'error');
@@ -124,6 +138,19 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
       setCleaningQueue(false);
     }
   };
+
+  const filteredRows = useMemo(() => {
+    const needle = accountSearch.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter((row) => [
+      row.accountName,
+      row.accountHandle,
+      row.customer,
+      row.runCategory,
+      row.threads?.label,
+      row.coupang?.label
+    ].filter(Boolean).join(' ').toLowerCase().includes(needle));
+  }, [rows, accountSearch]);
 
   const problemCounts = useMemo(() => {
     const problems = summary?.problemAccounts || [];
@@ -153,9 +180,9 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
           <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">오늘 정상 운영 중인지 먼저 확인하세요</h2>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button onClick={() => load().catch(() => toast('새로고침에 실패했습니다.', 'error'))} className="inline-flex items-center gap-2 rounded border border-line bg-white px-3 py-2 text-sm font-medium">
-            <RefreshCw size={16} />
-            새로고침
+          <button onClick={refresh} disabled={refreshing} className="inline-flex items-center gap-2 rounded border border-line bg-white px-3 py-2 text-sm font-medium disabled:opacity-50">
+            {refreshing ? <Spinner /> : <RefreshCw size={16} />}
+            {refreshing ? '새로고침 중' : '새로고침'}
           </button>
           <button
             onClick={runAll}
@@ -235,8 +262,18 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
 
       <section className="rounded border border-line bg-white">
         <div className="border-b border-line px-5 py-4">
-          <h3 className="font-bold">계정별 운영 상태</h3>
-          <p className="mt-0.5 text-xs text-slate-400">연결, 예약, 실패, 최근 활동을 한 번에 확인합니다.</p>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="font-bold">계정별 운영 상태</h3>
+              <p className="mt-0.5 text-xs text-slate-400">연결, 예약, 실패, 최근 활동을 한 번에 확인합니다.</p>
+            </div>
+            <input
+              className="w-full rounded border border-line px-3 py-2 text-sm md:w-72"
+              value={accountSearch}
+              onChange={(event) => setAccountSearch(event.target.value)}
+              placeholder="고객명, 아이디, 계정명, 핸들 검색"
+            />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-[980px] w-full text-sm">
@@ -252,7 +289,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
-              {rows.map((row) => (
+              {filteredRows.map((row) => (
                 <tr key={row.accountId} className="align-top">
                   <td className="px-4 py-3">
                     <div className="font-semibold text-slate-900">{row.accountName}</div>
@@ -301,6 +338,11 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
                   </td>
                 </tr>
               ))}
+              {filteredRows.length === 0 && (
+                <tr>
+                  <td colSpan="7" className="px-4 py-8 text-center text-sm text-slate-400">검색 결과가 없습니다.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -526,9 +568,9 @@ function activityLabel(action) {
     operations_safety_pause: '운영 안전 일시정지',
     operations_link_setup_hold: '링크 설정 확인 대기',
     emergency_pipeline_stopped: '긴급 중지',
-    pipeline_background_already_running: '자동화 중복 실행 차단',
-    pipeline_failed_paused: '파이프라인 실패 후 정지',
-    automation_start_failed_paused: '자동화 시작 실패 후 정지',
+    pipeline_background_already_running: '이미 예약 작업 확인 중',
+    pipeline_failed_paused: '예약 생성 실패로 자동화 일시중지',
+    automation_start_failed_paused: '자동화 시작 점검 필요',
     post_style_blocked: '콘텐츠 후보 제외',
     queue_guardrail_skipped: '콘텐츠 후보 제외',
     upload_reply_failed: '댓글/링크 답글 실패',

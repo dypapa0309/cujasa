@@ -6,7 +6,7 @@ import { assertUserCanOperate } from '../services/billingEntitlementService.js';
 import { decorateQueueRow, decorateQueueRows, postModeLabel } from '../services/queueErrorService.js';
 import { assertUserCanStartTrialAction } from '../services/trialEntitlementService.js';
 import { decorateProductQuality, isRealCoupangProduct } from '../utils/productQuality.js';
-import { dismissQueueForCustomer, isCustomerVisibleQueue } from '../services/queueVisibilityService.js';
+import { dismissPastQueueIssuesForAccount, dismissQueueForCustomer, isCustomerVisibleQueue } from '../services/queueVisibilityService.js';
 import { requireAdmin } from '../middleware/rateLimit.js';
 
 const router = Router();
@@ -62,6 +62,15 @@ router.get('/:accountId/queue', requireAccountAccessParam(), async (req, res, ne
     const rows = await dbList('post_queue', { account_id: req.params.accountId }, { order: 'scheduled_at', ascending: true });
     const visibleRows = req.user?.type === 'user' ? rows.filter(isCustomerVisibleQueue) : rows;
     res.json(decorateQueueRows(visibleRows));
+  } catch (e) { next(e); }
+});
+router.post('/:accountId/dismiss-past-issues', requireAccountAccessParam(), async (req, res, next) => {
+  try {
+    const result = await dismissPastQueueIssuesForAccount(req.params.accountId, {
+      mode: 'apply',
+      reason: req.body?.reason || 'customer_past_issue_cleanup'
+    });
+    res.json(result);
   } catch (e) { next(e); }
 });
 router.patch('/:queueId', requireQueueAccess, async (req, res, next) => {

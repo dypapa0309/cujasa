@@ -90,4 +90,18 @@ export const updateAccount = async (id, payload) => {
   const [updated] = await dbUpdate('accounts', { id }, normalizeAccount({ ...current, ...payload }));
   return updated;
 };
+export async function archiveAccount(id) {
+  const current = await getAccount(id);
+  if (!current) {
+    const error = new Error('Account not found');
+    error.status = 404;
+    throw error;
+  }
+  const [updated] = await dbUpdate('accounts', { id }, {
+    status: 'archived',
+    automation_status: 'paused',
+    automation_stopped_at: new Date().toISOString()
+  });
+  return updated;
+}
 export const deleteAccount = (id) => dbDelete('accounts', { id });
