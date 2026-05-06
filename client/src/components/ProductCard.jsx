@@ -1,9 +1,9 @@
 import { price } from '../lib/format.js';
 
 const issueLabels = {
-  fallback: '검색 링크',
-  fallback_id: '검색 링크',
-  fallback_category: '검색 링크',
+  fallback: '쿠팡 API 실상품 아님',
+  fallback_id: '임시상품 ID',
+  fallback_category: '임시상품 분류',
   missing_name: '상품명 없음',
   missing_image: '이미지 없음',
   missing_price: '가격 없음',
@@ -15,7 +15,7 @@ export default function ProductCard({ product, onSelect, selecting = false, onCo
   const issues = product.quality_issues || [];
   const canSelect = isReal && !product.selected && onSelect;
   const productLink = product.partner_url || product.product_url || '';
-  const displayPrice = product.is_fallback ? '수익화 링크 아님' : price(product.product_price);
+  const displayPrice = product.is_fallback ? '검색 실패 임시상품' : price(product.product_price);
   const copyLink = async () => {
     if (!isReal || !productLink) return;
     await navigator.clipboard.writeText(productLink);
@@ -37,6 +37,11 @@ export default function ProductCard({ product, onSelect, selecting = false, onCo
       {!isReal && issues.length > 0 && (
         <p className="mt-2 text-xs leading-relaxed text-rose-500">
           {issues.map((issue) => issueLabels[issue] || issue).filter(Boolean).join(' · ')}
+        </p>
+      )}
+      {!isReal && (
+        <p className="mt-2 text-xs leading-relaxed text-slate-500">
+          실제 쿠팡 상품 정보가 없어 링크 글에 사용할 수 없습니다. 상품 재검색으로 실상품을 다시 확보해야 합니다.
         </p>
       )}
       {product.selected && (

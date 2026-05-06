@@ -134,12 +134,12 @@ export default function ProductResultPage({ selectedAccount }) {
           </div>
           {(fallbackCount > 0 || invalidSelectedCount > 0) && (
             <div className="mt-1 text-xs text-rose-500">
-              검색 링크/fallback 상품과 과거 무효 선택 {invalidSelectedCount}개는 링크 포스팅에 사용할 수 없습니다.
+              예전 검색 실패로 저장된 임시상품과 과거 무효 선택 {invalidSelectedCount}개는 링크 포스팅에 사용할 수 없습니다.
             </div>
           )}
           {needsRealLinkRecovery && (
             <div className="mt-2 text-xs leading-relaxed">
-              먼저 이 주제에서 상품 재검색을 1회 실행한 뒤, 실상품 카드를 선택하세요. probe 성공 전에는 자동화를 다시 켜지 않는 것이 안전합니다.
+              쿠팡 상태는 정상이어도 현재 주제에는 실제 쿠팡 상품이 없습니다. 상품 재검색을 1회 실행한 뒤, 실상품 카드를 선택하세요. probe 성공 전에는 자동화를 다시 켜지 않는 것이 안전합니다.
             </div>
           )}
         </div>
