@@ -164,6 +164,15 @@ export function adminActivityLabel(action, message = '') {
   if (action === 'upload_failed') return classifyQueueError(message).title;
   if (action === 'upload_reply_failed') return '댓글/링크 답글 실패';
   if (action === 'post_style_blocked' || action === 'queue_guardrail_skipped') return '콘텐츠 후보 제외';
+  if (action === 'operations_safety_pause') return '운영 안전 점검으로 일시중지';
+  if (action === 'operations_link_setup_hold') return '실상품 링크 확인 대기';
+  if (action === 'emergency_pipeline_stopped') return '긴급 중지';
+  if (action === 'pipeline_background_already_running') return '자동화 중복 실행 방지';
+  if (action === 'pipeline_failed_paused' || action === 'automation_start_failed_paused') return '예약 생성 실패로 일시중지';
+  if (action === 'pipeline_queue_created') return '예약 큐 생성';
+  if (action === 'queue_link_slots_shortage') return '실상품 링크 부족';
+  if (action === 'threads_oauth_connected') return 'Threads 연결됨';
+  if (action === 'upload_completed') return '업로드 완료';
   return null;
 }
 
@@ -171,5 +180,11 @@ export function adminActivityMessage(action, message = '') {
   if (action === 'upload_failed') return classifyQueueError(message).message;
   if (action === 'upload_reply_failed') return '본문 업로드는 완료됐고, 댓글/링크 답글만 재시도하면 됩니다.';
   if (action === 'post_style_blocked' || action === 'queue_guardrail_skipped') return message || '계정 규칙에 맞지 않아 제외되었습니다.';
+  if (action === 'operations_safety_pause') return message || '운영 안전 점검으로 자동화를 일시중지했습니다.';
+  if (action === 'operations_link_setup_hold') return message || '실상품 쿠팡 링크 확인 전까지 링크 글 예약을 보류했습니다.';
+  if (action === 'emergency_pipeline_stopped') return message || '쿠팡 요청 제한 보호를 위해 긴급 중지했습니다.';
+  if (action === 'pipeline_background_already_running') return message || '이미 실행 중인 예약 작업이 있어 중복 실행을 막았습니다.';
+  if (action === 'pipeline_failed_paused' || action === 'automation_start_failed_paused') return message || '예약 생성 실패로 자동화를 일시중지했습니다.';
+  if (action === 'queue_link_slots_shortage') return message || '링크 글에 사용할 실제 쿠팡 상품이 부족합니다.';
   return null;
 }

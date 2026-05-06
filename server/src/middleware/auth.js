@@ -5,6 +5,7 @@ import { refreshUserEntitlement } from '../services/billingEntitlementService.js
 
 const publicRoutes = [
   { method: 'GET', path: '/api/health' },
+  { method: 'HEAD', path: '/api/health' },
   { method: 'POST', path: '/api/auth/login' },
   { method: 'POST', path: '/api/auth/register' },
   { method: 'GET', path: '/api/auth/threads/callback' },

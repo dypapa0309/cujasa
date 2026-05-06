@@ -78,7 +78,7 @@ const tables = {
       id: 'cujasa',
       name: 'CUJASA',
       description: '쿠팡 파트너스 자동화 콘솔',
-      app_url: 'https://cujasa.jasain.kr',
+      app_url: 'https://app.jasain.kr',
       landing_url: 'https://jasain.kr/cujasa',
       status: 'active',
       created_at: now(),
@@ -141,6 +141,31 @@ const sortRows = (rows, column, ascending = true) => [...rows].sort((a, b) => {
   return ascending ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
 });
 
+const updatedAtTables = new Set([
+  'projects',
+  'accounts',
+  'coupang_search_locks',
+  'posts',
+  'post_queue',
+  'pipeline_runs',
+  'post_metrics_jobs',
+  'notifications',
+  'announcements',
+  'users',
+  'user_accounts',
+  'jasain_products',
+  'user_products',
+  'billing_payments',
+  'billing_subscriptions',
+  'setup_tasks'
+]);
+
+function stampUpdate(table, patch) {
+  return updatedAtTables.has(table)
+    ? { ...patch, updated_at: now() }
+    : { ...patch };
+}
+
 export async function dbList(table, filters = {}, options = {}) {
   if (supabase) {
     let q = supabase.from(table).select(options.select || '*');
@@ -175,7 +200,7 @@ export async function dbInsert(table, payload) {
 }
 
 export async function dbUpdate(table, filters, patch) {
-  const stamped = { ...patch, updated_at: now() };
+  const stamped = stampUpdate(table, patch);
   if (supabase) {
     const { data, error } = await supabase.from(table).update(stamped).match(filters).select();
     if (error) throw error;

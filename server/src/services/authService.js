@@ -143,7 +143,7 @@ function defaultProductGrant() {
     role: 'customer',
     name: product?.name || 'CUJASA',
     description: product?.description || '쿠팡 파트너스 자동화 콘솔',
-    appUrl: product?.appUrl || 'https://cujasa.jasain.kr',
+    appUrl: product?.appUrl || 'https://app.jasain.kr',
     landingUrl: product?.landingUrl || 'https://jasain.kr/cujasa'
   };
 }

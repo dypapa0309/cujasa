@@ -5,7 +5,7 @@ const router = Router();
 
 const LANDING_URL = process.env.LANDING_URL || 'https://jasain.kr';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3000';
-const BLOG_IMAGE_URL = process.env.BLOG_IMAGE_URL || `${LANDING_URL}/images/og-image.png`;
+const BLOG_IMAGE_URL = process.env.BLOG_IMAGE_URL || `${LANDING_URL}/images/products.png`;
 const BLOG_AUTHOR = 'CUJASA';
 
 function formatDate(dateStr) {

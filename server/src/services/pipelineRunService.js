@@ -20,7 +20,7 @@ function getLastProgressAt(run) {
   return result.updatedAt || run?.updated_at || run?.started_at || null;
 }
 
-function staleReason(run) {
+export function pipelineStaleReason(run) {
   if (!run || run.status !== 'running') return null;
   const currentTime = now().getTime();
   if (new Date(run.expires_at).getTime() <= currentTime) {
@@ -41,14 +41,14 @@ function staleReason(run) {
 
 function isFreshRunning(run) {
   if (!run || run.status !== 'running') return false;
-  return !staleReason(run);
+  return !pipelineStaleReason(run);
 }
 
 export async function expireStalePipelineRuns(accountId = null) {
   const runs = await dbList('pipeline_runs', accountId ? { account_id: accountId, status: 'running' } : { status: 'running' });
   const expired = [];
   for (const run of runs) {
-    const reason = staleReason(run);
+    const reason = pipelineStaleReason(run);
     if (reason) {
       const currentResult = getResult(run);
       const expiredAt = now().toISOString();
@@ -140,6 +140,11 @@ export async function finishPipelineRun(runId, status, patch = {}) {
 
 export async function latestPipelineRun(accountId) {
   await expireStalePipelineRuns(accountId);
+  const rows = await dbList('pipeline_runs', { account_id: accountId }, { order: 'started_at', ascending: false, limit: 1 });
+  return rows[0] || null;
+}
+
+export async function latestPipelineRunReadOnly(accountId) {
   const rows = await dbList('pipeline_runs', { account_id: accountId }, { order: 'started_at', ascending: false, limit: 1 });
   return rows[0] || null;
 }

@@ -32,7 +32,7 @@ export const supportQaTree = {
       body: '실제 쿠팡 API에서 가져온 상품만 링크 글에 연결합니다. 검색 실패 임시상품이나 검색 URL은 수익화 링크로 사용하지 않습니다.',
       options: [
         { label: '상품 검색/연결 상담', action: 'inquiry', topic: 'cujasa_links' },
-        { label: 'CUJASA 바로가기', action: 'link', href: 'https://cujasa.jasain.kr' }
+        { label: 'CUJASA 바로가기', action: 'link', href: 'https://app.jasain.kr' }
       ]
     },
     'cujasa-threads': {

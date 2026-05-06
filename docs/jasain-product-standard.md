@@ -6,7 +6,7 @@ JASAIN is the parent brand. Product apps such as CUJASA and DEXOR use one shared
 
 - `api.jasain.kr`: shared API
 - `jasain.kr`: brand and product landing pages
-- `cujasa.jasain.kr`: CUJASA app
+- `app.jasain.kr`: CUJASA app
 - `app.jasain.kr`: temporary CUJASA legacy alias
 - `dexor.jasain.kr`: DEXOR app
 

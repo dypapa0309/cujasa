@@ -18,7 +18,7 @@
   <meta property="og:url" content="https://jasain.kr">
   <meta property="og:title" content="CUJASA — 쿠팡 파트너스 Threads 자동 포스팅">
   <meta property="og:description" content="AI가 주제부터 상품 검색, 글 작성, Threads 업로드까지 전부 자동. 일시불 ₩590,000 또는 월 ₩59,000으로 시작하세요.">
-  <meta property="og:image" content="https://jasain.kr/images/og-image.png">
+  <meta property="og:image" content="https://jasain.kr/images/products.png">
   <meta property="og:locale" content="ko_KR">
   <meta property="og:site_name" content="CUJASA">
 
@@ -26,7 +26,7 @@
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="CUJASA — 쿠팡 파트너스 자동 포스팅">
   <meta name="twitter:description" content="AI가 Threads 자동 포스팅까지. 하루 5개, 24시간 자동 운영.">
-  <meta name="twitter:image" content="https://jasain.kr/images/og-image.png">
+  <meta name="twitter:image" content="https://jasain.kr/images/products.png">
 
   <!-- JSON-LD 구조화 데이터 -->
   <script type="application/ld+json">
@@ -684,9 +684,9 @@
 
           <div class="text-sm font-bold text-coupang uppercase tracking-wide mb-4">일시불</div>
 
-          <!-- 4월 30일 특가 -->
+          <!-- 현재 신청가 -->
           <div class="bg-amber-50 border border-amber-300 rounded-2xl px-4 py-3 mb-3">
-            <div class="text-xs font-black text-amber-600 mb-0.5">⚡ 4월 30일 자정까지</div>
+            <div class="text-xs font-black text-amber-600 mb-0.5">현재 신청가</div>
             <div class="text-4xl font-black text-amber-500">₩590,000</div>
             <div class="text-xs text-amber-600 mt-0.5 font-semibold" id="countdown"></div>
           </div>
@@ -697,7 +697,7 @@
           </div>
           <div class="inline-flex items-center gap-1.5 bg-red-50 text-coupang font-bold px-3 py-1 rounded-full text-xs mb-6 self-start">
             <span class="w-1.5 h-1.5 rounded-full bg-coupang animate-pulse block"></span>
-            20명 초과 시 ₩1,990,000으로 인상
+            초기 세팅 포함, 도입 범위에 따라 조정 가능
           </div>
 
           <!-- Buyer progress -->
@@ -727,7 +727,7 @@
             class="block text-center bg-amber-500 hover:bg-amber-600 text-white font-black py-4 rounded-xl transition-all shadow-lg shadow-amber-200 hover:scale-105 active:scale-100">
             일시불로 시작하기 (₩590,000) →
           </a>
-          <p class="text-center text-gray-400 text-xs mt-2">5월 1일부터 ₩990,000</p>
+          <p class="text-center text-gray-400 text-xs mt-2">초기 세팅 포함</p>
         </div>
 
       </div>
@@ -821,7 +821,7 @@
         <div class="grid grid-cols-2 gap-3 mb-6" id="planSelector">
           <button type="button" onclick="selectPlan('onetime')" id="btn-onetime"
             class="plan-btn rounded-xl border-2 p-4 text-left transition-all border-amber-400 bg-amber-50">
-            <div class="text-xs font-black text-amber-600 mb-1">⚡ 4월 30일까지</div>
+            <div class="text-xs font-black text-amber-600 mb-1">현재 신청가</div>
             <div class="text-xl font-black text-amber-500">₩590,000</div>
             <div class="text-xs text-gray-500 mt-0.5">일시불</div>
           </button>
@@ -840,7 +840,7 @@
             <div class="text-2xl font-black text-amber-500" id="planPrice">₩590,000</div>
           </div>
           <div class="text-right">
-            <div class="text-xs text-amber-700 font-black bg-amber-100 px-3 py-1 rounded-full" id="planBadge">⚡ 4월 30일 한정</div>
+            <div class="text-xs text-amber-700 font-black bg-amber-100 px-3 py-1 rounded-full" id="planBadge">현재 신청가</div>
             <div class="text-xs text-gray-400 mt-1" id="countdown2"></div>
           </div>
         </div>
@@ -901,19 +901,11 @@
     // Lucide icons
     lucide.createIcons();
 
-    // 4월 30일 카운트다운
+    // 현재 신청가 안내
     function updateCountdown() {
       const el = document.getElementById('countdown');
       if (!el) return;
-      const deadline = new Date('2026-04-30T23:59:59+09:00');
-      const now = new Date();
-      const diff = deadline - now;
-      if (diff <= 0) { el.textContent = '특가 종료'; return; }
-      const d = Math.floor(diff / 86400000);
-      const h = Math.floor((diff % 86400000) / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      el.textContent = `종료까지 ${d}일 ${h}시간 ${m}분 ${s}초`;
+      el.textContent = '상담 후 바로 셋업을 시작할 수 있습니다';
     }
     updateCountdown();
     setInterval(updateCountdown, 1000);
@@ -1063,7 +1055,7 @@
         priceEl.className = 'text-2xl font-black text-amber-500';
         priceEl.textContent = '₩590,000';
         labelEl.textContent = '일시불';
-        badgeEl.textContent = '⚡ 4월 30일 한정';
+        badgeEl.textContent = '현재 신청가';
         badgeEl.className = 'text-xs text-amber-700 font-black bg-amber-100 px-3 py-1 rounded-full';
         submitBtn.className = 'w-full bg-amber-500 hover:bg-amber-600 text-white font-black py-4 rounded-xl transition-all text-base shadow-lg hover:scale-105 active:scale-100';
         submitBtn.textContent = '신청하기 (₩590,000 일시불) →';

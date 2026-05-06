@@ -44,7 +44,7 @@ create table if not exists jasain_products (
 
 insert into jasain_products (id, name, description, app_url, landing_url, status)
 values
-  ('cujasa', 'CUJASA', '쿠팡 파트너스 자동화 콘솔', 'https://cujasa.jasain.kr', 'https://jasain.kr/cujasa', 'active'),
+  ('cujasa', 'CUJASA', '쿠팡 파트너스 자동화 콘솔', 'https://app.jasain.kr', 'https://jasain.kr/cujasa', 'active'),
   ('dexor', 'DEXOR', '블로그 분석 및 선정 자동화', 'https://dexor-pearl.vercel.app/', 'https://jasain.kr/dexor', 'active')
 on conflict (id) do update set
   name = excluded.name,

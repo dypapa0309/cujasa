@@ -42,6 +42,25 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
   }, []);
 
   const runAll = async () => {
+    const readiness = summary?.runReadiness;
+    if (readiness) {
+      const ready = readiness.ready || 0;
+      if (ready === 0) {
+        toast('실행 가능한 계정이 없습니다. 재연결, 쿠팡 설정, 큐 상태를 먼저 정리하세요.', 'error');
+        return;
+      }
+      const confirmed = window.confirm([
+        '전체 자동화를 실행할까요?',
+        '',
+        `실행 가능: ${ready}개`,
+        `스킵 예정: ${readiness.skipped || 0}개`,
+        `Threads 재연결 필요: ${readiness.threadsReconnect || 0}개`,
+        `쿠팡 설정 필요: ${readiness.coupangSettings || 0}개`,
+        `큐 정리 필요: ${readiness.queueCleanup || 0}개`,
+        `멈춘 파이프라인: ${readiness.pipelineStuck || 0}개`
+      ].join('\n'));
+      if (!confirmed) return;
+    }
     setRunningAll(true);
     try {
       const result = await api.post('/api/scheduler/run-pipeline', {});
@@ -163,11 +182,16 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
         onOpenUsers={() => setPage?.('admin-users')}
       />
 
+      <ReadinessPanel
+        readiness={summary?.runReadiness}
+        issueBreakdown={summary?.issueBreakdown}
+      />
+
       <div className="grid gap-3 md:grid-cols-4">
         <OpsCard label="계정" value={`${summary?.cards?.accountsActive ?? 0}/${summary?.cards?.accountsTotal ?? 0}`} hint="활성 / 전체" tone="ok" />
         <OpsCard label="오늘 예약" value={summary?.cards?.scheduledToday ?? 0} hint={`오늘 업로드 완료 ${summary?.cards?.postedToday ?? 0}개`} tone="ok" />
-        <OpsCard label="실패/검토" value={summary?.cards?.queueProblems ?? 0} hint="failed · retry · manual_required" tone={(summary?.cards?.queueProblems ?? 0) > 0 ? 'error' : 'ok'} />
-        <OpsCard label="연결 문제" value={summary?.cards?.threadsProblems ?? 0} hint={`테스트 업로드 ${summary?.cards?.mockUploads ?? 0}개`} tone={(summary?.cards?.threadsProblems ?? 0) > 0 ? 'warn' : 'ok'} />
+        <OpsCard label="실패/검토" value={summary?.cards?.queueProblems ?? 0} hint={`큐 정리 ${summary?.issueBreakdown?.queueCleanup ?? 0}개 · stuck ${summary?.issueBreakdown?.pipelineStuck ?? 0}개`} tone={(summary?.cards?.queueProblems ?? 0) > 0 || (summary?.issueBreakdown?.pipelineStuck ?? 0) > 0 ? 'error' : 'ok'} />
+        <OpsCard label="연결 문제" value={summary?.cards?.threadsProblems ?? 0} hint={`재연결 ${summary?.issueBreakdown?.threadsReconnect ?? 0}개 · 테스트 ${summary?.cards?.mockUploads ?? 0}개`} tone={(summary?.cards?.threadsProblems ?? 0) > 0 ? 'warn' : 'ok'} />
       </div>
 
       <section className="rounded border border-line bg-white">
@@ -243,10 +267,13 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
                   <td className="px-4 py-3">
                     <div className="font-semibold">예약 {row.todayScheduled} · 완료 {row.todayPosted}</div>
                     <div className="text-xs text-slate-400">실패/검토 {row.failedCount} · 댓글경고 {row.replyWarningCount || 0} · 테스트 {row.mockCount}</div>
+                    <div className="mt-1 text-xs text-slate-400">{runCategoryLabel(row.runCategory)}</div>
                   </td>
                   <td className="px-4 py-3">
                     {row.pipelineRun?.status === 'running' ? (
                       <div className="inline-flex items-center gap-1 text-xs font-bold text-blue-600"><Clock3 size={13} />자동화 실행 중</div>
+                    ) : row.pipelineRun?.status === 'stuck' ? (
+                      <div className="inline-flex items-center gap-1 text-xs font-bold text-rose-600"><AlertTriangle size={13} />{row.pipelineRun.label || '파이프라인 점검 필요'}</div>
                     ) : row.lastActivity ? (
                       <>
                         <div className="text-xs font-medium text-slate-600">{row.lastActivity.label || activityLabel(row.lastActivity.action)}</div>
@@ -264,7 +291,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
                       <IconButton title="고객 계정 보기" onClick={() => setPage?.('admin-users')}><Users size={15} /></IconButton>
                       <button
                         onClick={() => runAccount(row)}
-                        disabled={runningAccountId === row.accountId || row.pipelineRun?.status === 'running'}
+                        disabled={runningAccountId === row.accountId || row.pipelineRun?.status === 'running' || row.runCategory === 'pipeline_stuck'}
                         className="inline-flex items-center gap-1 rounded border border-line px-2.5 py-1.5 text-xs font-medium hover:bg-panel disabled:opacity-50"
                       >
                         {runningAccountId === row.accountId || row.pipelineRun?.status === 'running' ? <Spinner /> : <Play size={13} />}
@@ -334,6 +361,41 @@ function RiskPanel({ conflicts, misassignments, onOpenUsers }) {
             <span className="ml-2 text-amber-700">{row.userEmail} · {row.accountName}</span>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function ReadinessPanel({ readiness, issueBreakdown }) {
+  if (!readiness) return null;
+  const ready = readiness.ready || 0;
+  const skipped = readiness.skipped || 0;
+  const blockers = [
+    { label: 'Threads 재연결', value: readiness.threadsReconnect || 0 },
+    { label: '쿠팡 설정', value: readiness.coupangSettings || 0 },
+    { label: '큐 정리', value: readiness.queueCleanup || 0 },
+    { label: '멈춘 파이프라인', value: readiness.pipelineStuck || 0 }
+  ];
+  return (
+    <section className="rounded border border-line bg-white">
+      <div className="grid gap-3 p-4 md:grid-cols-[1.2fr_2fr] md:items-center">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 text-sm font-black text-slate-900">
+            {ready > 0 ? <CheckCircle2 size={16} className="text-emerald-600" /> : <AlertTriangle size={16} className="text-rose-600" />}
+            전체 자동화 실행 전 확인
+          </div>
+          <div className="mt-1 text-xs text-slate-400">
+            실행 가능 {ready}개 · 스킵 예정 {skipped}개 · 과거 테스트 업로드 {issueBreakdown?.mockUploads || 0}개
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-4">
+          {blockers.map((item) => (
+            <div key={item.label} className={`rounded border px-3 py-2 ${item.value > 0 ? 'border-amber-200 bg-amber-50' : 'border-line bg-panel'}`}>
+              <div className="text-[11px] font-bold text-slate-400">{item.label}</div>
+              <div className={`mt-1 text-lg font-black ${item.value > 0 ? 'text-amber-700' : 'text-slate-700'}`}>{item.value}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -448,8 +510,25 @@ function healthLabel(status) {
   return status === 'ok' ? '정상' : status === 'running' ? '실행 중' : status === 'error' ? '오류' : '주의';
 }
 
+function runCategoryLabel(category) {
+  return ({
+    ready: '실행 가능',
+    threads_reconnect: 'Threads 재연결 필요',
+    coupang_settings: '쿠팡 설정 필요',
+    queue_cleanup: '큐 정리 필요',
+    pipeline_stuck: '멈춘 파이프라인 정리 필요',
+    blocked: '실행 차단'
+  })[category] || '상태 확인 필요';
+}
+
 function activityLabel(action) {
   return ({
+    operations_safety_pause: '운영 안전 일시정지',
+    operations_link_setup_hold: '링크 설정 확인 대기',
+    emergency_pipeline_stopped: '긴급 중지',
+    pipeline_background_already_running: '자동화 중복 실행 차단',
+    pipeline_failed_paused: '파이프라인 실패 후 정지',
+    automation_start_failed_paused: '자동화 시작 실패 후 정지',
     post_style_blocked: '콘텐츠 후보 제외',
     queue_guardrail_skipped: '콘텐츠 후보 제외',
     upload_reply_failed: '댓글/링크 답글 실패',
