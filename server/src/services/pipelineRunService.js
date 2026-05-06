@@ -1,25 +1,69 @@
 import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 
 const LOCK_TTL_MS = 2 * 60 * 60 * 1000;
+const DEFAULT_STALE_PROGRESS_MS = 15 * 60 * 1000;
+const configuredStaleProgressMs = Number(process.env.PIPELINE_STALE_PROGRESS_MS);
+const PIPELINE_STALE_PROGRESS_MS = Number.isFinite(configuredStaleProgressMs) && configuredStaleProgressMs > 0
+  ? configuredStaleProgressMs
+  : DEFAULT_STALE_PROGRESS_MS;
 
 function now() {
   return new Date();
 }
 
+function getResult(run) {
+  return run?.result && typeof run.result === 'object' ? run.result : {};
+}
+
+function getLastProgressAt(run) {
+  const result = getResult(run);
+  return result.updatedAt || run?.updated_at || run?.started_at || null;
+}
+
+function staleReason(run) {
+  if (!run || run.status !== 'running') return null;
+  const currentTime = now().getTime();
+  if (new Date(run.expires_at).getTime() <= currentTime) {
+    return {
+      code: 'PIPELINE_LOCK_EXPIRED',
+      message: 'pipeline lock expired'
+    };
+  }
+  const lastProgressAt = getLastProgressAt(run);
+  if (lastProgressAt && currentTime - new Date(lastProgressAt).getTime() > PIPELINE_STALE_PROGRESS_MS) {
+    return {
+      code: 'PIPELINE_PROGRESS_STALE',
+      message: 'pipeline progress stale'
+    };
+  }
+  return null;
+}
+
 function isFreshRunning(run) {
   if (!run || run.status !== 'running') return false;
-  return new Date(run.expires_at).getTime() > now().getTime();
+  return !staleReason(run);
 }
 
 export async function expireStalePipelineRuns(accountId = null) {
   const runs = await dbList('pipeline_runs', accountId ? { account_id: accountId, status: 'running' } : { status: 'running' });
   const expired = [];
   for (const run of runs) {
-    if (new Date(run.expires_at).getTime() <= now().getTime()) {
+    const reason = staleReason(run);
+    if (reason) {
+      const currentResult = getResult(run);
+      const expiredAt = now().toISOString();
       const [updated] = await dbUpdate('pipeline_runs', { id: run.id }, {
         status: 'expired',
-        finished_at: now().toISOString(),
-        error_message: 'pipeline lock expired'
+        finished_at: expiredAt,
+        error_message: reason.message,
+        result: {
+          ...currentResult,
+          status: 'expired',
+          code: reason.code,
+          message: reason.message,
+          label: '예약 작업 진행이 오래 멈춰 만료 처리했습니다',
+          expiredAt
+        }
       });
       expired.push(updated);
     }
@@ -68,7 +112,8 @@ export async function startPipelineRun(account, requestedBy = 'system') {
 export async function updatePipelineRunProgress(runId, progress = {}) {
   if (!runId) return null;
   const current = await dbGet('pipeline_runs', { id: runId });
-  const previous = current?.result && typeof current.result === 'object' ? current.result : {};
+  if (current?.status && current.status !== 'running') return current;
+  const previous = getResult(current);
   const percent = Math.max(0, Math.min(100, Number(progress.percent ?? previous.percent ?? 0)));
   const [updated] = await dbUpdate('pipeline_runs', { id: runId }, {
     result: {
@@ -83,6 +128,8 @@ export async function updatePipelineRunProgress(runId, progress = {}) {
 
 export async function finishPipelineRun(runId, status, patch = {}) {
   if (!runId) return null;
+  const current = await dbGet('pipeline_runs', { id: runId });
+  if (current?.status && current.status !== 'running') return current;
   const [updated] = await dbUpdate('pipeline_runs', { id: runId }, {
     status,
     finished_at: now().toISOString(),

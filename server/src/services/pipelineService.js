@@ -4,7 +4,6 @@ import { searchProductsForTopic } from './coupangService.js';
 import { selectProducts } from './productSelectionService.js';
 import { generatePosts } from './contentService.js';
 import { createDailyQueue } from './schedulerService.js';
-import { generateBlogPost } from './blogService.js';
 import { logActivity } from './supabaseService.js';
 import { finishPipelineRun, getRunningPipeline, startPipelineRun, updatePipelineRunProgress } from './pipelineRunService.js';
 import { assertPreflightCanPublish, preflightAccount } from './accountPreflightService.js';
@@ -145,7 +144,6 @@ export async function runPipelineForAccount(accountId, options = {}) {
           topicsDone: index + 1,
           postsCreated: totalPosts
         });
-        try { await generateBlogPost(topic.id); } catch {}
       } catch (err) {
         if (err.code === 'COUPANG_RATE_LIMIT') throw err;
         await logActivity({ account_id: account.id, project_id: account.project_id, action: 'pipeline_topic_failed', level: 'warn', message: `topic ${topic.id}: ${err.message}` });

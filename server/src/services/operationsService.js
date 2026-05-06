@@ -155,6 +155,9 @@ export async function operationAccountRows() {
     if ((lastActivity?.action === 'pipeline_failed' || pipelineRun?.status === 'failed') && problems.some((p) => p.severity === 'error')) {
       pushProblem(problems, account, 'error', 'pipeline_failed', '최근 파이프라인 실패', pipelineRun?.error_message || lastActivity?.message || '');
     }
+    if (pipelineRun?.status === 'expired') {
+      pushProblem(problems, account, 'warn', 'pipeline_expired', '최근 예약 작업 만료', pipelineRun.error_message || '');
+    }
 
     return {
       accountId: account.id,
