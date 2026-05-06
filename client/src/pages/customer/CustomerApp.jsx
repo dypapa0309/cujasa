@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Beaker, CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2, PlayCircle } from 'lucide-react';
+import { Beaker, CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2, PlayCircle, MessageCircle, Phone } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import CustomerHomePage from './CustomerHomePage.jsx';
@@ -463,7 +463,49 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
       {announcement && (
         <AnnouncementModal announcement={announcement} onClose={closeAnnouncement} onHideToday={hideAnnouncementToday} />
       )}
+      <SupportContactButton />
       {pipelineRunning && <PipelineOverlay progress={pipelineProgress} />}
+    </div>
+  );
+}
+
+function SupportContactButton() {
+  const [open, setOpen] = useState(false);
+  const smsHref = 'sms:01075416143';
+  const kakaoHref = 'https://open.kakao.com/o/sOtaVlsi';
+
+  return (
+    <div className="fixed bottom-20 right-4 z-30 sm:right-[max(1rem,calc((100vw-42rem)/2+1rem))]">
+      {open && (
+        <div className="mb-2 grid w-44 gap-2 rounded-lg border border-gray-100 bg-white p-2 shadow-xl">
+          <a
+            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50"
+            href={smsHref}
+          >
+            <Phone size={16} className="text-coupang" />
+            문자상담
+          </a>
+          <a
+            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50"
+            href={kakaoHref}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <MessageCircle size={16} className="text-yellow-500" />
+            카카오톡 상담
+          </a>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className="flex h-12 items-center gap-2 rounded-full bg-coupang px-4 text-sm font-black text-white shadow-lg shadow-blue-500/25"
+        aria-expanded={open}
+        aria-label="상담하기"
+      >
+        <MessageCircle size={18} />
+        상담하기
+      </button>
     </div>
   );
 }

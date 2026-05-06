@@ -5,7 +5,14 @@ import { CURRENT_PRODUCT, JASAIN_BRAND } from '../config/products.js';
 
 export default function LoginPage({ onLogin }) {
   const [form, setForm] = useState({ email: '', password: '' });
-  const [registerForm, setRegisterForm] = useState({ buyerName: '', username: '', password: '', passwordConfirm: '' });
+  const [registerForm, setRegisterForm] = useState({
+    buyerName: '',
+    phone: '',
+    username: '',
+    password: '',
+    passwordConfirm: '',
+    privacyConsent: false
+  });
   const [mode, setMode] = useState('login');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -76,6 +83,17 @@ export default function LoginPage({ onLogin }) {
                 onChange={(e) => setRegisterForm((prev) => ({ ...prev, buyerName: e.target.value }))}
               />
             </label>
+            <label className="mt-4 grid gap-1 text-sm">
+              <span className="font-medium">연락처</span>
+              <input
+                className="rounded border border-line px-3 py-2"
+                type="tel"
+                autoComplete="tel"
+                value={registerForm.phone}
+                placeholder="예: 01012345678"
+                onChange={(e) => setRegisterForm((prev) => ({ ...prev, phone: e.target.value }))}
+              />
+            </label>
             <label className="mt-6 grid gap-1 text-sm">
               <span className="font-medium">아이디</span>
               <input
@@ -111,6 +129,17 @@ export default function LoginPage({ onLogin }) {
             <div className="mt-4 rounded border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-700">
               가입하면 무료 체험 계정이 자동으로 생성되고, 실제 Threads 업로드 5회까지 사용할 수 있습니다.
             </div>
+            <label className="mt-4 flex items-start gap-2 rounded border border-line bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">
+              <input
+                className="mt-0.5 h-4 w-4 rounded border-line text-coupang"
+                type="checkbox"
+                checked={registerForm.privacyConsent}
+                onChange={(e) => setRegisterForm((prev) => ({ ...prev, privacyConsent: e.target.checked }))}
+              />
+              <span>
+                개인정보 수집 및 이용에 동의합니다. 연락처는 가입 확인, 서비스 안내, 상담 응대 목적으로만 사용하며 다른 용도로 사용하지 않습니다.
+              </span>
+            </label>
           </>
         )}
         {error ? <div className="mt-4 rounded border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div> : null}

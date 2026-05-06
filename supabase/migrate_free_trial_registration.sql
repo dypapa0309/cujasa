@@ -1,10 +1,12 @@
 alter table users
   add column if not exists username text,
+  add column if not exists phone text,
   add column if not exists plan text,
   add column if not exists paid_until timestamptz,
   add column if not exists free_post_limit integer not null default 5,
   add column if not exists free_post_used integer not null default 0,
-  add column if not exists trial_blocked_at timestamptz;
+  add column if not exists trial_blocked_at timestamptz,
+  add column if not exists privacy_consent_at timestamptz;
 
 alter table users
   alter column plan set default 'free';

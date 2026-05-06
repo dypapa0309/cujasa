@@ -7,6 +7,7 @@ import { createAccount } from './accountService.js';
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
 const REGISTER_USERNAME_RE = /^[a-zA-Z0-9._-]{3,30}$/;
+const REGISTER_PHONE_RE = /^\+?[0-9]{8,20}$/;
 
 function base64url(input) {
   return Buffer.from(JSON.stringify(input)).toString('base64url');
@@ -61,6 +62,10 @@ function normalizeUsername(username = '') {
 
 function internalEmailForUsername(username) {
   return `${username}@local.cujasa`;
+}
+
+function normalizePhone(phone = '') {
+  return String(phone).trim().replace(/[\s-]/g, '');
 }
 
 async function findUserByLogin(login = '') {
@@ -290,10 +295,21 @@ export async function createUser(email, password, maxAccounts = 2, buyerName = '
   return user;
 }
 
-export async function registerFreeUser({ username, password, passwordConfirm, buyerName, buyer_name }) {
+export async function registerFreeUser({ username, password, passwordConfirm, buyerName, buyer_name, phone, privacyConsent, privacy_consent }) {
   const normalizedUsername = normalizeUsername(username);
+  const normalizedPhone = normalizePhone(phone);
   if (!REGISTER_USERNAME_RE.test(normalizedUsername)) {
     const error = new Error('아이디는 3~30자의 영문, 숫자, 점, 밑줄, 하이픈만 사용할 수 있습니다.');
+    error.status = 400;
+    throw error;
+  }
+  if (!REGISTER_PHONE_RE.test(normalizedPhone)) {
+    const error = new Error('연락 가능한 전화번호를 입력해주세요.');
+    error.status = 400;
+    throw error;
+  }
+  if (privacyConsent !== true && privacy_consent !== true) {
+    const error = new Error('개인정보 수집 및 이용에 동의해야 회원가입할 수 있습니다.');
     error.status = 400;
     throw error;
   }
@@ -327,12 +343,14 @@ export async function registerFreeUser({ username, password, passwordConfirm, bu
     username: normalizedUsername,
     password_hash: hashPassword(password),
     buyer_name: displayName,
+    phone: normalizedPhone,
     max_accounts: 2,
     status: 'active',
     plan: 'free',
     billing_status: 'none',
     free_post_limit: 5,
-    free_post_used: 0
+    free_post_used: 0,
+    privacy_consent_at: new Date().toISOString()
   });
 
   await grantUserProduct(user.id, DEFAULT_PRODUCT_ID, { status: 'active', role: 'customer' });

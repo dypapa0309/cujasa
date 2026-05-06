@@ -325,6 +325,7 @@ create table if not exists users (
   password_hash text not null,
   buyer_name text,
   phone text,
+  privacy_consent_at timestamptz,
   status text not null default 'active' check (status in ('active', 'suspended')),
   max_accounts int not null default 2,
   plan text default 'free',
@@ -341,6 +342,7 @@ alter table users alter column max_accounts set default 2;
 alter table users add column if not exists username text;
 alter table users add column if not exists buyer_name text;
 alter table users add column if not exists phone text;
+alter table users add column if not exists privacy_consent_at timestamptz;
 alter table users add column if not exists plan text;
 alter table users alter column plan set default 'free';
 alter table users add column if not exists billing_status text not null default 'none';
