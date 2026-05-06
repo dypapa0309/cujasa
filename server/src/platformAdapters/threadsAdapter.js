@@ -94,15 +94,18 @@ function threadsError(label, body) {
 export async function uploadPost({ account, post, cta, trackingLink }) {
   const token = account.threads_access_token;
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
-  const linkUrl = trackingLink ? `${baseUrl}/r/${trackingLink.code}` : null;
+  const linkMode = String(process.env.THREADS_COUPANG_LINK_MODE || 'direct').toLowerCase();
+  const linkUrl = trackingLink
+    ? (linkMode === 'tracking' ? `${baseUrl}/r/${trackingLink.code}` : trackingLink.destination_url)
+    : null;
   const replyModeEnabled = process.env.THREADS_REPLY_LINK_MODE_ENABLED === 'true';
   const deliveryMode = replyModeEnabled && account.threads_link_delivery_mode === 'reply' ? 'reply' : 'body_fallback';
   const replyText = linkUrl && deliveryMode === 'reply' ? buildReplyText(linkUrl) : '';
 
   if (process.env.MOCK_UPLOAD === 'true') {
     const url = `${baseUrl}/mock/threads/${post.id}`;
-    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: buildPostText(post, linkUrl, deliveryMode), comment: replyText || null });
-    return { postUrl: url, raw: { mock: true, linkDeliveryMode: linkUrl ? deliveryMode : 'none' } };
+    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: buildPostText(post, linkUrl, deliveryMode), comment: replyText || null, linkMode });
+    return { postUrl: url, raw: { mock: true, linkDeliveryMode: linkUrl ? deliveryMode : 'none', linkMode } };
   }
   if (!token) {
     const error = new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');
@@ -172,5 +175,5 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
 
   const handle = account.account_handle?.replace('@', '') || 'unknown';
   const postUrl = `https://www.threads.net/@${handle}/post/${postId}`;
-  return { postUrl, raw: { creationId, postId, linkDeliveryMode: linkUrl ? deliveryMode : 'none' } };
+  return { postUrl, raw: { creationId, postId, linkDeliveryMode: linkUrl ? deliveryMode : 'none', linkMode } };
 }

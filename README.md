@@ -88,7 +88,7 @@ npm run dev
 
 ## 쿠팡 API
 
-`COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY`가 있으면 HMAC SHA256 서명으로 쿠팡 파트너스 검색 API를 호출합니다. API 실패 또는 키 미설정 시 쿠팡 검색 URL fallback 상품을 저장합니다.
+`COUPANG_ACCESS_KEY`, `COUPANG_SECRET_KEY`가 있으면 HMAC SHA256 서명으로 쿠팡 파트너스 검색 API를 호출합니다. API 실패 또는 키 미설정 시 fallback 상품을 저장하지 않고 상태 로그만 남깁니다.
 `COUPANG_TRACKING_CODE`가 있으면 쿠팡 요청에 `subId`로 붙여 채널별 성과를 추적합니다.
 
 쿠팡 API만 단독 테스트:
@@ -122,7 +122,7 @@ THREADS_REDIRECT_URI=https://api.jasain.kr/api/auth/threads/callback
 
 ## 추적 링크 테스트
 
-업로드가 완료되면 `tracking_links`에 `/r/:code` 링크가 생성됩니다.
+업로드가 완료되면 `tracking_links`에 `/r/:code` 링크가 생성됩니다. 기본 운영값은 `THREADS_COUPANG_LINK_MODE=direct`라서 Threads 본문에는 쿠팡 링크가 직접 들어가고, `/r/:code`는 내부 감사/디버깅용으로만 사용합니다. 기존처럼 redirect 링크를 게시하려면 `THREADS_COUPANG_LINK_MODE=tracking`으로 바꿉니다.
 
 ```bash
 curl -I http://localhost:3005/r/{code}
@@ -181,6 +181,7 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_IDS=
 SUPPORT_PHONE_DISPLAY=
 SUPPORT_PHONE_TEL=
+THREADS_COUPANG_LINK_MODE=direct
 TRACKING_RATE_LIMIT_WINDOW_MS=60000
 TRACKING_RATE_LIMIT_MAX=120
 ```

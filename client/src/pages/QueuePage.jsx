@@ -254,10 +254,10 @@ function DetailPanel({ detail, onClose }) {
       {/* 트래킹 링크 */}
       {trackingLink && (
         <div>
-          <div className="text-xs font-semibold text-slate-500 mb-1.5">트래킹 링크</div>
+          <div className="text-xs font-semibold text-slate-500 mb-1.5">쿠팡 링크</div>
           <div className="rounded border border-line p-3 bg-gray-50">
-            <div className="text-xs text-slate-600 font-mono">{baseUrl}/r/{trackingLink.code}</div>
-            <div className="text-xs text-slate-400 mt-1">→ {trackingLink.destination_url}</div>
+            <div className="text-xs text-slate-600 break-all">{trackingLink.destination_url}</div>
+            <div className="text-xs text-slate-400 mt-1">내부 추적 코드: {baseUrl}/r/{trackingLink.code}</div>
           </div>
         </div>
       )}
@@ -272,7 +272,7 @@ function DetailPanel({ detail, onClose }) {
       {linkPending && (
         <div className="rounded border border-amber-200 bg-amber-50 p-3">
           <div className="text-xs font-semibold text-amber-700 mb-1">링크 생성 대기</div>
-          <div className="text-xs text-amber-700">실제 쿠팡 상품은 연결되어 있습니다. 트래킹 링크는 업로드 직전에 생성되므로, 게시 성공 전까지 최종 링크 확정 상태는 아닙니다.</div>
+          <div className="text-xs text-amber-700">실제 쿠팡 상품은 연결되어 있습니다. 업로드 직전에 쿠팡 링크를 최종 확인하고 본문에는 쿠팡 링크를 직접 포함합니다.</div>
         </div>
       )}
 
