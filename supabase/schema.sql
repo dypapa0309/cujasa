@@ -30,7 +30,7 @@ create table if not exists accounts (
   emoji_level text not null default 'low' check (emoji_level in ('none', 'low', 'medium')),
   safe_debate_enabled boolean not null default false,
   content_style_note text,
-  daily_post_min int not null default 1,
+  daily_post_min int not null default 0,
   daily_post_max int not null default 5,
   active_time_windows jsonb not null default '[]',
   min_interval_minutes int not null default 50,
@@ -81,15 +81,13 @@ alter table accounts add column if not exists product_mention_style text not nul
 alter table accounts add column if not exists emoji_level text not null default 'low';
 alter table accounts add column if not exists safe_debate_enabled boolean not null default false;
 alter table accounts add column if not exists content_style_note text;
+alter table accounts alter column daily_post_min set default 0;
 alter table accounts alter column daily_post_max set default 5;
 update accounts
 set
-  daily_post_min = least(greatest(coalesce(daily_post_min, 1), 0), 5),
+  daily_post_min = 0,
   daily_post_max = least(
-    greatest(
-      coalesce(daily_post_max, daily_post_min, 1),
-      least(greatest(coalesce(daily_post_min, 1), 0), 5)
-    ),
+    greatest(coalesce(daily_post_max, 5), 0),
     5
   );
 
@@ -98,7 +96,7 @@ alter table accounts drop constraint if exists accounts_no_link_post_ratio_limit
 
 alter table accounts drop constraint if exists accounts_daily_post_limits_check;
 alter table accounts add constraint accounts_daily_post_limits_check
-  check (daily_post_min >= 0 and daily_post_min <= 5 and daily_post_max >= daily_post_min and daily_post_max <= 5);
+  check (daily_post_min = 0 and daily_post_max >= 0 and daily_post_max <= 5);
 
 create table if not exists topics (
   id uuid primary key default gen_random_uuid(),

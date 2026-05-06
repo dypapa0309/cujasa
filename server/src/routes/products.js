@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { listProducts, searchProductsForTopic } from '../services/coupangService.js';
-import { manuallySelectProduct, selectProducts } from '../services/productSelectionService.js';
+import { manuallySelectProduct, selectProducts, unselectProduct } from '../services/productSelectionService.js';
 import { requireTopicAccess } from '../middleware/accountAccess.js';
 import { dbList } from '../services/supabaseService.js';
 import { decorateProductQuality } from '../utils/productQuality.js';
@@ -50,12 +50,21 @@ router.post('/:topicId/manual-product-selection', requireTopicAccess, async (req
     res.status(201).json(await manuallySelectProduct(req.params.topicId, req.body.productId, req.body));
   } catch (e) { next(e); }
 });
+router.delete('/:topicId/product-selection/:productId', requireTopicAccess, async (req, res, next) => {
+  try {
+    res.json(await unselectProduct(req.params.topicId, req.params.productId));
+  } catch (e) { next(e); }
+});
 router.get('/:topicId/products', requireTopicAccess, async (req, res, next) => {
   try {
-    const [products, selected] = await Promise.all([
+    const [products, selected, posts, queueByTopic] = await Promise.all([
       listProducts(req.params.topicId),
-      dbList('post_products', { topic_id: req.params.topicId }, { order: 'rank', ascending: true })
+      dbList('post_products', { topic_id: req.params.topicId }, { order: 'rank', ascending: true }),
+      dbList('posts', { topic_id: req.params.topicId }),
+      dbList('post_queue', { topic_id: req.params.topicId })
     ]);
+    const queueByPost = (await Promise.all(posts.map((post) => dbList('post_queue', { post_id: post.id })))).flat();
+    const selectionInUse = [...queueByTopic, ...queueByPost].some((row) => ['scheduled', 'posting', 'posted'].includes(row.status));
     const selectedByProductId = new Map(selected.map((row) => [row.product_id, row]));
     res.json(products.map((product) => {
       const row = selectedByProductId.get(product.id);
@@ -66,7 +75,8 @@ router.get('/:topicId/products', requireTopicAccess, async (req, res, next) => {
           selected_invalid: true,
           selected_rank: row.rank,
           selected_fit_score: row.fit_score,
-          selected_reason: row.recommendation_reason
+          selected_reason: row.recommendation_reason,
+          selection_in_use: selectionInUse
         };
       }
       return {
@@ -74,7 +84,8 @@ router.get('/:topicId/products', requireTopicAccess, async (req, res, next) => {
         selected: true,
         selected_rank: row.rank,
         selected_fit_score: row.fit_score,
-        selected_reason: row.recommendation_reason
+        selected_reason: row.recommendation_reason,
+        selection_in_use: selectionInUse
       };
     }));
   } catch (e) { next(e); }

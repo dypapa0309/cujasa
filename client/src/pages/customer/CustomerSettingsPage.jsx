@@ -3,6 +3,7 @@ import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import SensitiveInput from '../../components/SensitiveInput.jsx';
 import TrialStatusCard from './TrialStatusCard.jsx';
+import ErrorReportButton from '../../components/ErrorReportButton.jsx';
 import {
   commentStyleOptions,
   contentIntensityOptions,
@@ -15,10 +16,10 @@ const MAX_DAILY_POSTS = 5;
 
 function clampDailyPostCount(value, fallback = 1) {
   const number = Number(value);
-  return Math.min(MAX_DAILY_POSTS, Math.max(1, Number.isFinite(number) ? number : fallback));
+  return Math.min(MAX_DAILY_POSTS, Math.max(0, Number.isFinite(number) ? number : fallback));
 }
 
-export default function CustomerSettingsPage({ account, reloadAccounts, trialStatus, reloadSetupStatus, setTab }) {
+export default function CustomerSettingsPage({ account, currentUser, reloadAccounts, trialStatus, reloadSetupStatus, setTab }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -50,7 +51,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
       content_style_note: account.content_style_note || '',
       forbidden_topics: Array.isArray(account.forbidden_topics) ? account.forbidden_topics.join('\n') : '',
       forbidden_words: Array.isArray(account.forbidden_words) ? account.forbidden_words.join('\n') : '',
-      daily_post_min: clampDailyPostCount(account.daily_post_min, 2),
+      daily_post_min: 0,
       daily_post_max: clampDailyPostCount(account.daily_post_max, 5),
       coupang_access_key: '',
       coupang_secret_key: '',
@@ -70,7 +71,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
       return;
     }
     const errs = {};
-    if (!form.target_audience?.trim()) errs.target_audience = '타겟 오디언스를 입력해주세요.';
+    if (!form.target_audience?.trim()) errs.target_audience = '타겟층을 입력해주세요.';
     if (!form.content_scope?.trim()) errs.content_scope = '다룰 카테고리를 입력해주세요.';
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setErrors({});
@@ -78,16 +79,24 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
     try {
       await api.patch(`/api/accounts/${account.id}`, {
         ...form,
-        daily_post_min: clampDailyPostCount(form.daily_post_min),
-        daily_post_max: Math.min(MAX_DAILY_POSTS, Math.max(clampDailyPostCount(form.daily_post_min), clampDailyPostCount(form.daily_post_max, form.daily_post_min))),
+        daily_post_min: 0,
+        daily_post_max: clampDailyPostCount(form.daily_post_max, 5),
         forbidden_topics: form.forbidden_topics.split('\n').map((s) => s.trim()).filter(Boolean),
         forbidden_words: form.forbidden_words.split('\n').map((s) => s.trim()).filter(Boolean),
       });
       await reloadAccounts();
       await reloadSetupStatus?.();
       toast('설정이 저장되었습니다.', 'success');
-    } catch {
-      toast('저장에 실패했습니다.', 'error');
+      setErrors((prev) => ({ ...prev, save: null }));
+    } catch (error) {
+      toast(error.message || '설정을 저장하지 못했습니다.', 'error');
+      setErrors((prev) => ({
+        ...prev,
+        save: {
+          message: error.message || '설정을 저장하지 못했습니다.',
+          code: error.code || 'SETTINGS_SAVE_FAILED'
+        }
+      }));
     } finally {
       setSaving(false);
     }
@@ -252,8 +261,8 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
       </Section>
 
       {/* 콘텐츠 설정 */}
-      <Section title="콘텐츠 설정" desc="AI가 주제와 글을 생성할 때 기반이 됩니다">
-        <Field label="타겟 오디언스 *">
+      <Section title="콘텐츠 설정" desc="AI가 주제와 글을 생성할 때 기반이 됩니다" collapsible>
+        <Field label="타겟층 *">
           <input type="text" value={form.target_audience} onChange={(e) => { setForm((p) => ({ ...p, target_audience: e.target.value })); setErrors((p) => ({ ...p, target_audience: null })); }}
             placeholder="예: 30대 주부, 자취하는 직장인" className={`${input} ${errors.target_audience ? 'border-red-400' : ''}`} />
           {errors.target_audience && <span className="text-xs text-red-500">{errors.target_audience}</span>}
@@ -324,19 +333,12 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
       </Section>
 
       {/* 포스팅 스케줄 */}
-      <Section title="포스팅 스케줄">
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="하루 최소">
-            <input type="number" min="1" max={MAX_DAILY_POSTS} value={form.daily_post_min}
-              onChange={(e) => setForm((p) => ({ ...p, daily_post_min: clampDailyPostCount(e.target.value) }))}
-              className={`${input} text-center font-bold text-lg`} />
-          </Field>
-          <Field label="하루 최대">
-            <input type="number" min="1" max={MAX_DAILY_POSTS} value={form.daily_post_max}
-              onChange={(e) => setForm((p) => ({ ...p, daily_post_max: clampDailyPostCount(e.target.value) }))}
-              className={`${input} text-center font-bold text-lg`} />
-          </Field>
-        </div>
+      <Section title="포스팅 스케줄" collapsible>
+        <Field label="하루 최대 포스팅">
+          <input type="number" min="0" max={MAX_DAILY_POSTS} value={form.daily_post_max}
+            onChange={(e) => setForm((p) => ({ ...p, daily_post_max: clampDailyPostCount(e.target.value, 5) }))}
+            className={`${input} text-center font-bold text-lg`} />
+        </Field>
         <Field label="업로드 시간대">
           <div className="grid gap-3">
             {form.active_time_windows.map((w, i) => (
@@ -362,6 +364,23 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
         {saving && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
         {saving ? '저장 중...' : trialBlocked ? '무료 체험 종료' : '설정 저장'}
       </button>
+      {errors.save && (
+        <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-700">
+          <div className="font-black">설정을 저장하지 못했어요</div>
+          <div className="mt-1 text-xs leading-relaxed">{errors.save.message}</div>
+          <div className="mt-3">
+            <ErrorReportButton
+              account={account}
+              currentUser={currentUser}
+              context={{
+                message: errors.save.message,
+                code: errors.save.code,
+                apiSummary: { form: { ...form, coupang_access_key: undefined, coupang_secret_key: undefined } }
+              }}
+            />
+          </div>
+        </div>
+      )}
       <Section title="계정 보관/삭제" desc="사용하지 않는 계정은 목록에서 숨기고 자동화를 중지합니다.">
         <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs leading-relaxed text-rose-700">
           고객용 계정 삭제는 복구 가능한 보관 처리입니다. 예약/게시/분석 기록은 보관되고, 자동화는 중지됩니다.

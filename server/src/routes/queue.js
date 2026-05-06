@@ -60,7 +60,9 @@ router.post('/:accountId/create-daily-queue', requireAccountAccessParam(), async
 router.get('/:accountId/queue', requireAccountAccessParam(), async (req, res, next) => {
   try {
     const rows = await dbList('post_queue', { account_id: req.params.accountId }, { order: 'scheduled_at', ascending: true });
-    const visibleRows = req.user?.type === 'user' ? rows.filter(isCustomerVisibleQueue) : rows;
+    const visibleRows = req.user?.type === 'user' || req.query.includeHidden !== '1'
+      ? rows.filter(isCustomerVisibleQueue)
+      : rows;
     res.json(decorateQueueRows(visibleRows));
   } catch (e) { next(e); }
 });

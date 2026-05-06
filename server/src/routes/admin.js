@@ -14,7 +14,7 @@ import { hashPassword } from '../utils/password.js';
 import { cleanupQueueErrors, operationAccountRows, operationSummary } from '../services/operationsService.js';
 import { buildOpsHealthSummary, runDailyOpsHealthCheck } from '../services/opsHealthService.js';
 import { cleanupUnusedPipelineArtifacts } from '../services/unusedArtifactCleanupService.js';
-import { dismissPastQueueIssuesForAccount } from '../services/queueVisibilityService.js';
+import { cleanupOldQueueIssues, dismissPastQueueIssuesForAccount } from '../services/queueVisibilityService.js';
 import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js';
 import { buildMisassignmentReport } from '../services/accountOwnershipService.js';
 import { createManualPayment, expireDueEntitlements } from '../services/billingEntitlementService.js';
@@ -131,6 +131,18 @@ router.post('/operations/cleanup-unused-artifacts', async (req, res, next) => {
     const retentionDays = Number(req.body?.retentionDays || 7);
     const accountId = req.body?.accountId || null;
     res.json(await cleanupUnusedPipelineArtifacts({ mode, retentionDays, accountId }));
+  } catch (e) { next(e); }
+});
+
+router.post('/operations/cleanup-old-queue-issues', async (req, res, next) => {
+  try {
+    const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
+    res.json(await cleanupOldQueueIssues({
+      mode,
+      accountId: req.body?.accountId || null,
+      hideAfterDays: Number(req.body?.hideAfterDays || 7),
+      deleteAfterHiddenDays: Number(req.body?.deleteAfterHiddenDays || 3)
+    }));
   } catch (e) { next(e); }
 });
 

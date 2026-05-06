@@ -29,8 +29,8 @@ function normalizeAccount(payload) {
   next.active_time_windows = next.active_time_windows
     .filter((window) => window?.start && window?.end)
     .map((window) => ({ start: window.start, end: window.end }));
-  next.daily_post_min = Math.min(MAX_DAILY_POSTS, Math.max(0, toFiniteNumber(next.daily_post_min, 1)));
-  next.daily_post_max = Math.min(MAX_DAILY_POSTS, Math.max(next.daily_post_min, toFiniteNumber(next.daily_post_max, next.daily_post_min)));
+  next.daily_post_min = 0;
+  next.daily_post_max = Math.min(MAX_DAILY_POSTS, Math.max(0, toFiniteNumber(next.daily_post_max, MAX_DAILY_POSTS)));
   next.min_interval_minutes = Math.max(1, toFiniteNumber(next.min_interval_minutes, 50));
   next.link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.link_post_ratio, 1)));
   next.no_link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.no_link_post_ratio, 0)));
@@ -76,7 +76,7 @@ export const createAccount = (payload) => dbInsert('accounts', normalizeAccount(
   emoji_level: 'low',
   safe_debate_enabled: false,
   content_style_note: '',
-  daily_post_min: 1,
+  daily_post_min: 0,
   daily_post_max: 5,
   active_time_windows: [{ start: '09:00', end: '11:00' }, { start: '20:00', end: '23:00' }],
   min_interval_minutes: 50,

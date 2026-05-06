@@ -41,9 +41,7 @@ where automation_status = 'running'
     or coalesce(threads_token_status, 'not_connected') <> 'connected'
     or nullif(trim(coalesce(target_audience, '')), '') is null
     or nullif(trim(coalesce(content_scope, '')), '') is null
-    or coalesce(daily_post_min, 0) <= 0
     or coalesce(daily_post_max, 0) <= 0
-    or coalesce(daily_post_max, 0) < coalesce(daily_post_min, 0)
     or (
       coalesce(link_post_ratio, 0) > 0
       and (

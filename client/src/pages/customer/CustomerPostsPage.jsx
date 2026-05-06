@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 import TrialStatusCard from './TrialStatusCard.jsx';
+import ErrorReportButton from '../../components/ErrorReportButton.jsx';
 
 function postModeLabel(postMode) {
   if (postMode === 'link') return '쿠팡 링크 글';
@@ -46,7 +47,7 @@ function ModeBadge({ mode, linkStatus }) {
   );
 }
 
-export default function CustomerPostsPage({ account, pipelineResult, trialStatus, setTab }) {
+export default function CustomerPostsPage({ account, currentUser, pipelineResult, trialStatus, setTab }) {
   const [queue, setQueue] = useState([]);
   const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -184,16 +185,25 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
             </div>
           ) : (
             <div>
-              <div className="font-bold">예약 생성 중 오류 발생</div>
-              <div className="text-xs mt-1 opacity-80">{pipelineResult.message || pipelineResult.error}</div>
+              <div className="font-bold">예약을 준비하지 못했어요</div>
+              <div className="text-xs mt-1 opacity-80">{pipelineResult.message || pipelineResult.error || '잠시 후 다시 시도해주세요.'}</div>
               {pipelineResult.queueDiagnostics && (
                 <div className="mt-2 text-[11px] opacity-70">
-                  예약 시간 {pipelineResult.queueDiagnostics.scheduleCount ?? 0}개 · 링크 후보 {pipelineResult.queueDiagnostics.availableLinkPosts ?? 0}개 · 미매칭 초안 {pipelineResult.queueDiagnostics.availableNoLinkPosts ?? 0}개
+                  예약 후보 {pipelineResult.queueDiagnostics.scheduleCount ?? 0}개 · 연결 가능한 글 {pipelineResult.queueDiagnostics.availableLinkPosts ?? 0}개
                 </div>
               )}
-              {pipelineResult.stage && (
-                <div className="mt-2 text-[11px] opacity-70">단계: {pipelineResult.stage}</div>
-              )}
+              <div className="mt-3">
+                <ErrorReportButton
+                  account={account}
+                  currentUser={currentUser}
+                  context={{
+                    message: pipelineResult.message || pipelineResult.error || '예약 준비 실패',
+                    code: pipelineResult.code,
+                    apiSummary: pipelineResult
+                  }}
+                  className="rounded-lg border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-600"
+                />
+              </div>
             </div>
           )}
         </div>
@@ -217,7 +227,7 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
           </div>
           {pastNeedsAttention.length > 0 && (
             <div className="mb-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-700">
-              지난 실패 기록은 현재 예약 생성 여부와 별개입니다. 확인이 끝난 항목은 한 번에 숨길 수 있습니다.
+              예전에 실패했던 기록입니다. 지금 해결됐거나 확인이 끝났다면 한 번에 정리할 수 있습니다.
             </div>
           )}
           <div className="grid gap-2">
@@ -268,9 +278,19 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
                               </div>
                               {(r.error_category || d.queue?.error_category) && (
                                 <div className="rounded-lg bg-white/70 px-3 py-2 font-bold">
-                                  관리자 전달 코드: {d.queue?.error_category || r.error_category}
+                                  관리자에게 보낼 때 함께 전달되는 확인 정보가 있습니다.
                                 </div>
                               )}
+                              <ErrorReportButton
+                                account={account}
+                                currentUser={currentUser}
+                                context={{
+                                  queueId: r.id,
+                                  message: detailFriendly.message || r.error_message || detailFriendly.title,
+                                  code: d.queue?.error_category || r.error_category,
+                                  apiSummary: { queue: d.queue || r, postMode: d.postMode, linkStatus: d.linkStatus }
+                                }}
+                              />
                             </div>
                           )}
                           <button
@@ -298,7 +318,7 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
         <div>
           <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 px-1">예약됨 ({scheduled.length})</div>
           <div className="mb-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-relaxed text-blue-700">
-            예약됨에는 현재 DB에 생성된 예약만 표시됩니다. 다다음날 이후 예약은 매일 새벽 02시 자동 생성 후 보입니다.
+            현재 쿠자사 서버에 준비된 예약만 표시됩니다. 다음 예약은 매일 새벽 2시에 자동 생성된 뒤 보입니다.
           </div>
           <div className="grid gap-2">
             {scheduled.map((r) => {

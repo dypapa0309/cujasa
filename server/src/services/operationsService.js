@@ -101,7 +101,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
     start,
     end
   } = context;
-  const accountQueue = queue.filter((row) => row.account_id === account.id);
+  const accountQueue = queue.filter((row) => row.account_id === account.id && !row.customer_hidden_at);
   const todayQueue = accountQueue.filter((row) => inRange(row.scheduled_at, start, end));
   const todayScheduled = todayQueue.filter((row) => row.status === 'scheduled').length;
   const todayPosted = accountQueue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length;
@@ -262,7 +262,7 @@ export async function operationSummary() {
     operationAccountRows()
   ]);
   const activeAccountIds = new Set(accounts.filter((account) => account.status === 'active').map((account) => account.id));
-  const activeQueue = queue.filter((row) => activeAccountIds.has(row.account_id));
+  const activeQueue = queue.filter((row) => activeAccountIds.has(row.account_id) && !row.customer_hidden_at);
   const todayQueue = activeQueue.filter((row) => inRange(row.scheduled_at, start, end));
   const threadsOkByAccountId = new Map(rows.map((row) => [row.accountId, row.threads.status !== 'error']));
   const problemAccounts = rows.flatMap((row) => row.problems).sort((a, b) => {

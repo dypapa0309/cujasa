@@ -37,7 +37,7 @@ function accountReadiness(account) {
       'content_required',
       'blocking',
       '콘텐츠 설정 필요',
-      `${account.name || '계정'}의 타겟 오디언스와 다룰 카테고리를 입력해주세요.`,
+      `${account.name || '계정'}의 타겟층과 다룰 카테고리를 입력해주세요.`,
       'settings',
       account.id
     ));

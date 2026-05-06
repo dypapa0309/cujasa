@@ -40,7 +40,7 @@ const tables = {
     emoji_level: 'low',
     safe_debate_enabled: false,
     content_style_note: '',
-    daily_post_min: 2,
+    daily_post_min: 0,
     daily_post_max: 5,
     active_time_windows: [{ start: '09:00', end: '11:00' }, { start: '20:00', end: '23:00' }],
     min_interval_minutes: 50,

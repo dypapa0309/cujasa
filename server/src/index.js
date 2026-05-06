@@ -22,6 +22,7 @@ import inquiriesRouter from './routes/inquiries.js';
 import billingRouter, { tossWebhook } from './routes/billing.js';
 import publicCheckoutRouter from './routes/publicCheckout.js';
 import supportWidgetRouter from './routes/supportWidget.js';
+import supportRouter from './routes/support.js';
 import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { processDueQueue } from './services/schedulerService.js';
@@ -33,6 +34,7 @@ import { expireDueEntitlements } from './services/billingEntitlementService.js';
 import { sendOpsAlert } from './services/notificationService.js';
 import { runDailyOpsHealthCheck } from './services/opsHealthService.js';
 import { cleanupUnusedPipelineArtifacts } from './services/unusedArtifactCleanupService.js';
+import { cleanupOldQueueIssues } from './services/queueVisibilityService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -141,6 +143,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/inquiries', inquiriesRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/public/checkout', publicCheckoutRouter);
+app.use('/api/support', supportRouter);
 app.post('/api/webhooks/toss', tossWebhook);
 
 // sitemap.xml (블로그 글 포함 자동 생성)
@@ -221,7 +224,8 @@ cron.schedule('0 2 * * *', async () => {
   await runCronJob('daily-pipeline', async () => {
     const pipeline = await runFullPipeline();
     const cleanup = await cleanupUnusedPipelineArtifacts({ mode: 'apply' });
-    return { pipeline, cleanup };
+    const oldIssues = await cleanupOldQueueIssues({ mode: 'apply' });
+    return { pipeline, cleanup, oldIssues };
   });
 }, { timezone: 'Asia/Seoul' });
 

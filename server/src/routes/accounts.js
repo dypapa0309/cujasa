@@ -9,6 +9,7 @@ import { assertUserCanOperate } from '../services/billingEntitlementService.js';
 import { redactAccount, redactAccounts, stripBlankSensitiveAccountFields } from '../services/redactionService.js';
 import { assertUserCanStartTrialAction } from '../services/trialEntitlementService.js';
 import { AUTOMATION_PAUSED, AUTOMATION_RUNNING, normalizeAutomationStatus, setAutomationStatus } from '../services/accountAutomationService.js';
+import { isRealCoupangProduct } from '../utils/productQuality.js';
 
 const router = Router();
 
@@ -137,6 +138,74 @@ router.get('/:accountId/preflight', async (req, res, next) => {
     }
     const mode = req.query.mode === 'start' ? 'start' : undefined;
     res.json(await preflightAccount(req.params.accountId, { mode }));
+  } catch (e) { next(e); }
+});
+
+router.get('/:accountId/product-summary', async (req, res, next) => {
+  try {
+    const { accountId } = req.params;
+    if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const [topics, products, selections, posts, queue] = await Promise.all([
+      dbList('topics', { account_id: accountId }, { order: 'created_at', ascending: false }),
+      dbList('coupang_products', { account_id: accountId }),
+      dbList('post_products'),
+      dbList('posts', { account_id: accountId }),
+      dbList('post_queue', { account_id: accountId })
+    ]);
+    const postsByTopic = posts.reduce((acc, post) => {
+      if (!post.topic_id) return acc;
+      if (!acc.has(post.topic_id)) acc.set(post.topic_id, []);
+      acc.get(post.topic_id).push(post);
+      return acc;
+    }, new Map());
+    const postTopicById = new Map(posts.map((post) => [post.id, post.topic_id]));
+    const queueTopicIds = new Set(queue.map((row) => row.topic_id || postTopicById.get(row.post_id)).filter(Boolean));
+    const selectedProductIdsByTopic = selections.reduce((acc, row) => {
+      if (!row.topic_id) return acc;
+      if (!acc.has(row.topic_id)) acc.set(row.topic_id, new Set());
+      acc.get(row.topic_id).add(row.product_id);
+      return acc;
+    }, new Map());
+    const productRowsByTopic = products.reduce((acc, product) => {
+      if (!product.topic_id) return acc;
+      if (!acc.has(product.topic_id)) acc.set(product.topic_id, []);
+      acc.get(product.topic_id).push(product);
+      return acc;
+    }, new Map());
+    const now = Date.now();
+    const cleanupCutoff = now - 7 * 24 * 60 * 60 * 1000;
+    res.json(topics.map((topic) => {
+      const topicProducts = productRowsByTopic.get(topic.id) || [];
+      const selectedIds = selectedProductIdsByTopic.get(topic.id) || new Set();
+      const realProducts = topicProducts.filter(isRealCoupangProduct);
+      const selectedRealCount = realProducts.filter((product) => selectedIds.has(product.id)).length;
+      const hasQueue = queueTopicIds.has(topic.id);
+      const cleanupCandidate = !hasQueue && new Date(topic.created_at || 0).getTime() < cleanupCutoff;
+      const status = selectedRealCount > 0
+        ? 'connected'
+        : realProducts.length > 0
+          ? 'needs_selection'
+          : topicProducts.length > 0
+            ? 'no_real_products'
+            : 'no_products';
+      return {
+        topicId: topic.id,
+        title: topic.title,
+        angle: topic.angle,
+        createdAt: topic.created_at,
+        status,
+        productCount: topicProducts.length,
+        realCount: realProducts.length,
+        selectedCount: selectedIds.size,
+        selectedRealCount,
+        fallbackCount: topicProducts.length - realProducts.length,
+        postCount: (postsByTopic.get(topic.id) || []).length,
+        hasQueue,
+        cleanupCandidate
+      };
+    }));
   } catch (e) { next(e); }
 });
 

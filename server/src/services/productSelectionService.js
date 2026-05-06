@@ -1,5 +1,5 @@
 import { getJson } from './openaiService.js';
-import { dbGet, dbInsert, dbList, logActivity } from './supabaseService.js';
+import { dbDelete, dbGet, dbInsert, dbList, logActivity } from './supabaseService.js';
 import { selectProductsPrompt } from '../prompts/selectProductsPrompt.js';
 import { getAccount } from './accountService.js';
 import { validateProductCandidate } from '../utils/contentGuardrails.js';
@@ -183,4 +183,45 @@ export async function manuallySelectProduct(topicId, productId, options = {}) {
     recommendation_reason: options.reason || `${topic.angle || topic.title}와 직접 연결되는 실제 쿠팡 상품`,
     rank: Number(options.rank || existing.length + 1)
   });
+}
+
+export async function unselectProduct(topicId, productId) {
+  const topic = await dbGet('topics', { id: topicId });
+  if (!topic) {
+    const error = new Error('Topic not found');
+    error.status = 404;
+    throw error;
+  }
+  const selected = await dbList('post_products', { topic_id: topicId });
+  const target = selected.find((row) => row.product_id === productId);
+  if (!target) {
+    const error = new Error('Product selection not found');
+    error.status = 404;
+    throw error;
+  }
+  const posts = await dbList('posts', { topic_id: topicId });
+  const postIds = new Set(posts.map((post) => post.id));
+  const queue = await dbList('post_queue', { topic_id: topicId });
+  const linkedQueue = [
+    ...queue,
+    ...(await Promise.all([...postIds].map((postId) => dbList('post_queue', { post_id: postId })))).flat()
+  ];
+  const inUse = linkedQueue.some((row) => ['scheduled', 'posting', 'posted'].includes(row.status));
+  if (inUse) {
+    const error = new Error('이미 예약에 사용된 상품 연결은 해제할 수 없습니다.');
+    error.status = 409;
+    error.code = 'PRODUCT_SELECTION_IN_USE';
+    throw error;
+  }
+  await dbDelete('post_products', { id: target.id });
+  await logActivity({
+    account_id: topic.account_id,
+    project_id: topic.project_id,
+    topic_id: topicId,
+    action: 'product_selection_removed',
+    level: 'info',
+    message: '예약 전 상품 연결을 해제했습니다.',
+    payload: { productId }
+  }).catch(() => null);
+  return { ok: true, removedId: target.id, topicId, productId };
 }

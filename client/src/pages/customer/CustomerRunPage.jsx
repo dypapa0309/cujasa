@@ -4,9 +4,11 @@ import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import TrialStatusCard from './TrialStatusCard.jsx';
 import PreflightModal from './PreflightModal.jsx';
+import ErrorReportButton from '../../components/ErrorReportButton.jsx';
 
 export default function CustomerRunPage({
   account,
+  currentUser,
   trialStatus,
   reloadTrialStatus,
   reloadAccounts,
@@ -257,11 +259,10 @@ export default function CustomerRunPage({
           <div className="font-black">자동화 실행이 중단됐습니다</div>
           <p className="mt-2 text-sm leading-relaxed">{runError.message}</p>
           <div className="mt-3 rounded-xl bg-white/70 px-4 py-3 text-xs leading-relaxed">
-            <div><span className="font-bold">단계</span> {runError.stage || 'pipeline'}</div>
-            <div><span className="font-bold">코드</span> {runError.code || 'PIPELINE_FAILED'}</div>
+            <div className="font-bold">현재 예약 후보 상태</div>
             {runError.diagnostics && (
               <div className="mt-2">
-                예약 시간 {runError.diagnostics.scheduleCount ?? 0}개 · 링크 후보 {runError.diagnostics.availableLinkPosts ?? 0}개 · 미매칭 초안 {runError.diagnostics.availableNoLinkPosts ?? 0}개
+                예약 후보 {runError.diagnostics.scheduleCount ?? 0}개 · 연결 가능한 글 {runError.diagnostics.availableLinkPosts ?? 0}개
               </div>
             )}
           </div>
@@ -272,6 +273,15 @@ export default function CustomerRunPage({
             <button type="button" onClick={() => runPreflight()} className="rounded-xl border border-rose-200 px-4 py-3 text-xs font-bold text-rose-700">
               다시 점검
             </button>
+            <ErrorReportButton
+              account={account}
+              currentUser={currentUser}
+              context={{
+                message: runError.message,
+                code: runError.code,
+                apiSummary: runError
+              }}
+            />
           </div>
         </div>
       )}
@@ -324,8 +334,7 @@ function normalizeRunError(error) {
 }
 
 function formatSchedule(account) {
-  const min = Number(account?.daily_post_min || 1);
-  const max = Number(account?.daily_post_max || min);
-  const limit = Math.min(5, Math.max(min, max));
+  const max = Number(account?.daily_post_max ?? 5);
+  const limit = Math.min(5, Math.max(0, Number.isFinite(max) ? max : 5));
   return `상품 매칭 성공분만 최대 ${limit}개 예약`;
 }

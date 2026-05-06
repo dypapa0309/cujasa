@@ -154,7 +154,7 @@ export async function preflightAccount(accountId, options = {}) {
   }
 
   if (!String(account.target_audience || '').trim()) {
-    checks.push(makeCheck('target_audience', 'error', '타겟 오디언스가 비어 있습니다', '설정 화면에서 타겟 오디언스를 입력해주세요.'));
+    checks.push(makeCheck('target_audience', 'error', '타겟층이 비어 있습니다', '설정 화면에서 타겟층을 입력해주세요.'));
   }
   if (!String(account.content_scope || '').trim()) {
     checks.push(makeCheck('content_scope', 'error', '다룰 카테고리가 비어 있습니다', '설정 화면에서 콘텐츠 범위를 입력해주세요.'));

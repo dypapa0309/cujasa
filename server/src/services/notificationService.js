@@ -63,6 +63,38 @@ async function sendTelegram(message) {
   };
 }
 
+async function sendEmail(to, subject, text) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || process.env.OPS_EMAIL_FROM || 'CUJASA <onboarding@resend.dev>';
+  if (!apiKey || !to) return { configured: false, to };
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from,
+        to,
+        subject,
+        text
+      })
+    });
+    let body = null;
+    try { body = await response.json(); } catch { body = null; }
+    return {
+      configured: true,
+      ok: response.ok,
+      status: response.status,
+      id: body?.id || null,
+      error: response.ok ? null : (body?.message || body?.error || 'email_send_failed')
+    };
+  } catch (error) {
+    return { configured: true, ok: false, to, error: error.message };
+  }
+}
+
 export async function sendNotification(type, message, payload = {}) {
   const row = await dbInsert('notifications', { type, channel: 'ops', message, payload, status: 'created' });
   const [slack, telegram] = await Promise.all([
@@ -79,6 +111,16 @@ export async function sendNotification(type, message, payload = {}) {
     status: sent ? 'sent' : 'failed'
   }).catch(() => [null]);
   return updated || { ...row, payload: resultPayload, status: sent ? 'sent' : 'failed' };
+}
+
+export async function sendEmailNotification(type, to, subject, message, payload = {}) {
+  const row = await dbInsert('notifications', { type, channel: 'email', message, payload: { ...payload, to, subject }, status: 'created' });
+  const email = await sendEmail(to, subject, message);
+  const [updated] = await dbUpdate('notifications', { id: row.id }, {
+    payload: { ...payload, to, subject, delivery: { email } },
+    status: email.ok ? 'sent' : 'failed'
+  }).catch(() => [null]);
+  return updated || { ...row, payload: { ...payload, to, subject, delivery: { email } }, status: email.ok ? 'sent' : 'failed' };
 }
 
 export async function safeSendNotification(type, message, payload = {}) {

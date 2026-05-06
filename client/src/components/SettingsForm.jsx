@@ -59,7 +59,7 @@ export default function SettingsForm({ form, setForm, onSubmit, saving, onReveal
       {[
         ['name', '계정명', 'text'],
         ['account_handle', '핸들', 'text'],
-        ['target_audience', '타깃', 'text'],
+        ['target_audience', '타겟층', 'text'],
         ['content_scope', '주제 범위', 'text'],
         ['threads_access_token', 'Threads 액세스 토큰', 'password'],
         ['coupang_access_key', '쿠팡 Access Key', 'text'],
@@ -146,10 +146,6 @@ export default function SettingsForm({ form, setForm, onSubmit, saving, onReveal
           value={(form.forbidden_words || []).join('\n')}
           onChange={(e) => updateList('forbidden_words', e.target.value)}
         />
-      </label>
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">하루 최소 업로드</span>
-        <input type="number" min="0" max={MAX_DAILY_POSTS} className="rounded border border-line px-3 py-2" value={form.daily_post_min ?? 1} onChange={(e) => update('daily_post_min', Math.min(MAX_DAILY_POSTS, Math.max(0, Number(e.target.value))))} />
       </label>
       <label className="grid gap-1 text-sm">
         <span className="font-medium">하루 최대 업로드</span>

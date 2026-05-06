@@ -13,6 +13,7 @@ const sensitiveAccountKeys = [
 
 function sanitizeAccountPayload(form) {
   const payload = { ...form };
+  payload.daily_post_min = 0;
   for (const key of sensitiveAccountKeys) {
     if (!String(payload[key] || '').trim()) delete payload[key];
     delete payload[`has_${key}`];

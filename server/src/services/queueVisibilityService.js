@@ -1,10 +1,13 @@
-import { dbList, dbUpdate, logActivity } from './supabaseService.js';
+import { dbDelete, dbList, dbUpdate, logActivity } from './supabaseService.js';
 import { normalizeQueueClassification } from './queueErrorService.js';
 
 const CUSTOMER_VISIBLE_PROBLEM_STATUSES = new Set(['failed', 'retry', 'manual_required']);
 const CUSTOMER_DISMISSIBLE_STATUSES = new Set(['failed', 'retry', 'manual_required', 'skipped']);
 const PAST_TOKEN_CATEGORIES = new Set(['threads_reconnect_required', 'retry_available', 'recheck_required']);
 const DEFAULT_RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const AUTO_HIDE_ISSUE_DAYS = Math.max(1, Number(process.env.QUEUE_ISSUE_AUTO_HIDE_DAYS || 7));
+const DELETE_HIDDEN_ISSUE_DAYS = Math.max(1, Number(process.env.QUEUE_ISSUE_DELETE_AFTER_HIDE_DAYS || 3));
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 function startOfTodayKst(date = new Date()) {
   const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -13,6 +16,10 @@ function startOfTodayKst(date = new Date()) {
 
 function queueTime(row = {}) {
   return new Date(row.updated_at || row.created_at || row.scheduled_at || 0).getTime() || 0;
+}
+
+function hiddenTime(row = {}) {
+  return new Date(row.customer_hidden_at || 0).getTime() || 0;
 }
 
 function isRecent(row = {}, recentWindowMs = DEFAULT_RECENT_WINDOW_MS) {
@@ -131,5 +138,68 @@ export async function dismissPastQueueIssuesForAccount(accountId, options = {}) 
     hiddenCount: apply ? hidden.length : 0,
     hiddenIds: (apply ? hidden : targets).map((row) => row.id),
     cutoff: cutoff.toISOString()
+  };
+}
+
+export async function cleanupOldQueueIssues({
+  mode = 'dry-run',
+  hideAfterDays = AUTO_HIDE_ISSUE_DAYS,
+  deleteAfterHiddenDays = DELETE_HIDDEN_ISSUE_DAYS,
+  accountId = null
+} = {}) {
+  const apply = mode === 'apply';
+  const now = Date.now();
+  const rows = await dbList('post_queue', accountId ? { account_id: accountId } : {});
+  const hideCutoff = now - Math.max(1, Number(hideAfterDays) || AUTO_HIDE_ISSUE_DAYS) * ONE_DAY_MS;
+  const deleteCutoff = now - Math.max(1, Number(deleteAfterHiddenDays) || DELETE_HIDDEN_ISSUE_DAYS) * ONE_DAY_MS;
+  const hideTargets = rows.filter((row) => {
+    if (row.customer_hidden_at) return false;
+    if (!CUSTOMER_DISMISSIBLE_STATUSES.has(row.status)) return false;
+    return queueTime(row) > 0 && queueTime(row) < hideCutoff;
+  });
+  const deleteTargets = rows.filter((row) => {
+    if (!row.customer_hidden_at) return false;
+    if (!CUSTOMER_DISMISSIBLE_STATUSES.has(row.status)) return false;
+    return hiddenTime(row) > 0 && hiddenTime(row) < deleteCutoff;
+  });
+
+  if (apply) {
+    for (const row of hideTargets) {
+      await dbUpdate('post_queue', { id: row.id }, {
+        customer_hidden_at: new Date().toISOString(),
+        customer_hidden_reason: 'old_issue_auto_hidden'
+      });
+    }
+    for (const row of deleteTargets) {
+      await dbDelete('post_queue', { id: row.id });
+    }
+    if (hideTargets.length || deleteTargets.length) {
+      await logActivity({
+        account_id: accountId || null,
+        action: 'old_queue_issues_cleanup',
+        level: 'info',
+        message: `오래된 확인 필요 항목 숨김 ${hideTargets.length}개, 삭제 ${deleteTargets.length}개`,
+        payload: {
+          hideAfterDays,
+          deleteAfterHiddenDays,
+          hiddenCount: hideTargets.length,
+          deletedCount: deleteTargets.length,
+          hiddenIds: hideTargets.map((row) => row.id),
+          deletedIds: deleteTargets.map((row) => row.id)
+        }
+      }).catch(() => null);
+    }
+  }
+
+  return {
+    mode: apply ? 'apply' : 'dry-run',
+    hideAfterDays,
+    deleteAfterHiddenDays,
+    hiddenCount: apply ? hideTargets.length : 0,
+    deletedCount: apply ? deleteTargets.length : 0,
+    hideTargetCount: hideTargets.length,
+    deleteTargetCount: deleteTargets.length,
+    hideIds: hideTargets.map((row) => row.id),
+    deleteIds: deleteTargets.map((row) => row.id)
   };
 }

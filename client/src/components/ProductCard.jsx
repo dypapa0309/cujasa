@@ -10,7 +10,7 @@ const issueLabels = {
   missing_url: 'URL 없음'
 };
 
-export default function ProductCard({ product, onSelect, selecting = false, onCopied }) {
+export default function ProductCard({ product, onSelect, onUnselect, selecting = false, unselecting = false, onCopied }) {
   const isReal = product.is_real_product !== false;
   const issues = product.quality_issues || [];
   const canSelect = isReal && !product.selected && onSelect;
@@ -45,9 +45,10 @@ export default function ProductCard({ product, onSelect, selecting = false, onCo
         </p>
       )}
       {product.selected && (
-        <p className="mt-2 rounded bg-blue-50 px-2 py-1 text-xs font-bold text-blue-600">
-          선택됨 · rank {product.selected_rank}
-        </p>
+        <div className="mt-2 rounded bg-blue-50 px-2 py-2 text-xs font-bold text-blue-600">
+          <div>이 주제의 링크 글 후보로 연결됨</div>
+          {product.selection_in_use && <div className="mt-1 text-blue-500">예약에 사용 중</div>}
+        </div>
       )}
       {product.selected_invalid && (
         <p className="mt-2 rounded bg-rose-50 px-2 py-1 text-xs font-bold text-rose-600">
@@ -92,7 +93,21 @@ export default function ProductCard({ product, onSelect, selecting = false, onCo
               : 'bg-slate-100 text-slate-400'
           }`}
         >
-          {product.selected ? '이미 연결됨' : isReal ? (selecting ? '연결 중...' : '이 상품 연결') : '실상품만 연결 가능'}
+          {product.selected ? '이미 연결됨' : isReal ? (selecting ? '연결 중...' : '이 주제에 연결') : '실상품만 연결 가능'}
+        </button>
+      )}
+      {product.selected && onUnselect && (
+        <button
+          type="button"
+          onClick={() => onUnselect(product)}
+          disabled={product.selection_in_use || unselecting}
+          className={`mt-2 w-full rounded px-3 py-2 text-xs font-bold ${
+            product.selection_in_use
+              ? 'bg-slate-100 text-slate-400'
+              : 'border border-line bg-white text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          {product.selection_in_use ? '예약에 사용 중' : unselecting ? '해제 중...' : '연결 해제'}
         </button>
       )}
     </div>
