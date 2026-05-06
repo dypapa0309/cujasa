@@ -12,6 +12,7 @@ import {
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
 import { hashPassword } from '../utils/password.js';
 import { cleanupQueueErrors, operationAccountRows, operationSummary } from '../services/operationsService.js';
+import { buildOpsHealthSummary, runDailyOpsHealthCheck } from '../services/opsHealthService.js';
 import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js';
 import { buildMisassignmentReport } from '../services/accountOwnershipService.js';
 import { createManualPayment, expireDueEntitlements } from '../services/billingEntitlementService.js';
@@ -120,6 +121,14 @@ router.post('/operations/cleanup-queue-errors', async (req, res, next) => {
     const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
     res.json(await cleanupQueueErrors({ mode }));
   } catch (e) { next(e); }
+});
+
+router.get('/operations/healthcheck', async (req, res, next) => {
+  try { res.json(await buildOpsHealthSummary()); } catch (e) { next(e); }
+});
+
+router.post('/operations/healthcheck/run', async (req, res, next) => {
+  try { res.json(await runDailyOpsHealthCheck()); } catch (e) { next(e); }
 });
 
 router.get('/setup-tasks', async (req, res, next) => {

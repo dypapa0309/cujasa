@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
 import { normalizeQueueClassification } from './queueErrorService.js';
 import { autoHidePastTokenFailures } from './queueVisibilityService.js';
+import { sendOpsAlert } from './notificationService.js';
 
 const THREADS_AUTH_URL = 'https://threads.net/oauth/authorize';
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
@@ -242,6 +243,14 @@ export async function refreshExpiringThreadsTokens() {
         action: 'threads_token_refresh_failed',
         level: 'error',
         message: error.message
+      });
+      await sendOpsAlert('threads_token_refresh_failed', {
+        title: 'Threads 토큰 갱신 실패',
+        account,
+        code: 'THREADS_TOKEN_REFRESH_FAILED',
+        message: error.message,
+        hint: '고객/관리자 화면에서 Threads 재연결 상태를 확인하세요.',
+        payload: { accountId: account.id, projectId: account.project_id }
       });
     }
   }

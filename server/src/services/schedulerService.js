@@ -12,6 +12,7 @@ import { assertAccountCanUpload, recordSuccessfulUpload } from './trialEntitleme
 import { assertAutomationRunning, isAutomationRunning } from './accountAutomationService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { createCoupangCooldownError, isCoupangCooldownActive, isCoupangSearchLockAvailable } from './coupangService.js';
+import { sendOpsAlert } from './notificationService.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
@@ -161,6 +162,13 @@ export async function createDailyQueue(accountId, options = {}) {
           error: lockHealth.message
         }
       }).catch(() => null);
+      await sendOpsAlert('daily_queue_blocked_coupang_lock_unavailable', {
+        title: '일일 큐 생성 차단',
+        account,
+        code: 'COUPANG_LOCK_UNAVAILABLE',
+        message: '쿠팡 검색 보호 락이 없어 링크 큐 생성을 차단했습니다.',
+        hint: 'coupang_search_locks 마이그레이션과 DB 연결 상태를 확인하세요.'
+      });
       const error = new Error('COUPANG_LOCK_UNAVAILABLE: 쿠팡 검색 보호 락이 준비되지 않아 링크 큐를 만들 수 없습니다.');
       error.status = 503;
       error.code = 'COUPANG_LOCK_UNAVAILABLE';
@@ -179,6 +187,14 @@ export async function createDailyQueue(accountId, options = {}) {
         cooldownUntil: account.coupang_search_cooldown_until
       }
     }).catch(() => null);
+    await sendOpsAlert('daily_queue_blocked_coupang_cooldown', {
+      title: '쿠팡 쿨다운으로 큐 생성 차단',
+      account,
+      code: 'COUPANG_RATE_LIMIT',
+      message: '쿠팡 요청 제한 보호 중이라 일일 큐 생성을 차단했습니다.',
+      hint: '쿨다운 해제 전까지 검색/자동화 재개를 피하세요.',
+      payload: { cooldownUntil: account.coupang_search_cooldown_until }
+    });
     throw createCoupangCooldownError(account);
   }
   if (!options.skipPreflight) {
@@ -252,6 +268,14 @@ export async function createDailyQueue(accountId, options = {}) {
       action: 'queue_link_slots_shortage',
       level: 'warn',
       message: `실제 쿠팡 링크 후보 부족: 목표 ${linkCount}개, 가능 ${primaryWithLink.length}개`,
+      payload: diagnostics
+    });
+    await sendOpsAlert('daily_queue_no_real_coupang_links', {
+      title: '실상품 링크 부족으로 큐 0개',
+      account,
+      code: 'NO_REAL_COUPANG_LINKS',
+      message: `링크 글 목표 ${linkCount}개 중 가능한 링크 후보가 ${primaryWithLink.length}개입니다.`,
+      hint: '상품 추천 결과에서 실상품 검색/선택 probe를 먼저 진행하세요.',
       payload: diagnostics
     });
     diagnostics.queuedCount = 0;
@@ -457,6 +481,20 @@ export async function uploadQueueItem(queueId) {
     }
     const [updated] = updatedRows;
     await logActivity({ account_id: queue.account_id, project_id: queue.project_id, action: 'upload_failed', level: 'error', message: error.message });
+    await sendOpsAlert(status === 'manual_required' ? 'queue_manual_required' : 'queue_upload_failed', {
+      title: status === 'manual_required' ? '큐 수동 검토 전환' : '큐 업로드 실패',
+      account,
+      code: error.code || classified.category || 'UPLOAD_FAILED',
+      message: error.message,
+      hint: status === 'manual_required' ? '관리자 큐에서 상세 오류와 링크/토큰 상태를 확인하세요.' : '재시도 예정입니다. 반복되면 수동 검토로 전환됩니다.',
+      payload: {
+        queueId,
+        postId: queue.post_id,
+        nextStatus: status,
+        retryCount: retry,
+        errorCategory: classified.category
+      }
+    });
     return updated;
   }
 }

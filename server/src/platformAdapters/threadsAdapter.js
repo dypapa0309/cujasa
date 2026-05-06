@@ -1,5 +1,6 @@
 const THREADS_API = 'https://graph.threads.net/v1.0';
 const COUPANG_DISCLOSURE = '[광고] 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
+const THREADS_TEXT_LIMIT = 500;
 
 export function stripLinkCta(text) {
   return String(text || '')
@@ -18,11 +19,36 @@ export function stripLinkCta(text) {
     .trim();
 }
 
-function buildPostText(post, linkUrl = null, deliveryMode = 'reply') {
+function charLength(text) {
+  return Array.from(String(text || '')).length;
+}
+
+function takeChars(text, max) {
+  return Array.from(String(text || '')).slice(0, Math.max(0, max)).join('');
+}
+
+function trimToThreadsLimit(text) {
+  const value = String(text || '').trim();
+  if (charLength(value) <= THREADS_TEXT_LIMIT) return value;
+  if (THREADS_TEXT_LIMIT <= 3) return takeChars(value, THREADS_TEXT_LIMIT).trim();
+  return `${takeChars(value, THREADS_TEXT_LIMIT - 3).trimEnd()}...`;
+}
+
+export function buildPostText(post, linkUrl = null, deliveryMode = 'reply') {
   const cleanBody = stripLinkCta(post.body);
   if (!cleanBody) return '';
-  if (!linkUrl || deliveryMode !== 'body_fallback') return cleanBody;
-  return `${cleanBody}\n\n${COUPANG_DISCLOSURE}\n${linkUrl}`;
+  if (!linkUrl || deliveryMode !== 'body_fallback') return trimToThreadsLimit(cleanBody);
+
+  const footer = `${COUPANG_DISCLOSURE}\n${linkUrl}`;
+  const separator = '\n\n';
+  const footerLength = charLength(footer);
+  if (footerLength + charLength(separator) >= THREADS_TEXT_LIMIT) return footer;
+
+  const bodyLimit = THREADS_TEXT_LIMIT - footerLength - charLength(separator);
+  const trimmedBody = charLength(cleanBody) > bodyLimit
+    ? `${takeChars(cleanBody, Math.max(0, bodyLimit - 3)).trimEnd()}...`
+    : cleanBody;
+  return `${trimmedBody.trim()}\n\n${footer}`.trim();
 }
 
 function buildReplyText(linkUrl) {
@@ -89,6 +115,12 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   if (!text) {
     const error = new Error('Threads post text is empty after content cleanup. 콘텐츠 본문을 다시 생성해주세요.');
     error.code = 'POST_BODY_EMPTY';
+    error.permanent = true;
+    throw error;
+  }
+  if (charLength(text) > THREADS_TEXT_LIMIT) {
+    const error = new Error('Threads post text exceeds 500 characters after adding disclosure and link. 콘텐츠 본문을 줄인 뒤 다시 시도해주세요.');
+    error.code = 'THREADS_TEXT_TOO_LONG';
     error.permanent = true;
     throw error;
   }

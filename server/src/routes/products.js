@@ -3,15 +3,17 @@ import { listProducts, searchProductsForTopic } from '../services/coupangService
 import { manuallySelectProduct, selectProducts } from '../services/productSelectionService.js';
 import { requireTopicAccess } from '../middleware/accountAccess.js';
 import { dbList } from '../services/supabaseService.js';
+import { decorateProductQuality } from '../utils/productQuality.js';
 
 const router = Router();
 router.post('/:topicId/search-products', requireTopicAccess, async (req, res, next) => {
   try {
     const products = await searchProductsForTopic(req.params.topicId);
     const blockedProduct = products.find((product) => ['COUPANG_RATE_LIMIT', 'COUPANG_SEARCH_THROTTLED', 'COUPANG_LOCK_UNAVAILABLE'].includes(product.raw_data?.code || ''));
+    const decorated = products.map(decorateProductQuality);
     res.status(201).json({
-      products,
-      realCount: products.filter((product) => !product.is_fallback).length,
+      products: decorated,
+      realCount: decorated.filter((product) => product.is_real_product !== false).length,
       blocked: Boolean(blockedProduct),
       reasonCode: blockedProduct?.raw_data?.code || products.find((product) => product.raw_data?.code)?.raw_data?.code || null,
       retryAfterMs: blockedProduct?.raw_data?.retryAfterMs || null,

@@ -12,8 +12,8 @@ function normalizeHandle(value) {
   return String(value || '').trim().replace(/^@/, '').toLowerCase();
 }
 
-function makeCheck(key, status, title, message, action = null) {
-  return { key, status, title, message, action };
+function makeCheck(key, status, title, message, action = null, details = null) {
+  return { key, status, title, message, action, ...(details ? { details } : {}) };
 }
 
 function isTokenError(message = '') {
@@ -24,7 +24,7 @@ function queueTime(row = {}) {
   return new Date(row.updated_at || row.created_at || row.scheduled_at || 0).getTime() || 0;
 }
 
-async function countSelectedRealProducts(accountId) {
+async function getCoupangLinkReadiness(accountId) {
   const [topics, products, postProducts] = await Promise.all([
     dbList('topics', { account_id: accountId }),
     dbList('coupang_products', { account_id: accountId }),
@@ -32,10 +32,21 @@ async function countSelectedRealProducts(accountId) {
   ]);
   const topicIds = new Set(topics.map((topic) => topic.id));
   const productsById = new Map(products.map((product) => [product.id, product]));
-  return postProducts.filter((row) => {
+  const scopedSelections = postProducts.filter((row) => topicIds.has(row.topic_id));
+  const selectedRealCount = scopedSelections.filter((row) => {
     if (!topicIds.has(row.topic_id)) return false;
     return isRealCoupangProduct(productsById.get(row.product_id));
   }).length;
+  const realProductCount = products.filter((product) => isRealCoupangProduct(product)).length;
+  return {
+    topicCount: topics.length,
+    productCount: products.length,
+    realProductCount,
+    fallbackProductCount: Math.max(0, products.length - realProductCount),
+    selectedProductCount: scopedSelections.length,
+    selectedRealCount,
+    selectedInvalidCount: Math.max(0, scopedSelections.length - selectedRealCount)
+  };
 }
 
 async function requestThreadsMe(token) {
@@ -173,17 +184,31 @@ export async function preflightAccount(accountId, options = {}) {
     } else {
       checks.push(makeCheck('coupang', 'ok', '쿠팡 API 설정 확인', '링크 포함 글을 만들 수 있는 기본 설정이 있습니다.'));
     }
-    const selectedRealCount = await countSelectedRealProducts(account.id);
-    if (selectedRealCount === 0) {
+    const readiness = await getCoupangLinkReadiness(account.id);
+    const linkRatioPercent = Math.round(linkRatio * 100);
+    const readinessDetails = {
+      ...readiness,
+      linkPostRatio: linkRatio,
+      linkPostRatioPercent: linkRatioPercent
+    };
+    if (readiness.selectedRealCount === 0) {
       checks.push(makeCheck(
         'real_coupang_links',
         'error',
         '실상품 링크 확보가 필요합니다',
-        '링크 포스팅을 시작하려면 상품 추천 결과에서 실제 쿠팡 상품을 먼저 선택해주세요.',
-        'select_real_coupang_product'
+        `현재 실상품 ${readiness.realProductCount}개, 선택된 실상품 ${readiness.selectedRealCount}개, 링크 글 비율 ${linkRatioPercent}%입니다. 상품 추천 결과에서 실제 쿠팡 상품을 먼저 검색하고 선택해야 링크 글 예약이 가능합니다.`,
+        'select_real_coupang_product',
+        readinessDetails
       ));
     } else {
-      checks.push(makeCheck('real_coupang_links', 'ok', '실상품 링크 확인', `${selectedRealCount}개의 실제 쿠팡 상품 선택이 확인되었습니다.`));
+      checks.push(makeCheck(
+        'real_coupang_links',
+        'ok',
+        '실상품 링크 확인',
+        `${readiness.selectedRealCount}개의 실제 쿠팡 상품 선택이 확인되었습니다. 링크 글 비율 ${linkRatioPercent}% 기준으로 예약 생성이 가능합니다.`,
+        null,
+        readinessDetails
+      ));
     }
   }
 

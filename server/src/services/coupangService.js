@@ -1,6 +1,7 @@
 import { createCoupangAuthorization } from '../utils/coupangSignature.js';
 import { dbGet, dbInsert, dbList, dbUpdate, logActivity, supabase } from './supabaseService.js';
 import { decorateProductQuality } from '../utils/productQuality.js';
+import { sendOpsAlert } from './notificationService.js';
 
 const host = 'https://api-gateway.coupang.com';
 const COUPANG_FETCH_TIMEOUT_MS = Number(process.env.COUPANG_FETCH_TIMEOUT_MS || 5000);
@@ -37,6 +38,30 @@ function createSearchPath(keyword, limit = 10, trackingCode) {
   const subId = trackingCode || process.env.COUPANG_TRACKING_CODE;
   if (subId) params.set('subId', subId);
   return `/v2/providers/affiliate_open_api/apis/openapi/products/search?${params.toString()}`;
+}
+
+export function buildCoupangPartnersLinkFromProductUrl(productUrl, { lptag, subid } = {}) {
+  if (!productUrl || !lptag) return null;
+  let url;
+  try {
+    url = new URL(productUrl);
+  } catch {
+    return null;
+  }
+  if (!/coupang\.com$/i.test(url.hostname.replace(/^www\./, ''))) return null;
+  const pageKey = url.searchParams.get('pageKey') || url.pathname.match(/\/products\/(\d+)/)?.[1];
+  const itemId = url.searchParams.get('itemId');
+  const vendorItemId = url.searchParams.get('vendorItemId');
+  if (!pageKey || !itemId || !vendorItemId) return null;
+
+  const params = new URLSearchParams({
+    lptag,
+    pageKey,
+    itemId,
+    vendorItemId
+  });
+  if (subid) params.set('subid', subid);
+  return `https://link.coupang.com/re/AFFSDP?${params.toString()}`;
 }
 
 function fallbackProduct(keyword, index = 0, reason = 'fallback', code = 'NO_REAL_PRODUCTS', extra = {}) {
@@ -241,6 +266,13 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
           error: slot.message
         }
       }).catch(() => null);
+      await sendOpsAlert('coupang_lock_unavailable', {
+        title: '쿠팡 검색 보호 락 장애',
+        message: 'coupang_search_locks 테이블을 사용할 수 없어 쿠팡 검색을 차단했습니다.',
+        code: 'COUPANG_LOCK_UNAVAILABLE',
+        hint: '운영 DB 마이그레이션과 Supabase 연결 상태를 확인하세요.',
+        payload: { ...logContext, keyword, error: slot.message }
+      });
       return [createLockUnavailableProduct(keyword, slot.message)];
     }
     const retryAfterMs = slot.retryAfterMs || COUPANG_ACCOUNT_SEARCH_INTERVAL_MS;
@@ -282,6 +314,13 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
         message,
         payload: { keyword, rCode: json.rCode, code, cooldownUntil }
       }).catch(() => null);
+      await sendOpsAlert(isRateLimited ? 'coupang_rate_limited' : 'coupang_api_rejected', {
+        title: isRateLimited ? '쿠팡 요청 제한 감지' : '쿠팡 API 요청 거절',
+        message,
+        code,
+        hint: isRateLimited ? '해당 계정의 자동화/검색 쿨다운 상태를 확인하세요.' : '쿠팡 키, 파라미터, 검색 제한 여부를 확인하세요.',
+        payload: { ...logContext, keyword, rCode: json.rCode, cooldownUntil }
+      });
       await updateCoupangSearchState(creds.accountId, {
         coupang_search_status: isRateLimited ? COUPANG_STATUS.RATE_LIMITED : COUPANG_STATUS.API_ERROR,
         coupang_search_cooldown_until: cooldownUntil
@@ -339,6 +378,15 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
       coupang_search_status: isRateLimited ? COUPANG_STATUS.RATE_LIMITED : COUPANG_STATUS.API_ERROR,
       coupang_search_cooldown_until: cooldownUntil
     });
+    if (isRateLimited) {
+      await sendOpsAlert('coupang_rate_limited', {
+        title: '쿠팡 요청 제한 감지',
+        message: error.message,
+        code,
+        hint: '해당 계정의 자동화/검색 쿨다운 상태를 확인하세요.',
+        payload: { ...logContext, keyword, cooldownUntil }
+      });
+    }
     return [fallbackProduct(keyword, 0, isRateLimited ? 'rate_limited' : 'api_error', code, {
       cooldownUntil,
       stopSearch: isRateLimited

@@ -48,9 +48,21 @@ function CheckGroup({ title, tone, checks }) {
           <div key={`${check.key}-${check.title}`} className={`rounded-xl border px-4 py-3 ${styles[tone]}`}>
             <div className="text-sm font-black">{check.title}</div>
             <div className="mt-1 break-words text-xs leading-relaxed opacity-80">{check.message}</div>
+            <CheckDetails details={check.details} />
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function CheckDetails({ details }) {
+  if (!details || typeof details !== 'object') return null;
+  if (details.linkPostRatioPercent === undefined) return null;
+  return (
+    <div className="mt-3 grid gap-1 rounded-lg bg-white/70 px-3 py-2 text-[11px] font-bold leading-relaxed text-gray-600">
+      <div>실상품 {details.realProductCount ?? 0}개 · 선택된 실상품 {details.selectedRealCount ?? 0}개 · 링크 글 비율 {details.linkPostRatioPercent ?? 0}%</div>
+      <div className="font-medium text-gray-500">사용불가 상품 {details.fallbackProductCount ?? 0}개 · 과거/무효 선택 {details.selectedInvalidCount ?? 0}개</div>
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { assertPreflightCanPublish, preflightAccount } from './accountPreflightS
 import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 import { assertAutomationRunning, isAutomationRunning } from './accountAutomationService.js';
 import { repairProductsForTopic } from './productRepairService.js';
+import { sendOpsAlert } from './notificationService.js';
 
 function createNoQueueMessage(diagnostics = {}) {
   if (diagnostics.reasonCode === 'COUPANG_LOCK_UNAVAILABLE') {
@@ -187,6 +188,16 @@ export async function runPipelineForAccount(accountId, options = {}) {
         message,
         payload: result.queueDiagnostics
       });
+      if (!['NO_REAL_COUPANG_LINKS', 'COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE'].includes(result.queueDiagnostics?.reasonCode)) {
+        await sendOpsAlert('pipeline_queue_empty', {
+          title: '파이프라인 예약 생성 0개',
+          account,
+          code: result.queueDiagnostics?.reasonCode || 'NO_QUEUE_CREATED',
+          message,
+          hint: '상품 추천/실상품 선택/예약 시간/초안 상태를 확인하세요.',
+          payload: result.queueDiagnostics || {}
+        });
+      }
       return result;
     }
     await progress({ percent: 100, stage: 'completed', label: `${queued.length}개 예약이 완료됐습니다`, topicsTotal: topics.length, topicsDone: topics.length, postsCreated: totalPosts, queuedCount: queued.length, queueDiagnostics: result.queueDiagnostics });
@@ -209,6 +220,14 @@ export async function runPipelineForAccount(accountId, options = {}) {
     result.blocking = err.preflight?.checks?.filter((check) => check.status === 'error') || [];
     await finishPipelineRun(run.id, 'failed', { result, error_message: result.message });
     await logActivity({ account_id: account.id, project_id: account.project_id, action: 'pipeline_failed', level: 'error', message: result.message });
+    await sendOpsAlert('pipeline_failed', {
+      title: '파이프라인 실패',
+      account,
+      code: result.code,
+      message: result.message,
+      hint: '관리자 대시보드에서 pipeline run과 activity log를 확인하세요.',
+      payload: { stage: result.stage, failedStage: result.failedStage }
+    });
   }
   return result;
 }

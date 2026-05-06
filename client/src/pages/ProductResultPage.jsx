@@ -95,8 +95,11 @@ export default function ProductResultPage({ selectedAccount }) {
   };
 
   const realCount = products.filter((product) => product.is_real_product !== false).length;
-  const selectedCount = products.filter((product) => product.selected).length;
+  const selectedRealCount = products.filter((product) => product.selected && product.is_real_product !== false).length;
+  const invalidSelectedCount = products.filter((product) => product.selected_invalid).length;
   const fallbackCount = products.length - realCount;
+  const linkRatioPercent = Math.round(Number(selectedAccount?.link_post_ratio ?? 0) * 100);
+  const needsRealLinkRecovery = linkRatioPercent > 0 && selectedRealCount === 0;
   const waitMs = searchBlock?.waitUntil ? Math.max(0, searchBlock.waitUntil - now) : 0;
   const searchBlocked = waitMs > 0;
   const waitSeconds = Math.ceil(waitMs / 1000);
@@ -121,10 +124,24 @@ export default function ProductResultPage({ selectedAccount }) {
         </div>
       </div>
 
-      {products.length > 0 && (
-        <div className="rounded border border-line bg-white px-4 py-3 text-sm text-slate-600">
-          실상품 {realCount}개 · 사용불가 {fallbackCount}개 · 연결됨 {selectedCount}개
-          {fallbackCount > 0 && <span className="ml-2 text-rose-500">검색 링크/fallback 상품은 링크 포스팅에 사용할 수 없습니다.</span>}
+      {(products.length > 0 || linkRatioPercent > 0) && (
+        <div className={`rounded border px-4 py-3 text-sm ${needsRealLinkRecovery ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-line bg-white text-slate-600'}`}>
+          <div className="font-semibold">
+            {needsRealLinkRecovery ? '실상품 링크 복구 필요' : '상품 링크 상태'}
+          </div>
+          <div className="mt-1">
+            실상품 {realCount}개 · 선택된 실상품 {selectedRealCount}개 · 사용불가 {fallbackCount}개 · 링크 글 비율 {linkRatioPercent}%
+          </div>
+          {(fallbackCount > 0 || invalidSelectedCount > 0) && (
+            <div className="mt-1 text-xs text-rose-500">
+              검색 링크/fallback 상품과 과거 무효 선택 {invalidSelectedCount}개는 링크 포스팅에 사용할 수 없습니다.
+            </div>
+          )}
+          {needsRealLinkRecovery && (
+            <div className="mt-2 text-xs leading-relaxed">
+              먼저 이 주제에서 상품 재검색을 1회 실행한 뒤, 실상품 카드를 선택하세요. probe 성공 전에는 자동화를 다시 켜지 않는 것이 안전합니다.
+            </div>
+          )}
         </div>
       )}
 

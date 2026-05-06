@@ -29,6 +29,8 @@ import { runFullPipeline } from './services/pipelineService.js';
 import { listBlogPosts } from './services/blogService.js';
 import { refreshExpiringThreadsTokens } from './services/threadsOAuthService.js';
 import { expireDueEntitlements } from './services/billingEntitlementService.js';
+import { sendOpsAlert } from './services/notificationService.js';
+import { runDailyOpsHealthCheck } from './services/opsHealthService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -61,6 +63,13 @@ function isAllowedOrigin(origin = '') {
 async function runCronJob(name, fn) {
   if (runningCronJobs.has(name)) {
     console.warn(`[Cron:${name}] skipped because previous run is still active`);
+    await sendOpsAlert('cron_skipped', {
+      title: 'cron 중복 실행 스킵',
+      code: 'CRON_ALREADY_RUNNING',
+      message: `${name} 작업의 이전 실행이 아직 끝나지 않아 이번 실행을 건너뛰었습니다.`,
+      hint: '반복 발생하면 해당 작업 처리 시간과 외부 API 지연을 확인하세요.',
+      payload: { cronName: name }
+    });
     return null;
   }
   runningCronJobs.add(name);
@@ -72,6 +81,13 @@ async function runCronJob(name, fn) {
     return result;
   } catch (error) {
     console.error(`[Cron:${name}] failed`, error);
+    await sendOpsAlert('cron_failed', {
+      title: 'cron 작업 실패',
+      code: 'CRON_FAILED',
+      message: `${name}: ${error.message}`,
+      hint: '서버 로그와 activity_logs를 확인하세요.',
+      payload: { cronName: name }
+    });
     return null;
   } finally {
     runningCronJobs.delete(name);
@@ -214,6 +230,11 @@ cron.schedule('17 * * * *', async () => {
     return { expiredCount: expired.length };
   });
 });
+
+// 매일 오전 8시(KST): 운영 위험 상태 요약 알림
+cron.schedule('0 8 * * *', async () => {
+  await runCronJob('daily-ops-healthcheck', async () => runDailyOpsHealthCheck());
+}, { timezone: 'Asia/Seoul' });
 
 app.listen(port, () => {
   console.log(`JASAIN API running on http://localhost:${port}`);
