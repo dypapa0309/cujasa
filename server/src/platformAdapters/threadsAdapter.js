@@ -98,7 +98,7 @@ function threadsError(label, body) {
 export async function uploadPost({ account, post, cta, trackingLink }) {
   const token = account.threads_access_token;
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
-  const linkMode = String(process.env.THREADS_COUPANG_LINK_MODE || 'direct').toLowerCase();
+  const linkMode = String(process.env.THREADS_COUPANG_LINK_MODE || 'tracking').toLowerCase();
   const linkUrl = trackingLink
     ? (linkMode === 'tracking' ? `${baseUrl}/r/${trackingLink.code}` : trackingLink.destination_url)
     : null;

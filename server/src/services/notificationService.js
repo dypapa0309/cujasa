@@ -65,7 +65,7 @@ async function sendTelegram(message) {
 
 async function sendEmail(to, subject, text) {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.EMAIL_FROM || process.env.OPS_EMAIL_FROM || 'CUJASA <onboarding@resend.dev>';
+  const from = process.env.EMAIL_FROM || process.env.OPS_EMAIL_FROM || 'CUJASA <no-reply@jasain.kr>';
   if (!apiKey || !to) return { configured: false, to };
   try {
     const response = await fetch('https://api.resend.com/emails', {

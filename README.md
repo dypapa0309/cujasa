@@ -122,7 +122,7 @@ THREADS_REDIRECT_URI=https://api.jasain.kr/api/auth/threads/callback
 
 ## 추적 링크 테스트
 
-업로드가 완료되면 `tracking_links`에 `/r/:code` 링크가 생성됩니다. 기본 운영값은 `THREADS_COUPANG_LINK_MODE=direct`라서 Threads 본문에는 쿠팡 링크가 직접 들어가고, `/r/:code`는 내부 감사/디버깅용으로만 사용합니다. 기존처럼 redirect 링크를 게시하려면 `THREADS_COUPANG_LINK_MODE=tracking`으로 바꿉니다.
+업로드가 완료되면 `tracking_links`에 `/r/:code` 링크가 생성됩니다. 기본 운영값은 `THREADS_COUPANG_LINK_MODE=tracking`이며, Threads 본문/댓글에는 쿠팡 직접 URL 대신 추적 링크가 들어갑니다. 클릭 시 `click_events`에 기록되어 애널리틱스 총 클릭 수에 반영됩니다.
 
 ```bash
 curl -I http://localhost:3005/r/{code}
@@ -181,7 +181,10 @@ TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_IDS=
 SUPPORT_PHONE_DISPLAY=
 SUPPORT_PHONE_TEL=
-THREADS_COUPANG_LINK_MODE=direct
+THREADS_COUPANG_LINK_MODE=tracking
+APP_BASE_URL=https://api.jasain.kr
+RESEND_API_KEY=
+EMAIL_FROM=CUJASA <no-reply@jasain.kr>
 TRACKING_RATE_LIMIT_WINDOW_MS=60000
 TRACKING_RATE_LIMIT_MAX=120
 ```

@@ -8,7 +8,7 @@ export default function TrialStatusCard({ trialStatus, onUpgrade }) {
           {trialStatus.blocked ? '무료 체험 종료' : `무료 체험: ${trialStatus.limit}회 중 ${trialStatus.used}회 사용`}
         </div>
         <div className={`mt-1 text-xs ${trialStatus.blocked ? 'text-rose-600' : 'text-blue-600'}`}>
-          {trialStatus.blocked ? '무료 체험 포스팅 3회를 모두 사용했습니다.' : `남은 무료 포스팅: ${trialStatus.remaining}회`}
+          {trialStatus.blocked ? '무료 체험 포스팅 5회를 모두 사용했습니다.' : `남은 무료 포스팅: ${trialStatus.remaining}회`}
         </div>
         {trialStatus.blocked && (
           <div className="mt-4 grid gap-2">

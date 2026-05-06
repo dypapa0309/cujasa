@@ -331,7 +331,7 @@ export async function registerFreeUser({ username, password, passwordConfirm, bu
     status: 'active',
     plan: 'free',
     billing_status: 'none',
-    free_post_limit: 3,
+    free_post_limit: 5,
     free_post_used: 0
   });
 

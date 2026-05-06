@@ -109,7 +109,7 @@ export default function LoginPage({ onLogin }) {
               />
             </label>
             <div className="mt-4 rounded border border-blue-100 bg-blue-50 p-3 text-xs leading-relaxed text-blue-700">
-              가입하면 무료 체험 계정이 자동으로 생성되고, 실제 Threads 업로드 3회까지 사용할 수 있습니다.
+              가입하면 무료 체험 계정이 자동으로 생성되고, 실제 Threads 업로드 5회까지 사용할 수 있습니다.
             </div>
           </>
         )}

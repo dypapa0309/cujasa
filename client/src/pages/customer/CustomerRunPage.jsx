@@ -58,7 +58,7 @@ export default function CustomerRunPage({
   const setAutomation = async (nextStatus) => {
     if (!account?.id || actionRef.current) return;
     if (nextStatus === 'running' && trialBlocked) {
-      toast('무료 체험 포스팅 3회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
+      toast('무료 체험 포스팅 5회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
       setTab?.('billing');
       return;
     }
@@ -136,7 +136,7 @@ export default function CustomerRunPage({
       onPipelineDone?.(pipelineResult);
     } catch (err) {
       if (err.code === 'FREE_TRIAL_LIMIT_REACHED' || err.upgradeRequired) {
-        toast('무료 체험 포스팅 3회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
+        toast('무료 체험 포스팅 5회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
         setTab?.('billing');
         onPipelineRunningChange?.(false);
         return;
