@@ -12,6 +12,7 @@ export default function ProductResultPage({ selectedAccount }) {
   const [actioning, setActioning] = useState(false);
   const [selectingId, setSelectingId] = useState('');
   const [searchBlock, setSearchBlock] = useState(null);
+  const [lastSearchStatus, setLastSearchStatus] = useState(null);
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -33,6 +34,7 @@ export default function ProductResultPage({ selectedAccount }) {
 
   useEffect(() => {
     setSearchBlock(null);
+    setLastSearchStatus(null);
     loadProducts();
   }, [topicId]);
 
@@ -57,8 +59,20 @@ export default function ProductResultPage({ selectedAccount }) {
       } else {
         setSearchBlock(null);
       }
+      setLastSearchStatus(result.reasonCode ? {
+        reasonCode: result.reasonCode,
+        message: result.message,
+        realCount: result.realCount
+      } : null);
       await loadProducts();
-      toast(result.blocked ? '쿠팡 검색 보호로 추가 요청을 건너뛰었습니다.' : '상품 검색을 다시 실행했습니다.', result.blocked ? 'error' : 'success');
+      toast(
+        result.blocked
+          ? '쿠팡 검색 보호로 추가 요청을 건너뛰었습니다.'
+          : result.realCount > 0
+            ? '상품 검색을 다시 실행했습니다.'
+            : (result.message || '실상품 검색 결과가 없습니다.'),
+        result.blocked || result.realCount === 0 ? 'error' : 'success'
+      );
     } catch (error) {
       toast(error.message || '상품 검색에 실패했습니다.', 'error');
     } finally {
@@ -160,9 +174,14 @@ export default function ProductResultPage({ selectedAccount }) {
       )}
 
       {!loading && products.length === 0 && topicId && (
-        <div className="rounded border border-line bg-white p-8 text-center text-sm text-slate-400">
-          이 주제에 검색된 상품이 없습니다.<br />
-          <span className="text-xs mt-1 block">주제/콘텐츠 생성 탭에서 상품 검색을 먼저 실행해주세요.</span>
+        <div className="rounded border border-line bg-white p-8 text-center text-sm text-slate-500">
+          <div className="font-semibold text-slate-700">실상품 검색 필요</div>
+          <div className="mt-2">
+            {lastSearchStatus?.message || '이 주제에 연결 가능한 실제 쿠팡 상품이 없습니다.'}
+          </div>
+          <span className="mt-2 block text-xs text-slate-400">
+            상품 재검색을 1회 실행한 뒤, 실상품이 나오면 자동 연결을 진행해주세요.
+          </span>
         </div>
       )}
 

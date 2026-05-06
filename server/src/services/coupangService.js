@@ -64,17 +64,9 @@ export function buildCoupangPartnersLinkFromProductUrl(productUrl, { lptag, subi
   return `https://link.coupang.com/re/AFFSDP?${params.toString()}`;
 }
 
-function fallbackProduct(keyword, index = 0, reason = 'fallback', code = 'NO_REAL_PRODUCTS', extra = {}) {
-  const q = encodeURIComponent(keyword);
+function createSearchStatus(keyword, reason = 'no_real_products', code = 'NO_REAL_PRODUCTS', extra = {}) {
   return {
-    product_id: `fallback-${keyword}-${index}`,
-    product_name: `${keyword} 추천 상품`,
-    product_price: 0,
-    product_image: '',
-    product_url: `https://www.coupang.com/np/search?q=${q}`,
-    partner_url: `https://www.coupang.com/np/search?q=${q}`,
-    category_name: 'fallback',
-    is_fallback: true,
+    is_search_status: true,
     raw_data: { keyword, reason, code, ...extra }
   };
 }
@@ -92,7 +84,7 @@ function isRateLimitMessage(message = '') {
 }
 
 function createThrottleProduct(keyword, retryAfterMs) {
-  return fallbackProduct(keyword, 0, 'account_throttled', 'COUPANG_SEARCH_THROTTLED', {
+  return createSearchStatus(keyword, 'account_throttled', 'COUPANG_SEARCH_THROTTLED', {
     retryAfterMs,
     retryAfterSeconds: Math.ceil(retryAfterMs / 1000),
     stopSearch: true
@@ -100,7 +92,7 @@ function createThrottleProduct(keyword, retryAfterMs) {
 }
 
 function createLockUnavailableProduct(keyword, message) {
-  return fallbackProduct(keyword, 0, 'lock_unavailable', 'COUPANG_LOCK_UNAVAILABLE', {
+  return createSearchStatus(keyword, 'lock_unavailable', 'COUPANG_LOCK_UNAVAILABLE', {
     message,
     stopSearch: true
   });
@@ -242,14 +234,14 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
       ...logContext,
       action: 'coupang_credentials_missing',
       level: 'warn',
-      message: '쿠팡 검색 키가 없어 fallback 상품을 생성합니다.',
+      message: '쿠팡 검색 키가 없어 상품 검색을 중단했습니다.',
       payload: { keyword, code: 'COUPANG_CREDENTIALS_MISSING' }
     }).catch(() => null);
     await updateCoupangSearchState(creds.accountId, {
       coupang_search_status: COUPANG_STATUS.CREDENTIALS_MISSING,
       coupang_search_cooldown_until: null
     });
-    return [fallbackProduct(keyword, 0, 'missing_credentials', 'COUPANG_CREDENTIALS_MISSING')];
+    return [createSearchStatus(keyword, 'missing_credentials', 'COUPANG_CREDENTIALS_MISSING')];
   }
 
   const slot = await acquireCoupangSearchSlot({ accountId: creds.accountId, keyword, logContext });
@@ -325,7 +317,7 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
         coupang_search_status: isRateLimited ? COUPANG_STATUS.RATE_LIMITED : COUPANG_STATUS.API_ERROR,
         coupang_search_cooldown_until: cooldownUntil
       });
-      return [fallbackProduct(keyword, 0, isRateLimited ? 'rate_limited' : 'api_rejected', code, {
+      return [createSearchStatus(keyword, isRateLimited ? 'rate_limited' : 'api_rejected', code, {
         rCode: json.rCode,
         rMessage: message,
         cooldownUntil,
@@ -341,7 +333,7 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
         message: '쿠팡 검색 결과가 없어 실상품 후보를 만들지 못했습니다.',
         payload: { keyword, code: 'NO_REAL_PRODUCTS' }
       });
-      return [fallbackProduct(keyword, 0, 'empty_result')];
+      return [createSearchStatus(keyword, 'empty_result', 'NO_REAL_PRODUCTS')];
     }
     const mapped = productData.map((item) => ({
       product_id: String(item.productId),
@@ -365,7 +357,7 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
     const code = isRateLimited ? 'COUPANG_RATE_LIMIT' : 'COUPANG_API_ERROR';
     try {
       await logActivity({
-        action: isRateLimited ? 'coupang_rate_limited' : 'coupang_fallback',
+        action: isRateLimited ? 'coupang_rate_limited' : 'coupang_api_error',
         level: 'warn',
         message: error.message,
         payload: { keyword, code, cooldownUntil },
@@ -387,7 +379,7 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
         payload: { ...logContext, keyword, cooldownUntil }
       });
     }
-    return [fallbackProduct(keyword, 0, isRateLimited ? 'rate_limited' : 'api_error', code, {
+    return [createSearchStatus(keyword, isRateLimited ? 'rate_limited' : 'api_error', code, {
       cooldownUntil,
       stopSearch: isRateLimited
     })];
@@ -462,16 +454,16 @@ export async function searchProductsForTopic(topicId, options = {}) {
         cooldownUntil: account.coupang_search_cooldown_until
       }
     }).catch(() => null);
-    const fallback = fallbackProduct(keyword, 0, 'rate_limited_cooldown', 'COUPANG_RATE_LIMIT', {
+    const status = createSearchStatus(keyword, 'rate_limited_cooldown', 'COUPANG_RATE_LIMIT', {
       cooldownUntil: account.coupang_search_cooldown_until,
       stopSearch: true
     });
-    return [seen.has(fallback.product_id) ? (existingByProductId.get(fallback.product_id) || fallback) : fallback];
+    return [status];
   }
   for (const keyword of keywords) {
     const products = await searchKeyword(keyword, COUPANG_SEARCH_RESULT_LIMIT, creds);
     for (const product of products) {
-      if (product.raw_data?.code === 'COUPANG_RATE_LIMIT' || product.raw_data?.code === 'COUPANG_SEARCH_THROTTLED') {
+      if (product.is_search_status) {
         saved.push(product);
         continue;
       }
@@ -493,7 +485,7 @@ export async function searchProductsForTopic(topicId, options = {}) {
       saved.push(row);
     }
     if (products.some((product) => product.raw_data?.stopSearch)) break;
-    if (stopAfterRealCount > 0 && saved.filter((product) => !product.is_fallback).length >= stopAfterRealCount) break;
+    if (stopAfterRealCount > 0 && saved.filter((product) => !product.is_search_status && !product.is_fallback).length >= stopAfterRealCount) break;
   }
   return saved;
 }
@@ -501,17 +493,19 @@ export async function searchProductsForTopic(topicId, options = {}) {
 export async function ensureFallbackProductForTopic(topicId, reason = 'repair_failed') {
   const topic = await dbGet('topics', { id: topicId });
   if (!topic) return null;
-  const existing = await dbList('coupang_products', { topic_id: topic.id });
-  const fallback = existing.find((product) => product.is_fallback);
-  if (fallback) return fallback;
   const keyword = topic.search_keywords?.[0] || topic.title || '상품 추천';
-  return {
+  await logActivity({
     account_id: topic.account_id,
+    project_id: topic.project_id,
     topic_id: topic.id,
-    keyword,
-    ...fallbackProduct(keyword, 0, reason)
-  };
+    action: 'fallback_product_not_created',
+    level: 'warn',
+    message: '실상품 검색 실패 후 fallback 상품을 생성하지 않았습니다.',
+    payload: { keyword, reason, code: 'NO_REAL_PRODUCTS' }
+  }).catch(() => null);
+  return null;
 }
 
 export const listProducts = async (topicId) => (await dbList('coupang_products', { topic_id: topicId }, { order: 'created_at', ascending: true }))
+  .filter((product) => !product.is_fallback && !String(product.product_id || '').startsWith('fallback-') && String(product.category_name || '').toLowerCase() !== 'fallback')
   .map(decorateProductQuality);

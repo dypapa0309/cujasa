@@ -170,7 +170,7 @@ export async function repairProductsForTopic(topicId, options = {}) {
     attempts.push({
       attempt,
       keywords,
-      productsFound: products.filter((product) => !product.is_fallback).length,
+      productsFound: products.filter((product) => !product.is_search_status && !product.is_fallback).length,
       selectedCount: realSelected.length,
       reasonCode: lockUnavailable ? 'COUPANG_LOCK_UNAVAILABLE' : (rateLimited ? 'COUPANG_RATE_LIMIT' : undefined)
     });
@@ -212,10 +212,10 @@ export async function repairProductsForTopic(topicId, options = {}) {
     action: 'product_repair_fallback_to_no_link',
     level: 'warn',
     message: reasonCode === 'COUPANG_LOCK_UNAVAILABLE'
-      ? '쿠팡 검색 DB 락이 없어 추가 재검색과 fallback 생성을 멈췄습니다.'
-      : reasonCode === 'COUPANG_RATE_LIMIT'
-        ? '쿠팡 검색 제한으로 추가 재검색과 fallback 생성을 멈췄습니다.'
-        : '실상품 자동 복구 실패로 fallback 카드를 남기고 링크 없는 업로드로 전환합니다.',
+        ? '쿠팡 검색 DB 락이 없어 추가 재검색과 fallback 생성을 멈췄습니다.'
+        : reasonCode === 'COUPANG_RATE_LIMIT'
+          ? '쿠팡 검색 제한으로 추가 재검색과 fallback 생성을 멈췄습니다.'
+          : '실상품 자동 복구 실패로 fallback 상품을 만들지 않고 링크 없는 업로드로 전환합니다.',
     payload: {
       attempts,
       fallbackProductId: fallbackProduct?.id,

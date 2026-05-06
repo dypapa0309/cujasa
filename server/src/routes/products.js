@@ -9,13 +9,31 @@ const router = Router();
 router.post('/:topicId/search-products', requireTopicAccess, async (req, res, next) => {
   try {
     const products = await searchProductsForTopic(req.params.topicId);
-    const blockedProduct = products.find((product) => ['COUPANG_RATE_LIMIT', 'COUPANG_SEARCH_THROTTLED', 'COUPANG_LOCK_UNAVAILABLE'].includes(product.raw_data?.code || ''));
-    const decorated = products.map(decorateProductQuality);
+    const statusItem = products.find((product) => product.is_search_status || product.raw_data?.code);
+    const blockedProduct = products.find((product) => [
+      'COUPANG_RATE_LIMIT',
+      'COUPANG_SEARCH_THROTTLED',
+      'COUPANG_LOCK_UNAVAILABLE',
+      'COUPANG_CREDENTIALS_MISSING',
+      'COUPANG_API_REJECTED',
+      'COUPANG_API_ERROR'
+    ].includes(product.raw_data?.code || ''));
+    const decorated = products
+      .filter((product) => !product.is_search_status)
+      .map(decorateProductQuality);
+    const reasonCode = blockedProduct?.raw_data?.code || statusItem?.raw_data?.code || null;
     res.status(201).json({
       products: decorated,
       realCount: decorated.filter((product) => product.is_real_product !== false).length,
       blocked: Boolean(blockedProduct),
-      reasonCode: blockedProduct?.raw_data?.code || products.find((product) => product.raw_data?.code)?.raw_data?.code || null,
+      reasonCode,
+      message: reasonCode === 'NO_REAL_PRODUCTS'
+        ? '쿠팡 검색 결과가 없어 실상품 후보를 만들지 못했습니다.'
+        : reasonCode === 'COUPANG_CREDENTIALS_MISSING'
+          ? '쿠팡 검색 키가 없어 상품 검색을 실행할 수 없습니다.'
+          : reasonCode === 'COUPANG_API_REJECTED' || reasonCode === 'COUPANG_API_ERROR'
+            ? '쿠팡 API 응답 문제로 실상품 후보를 만들지 못했습니다.'
+            : blockedProduct?.raw_data?.message || null,
       retryAfterMs: blockedProduct?.raw_data?.retryAfterMs || null,
       cooldownUntil: blockedProduct?.raw_data?.cooldownUntil || null
     });
