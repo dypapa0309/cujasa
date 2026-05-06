@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { createAccount, deleteAccount, getAccount, listAccounts, updateAccount } from '../services/accountService.js';
 import { dbGet, dbInsert, dbList, logActivity, safeLogActivity } from '../services/supabaseService.js';
-import { runPipelineForAccount } from '../services/pipelineService.js';
 import { getRunningPipeline, latestPipelineRun } from '../services/pipelineRunService.js';
+import { runPipelineForAccountInBackground } from '../services/pipelineBackgroundService.js';
 import { markedOkKeysFromAudits, shouldHideAssignment, suspiciousAssignmentsForUser } from '../services/accountOwnershipService.js';
 import { assertPreflightCanPublish, preflightAccount } from '../services/accountPreflightService.js';
 import { assertUserCanOperate } from '../services/billingEntitlementService.js';
@@ -226,63 +226,21 @@ router.patch('/:accountId/automation', async (req, res, next) => {
       });
     }
 
-    let pipelineResult;
-    try {
-      pipelineResult = await runPipelineForAccount(accountId, {
-        requestedBy: req.user?.email || req.user?.type || 'manual',
-        mode: 'start',
-        allowInitialLinkDiscovery: true
-      });
-    } catch (pipelineError) {
-      const paused = await setAutomationStatus(accountId, AUTOMATION_PAUSED);
-      await safeLogActivity({
-        account_id: accountId,
-        level: 'error',
-        action: 'automation_start_failed_paused',
-        message: pipelineError.message,
-        payload: { requestedBy: req.user?.email || req.user?.type || 'manual' }
-      });
-      return res.status(pipelineError.status || 500).json({
-        ok: false,
-        error: pipelineError.message,
-        code: pipelineError.code,
-        automationStatus: AUTOMATION_PAUSED,
-        alreadyRunning: false,
-        account: redactAccount(paused),
-        preflight
-      });
-    }
+    runPipelineForAccountInBackground(accountId, {
+      requestedBy: req.user?.email || req.user?.type || 'manual',
+      mode: 'start',
+      allowInitialLinkDiscovery: true,
+      failureAction: 'automation_start_failed_paused'
+    });
 
-    const queuedCount = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? null;
-    if (pipelineResult?.ok === false || pipelineResult?.status === 'error' || queuedCount === 0) {
-      const paused = await setAutomationStatus(accountId, AUTOMATION_PAUSED);
-      await safeLogActivity({
-        account_id: accountId,
-        level: 'warn',
-        action: 'automation_start_failed_paused',
-        message: pipelineResult?.message || pipelineResult?.error || '예약 생성 실패로 자동화를 일시중지했습니다.',
-        payload: {
-          requestedBy: req.user?.email || req.user?.type || 'manual',
-          pipelineResult
-        }
-      });
-      return res.json({
-        ok: false,
-        automationStatus: AUTOMATION_PAUSED,
-        alreadyRunning: false,
-        account: redactAccount(paused),
-        pipelineResult,
-        preflight
-      });
-    }
-
-    return res.json({
+    return res.status(202).json({
       ok: true,
+      status: 'accepted',
       automationStatus: AUTOMATION_RUNNING,
       alreadyRunning: false,
       account: redactAccount(updated),
-      pipelineResult,
-      preflight
+      preflight,
+      message: '예약 작업을 시작했습니다. 진행 상태를 확인하고 있습니다.'
     });
   } catch (e) { next(e); }
 });
@@ -304,32 +262,17 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
         message: '이미 예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.'
       });
     }
-    const pipelineResult = await runPipelineForAccount(req.params.accountId, {
+    runPipelineForAccountInBackground(req.params.accountId, {
       requestedBy: req.user?.email || req.user?.type || 'manual',
       mode: 'start',
-      allowInitialLinkDiscovery: true
+      allowInitialLinkDiscovery: true,
+      failureAction: 'manual_pipeline_failed_paused'
     });
-    const queuedCount = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? null;
-    if (pipelineResult?.ok === false || pipelineResult?.status === 'error' || queuedCount === 0) {
-      const paused = await setAutomationStatus(req.params.accountId, AUTOMATION_PAUSED);
-      await safeLogActivity({
-        account_id: req.params.accountId,
-        level: 'warn',
-        action: 'manual_pipeline_failed_paused',
-        message: pipelineResult?.message || pipelineResult?.error || '예약 생성 실패로 자동화를 일시중지했습니다.',
-        payload: {
-          requestedBy: req.user?.email || req.user?.type || 'manual',
-          pipelineResult
-        }
-      });
-      return res.json({
-        ok: false,
-        automationStatus: AUTOMATION_PAUSED,
-        account: redactAccount(paused),
-        pipelineResult
-      });
-    }
-    res.json(pipelineResult);
+    res.status(202).json({
+      ok: true,
+      status: 'accepted',
+      message: '예약 작업을 시작했습니다. 진행 상태를 확인하고 있습니다.'
+    });
   } catch (e) { next(e); }
 });
 

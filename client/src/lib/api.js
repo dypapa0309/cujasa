@@ -12,15 +12,24 @@ export function setAuthToken(token) {
 
 async function request(path, options = {}) {
   const token = getAuthToken();
-  const res = await fetch(`${baseUrl}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {})
-    },
-    ...options,
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
+  let res;
+  try {
+    res = await fetch(`${baseUrl}${path}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {})
+      },
+      ...options,
+      body: options.body ? JSON.stringify(options.body) : undefined
+    });
+  } catch (fetchError) {
+    const error = new Error('요청 연결이 끊겼습니다. 서버 작업 상태를 다시 확인하고 있습니다.');
+    error.code = 'NETWORK_REQUEST_FAILED';
+    error.networkError = true;
+    error.cause = fetchError;
+    throw error;
+  }
   if (res.status === 401) setAuthToken('');
   if (!res.ok) {
     const text = await res.text();

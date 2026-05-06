@@ -45,6 +45,12 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
     setRunningAll(true);
     try {
       const result = await api.post('/api/scheduler/run-pipeline', {});
+      if (result.status === 'accepted') {
+        setRunSummaryModal(null);
+        toast(result.message || '전체 자동화 실행을 시작했습니다.', 'success');
+        await load();
+        return;
+      }
       const ok = result.results?.filter((r) => r.status === 'ok').length ?? 0;
       const skipped = result.results?.filter((r) => r.status === 'skipped').length ?? 0;
       const reconnect = result.results?.filter((r) => /Threads|토큰|연결|access token|OAuth/i.test(r.error || r.reason || '')).length ?? 0;
@@ -69,8 +75,10 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
         toast(`${row.accountName} 실행 전 확인이 필요합니다.`, 'error');
         return;
       }
-      await api.post(`/api/accounts/${row.accountId}/run-pipeline`, {});
-      toast(`${row.accountName} 자동화가 완료됐습니다.`, 'success');
+      const result = await api.post(`/api/accounts/${row.accountId}/run-pipeline`, {});
+      toast(result.status === 'accepted'
+        ? `${row.accountName} 예약 작업을 시작했습니다.`
+        : `${row.accountName} 자동화가 완료됐습니다.`, 'success');
       await load();
     } catch (err) {
       toast(err.message || '자동화 실행에 실패했습니다.', 'error');

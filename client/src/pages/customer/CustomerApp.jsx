@@ -221,6 +221,9 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
         setPipelineProgress(payload.run.progress);
         if (payload.run.status === 'completed') {
           setPipelineResult(payload.run.result);
+          reloadAccounts?.();
+          loadTrialStatus();
+          loadSetupStatus();
           navigateTab(pipelineHasReservations(payload.run.result) ? 'posts' : 'run');
           setPipelineRunning(false);
         } else if (payload.run.status === 'failed') {
@@ -234,6 +237,9 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
             blocking: result.blocking || []
           };
           setPipelineResult(nextResult);
+          reloadAccounts?.();
+          loadTrialStatus();
+          loadSetupStatus();
           navigateTab('run');
           toast(nextResult.message, 'error');
           setPipelineRunning(false);

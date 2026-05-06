@@ -104,6 +104,16 @@ export default function CustomerRunPage({
         return;
       }
 
+      if (result?.status === 'accepted') {
+        toast(result.message || '자동화가 켜졌고 예약 작업을 시작했습니다.', 'success');
+        onPipelineRunningChange?.(true, result.run?.progress || {
+          percent: 5,
+          stage: 'starting',
+          label: '예약 작업을 시작했습니다'
+        });
+        return;
+      }
+
       const pipelineResult = result?.pipelineResult || result;
       const queuedCount = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? null;
       if (pipelineResult?.ok === false || pipelineResult?.status === 'error' || queuedCount === 0) {
@@ -121,6 +131,15 @@ export default function CustomerRunPage({
         toast('무료 체험 포스팅 3회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
         setTab?.('billing');
         onPipelineRunningChange?.(false);
+        return;
+      }
+      if (err.networkError && nextStatus === 'running') {
+        toast(err.message || '요청 연결이 끊겼지만 서버 작업 상태를 확인하고 있습니다.', 'info');
+        onPipelineRunningChange?.(true, {
+          percent: 5,
+          stage: 'checking',
+          label: '서버 작업 상태를 확인하고 있습니다'
+        });
         return;
       }
       if (err.preflight) {
