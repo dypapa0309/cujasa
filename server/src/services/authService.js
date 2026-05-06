@@ -28,6 +28,22 @@ export function shouldBypassAuth() {
   return !isTokenConfigured() && process.env.NODE_ENV !== 'production';
 }
 
+function parseExtraAdminCredentials() {
+  return String(process.env.ADMIN_EXTRA_CREDENTIALS || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const separator = entry.indexOf(':');
+      if (separator <= 0) return null;
+      return {
+        login: entry.slice(0, separator).trim().toLowerCase(),
+        passwordHash: entry.slice(separator + 1).trim()
+      };
+    })
+    .filter((entry) => entry?.login && entry.passwordHash);
+}
+
 function makeToken(payload) {
   const header = base64url({ alg: 'HS256', typ: 'JWT' });
   const body = base64url({
@@ -102,15 +118,21 @@ export function loginAdmin(email, password) {
     error.status = 503;
     throw error;
   }
-  const emailMatches = email?.trim().toLowerCase() === process.env.ADMIN_EMAIL.trim().toLowerCase();
-  const passwordMatches = verifyPassword(password || '', process.env.ADMIN_PASSWORD_HASH);
-  if (!emailMatches || !passwordMatches) {
+  const login = email?.trim().toLowerCase();
+  const primaryLogin = process.env.ADMIN_EMAIL.trim().toLowerCase();
+  const adminCredentials = [
+    { login: primaryLogin, passwordHash: process.env.ADMIN_PASSWORD_HASH },
+    ...parseExtraAdminCredentials()
+  ];
+  const matched = adminCredentials.find((credential) => credential.login === login);
+  const passwordMatches = matched && verifyPassword(password || '', matched.passwordHash);
+  if (!matched || !passwordMatches) {
     const error = new Error('Invalid email or password');
     error.status = 401;
     throw error;
   }
-  const token = makeToken({ sub: process.env.ADMIN_EMAIL, role: 'admin' });
-  return { token, type: 'admin', email: process.env.ADMIN_EMAIL };
+  const token = makeToken({ sub: matched.login, role: 'admin' });
+  return { token, type: 'admin', email: matched.login };
 }
 
 function defaultProductGrant() {
