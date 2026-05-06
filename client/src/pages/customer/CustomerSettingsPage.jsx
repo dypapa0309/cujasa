@@ -11,6 +11,13 @@ import {
   productMentionOptions
 } from '../../config/contentStrategy.js';
 
+const MAX_DAILY_POSTS = 5;
+
+function clampDailyPostCount(value, fallback = 1) {
+  const number = Number(value);
+  return Math.min(MAX_DAILY_POSTS, Math.max(1, Number.isFinite(number) ? number : fallback));
+}
+
 export default function CustomerSettingsPage({ account, reloadAccounts, trialStatus, reloadSetupStatus, setTab }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
@@ -41,10 +48,8 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
       content_style_note: account.content_style_note || '',
       forbidden_topics: Array.isArray(account.forbidden_topics) ? account.forbidden_topics.join('\n') : '',
       forbidden_words: Array.isArray(account.forbidden_words) ? account.forbidden_words.join('\n') : '',
-      daily_post_min: account.daily_post_min ?? 2,
-      daily_post_max: account.daily_post_max ?? 4,
-      link_post_ratio: Number(account.link_post_ratio ?? 0.3),
-      no_link_post_ratio: Number(account.no_link_post_ratio ?? 0.7),
+      daily_post_min: clampDailyPostCount(account.daily_post_min, 2),
+      daily_post_max: clampDailyPostCount(account.daily_post_max, 5),
       coupang_access_key: '',
       coupang_secret_key: '',
       coupang_partner_id: '',
@@ -71,6 +76,8 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
     try {
       await api.patch(`/api/accounts/${account.id}`, {
         ...form,
+        daily_post_min: clampDailyPostCount(form.daily_post_min),
+        daily_post_max: Math.min(MAX_DAILY_POSTS, Math.max(clampDailyPostCount(form.daily_post_min), clampDailyPostCount(form.daily_post_max, form.daily_post_min))),
         forbidden_topics: form.forbidden_topics.split('\n').map((s) => s.trim()).filter(Boolean),
         forbidden_words: form.forbidden_words.split('\n').map((s) => s.trim()).filter(Boolean),
       });
@@ -102,14 +109,6 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
       setConnectingThreads(false);
     }
   };
-  const updateLinkRatio = (value) => {
-    const next = Number(value);
-    setForm((prev) => ({
-      ...prev,
-      link_post_ratio: next,
-      no_link_post_ratio: Number((1 - next).toFixed(2))
-    }));
-  };
   const updateContentMode = (value) => {
     setForm((prev) => ({
       ...prev,
@@ -133,7 +132,6 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
     </div>
   );
 
-  const linkRatio = Math.min(1, Math.max(0, Number(form.link_post_ratio ?? 0.3)));
   const trialBlocked = trialStatus?.plan === 'free' && trialStatus.blocked;
 
   return (
@@ -190,7 +188,7 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
 
       <Section title="쿠팡 파트너스 API 설정" desc="링크 포함 글을 만들 때 필요합니다. 비워두면 기존 저장값은 유지됩니다." collapsible>
         <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs leading-relaxed text-blue-700">
-          무료 체험은 쿠팡 API 없이도 일반 글로 시작할 수 있습니다. 링크 포함 비율을 1% 이상으로 쓰려면 아래 값을 입력해주세요.
+          CUJASA는 실제 쿠팡 상품 링크가 매칭된 글만 자동 업로드합니다. 매칭 가능한 상품이 없는 날은 품질 보호를 위해 업로드하지 않습니다.
         </div>
         <Field label="Access Key">
           <SensitiveInput
@@ -311,13 +309,13 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
       <Section title="포스팅 스케줄">
         <div className="grid grid-cols-2 gap-4">
           <Field label="하루 최소">
-            <input type="number" min="1" max="10" value={form.daily_post_min}
-              onChange={(e) => setForm((p) => ({ ...p, daily_post_min: Number(e.target.value) }))}
+            <input type="number" min="1" max={MAX_DAILY_POSTS} value={form.daily_post_min}
+              onChange={(e) => setForm((p) => ({ ...p, daily_post_min: clampDailyPostCount(e.target.value) }))}
               className={`${input} text-center font-bold text-lg`} />
           </Field>
           <Field label="하루 최대">
-            <input type="number" min="1" max="10" value={form.daily_post_max}
-              onChange={(e) => setForm((p) => ({ ...p, daily_post_max: Number(e.target.value) }))}
+            <input type="number" min="1" max={MAX_DAILY_POSTS} value={form.daily_post_max}
+              onChange={(e) => setForm((p) => ({ ...p, daily_post_max: clampDailyPostCount(e.target.value) }))}
               className={`${input} text-center font-bold text-lg`} />
           </Field>
         </div>
@@ -333,28 +331,11 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
               </div>
             ))}
           </div>
-          <p className="text-xs text-gray-400 mt-2">이 시간대 안에서 랜덤하게 발행됩니다</p>
+          <p className="text-xs text-gray-400 mt-2">이 시간대 안에서 상품 매칭이 완료된 글만 최대 5개까지 발행됩니다.</p>
         </Field>
-        <Field label="링크 포함 포스트 비율">
-          <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3">
-            <div className="mb-2 flex items-center justify-between text-xs">
-              <span className="font-bold text-gray-700">링크 포함 {Math.round(linkRatio * 100)}%</span>
-              <span className="text-gray-400">일반 글 {Math.round((1 - linkRatio) * 100)}%</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              value={linkRatio}
-              onChange={(e) => updateLinkRatio(e.target.value)}
-              className="w-full accent-coupang"
-            />
-            <p className="mt-2 text-xs text-gray-400">
-              계정별로 쿠팡 링크가 들어가는 글의 비율을 조절합니다. 기본값은 링크 포함 30%입니다.
-            </p>
-          </div>
-        </Field>
+        <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs leading-relaxed text-gray-500">
+          하루 최대 개수는 보장 수량이 아니라 상한입니다. 실제 쿠팡 상품 매칭이 완료된 콘텐츠가 있을 때만 예약됩니다.
+        </div>
       </Section>
 
       <button onClick={save} disabled={saving || trialBlocked}

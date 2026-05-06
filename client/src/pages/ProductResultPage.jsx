@@ -112,8 +112,7 @@ export default function ProductResultPage({ selectedAccount }) {
   const selectedRealCount = products.filter((product) => product.selected && product.is_real_product !== false).length;
   const invalidSelectedCount = products.filter((product) => product.selected_invalid).length;
   const fallbackCount = products.length - realCount;
-  const linkRatioPercent = Math.round(Number(selectedAccount?.link_post_ratio ?? 0) * 100);
-  const needsRealLinkRecovery = linkRatioPercent > 0 && selectedRealCount === 0;
+  const needsRealLinkRecovery = selectedAccount && selectedRealCount === 0;
   const waitMs = searchBlock?.waitUntil ? Math.max(0, searchBlock.waitUntil - now) : 0;
   const searchBlocked = waitMs > 0;
   const waitSeconds = Math.ceil(waitMs / 1000);
@@ -138,13 +137,13 @@ export default function ProductResultPage({ selectedAccount }) {
         </div>
       </div>
 
-      {(products.length > 0 || linkRatioPercent > 0) && (
+      {(products.length > 0 || selectedAccount) && (
         <div className={`rounded border px-4 py-3 text-sm ${needsRealLinkRecovery ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-line bg-white text-slate-600'}`}>
           <div className="font-semibold">
             {needsRealLinkRecovery ? '실상품 링크 복구 필요' : '상품 링크 상태'}
           </div>
           <div className="mt-1">
-            실상품 {realCount}개 · 선택된 실상품 {selectedRealCount}개 · 사용불가 {fallbackCount}개 · 링크 글 비율 {linkRatioPercent}%
+            실상품 {realCount}개 · 선택된 실상품 {selectedRealCount}개 · 사용불가 {fallbackCount}개
           </div>
           {(fallbackCount > 0 || invalidSelectedCount > 0) && (
             <div className="mt-1 text-xs text-rose-500">

@@ -21,8 +21,10 @@ const fromKstDateTime = ({ year, month, date }, minute) => {
 };
 
 export function createDailySchedule(account, date = new Date()) {
-  const min = account.daily_post_min || 1;
-  const max = account.daily_post_max || min;
+  const rawMin = Number(account.daily_post_min ?? 1);
+  const min = Math.min(5, Math.max(0, Number.isFinite(rawMin) ? rawMin : 1));
+  const rawMax = Number(account.daily_post_max ?? min);
+  const max = Math.min(5, Math.max(min, Number.isFinite(rawMax) ? rawMax : min));
   const count = min + Math.floor(Math.random() * (max - min + 1));
   const windows = account.active_time_windows?.length ? account.active_time_windows : [{ start: '09:00', end: '22:00' }];
   const minGap = account.min_interval_minutes || 45;

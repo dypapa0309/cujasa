@@ -171,6 +171,7 @@ export function adminActivityLabel(action, message = '') {
   if (action === 'pipeline_failed_paused' || action === 'automation_start_failed_paused') return '예약 생성 실패로 일시중지';
   if (action === 'pipeline_queue_created') return '예약 큐 생성';
   if (action === 'queue_link_slots_shortage') return '실상품 링크 부족';
+  if (action === 'queue_link_slots_shortage_partial') return '일부 링크 후보만 예약';
   if (action === 'threads_oauth_connected') return 'Threads 연결됨';
   if (action === 'upload_completed') return '업로드 완료';
   return null;
@@ -186,5 +187,6 @@ export function adminActivityMessage(action, message = '') {
   if (action === 'pipeline_background_already_running') return message || '이미 실행 중인 예약 작업이 있어 중복 실행을 막았습니다.';
   if (action === 'pipeline_failed_paused' || action === 'automation_start_failed_paused') return message || '예약 생성 실패로 자동화를 일시중지했습니다.';
   if (action === 'queue_link_slots_shortage') return message || '링크 글에 사용할 실제 쿠팡 상품이 부족합니다.';
+  if (action === 'queue_link_slots_shortage_partial') return message || '수익화 가능한 상품 링크 후보만 예약했습니다.';
   return null;
 }

@@ -14,6 +14,7 @@ const sensitiveKeys = new Set([
   'coupang_partner_id',
   'coupang_tracking_code'
 ]);
+const MAX_DAILY_POSTS = 5;
 
 export default function SettingsForm({ form, setForm, onSubmit, saving, onRevealSensitive }) {
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
@@ -148,24 +149,20 @@ export default function SettingsForm({ form, setForm, onSubmit, saving, onReveal
       </label>
       <label className="grid gap-1 text-sm">
         <span className="font-medium">하루 최소 업로드</span>
-        <input type="number" className="rounded border border-line px-3 py-2" value={form.daily_post_min || 1} onChange={(e) => update('daily_post_min', Number(e.target.value))} />
+        <input type="number" min="0" max={MAX_DAILY_POSTS} className="rounded border border-line px-3 py-2" value={form.daily_post_min ?? 1} onChange={(e) => update('daily_post_min', Math.min(MAX_DAILY_POSTS, Math.max(0, Number(e.target.value))))} />
       </label>
       <label className="grid gap-1 text-sm">
         <span className="font-medium">하루 최대 업로드</span>
-        <input type="number" className="rounded border border-line px-3 py-2" value={form.daily_post_max || 3} onChange={(e) => update('daily_post_max', Number(e.target.value))} />
+        <input type="number" min="0" max={MAX_DAILY_POSTS} className="rounded border border-line px-3 py-2" value={form.daily_post_max ?? 5} onChange={(e) => update('daily_post_max', Math.min(MAX_DAILY_POSTS, Math.max(0, Number(e.target.value))))} />
       </label>
       <label className="grid gap-1 text-sm">
         <span className="font-medium">최소 간격(분)</span>
         <input type="number" className="rounded border border-line px-3 py-2" value={form.min_interval_minutes || 50} onChange={(e) => update('min_interval_minutes', Number(e.target.value))} />
       </label>
-      <label className="grid gap-1 text-sm">
-        <span className="font-medium">링크 포함 비율</span>
-        <input type="range" step="0.05" min="0" max="1" className="accent-coupang" value={form.link_post_ratio ?? 0.3} onChange={(e) => {
-          const value = Number(e.target.value);
-          setForm((prev) => ({ ...prev, link_post_ratio: value, no_link_post_ratio: Number((1 - value).toFixed(2)) }));
-        }} />
-        <span className="text-xs text-slate-500">{Math.round((form.link_post_ratio ?? 0.3) * 100)}%</span>
-      </label>
+      <div className="grid gap-1 rounded border border-line bg-slate-50 px-3 py-2 text-sm">
+        <span className="font-medium">업로드 기준</span>
+        <span className="text-xs leading-relaxed text-slate-500">수익화 가능한 쿠팡 상품이 매칭된 글만 최대 5개까지 예약합니다.</span>
+      </div>
       <label className="grid gap-1 text-sm">
         <span className="font-medium">주당 휴식일 수</span>
         <input type="number" min="0" max="7" className="rounded border border-line px-3 py-2" value={form.rest_days_per_week ?? 1} onChange={(e) => update('rest_days_per_week', Number(e.target.value))} />

@@ -160,65 +160,56 @@ export async function preflightAccount(accountId, options = {}) {
     checks.push(makeCheck('content_scope', 'error', '다룰 카테고리가 비어 있습니다', '설정 화면에서 콘텐츠 범위를 입력해주세요.'));
   }
 
-  const linkRatio = Number(account.link_post_ratio ?? 0.3);
-  if (linkRatio > 0) {
-    const hasCoupang = account.coupang_access_key && account.coupang_secret_key && account.coupang_partner_id;
-    const lockHealth = await isCoupangSearchLockAvailable();
-    if (!lockHealth.available) {
-      checks.push(makeCheck(
-        'coupang_search_lock',
-        'error',
-        '쿠팡 검색 보호 락이 준비되지 않았습니다',
-        '운영 DB의 coupang_search_locks 테이블이 없어 쿠팡 검색과 자동화를 차단했습니다. 관리자에게 문의해주세요.',
-        'admin_apply_coupang_lock_migration'
-      ));
-    } else if (isCoupangCooldownActive(account)) {
-      checks.push(makeCheck(
-        'coupang_rate_limit',
-        'error',
-        '쿠팡 요청 제한 보호 중입니다',
-        `쿠팡 파트너스 요청 제한으로 자동화를 멈췄습니다. ${account.coupang_search_cooldown_until || '쿨다운 해제'} 이후 다시 시도해주세요.`,
-        'wait_coupang_cooldown'
-      ));
-    } else if (!hasCoupang) {
-      checks.push(makeCheck(
-        'COUPANG_CREDENTIALS_REQUIRED',
-        'error',
-        '쿠팡 API 설정이 필요합니다',
-        '링크 포함 글을 만들려면 쿠팡 Access Key, Secret Key, Partner ID가 필요합니다.',
-        'configure_coupang'
-      ));
-    } else {
-      checks.push(makeCheck('coupang', 'ok', '쿠팡 API 설정 확인', '링크 포함 글을 만들 수 있는 기본 설정이 있습니다.'));
-    }
-    const readiness = await getCoupangLinkReadiness(account.id);
-    const linkRatioPercent = Math.round(linkRatio * 100);
-    const readinessDetails = {
-      ...readiness,
-      linkPostRatio: linkRatio,
-      linkPostRatioPercent: linkRatioPercent
-    };
-    if (readiness.selectedRealCount === 0) {
-      checks.push(makeCheck(
-        'real_coupang_links',
-        allowInitialLinkDiscovery ? 'warn' : 'error',
-        allowInitialLinkDiscovery ? '실상품 링크를 자동으로 확보합니다' : '실상품 링크 확보가 필요합니다',
-        allowInitialLinkDiscovery
-          ? `현재 선택된 실상품은 없지만 자동화 시작 과정에서 주제 생성 후 쿠팡 상품을 검색하고 연결합니다. 링크 글 비율 ${linkRatioPercent}% 기준으로 예약을 시도합니다.`
-          : `현재 실상품 ${readiness.realProductCount}개, 선택된 실상품 ${readiness.selectedRealCount}개, 링크 글 비율 ${linkRatioPercent}%입니다. 상품 추천 결과에서 실제 쿠팡 상품을 먼저 검색하고 선택해야 링크 글 예약이 가능합니다.`,
-        allowInitialLinkDiscovery ? 'initial_link_discovery' : 'select_real_coupang_product',
-        readinessDetails
-      ));
-    } else {
-      checks.push(makeCheck(
-        'real_coupang_links',
-        'ok',
-        '실상품 링크 확인',
-        `${readiness.selectedRealCount}개의 실제 쿠팡 상품 선택이 확인되었습니다. 링크 글 비율 ${linkRatioPercent}% 기준으로 예약 생성이 가능합니다.`,
-        null,
-        readinessDetails
-      ));
-    }
+  const hasCoupang = account.coupang_access_key && account.coupang_secret_key && account.coupang_partner_id;
+  const lockHealth = await isCoupangSearchLockAvailable();
+  if (!lockHealth.available) {
+    checks.push(makeCheck(
+      'coupang_search_lock',
+      'error',
+      '쿠팡 검색 보호 락이 준비되지 않았습니다',
+      '운영 DB의 coupang_search_locks 테이블이 없어 쿠팡 검색과 자동화를 차단했습니다. 관리자에게 문의해주세요.',
+      'admin_apply_coupang_lock_migration'
+    ));
+  } else if (isCoupangCooldownActive(account)) {
+    checks.push(makeCheck(
+      'coupang_rate_limit',
+      'error',
+      '쿠팡 요청 제한 보호 중입니다',
+      `쿠팡 파트너스 요청 제한으로 자동화를 멈췄습니다. ${account.coupang_search_cooldown_until || '쿨다운 해제'} 이후 다시 시도해주세요.`,
+      'wait_coupang_cooldown'
+    ));
+  } else if (!hasCoupang) {
+    checks.push(makeCheck(
+      'COUPANG_CREDENTIALS_REQUIRED',
+      'error',
+      '쿠팡 API 설정이 필요합니다',
+      'CUJASA는 수익화 가능한 쿠팡 링크 글만 자동 업로드하므로 쿠팡 Access Key, Secret Key, Partner ID가 필요합니다.',
+      'configure_coupang'
+    ));
+  } else {
+    checks.push(makeCheck('coupang', 'ok', '쿠팡 API 설정 확인', '수익화 가능한 링크 글을 만들 수 있는 기본 설정이 있습니다.'));
+  }
+  const readiness = await getCoupangLinkReadiness(account.id);
+  if (readiness.selectedRealCount === 0) {
+    checks.push(makeCheck(
+      'real_coupang_links',
+      allowInitialLinkDiscovery ? 'warn' : 'error',
+      allowInitialLinkDiscovery ? '실상품 링크를 자동으로 확보합니다' : '실상품 링크 확보가 필요합니다',
+      allowInitialLinkDiscovery
+        ? '현재 선택된 실상품은 없지만 자동화 시작 과정에서 주제 생성 후 쿠팡 상품을 검색하고 연결합니다. 매칭된 링크 글만 예약합니다.'
+        : `현재 실상품 ${readiness.realProductCount}개, 선택된 실상품 ${readiness.selectedRealCount}개입니다. 상품 추천 결과에서 실제 쿠팡 상품을 먼저 검색하고 선택해야 예약이 가능합니다.`,
+      allowInitialLinkDiscovery ? 'initial_link_discovery' : 'select_real_coupang_product',
+      readiness
+    ));
+  } else {
+    checks.push(makeCheck(
+      'real_coupang_links',
+      'ok',
+      '실상품 링크 확인',
+      `${readiness.selectedRealCount}개의 실제 쿠팡 상품 선택이 확인되었습니다. 상품 매칭이 완료된 글만 최대 5개까지 예약합니다.`,
+      null,
+      readiness
+    ));
   }
 
   if (options.includeQueue !== false) {

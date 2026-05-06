@@ -126,6 +126,11 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
               <div className="text-xs opacity-80">
                 주제 {pipelineTopics}개 · 콘텐츠 {pipelinePosts}개 · {pipelineQueued}개 예약 완료
               </div>
+              {pipelineResult.queueDiagnostics?.linkShortage > 0 && (
+                <div className="mt-1 text-xs opacity-80">
+                  상품 매칭이 완료된 링크 글만 예약했습니다.
+                </div>
+              )}
               {(pipelineResult.warnings || []).length > 0 && (
                 <div className="mt-1 text-xs opacity-80">
                   과거 실패 기록 등 경고 {pipelineResult.warnings.length}개가 있었지만 현재 실행은 완료됐습니다.
@@ -138,7 +143,7 @@ export default function CustomerPostsPage({ account, pipelineResult, trialStatus
               <div className="text-xs mt-1 opacity-80">{pipelineResult.message || pipelineResult.error}</div>
               {pipelineResult.queueDiagnostics && (
                 <div className="mt-2 text-[11px] opacity-70">
-                  예약 시간 {pipelineResult.queueDiagnostics.scheduleCount ?? 0}개 · 링크 후보 {pipelineResult.queueDiagnostics.availableLinkPosts ?? 0}개 · 일반 후보 {pipelineResult.queueDiagnostics.availableNoLinkPosts ?? 0}개
+                  예약 시간 {pipelineResult.queueDiagnostics.scheduleCount ?? 0}개 · 링크 후보 {pipelineResult.queueDiagnostics.availableLinkPosts ?? 0}개 · 미매칭 초안 {pipelineResult.queueDiagnostics.availableNoLinkPosts ?? 0}개
                 </div>
               )}
               {pipelineResult.stage && (

@@ -31,11 +31,11 @@ create table if not exists accounts (
   safe_debate_enabled boolean not null default false,
   content_style_note text,
   daily_post_min int not null default 1,
-  daily_post_max int not null default 3,
+  daily_post_max int not null default 5,
   active_time_windows jsonb not null default '[]',
   min_interval_minutes int not null default 50,
-  link_post_ratio numeric not null default 0.3,
-  no_link_post_ratio numeric not null default 0.7,
+  link_post_ratio numeric not null default 1,
+  no_link_post_ratio numeric not null default 0,
   rest_days_per_week int not null default 1,
   threads_access_token text,
   threads_user_id text,
@@ -81,6 +81,24 @@ alter table accounts add column if not exists product_mention_style text not nul
 alter table accounts add column if not exists emoji_level text not null default 'low';
 alter table accounts add column if not exists safe_debate_enabled boolean not null default false;
 alter table accounts add column if not exists content_style_note text;
+alter table accounts alter column daily_post_max set default 5;
+update accounts
+set
+  daily_post_min = least(greatest(coalesce(daily_post_min, 1), 0), 5),
+  daily_post_max = least(
+    greatest(
+      coalesce(daily_post_max, daily_post_min, 1),
+      least(greatest(coalesce(daily_post_min, 1), 0), 5)
+    ),
+    5
+  );
+
+alter table accounts drop constraint if exists accounts_link_post_ratio_limit_check;
+alter table accounts drop constraint if exists accounts_no_link_post_ratio_limit_check;
+
+alter table accounts drop constraint if exists accounts_daily_post_limits_check;
+alter table accounts add constraint accounts_daily_post_limits_check
+  check (daily_post_min >= 0 and daily_post_min <= 5 and daily_post_max >= daily_post_min and daily_post_max <= 5);
 
 create table if not exists topics (
   id uuid primary key default gen_random_uuid(),

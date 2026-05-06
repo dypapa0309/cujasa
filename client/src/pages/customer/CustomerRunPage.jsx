@@ -116,6 +116,12 @@ export default function CustomerRunPage({
 
       const pipelineResult = result?.pipelineResult || result;
       const queuedCount = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? null;
+      if (pipelineResult?.status === 'no_link_candidates' || pipelineResult?.code === 'NO_REAL_COUPANG_LINKS') {
+        toast(pipelineResult.message || '오늘은 수익화 가능한 상품 링크 후보가 없어 업로드하지 않았습니다.', 'info');
+        onPipelineDone?.(pipelineResult);
+        onPipelineRunningChange?.(false);
+        return;
+      }
       if (pipelineResult?.ok === false || pipelineResult?.status === 'error' || queuedCount === 0) {
         const normalized = normalizeRunError(pipelineResult);
         setRunError(normalized);
@@ -255,13 +261,13 @@ export default function CustomerRunPage({
             <div><span className="font-bold">코드</span> {runError.code || 'PIPELINE_FAILED'}</div>
             {runError.diagnostics && (
               <div className="mt-2">
-                예약 시간 {runError.diagnostics.scheduleCount ?? 0}개 · 링크 후보 {runError.diagnostics.availableLinkPosts ?? 0}개 · 일반 후보 {runError.diagnostics.availableNoLinkPosts ?? 0}개
+                예약 시간 {runError.diagnostics.scheduleCount ?? 0}개 · 링크 후보 {runError.diagnostics.availableLinkPosts ?? 0}개 · 미매칭 초안 {runError.diagnostics.availableNoLinkPosts ?? 0}개
               </div>
             )}
           </div>
           <div className="mt-4 flex gap-2">
             <button type="button" onClick={() => setTab?.('settings')} className="rounded-xl bg-white px-4 py-3 text-xs font-bold text-rose-700">
-              링크 비율 확인
+              설정 확인
             </button>
             <button type="button" onClick={() => runPreflight()} className="rounded-xl border border-rose-200 px-4 py-3 text-xs font-bold text-rose-700">
               다시 점검
@@ -278,7 +284,7 @@ export default function CustomerRunPage({
         <ul className="mt-3 grid gap-2 text-sm leading-relaxed text-gray-500">
           <li>자동화 시작은 오늘 예약을 한 번 만들고, 계정을 자동화 진행 중 상태로 유지합니다.</li>
           <li>서버는 매일 정해진 시간에 진행 중 계정만 다시 예약 생성합니다.</li>
-          <li>하루 최소/최대가 다르면 그 사이에서 랜덤 개수를 예약합니다. 매일 3개가 필요하면 최소 3, 최대 3으로 설정하세요.</li>
+          <li>하루 업로드 수는 최대 5개이며, 실제 쿠팡 상품 매칭이 완료된 글만 예약됩니다.</li>
           <li>과거 실패 기록은 경고로만 표시하고, 현재 토큰이 정상이면 실행을 막지 않습니다.</li>
         </ul>
       </div>
@@ -310,7 +316,7 @@ function normalizeRunError(error) {
     code: error?.code || error?.error || (noQueue ? 'NO_QUEUE_CREATED' : 'PIPELINE_FAILED'),
     stage: error?.stage || error?.result?.stage || 'pipeline',
     message: error?.message || error?.errorMessage || (noQueue
-      ? '예약 큐가 0개로 생성됐습니다. 쿠팡 상품 매칭 또는 링크 비율 설정을 확인해주세요.'
+      ? '오늘은 수익화 가능한 상품 링크 후보가 없어 업로드하지 않았습니다. 상품 매칭 결과를 확인해주세요.'
       : '예약 생성 중 오류가 발생했습니다. 사전 점검 결과를 확인해주세요.'),
     blocking: error?.blocking || [],
     diagnostics: error?.queueDiagnostics || error?.diagnostics || null
@@ -320,6 +326,6 @@ function normalizeRunError(error) {
 function formatSchedule(account) {
   const min = Number(account?.daily_post_min || 1);
   const max = Number(account?.daily_post_max || min);
-  if (min === max) return `매일 ${min}개 예약`;
-  return `매일 ${min}~${max}개 중 랜덤 예약`;
+  const limit = Math.min(5, Math.max(min, max));
+  return `상품 매칭 성공분만 최대 ${limit}개 예약`;
 }

@@ -20,7 +20,6 @@ function isThreadsConnected(account) {
 function accountReadiness(account) {
   const blocking = [];
   const warnings = [];
-  const linkRatio = Number(account.link_post_ratio ?? 0);
 
   if (!isThreadsConnected(account)) {
     blocking.push(item(
@@ -44,23 +43,12 @@ function accountReadiness(account) {
     ));
   }
 
-  if (linkRatio > 0 && !hasCoupangSettings(account)) {
+  if (!hasCoupangSettings(account)) {
     blocking.push(item(
       'coupang_required_for_links',
       'blocking',
       '쿠팡 API 설정 필요',
-      `${account.name || '계정'}은 링크 포함 비율이 ${Math.round(linkRatio * 100)}%입니다. 링크 글을 만들려면 쿠팡 Access Key, Secret Key, Partner ID가 필요합니다.`,
-      'settings',
-      account.id
-    ));
-  }
-
-  if (linkRatio === 0 && !hasCoupangSettings(account)) {
-    warnings.push(item(
-      'no_coupang_no_link_mode',
-      'warning',
-      '일반 글 체험 모드',
-      `${account.name || '계정'}은 쿠팡 API 없이 일반 글로 체험할 수 있습니다. 링크 글을 쓰려면 쿠팡 API를 입력해주세요.`,
+      `${account.name || '계정'}은 수익화 가능한 링크 글만 자동 업로드합니다. 쿠팡 Access Key, Secret Key, Partner ID를 입력해주세요.`,
       'settings',
       account.id
     ));

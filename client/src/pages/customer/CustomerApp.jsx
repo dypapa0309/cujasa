@@ -219,12 +219,15 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
         const payload = await api.get(`/api/accounts/${account.id}/pipeline-run`);
         if (cancelled || !payload?.run) return;
         setPipelineProgress(payload.run.progress);
-        if (payload.run.status === 'completed') {
+        if (payload.run.status === 'completed' || payload.run.status === 'skipped') {
           setPipelineResult(payload.run.result);
           reloadAccounts?.();
           loadTrialStatus();
           loadSetupStatus();
           navigateTab(pipelineHasReservations(payload.run.result) ? 'posts' : 'run');
+          if (payload.run.status === 'skipped') {
+            toast(payload.run.result?.message || '오늘은 수익화 가능한 상품 링크 후보가 없어 업로드하지 않았습니다.', 'info');
+          }
           setPipelineRunning(false);
         } else if (payload.run.status === 'failed') {
           const result = payload.run.result || {};

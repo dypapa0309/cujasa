@@ -25,8 +25,7 @@ async function main() {
   for (const queue of queues) {
     const account = accountById.get(queue.account_id);
     if (!account || !isAutomationRunning(account)) continue;
-    const linkRatio = Number(account.link_post_ratio || 0);
-    if (queue.post_mode === 'no_link' || linkRatio <= 0) continue;
+    if (queue.post_mode === 'no_link') continue;
     const alreadySkippedForRepair = queue.status === 'skipped'
       && queue.error_message === '실상품 연결이 없는 과거 예약이라 자동 복구를 위해 취소됨';
     if (queue.status !== 'scheduled' && !alreadySkippedForRepair) continue;
@@ -52,14 +51,13 @@ async function main() {
       for (const queue of item.downgradedQueues) {
         try {
           await dbUpdate('post_queue', { id: queue.id }, {
-            status: 'scheduled',
-            post_mode: 'no_link',
-            error_message: '실상품 연결이 없어 fallback 카드 표시 후 일반 업로드로 전환됨'
+            status: 'skipped',
+            error_message: '실상품 연결이 없어 링크 전용 정책에 따라 업로드하지 않음'
           });
-          if (queue.post_id) await dbUpdate('posts', { id: queue.post_id }, { status: 'queued' });
+          if (queue.post_id) await dbUpdate('posts', { id: queue.post_id }, { status: 'draft' });
           item.recreatedQueues.push({
             id: queue.id,
-            postMode: 'no_link',
+            postMode: queue.post_mode,
             scheduledAt: queue.scheduled_at
           });
         } catch (error) {

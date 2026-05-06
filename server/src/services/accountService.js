@@ -6,6 +6,12 @@ const CONTENT_INTENSITIES = new Set(['soft', 'normal', 'strong']);
 const COMMENT_STYLES = new Set(['none', 'soft_question', 'experience_question', 'choice_question']);
 const PRODUCT_MENTION_STYLES = new Set(['none', 'natural', 'direct']);
 const EMOJI_LEVELS = new Set(['none', 'low', 'medium']);
+const MAX_DAILY_POSTS = 5;
+
+function toFiniteNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
 
 function normalizeAccount(payload) {
   const next = { ...payload };
@@ -23,12 +29,12 @@ function normalizeAccount(payload) {
   next.active_time_windows = next.active_time_windows
     .filter((window) => window?.start && window?.end)
     .map((window) => ({ start: window.start, end: window.end }));
-  next.daily_post_min = Math.max(0, Number(next.daily_post_min ?? 1));
-  next.daily_post_max = Math.max(next.daily_post_min, Number(next.daily_post_max ?? next.daily_post_min));
-  next.min_interval_minutes = Math.max(1, Number(next.min_interval_minutes ?? 50));
-  next.link_post_ratio = Math.min(1, Math.max(0, Number(next.link_post_ratio ?? 0.3)));
-  next.no_link_post_ratio = Math.min(1, Math.max(0, Number(next.no_link_post_ratio ?? (1 - next.link_post_ratio))));
-  next.rest_days_per_week = Math.min(7, Math.max(0, Number(next.rest_days_per_week ?? 1)));
+  next.daily_post_min = Math.min(MAX_DAILY_POSTS, Math.max(0, toFiniteNumber(next.daily_post_min, 1)));
+  next.daily_post_max = Math.min(MAX_DAILY_POSTS, Math.max(next.daily_post_min, toFiniteNumber(next.daily_post_max, next.daily_post_min)));
+  next.min_interval_minutes = Math.max(1, toFiniteNumber(next.min_interval_minutes, 50));
+  next.link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.link_post_ratio, 1)));
+  next.no_link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.no_link_post_ratio, 0)));
+  next.rest_days_per_week = Math.min(7, Math.max(0, toFiniteNumber(next.rest_days_per_week, 1)));
   if (!CONTENT_MODES.has(next.content_mode)) next.content_mode = 'empathy';
   if (!CONTENT_INTENSITIES.has(next.content_intensity)) next.content_intensity = 'normal';
   if (!COMMENT_STYLES.has(next.comment_induction_style)) next.comment_induction_style = 'soft_question';
@@ -71,11 +77,11 @@ export const createAccount = (payload) => dbInsert('accounts', normalizeAccount(
   safe_debate_enabled: false,
   content_style_note: '',
   daily_post_min: 1,
-  daily_post_max: 3,
+  daily_post_max: 5,
   active_time_windows: [{ start: '09:00', end: '11:00' }, { start: '20:00', end: '23:00' }],
   min_interval_minutes: 50,
-  link_post_ratio: 0.3,
-  no_link_post_ratio: 0.7,
+  link_post_ratio: 1,
+  no_link_post_ratio: 0,
   rest_days_per_week: 1,
   ...payload
 }));

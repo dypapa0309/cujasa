@@ -67,7 +67,6 @@ export default function CustomerBetaPage({ account, setTab }) {
     .filter((row) => ['failed', 'retry', 'manual_required', 'skipped'].includes(row.status) || row.error_category)
     .slice(0, 4);
 
-  const linkRatio = Math.round(Number(account?.link_post_ratio ?? 0.3) * 100);
   const automationRunning = account?.status === 'active' && account?.automation_status === 'running';
 
   return (
@@ -88,7 +87,7 @@ export default function CustomerBetaPage({ account, setTab }) {
                 {automationRunning ? '자동화 실행 중' : '자동화 중지됨'}
               </span>
               <span className="text-gray-300">·</span>
-              <span>링크 비율 {linkRatio}%</span>
+              <span>링크 매칭 글만 업로드</span>
               {account.account_handle && (
                 <>
                   <span className="text-gray-300">·</span>
@@ -130,10 +129,12 @@ export default function CustomerBetaPage({ account, setTab }) {
               <span className="font-bold text-blue-700">링크 글</span>
               <span className="font-black text-blue-700">{summary.linkPosts}개</span>
             </div>
-            <div className="flex items-center justify-between rounded-2xl bg-gray-50 px-4 py-3">
-              <span className="font-bold text-gray-600">일반 글</span>
-              <span className="font-black text-gray-700">{summary.noLinkPosts}개</span>
-            </div>
+            {summary.noLinkPosts > 0 && (
+              <div className="flex items-center justify-between rounded-2xl bg-gray-50 px-4 py-3">
+                <span className="font-bold text-gray-600">과거 일반 글</span>
+                <span className="font-black text-gray-700">{summary.noLinkPosts}개</span>
+              </div>
+            )}
           </div>
         </div>
 

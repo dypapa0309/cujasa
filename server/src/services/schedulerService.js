@@ -49,21 +49,17 @@ async function getFirstLinkableProductForTopic(topicId) {
 async function assertRealLinkCandidateForPost(post, account, action = 'queue link post') {
   const { postProduct, product } = await getFirstLinkableProductForTopic(post.topic_id);
   if (postProduct && product) return { postProduct, product };
-  const linkRatio = Number(account?.link_post_ratio || 0);
-  if (linkRatio > 0) {
-    await logActivity({
-      account_id: post.account_id,
-      project_id: post.project_id,
-      topic_id: post.topic_id,
-      post_id: post.id,
-      action: 'link_queue_blocked_no_real_product',
-      level: 'warn',
-      message: '실제 쿠팡 상품 링크가 없어 링크 큐 생성을 차단했습니다.',
-      payload: { code: 'NO_REAL_COUPANG_LINKS', action }
-    }).catch(() => null);
-    throw createNoRealCoupangLinksError('실상품 선택 후 다시 큐에 추가해주세요.');
-  }
-  return { postProduct: null, product: null };
+  await logActivity({
+    account_id: post.account_id,
+    project_id: post.project_id,
+    topic_id: post.topic_id,
+    post_id: post.id,
+    action: 'link_queue_blocked_no_real_product',
+    level: 'warn',
+    message: '실제 쿠팡 상품 링크가 없어 링크 큐 생성을 차단했습니다.',
+    payload: { code: 'NO_REAL_COUPANG_LINKS', action }
+  }).catch(() => null);
+  throw createNoRealCoupangLinksError('실상품 선택 후 다시 큐에 추가해주세요.');
 }
 
 async function isPostAllowedForQueue(post, account) {
@@ -150,35 +146,32 @@ export async function createDailyQueue(accountId, options = {}) {
     throw error;
   }
   assertAutomationRunning(account, 'create daily queue');
-  const linkRatio = Math.min(1, Math.max(0, Number(account.link_post_ratio ?? 0.3)));
-  if (linkRatio > 0) {
-    const lockHealth = await isCoupangSearchLockAvailable();
-    if (!lockHealth.available) {
-      await logActivity({
-        account_id: account.id,
-        project_id: account.project_id,
-        action: 'daily_queue_blocked_coupang_lock_unavailable',
-        level: 'error',
-        message: '쿠팡 검색 DB 락 테이블이 없어 일일 큐 생성을 차단했습니다.',
-        payload: {
-          reasonCode: 'COUPANG_LOCK_UNAVAILABLE',
-          error: lockHealth.message
-        }
-      }).catch(() => null);
-      await sendOpsAlert('daily_queue_blocked_coupang_lock_unavailable', {
-        title: '일일 큐 생성 차단',
-        account,
-        code: 'COUPANG_LOCK_UNAVAILABLE',
-        message: '쿠팡 검색 보호 락이 없어 링크 큐 생성을 차단했습니다.',
-        hint: 'coupang_search_locks 마이그레이션과 DB 연결 상태를 확인하세요.'
-      });
-      const error = new Error('COUPANG_LOCK_UNAVAILABLE: 쿠팡 검색 보호 락이 준비되지 않아 링크 큐를 만들 수 없습니다.');
-      error.status = 503;
-      error.code = 'COUPANG_LOCK_UNAVAILABLE';
-      throw error;
-    }
+  const lockHealth = await isCoupangSearchLockAvailable();
+  if (!lockHealth.available) {
+    await logActivity({
+      account_id: account.id,
+      project_id: account.project_id,
+      action: 'daily_queue_blocked_coupang_lock_unavailable',
+      level: 'error',
+      message: '쿠팡 검색 DB 락 테이블이 없어 일일 큐 생성을 차단했습니다.',
+      payload: {
+        reasonCode: 'COUPANG_LOCK_UNAVAILABLE',
+        error: lockHealth.message
+      }
+    }).catch(() => null);
+    await sendOpsAlert('daily_queue_blocked_coupang_lock_unavailable', {
+      title: '일일 큐 생성 차단',
+      account,
+      code: 'COUPANG_LOCK_UNAVAILABLE',
+      message: '쿠팡 검색 보호 락이 없어 링크 큐 생성을 차단했습니다.',
+      hint: 'coupang_search_locks 마이그레이션과 DB 연결 상태를 확인하세요.'
+    });
+    const error = new Error('COUPANG_LOCK_UNAVAILABLE: 쿠팡 검색 보호 락이 준비되지 않아 링크 큐를 만들 수 없습니다.');
+    error.status = 503;
+    error.code = 'COUPANG_LOCK_UNAVAILABLE';
+    throw error;
   }
-  if (linkRatio > 0 && isCoupangCooldownActive(account)) {
+  if (isCoupangCooldownActive(account)) {
     await logActivity({
       account_id: account.id,
       project_id: account.project_id,
@@ -220,34 +213,28 @@ export async function createDailyQueue(accountId, options = {}) {
     }
   }
 
-  // link_post_ratio 적용: 링크 있는 것과 없는 것을 비율에 맞게 섞기
   const scheduleTimes = createDailySchedule(account);
   const times = trialStatus?.plan === 'free'
     ? scheduleTimes.slice(0, Math.max(0, Number(trialStatus.remaining ?? scheduleTimes.length)))
     : scheduleTimes;
   const total = times.length;
-  const linkCount = Math.round(total * linkRatio);
+  const linkCount = total;
   const repairOutcomes = [];
   const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
 
-  const primaryWithLink = withLink.slice(0, linkCount);
-  const usedLinkPostIds = new Set(primaryWithLink.map((post) => post.id));
-  const finalNoLinkCount = Math.max(0, total - primaryWithLink.length);
-  const primaryWithoutLink = allDrafts.filter((post) => !usedLinkPostIds.has(post.id)).slice(0, finalNoLinkCount);
-  const drafts = [
-    ...primaryWithLink.map((post) => ({ post, postMode: 'link' })),
-    ...primaryWithoutLink.map((post) => ({ post, postMode: 'no_link' }))
-  ];
+  const primaryWithLink = withLink.slice(0, total);
+  const linkShortage = Math.max(0, linkCount - primaryWithLink.length);
+  const drafts = primaryWithLink.map((post) => ({ post, postMode: 'link' }));
   const diagnostics = {
     scheduleCount: total,
-    linkRatio,
     requiredLinkCount: linkCount,
-    requiredNoLinkCount: total - linkCount,
+    requiredNoLinkCount: 0,
     availableDraftPosts: allDrafts.length,
     availableLinkPosts: withLink.length,
     availableNoLinkPosts: allDrafts.length - withLink.length,
     selectedLinkPosts: primaryWithLink.length,
-    selectedNoLinkPosts: primaryWithoutLink.length,
+    selectedNoLinkPosts: 0,
+    linkShortage,
     trialPlan: trialStatus?.plan || null,
     trialRemaining: trialStatus?.remaining ?? null,
     uncappedScheduleCount: scheduleTimes.length,
@@ -265,30 +252,25 @@ export async function createDailyQueue(accountId, options = {}) {
   };
   if (total === 0) diagnostics.reasonCode = 'NO_SCHEDULE_TIMES';
   else if (allDrafts.length === 0) diagnostics.reasonCode = 'NO_DRAFT_POSTS';
-  else if (linkCount > 0 && primaryWithLink.length < linkCount) diagnostics.reasonCode = 'NO_REAL_COUPANG_LINKS';
   else if (repairOutcomes.some((row) => row.reasonCode === 'COUPANG_RATE_LIMIT')) diagnostics.reasonCode = 'COUPANG_RATE_LIMIT';
   else if (diagnostics.productRepairFallbacks > 0) diagnostics.reasonCode = 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
-  else if (drafts.length === 0) diagnostics.reasonCode = 'NO_QUEUE_CANDIDATES';
+  else if (drafts.length === 0) diagnostics.reasonCode = 'NO_REAL_COUPANG_LINKS';
+  else if (linkShortage > 0) diagnostics.reasonCode = 'PARTIAL_LINK_CANDIDATES';
 
-  if (primaryWithLink.length < linkCount) {
+  if (total === 0 || allDrafts.length === 0 || drafts.length === 0) {
+    diagnostics.queuedCount = 0;
+    return attachQueueDiagnostics([], diagnostics);
+  }
+
+  if (linkShortage > 0) {
     await logActivity({
       account_id: account.id,
       project_id: account.project_id,
-      action: 'queue_link_slots_shortage',
-      level: 'warn',
-      message: `실제 쿠팡 링크 후보 부족: 목표 ${linkCount}개, 가능 ${primaryWithLink.length}개`,
+      action: 'queue_link_slots_shortage_partial',
+      level: 'info',
+      message: `수익화 가능한 링크 후보 ${primaryWithLink.length}개만 예약합니다.`,
       payload: diagnostics
     });
-    await sendOpsAlert('daily_queue_no_real_coupang_links', {
-      title: '실상품 링크 부족으로 큐 0개',
-      account,
-      code: 'NO_REAL_COUPANG_LINKS',
-      message: `링크 글 목표 ${linkCount}개 중 가능한 링크 후보가 ${primaryWithLink.length}개입니다.`,
-      hint: '상품 추천 결과에서 실상품 검색/선택 probe를 먼저 진행하세요.',
-      payload: diagnostics
-    });
-    diagnostics.queuedCount = 0;
-    return attachQueueDiagnostics([], diagnostics);
   }
   const queued = [];
   for (const [index, item] of drafts.slice(0, times.length).entries()) {

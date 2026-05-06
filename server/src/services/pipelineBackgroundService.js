@@ -4,6 +4,7 @@ import { AUTOMATION_PAUSED, setAutomationStatus } from './accountAutomationServi
 
 export function isPipelineFailureResult(result) {
   const queuedCount = result?.queuedCount ?? result?.steps?.queued ?? null;
+  if (result?.code === 'NO_REAL_COUPANG_LINKS' || result?.status === 'no_link_candidates') return false;
   return result?.ok === false || result?.status === 'error' || queuedCount === 0;
 }
 

@@ -44,8 +44,6 @@ export async function buildOpsHealthSummary() {
   const coupangLimited = activeAccounts.filter(hasCooldown);
   const threadsReconnect = activeAccounts.filter((account) => !account.threads_access_token || account.threads_token_status === 'refresh_failed');
   const linkNeedsProduct = activeAccounts.filter((account) => {
-    const linkRatio = Number(account.link_post_ratio || 0);
-    if (linkRatio <= 0) return false;
     return selectedRealCountForAccount(account, topics, products, postProducts) === 0;
   });
 
@@ -87,7 +85,7 @@ export async function runDailyOpsHealthCheck() {
     ...topLines(summary.threadsReconnect, (account) => `- ${accountLabel(account)}`),
     '',
     '[실상품 링크 필요]',
-    ...topLines(summary.linkNeedsProduct, (account) => `- ${accountLabel(account)} · 링크 비율 ${Math.round(Number(account.link_post_ratio || 0) * 100)}%`)
+    ...topLines(summary.linkNeedsProduct, (account) => `- ${accountLabel(account)} · 선택된 실상품 없음`)
   ].join('\n');
 
   await sendOpsAlert('daily_ops_healthcheck', {

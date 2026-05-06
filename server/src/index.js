@@ -218,7 +218,7 @@ cron.schedule('* * * * *', async () => {
 // 매일 새벽 2시: 전체 파이프라인 자동 실행 (주제→상품→콘텐츠→큐 등록)
 cron.schedule('0 2 * * *', async () => {
   await runCronJob('daily-pipeline', async () => runFullPipeline());
-});
+}, { timezone: 'Asia/Seoul' });
 
 // 매일 새벽 3시: Threads long-lived token 만료 전 갱신
 cron.schedule('0 3 * * *', async () => {

@@ -20,16 +20,19 @@ function createNoQueueMessage(diagnostics = {}) {
     return '실제 쿠팡 상품이 매칭된 링크 글 후보가 없어 예약을 만들지 못했습니다. 상품을 다시 검색하거나 관리자 화면에서 실상품을 직접 선택해주세요.';
   }
   if (diagnostics.reasonCode === 'NO_REAL_COUPANG_LINKS') {
-    return '수익화 가능한 실제 쿠팡 상품 링크가 부족해 예약을 만들지 않았습니다. 상품 추천 결과에서 실상품 링크를 먼저 확보해주세요.';
+    return '오늘은 수익화 가능한 상품 링크 후보가 없어 업로드하지 않았습니다. 상품 추천 결과를 다시 확인해주세요.';
   }
   if (diagnostics.reasonCode === 'REAL_PRODUCTS_INSUFFICIENT') {
     return '링크 글 목표 개수를 채울 만큼 실제 쿠팡 상품 후보가 부족합니다. 상품 추천 결과에서 실상품을 추가로 선택해주세요.';
   }
   if (diagnostics.reasonCode === 'NO_LINK_CANDIDATES') {
-    return '쿠팡 상품이 매칭된 링크 글 후보가 없어 예약을 만들지 못했습니다. 상품 후보를 다시 생성하거나 링크 비율을 낮춰주세요.';
+    return '쿠팡 상품이 매칭된 링크 글 후보가 없어 예약을 만들지 못했습니다. 상품 후보를 다시 생성해주세요.';
   }
   if (diagnostics.reasonCode === 'NO_DRAFT_POSTS') {
     return '예약 가능한 초안 글이 없어 예약을 만들지 못했습니다. 콘텐츠를 다시 생성해주세요.';
+  }
+  if (diagnostics.reasonCode === 'NO_QUEUE_CANDIDATES') {
+    return '예약 가능한 링크 콘텐츠가 부족해 예약을 만들지 못했습니다. 상품 매칭 결과를 확인해주세요.';
   }
   if (diagnostics.reasonCode === 'NO_SCHEDULE_TIMES') {
     return '오늘 예약 가능한 시간이 없어 예약을 만들지 못했습니다. 운영 시간과 예약 개수를 확인해주세요.';
@@ -117,7 +120,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
           postsCreated: totalPosts
         });
         const selectedProducts = await selectProducts(topic.id);
-        if (selectedProducts.length === 0 && Number(account.link_post_ratio || 0) > 0) {
+        if (selectedProducts.length === 0) {
           const repair = await repairProductsForTopic(topic.id, { account });
           if (repair.reasonCode === 'COUPANG_RATE_LIMIT') {
             const error = new Error('쿠팡 요청 제한 보호 중이라 상품 복구와 예약 생성을 중단했습니다.');
@@ -161,8 +164,9 @@ export async function runPipelineForAccount(accountId, options = {}) {
     result.queueDiagnostics = queued.diagnostics || null;
     if (queued.length === 0) {
       const message = createNoQueueMessage(queued.diagnostics);
-      result.ok = false;
-      result.status = 'error';
+      const noLinkCandidateDay = queued.diagnostics?.reasonCode === 'NO_REAL_COUPANG_LINKS';
+      result.ok = noLinkCandidateDay;
+      result.status = noLinkCandidateDay ? 'no_link_candidates' : 'error';
       result.code = queued.diagnostics?.reasonCode || 'NO_QUEUE_CREATED';
       result.message = message;
       result.error = message;
@@ -178,16 +182,16 @@ export async function runPipelineForAccount(accountId, options = {}) {
         code: result.code,
         message
       });
-      await finishPipelineRun(run.id, 'failed', { result, error_message: message });
+      await finishPipelineRun(run.id, noLinkCandidateDay ? 'skipped' : 'failed', { result, error_message: noLinkCandidateDay ? null : message });
       await logActivity({
         account_id: account.id,
         project_id: account.project_id,
-        action: 'pipeline_queue_empty',
-        level: 'warn',
+        action: noLinkCandidateDay ? 'pipeline_skipped_no_link_candidates' : 'pipeline_queue_empty',
+        level: noLinkCandidateDay ? 'info' : 'warn',
         message,
         payload: result.queueDiagnostics
       });
-      if (!['NO_REAL_COUPANG_LINKS', 'COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE'].includes(result.queueDiagnostics?.reasonCode)) {
+      if (!noLinkCandidateDay && !['COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE'].includes(result.queueDiagnostics?.reasonCode)) {
         await sendOpsAlert('pipeline_queue_empty', {
           title: '파이프라인 예약 생성 0개',
           account,
@@ -204,6 +208,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
 
     result.ok = true;
     result.status = 'ok';
+    result.message = `${queued.length}개 링크 예약이 완료됐습니다.`;
     await finishPipelineRun(run.id, 'completed', { result });
   } catch (err) {
     const failedStage = result.stage || 'pipeline';
@@ -247,7 +252,7 @@ export async function runFullPipeline(options = {}) {
       continue;
     }
     try {
-      const preflight = await preflightAccount(account.id);
+      const preflight = await preflightAccount(account.id, { allowInitialLinkDiscovery: true });
       if (!preflight.canPublish) {
         const first = preflight.checks.find((check) => check.status === 'error');
         results.push({
@@ -259,7 +264,10 @@ export async function runFullPipeline(options = {}) {
         });
         continue;
       }
-      results.push(await runPipelineForAccount(account.id, { requestedBy: options.requestedBy || 'full_pipeline' }));
+      results.push(await runPipelineForAccount(account.id, {
+        requestedBy: options.requestedBy || 'full_pipeline',
+        allowInitialLinkDiscovery: true
+      }));
     } catch (err) {
       if (err.status === 409) {
         results.push({
