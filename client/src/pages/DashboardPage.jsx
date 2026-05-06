@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, ListChecks, Play, RefreshCw, Settings, Users, Wrench } from 'lucide-react';
+import { AlertTriangle, BarChart3, CheckCircle2, Clock3, ExternalLink, ListChecks, Play, RefreshCw, Settings, Users, Wrench, X } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import { dateTime } from '../lib/format.js';
@@ -25,6 +25,9 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
   const [preflightModal, setPreflightModal] = useState(null);
   const [runSummaryModal, setRunSummaryModal] = useState(null);
   const [cleaningQueue, setCleaningQueue] = useState(false);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [eventModal, setEventModal] = useState(null);
+  const [eventLoading, setEventLoading] = useState(false);
 
   const load = async () => {
     const [nextSummary, nextRows, nextConflicts, nextMisassignments] = await Promise.all([
@@ -139,18 +142,40 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
     }
   };
 
+  const openEvents = async (type, title) => {
+    setEventLoading(true);
+    setEventModal({ type, title, events: [], count: 0 });
+    try {
+      const result = await api.get(`/api/admin/operations/events?type=${encodeURIComponent(type)}&limit=250`);
+      setEventModal({ type, title, events: result.events || [], count: result.count || 0 });
+    } catch (err) {
+      setEventModal(null);
+      toast(err.message || '상세 데이터를 불러오지 못했습니다.', 'error');
+    } finally {
+      setEventLoading(false);
+    }
+  };
+
+  const accountFilterCounts = useMemo(() => buildAccountFilterCounts(rows), [rows]);
+  const accountFilters = useMemo(() => buildAccountFilters(accountFilterCounts), [accountFilterCounts]);
+
   const filteredRows = useMemo(() => {
     const needle = accountSearch.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter((row) => [
-      row.accountName,
-      row.accountHandle,
-      row.customer,
-      row.runCategory,
-      row.threads?.label,
-      row.coupang?.label
-    ].filter(Boolean).join(' ').toLowerCase().includes(needle));
-  }, [rows, accountSearch]);
+    return rows
+      .filter((row) => matchesAccountFilter(row, statusFilter))
+      .filter((row) => {
+        if (!needle) return true;
+        return [
+          row.accountName,
+          row.accountHandle,
+          row.customer,
+          row.runCategory,
+          row.threads?.label,
+          row.coupang?.label
+        ].filter(Boolean).join(' ').toLowerCase().includes(needle);
+      })
+      .sort(compareAccountRows);
+  }, [rows, accountSearch, statusFilter]);
 
   const problemCounts = useMemo(() => {
     const problems = summary?.problemAccounts || [];
@@ -215,10 +240,10 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
       />
 
       <div className="grid gap-3 md:grid-cols-4">
-        <OpsCard label="계정" value={`${summary?.cards?.accountsActive ?? 0}/${summary?.cards?.accountsTotal ?? 0}`} hint="활성 / 전체" tone="ok" />
-        <OpsCard label="오늘 예약" value={summary?.cards?.scheduledToday ?? 0} hint={`오늘 업로드 완료 ${summary?.cards?.postedToday ?? 0}개`} tone="ok" />
-        <OpsCard label="실패/검토" value={summary?.cards?.queueProblems ?? 0} hint={`큐 정리 ${summary?.issueBreakdown?.queueCleanup ?? 0}개 · stuck ${summary?.issueBreakdown?.pipelineStuck ?? 0}개`} tone={(summary?.cards?.queueProblems ?? 0) > 0 || (summary?.issueBreakdown?.pipelineStuck ?? 0) > 0 ? 'error' : 'ok'} />
-        <OpsCard label="연결 문제" value={summary?.cards?.threadsProblems ?? 0} hint={`재연결 ${summary?.issueBreakdown?.threadsReconnect ?? 0}개 · 테스트 ${summary?.cards?.mockUploads ?? 0}개`} tone={(summary?.cards?.threadsProblems ?? 0) > 0 ? 'warn' : 'ok'} />
+        <OpsCard label="계정" value={`${summary?.cards?.accountsActive ?? 0}/${summary?.cards?.accountsTotal ?? 0}`} hint="활성 / 전체" tone="ok" onClick={() => setStatusFilter('all')} />
+        <OpsCard label="오늘 예약" value={summary?.cards?.scheduledToday ?? 0} hint={`오늘 업로드 완료 ${summary?.cards?.postedToday ?? 0}개`} tone="ok" onClick={() => openEvents('scheduled_today', '오늘 예약/업로드')} />
+        <OpsCard label="실패/검토" value={summary?.cards?.queueProblems ?? 0} hint={`큐 정리 ${summary?.issueBreakdown?.queueCleanup ?? 0}개 · 확인 ${summary?.issueBreakdown?.pipelineStuck ?? 0}개`} tone={(summary?.cards?.queueProblems ?? 0) > 0 || (summary?.issueBreakdown?.pipelineStuck ?? 0) > 0 ? 'error' : 'ok'} onClick={() => openEvents('queue_problems', '실패/검토 항목')} />
+        <OpsCard label="연결 문제" value={summary?.cards?.threadsProblems ?? 0} hint={`재연결 ${summary?.issueBreakdown?.threadsReconnect ?? 0}개 · 테스트 ${summary?.cards?.mockUploads ?? 0}개`} tone={(summary?.cards?.threadsProblems ?? 0) > 0 ? 'warn' : 'ok'} onClick={() => openEvents('connection_problems', '연결 문제')} />
       </div>
 
       <section className="rounded border border-line bg-white">
@@ -273,6 +298,18 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
               onChange={(event) => setAccountSearch(event.target.value)}
               placeholder="고객명, 아이디, 계정명, 핸들 검색"
             />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {accountFilters.map((filter) => (
+              <button
+                key={filter.key}
+                onClick={() => setStatusFilter(filter.key)}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition ${statusFilter === filter.key ? 'border-slate-900 bg-slate-900 text-white' : 'border-line bg-white text-slate-600 hover:bg-panel'}`}
+              >
+                {filter.label}
+                <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${statusFilter === filter.key ? 'bg-white/20 text-white' : 'bg-panel text-slate-500'}`}>{filter.count}</span>
+              </button>
+            ))}
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -365,8 +402,76 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
           onClose={() => setRunSummaryModal(null)}
         />
       )}
+      {eventModal && (
+        <OperationEventsModal
+          modal={eventModal}
+          loading={eventLoading}
+          onClose={() => setEventModal(null)}
+          onOpenSettings={openAccountSettings}
+          onOpenQueue={openAccountQueue}
+        />
+      )}
+      <ContentQualityPanel />
     </div>
   );
+}
+
+function buildAccountFilterCounts(rows) {
+  return {
+    all: rows.length,
+    ok: rows.filter((row) => row.health === 'ok').length,
+    warn: rows.filter((row) => row.health === 'warn').length,
+    error: rows.filter((row) => row.health === 'error').length,
+    running: rows.filter((row) => row.health === 'running' || row.pipelineRun?.status === 'running').length,
+    threads_reconnect: rows.filter((row) => row.runCategory === 'threads_reconnect' || row.threads?.status === 'error').length,
+    coupang_settings: rows.filter((row) => row.runCategory === 'coupang_settings' || row.coupang?.status === 'error').length,
+    no_schedule: rows.filter((row) => Number(row.todayScheduled || 0) === 0 && row.accountStatus === 'active').length,
+    failed_review: rows.filter((row) => Number(row.failedCount || 0) > 0 || Number(row.retryAvailableCount || 0) > 0 || Number(row.replyWarningCount || 0) > 0 || Number(row.contentBlockedCount || 0) > 0).length,
+    pipeline_check: rows.filter((row) => row.runCategory === 'pipeline_stuck' || ['stuck', 'failed', 'expired'].includes(row.pipelineRun?.status)).length
+  };
+}
+
+function buildAccountFilters(counts) {
+  return [
+    { key: 'all', label: '전체', count: counts.all || 0 },
+    { key: 'ok', label: '정상', count: counts.ok || 0 },
+    { key: 'warn', label: '주의', count: counts.warn || 0 },
+    { key: 'error', label: '오류', count: counts.error || 0 },
+    { key: 'running', label: '실행 중', count: counts.running || 0 },
+    { key: 'threads_reconnect', label: 'Threads 재연결', count: counts.threads_reconnect || 0 },
+    { key: 'coupang_settings', label: '쿠팡 설정', count: counts.coupang_settings || 0 },
+    { key: 'no_schedule', label: '오늘 예약 없음', count: counts.no_schedule || 0 },
+    { key: 'failed_review', label: '실패/검토', count: counts.failed_review || 0 },
+    { key: 'pipeline_check', label: '파이프라인 확인', count: counts.pipeline_check || 0 }
+  ];
+}
+
+function matchesAccountFilter(row, filter) {
+  if (filter === 'ok') return row.health === 'ok';
+  if (filter === 'warn') return row.health === 'warn';
+  if (filter === 'error') return row.health === 'error';
+  if (filter === 'running') return row.health === 'running' || row.pipelineRun?.status === 'running';
+  if (filter === 'threads_reconnect') return row.runCategory === 'threads_reconnect' || row.threads?.status === 'error';
+  if (filter === 'coupang_settings') return row.runCategory === 'coupang_settings' || row.coupang?.status === 'error';
+  if (filter === 'no_schedule') return Number(row.todayScheduled || 0) === 0 && row.accountStatus === 'active';
+  if (filter === 'failed_review') {
+    return Number(row.failedCount || 0) > 0
+      || Number(row.retryAvailableCount || 0) > 0
+      || Number(row.replyWarningCount || 0) > 0
+      || Number(row.contentBlockedCount || 0) > 0;
+  }
+  if (filter === 'pipeline_check') return row.runCategory === 'pipeline_stuck' || ['stuck', 'failed', 'expired'].includes(row.pipelineRun?.status);
+  return true;
+}
+
+function compareAccountRows(a, b) {
+  const healthRank = { error: 0, warn: 1, running: 2, ok: 3 };
+  const rankDiff = (healthRank[a.health] ?? 4) - (healthRank[b.health] ?? 4);
+  if (rankDiff !== 0) return rankDiff;
+  const aTime = new Date(a.lastActivity?.createdAt || a.pipelineRun?.startedAt || a.lastPostedAt || 0).getTime();
+  const bTime = new Date(b.lastActivity?.createdAt || b.pipelineRun?.startedAt || b.lastPostedAt || 0).getTime();
+  if (aTime !== bTime) return bTime - aTime;
+  return String(a.accountName || '').localeCompare(String(b.accountName || ''));
 }
 
 function RiskPanel({ conflicts, misassignments, onOpenUsers }) {
@@ -518,6 +623,94 @@ function RunSummaryModal({ results, onClose }) {
   );
 }
 
+function OperationEventsModal({ modal, loading, onClose, onOpenSettings, onOpenQueue }) {
+  const events = Array.isArray(modal?.events) ? modal.events : [];
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5">
+      <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded bg-white shadow-2xl">
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-5 py-4">
+          <div>
+            <div className="text-lg font-black text-slate-900">{modal?.title || '상세 보기'}</div>
+            <div className="mt-1 text-xs text-slate-400">관련 항목 {modal?.count ?? events.length}개를 시간순으로 모았습니다.</div>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded border border-line text-slate-500 hover:bg-panel">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="overflow-y-auto">
+          {loading ? (
+            <div className="grid place-items-center gap-2 px-5 py-12 text-sm font-bold text-slate-500">
+              <Spinner />
+              불러오는 중
+            </div>
+          ) : events.length > 0 ? (
+            <div className="grid divide-y divide-line">
+              {events.map((event) => (
+                <div key={event.id} className="grid gap-3 px-5 py-4 md:grid-cols-[1.1fr_1.6fr_auto] md:items-center">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <StatusPill status={event.severity || 'warn'} label={eventSeverityLabel(event.severity)} />
+                      <span className="font-bold text-slate-900">{event.accountName}</span>
+                    </div>
+                    <div className="mt-1 truncate text-xs text-slate-400">
+                      {event.customer || '고객 미할당'} {event.accountHandle ? `· ${event.accountHandle}` : ''}
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-slate-700">{friendlyOpsText(event.title)}</div>
+                    <div className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">{friendlyOpsText(event.message) || '-'}</div>
+                    {event.time && <div className="mt-1 text-[11px] font-medium text-slate-400">{dateTime(event.time)}</div>}
+                  </div>
+                  <div className="flex justify-end gap-1.5">
+                    <IconButton title="설정 열기" onClick={() => onOpenSettings?.(event.accountId)}><Settings size={15} /></IconButton>
+                    <IconButton title="큐 보기" onClick={() => onOpenQueue?.(event.accountId)}><ListChecks size={15} /></IconButton>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="px-5 py-12 text-center text-sm text-slate-400">표시할 항목이 없습니다.</div>
+          )}
+        </div>
+        <div className="shrink-0 border-t border-line px-5 py-4 text-right">
+          <button onClick={onClose} className="rounded bg-slate-900 px-4 py-2 text-sm font-bold text-white">닫기</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ContentQualityPanel() {
+  const checkpoints = [
+    '상품 매칭 성공률을 먼저 보고, 링크 후보가 자주 부족한 계정을 분리합니다.',
+    '최근 주제와 각도가 반복되는지 확인해 다음 생성 정책에 반영합니다.',
+    '공감형, 체크리스트형, 문제해결형, 질문형이 한쪽으로 몰리지 않게 봅니다.',
+    '클릭이 나온 주제와 상품 패턴은 이후 프롬프트 개선 자료로 모읍니다.'
+  ];
+  return (
+    <section className="rounded border border-line bg-white">
+      <div className="flex items-start gap-3 px-5 py-4">
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded border border-blue-100 bg-blue-50 text-blue-600">
+          <BarChart3 size={18} />
+        </div>
+        <div className="min-w-0">
+          <h3 className="font-bold text-slate-900">콘텐츠 품질 체크포인트</h3>
+          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+            이번 단계에서는 생성 로직을 크게 바꾸지 않고, 운영자가 품질 병목을 판단할 기준을 먼저 정리합니다.
+          </p>
+          <div className="mt-3 grid gap-2 md:grid-cols-2">
+            {checkpoints.map((item) => (
+              <div key={item} className="rounded border border-line bg-panel px-3 py-2 text-xs font-medium leading-relaxed text-slate-600">
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function runResultLabel(row) {
   if (row.status === 'ok') return '성공';
   if (row.reason === 'already_running') return '이미 실행 중';
@@ -526,13 +719,20 @@ function runResultLabel(row) {
   return '실패';
 }
 
-function OpsCard({ label, value, hint, tone }) {
+function OpsCard({ label, value, hint, tone, onClick }) {
+  const Tag = onClick ? 'button' : 'div';
   return (
-    <div className={`rounded border bg-white p-4 ${tone === 'error' ? 'border-rose-200' : tone === 'warn' ? 'border-amber-200' : 'border-line'}`}>
+    <Tag
+      onClick={onClick}
+      className={`rounded border bg-white p-4 text-left transition ${onClick ? 'hover:-translate-y-0.5 hover:shadow-sm' : ''} ${tone === 'error' ? 'border-rose-200' : tone === 'warn' ? 'border-amber-200' : 'border-line'}`}
+    >
       <div className="text-xs font-bold text-slate-400">{label}</div>
       <div className="mt-2 text-3xl font-black text-slate-900">{value}</div>
-      <div className="mt-1 text-xs text-slate-400">{hint}</div>
-    </div>
+      <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-400">
+        <span>{hint}</span>
+        {onClick && <ExternalLink size={13} className="shrink-0" />}
+      </div>
+    </Tag>
   );
 }
 
@@ -589,6 +789,28 @@ function activityMessage(activity) {
   if (activity.action === 'queue_guardrail_skipped') return activity.message || '콘텐츠 안전 규칙에 맞지 않아 제외';
   if (activity.action === 'upload_reply_failed') return '본문 업로드 완료, 댓글/링크 답글은 재시도 필요';
   return activity.message || '';
+}
+
+function eventSeverityLabel(severity) {
+  if (severity === 'ok') return '완료';
+  if (severity === 'running') return '예약';
+  if (severity === 'error') return '오류';
+  return '주의';
+}
+
+function friendlyOpsText(value) {
+  return ({
+    pipeline_background_already_running: '이미 예약 작업을 확인 중입니다',
+    queue_empty: '오늘 예약 가능한 링크 글이 없습니다',
+    threads_reconnect: 'Threads 재연결 필요',
+    threads_reconnect_required: 'Threads 재연결 필요',
+    pipeline_stuck: '예약 작업 확인 필요',
+    operations_safety_pause: '운영 안전 점검으로 일시정지',
+    operations_link_setup_hold: '상품 링크 설정 확인 필요',
+    DB: '서버 저장소',
+    preflight: '실행 전 점검',
+    probe: '연결 확인'
+  })[value] || value;
 }
 
 function Spinner() {

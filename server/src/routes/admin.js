@@ -11,7 +11,7 @@ import {
 } from '../services/authService.js';
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
 import { hashPassword } from '../utils/password.js';
-import { cleanupQueueErrors, operationAccountRows, operationSummary } from '../services/operationsService.js';
+import { cleanupQueueErrors, operationAccountRows, operationEvents, operationSummary } from '../services/operationsService.js';
 import { buildOpsHealthSummary, runDailyOpsHealthCheck } from '../services/opsHealthService.js';
 import { cleanupUnusedPipelineArtifacts } from '../services/unusedArtifactCleanupService.js';
 import { cleanupOldQueueIssues, dismissPastQueueIssuesForAccount } from '../services/queueVisibilityService.js';
@@ -116,6 +116,15 @@ router.get('/operations/summary', async (req, res, next) => {
 
 router.get('/operations/accounts', async (req, res, next) => {
   try { res.json(await operationAccountRows()); } catch (e) { next(e); }
+});
+
+router.get('/operations/events', async (req, res, next) => {
+  try {
+    res.json(await operationEvents({
+      type: req.query?.type || 'queue_problems',
+      limit: req.query?.limit || 200
+    }));
+  } catch (e) { next(e); }
 });
 
 router.post('/operations/cleanup-queue-errors', async (req, res, next) => {

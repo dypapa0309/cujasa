@@ -62,6 +62,32 @@ function countBy(items, keyFn) {
   }, {});
 }
 
+function displayActivityCode(value) {
+  return ({
+    pipeline_background_already_running: '이미 예약 작업을 확인 중입니다',
+    queue_empty: '오늘 예약 가능한 링크 글이 없습니다',
+    threads_reconnect: 'Threads 재연결 필요',
+    threads_reconnect_required: 'Threads 재연결 필요',
+    operations_safety_pause: '운영 안전 점검으로 일시정지',
+    operations_link_setup_hold: '상품 링크 설정 확인 필요',
+    pipeline_stuck: '예약 작업 확인 필요',
+    coupang_settings: '쿠팡 API 설정 필요',
+    coupon_settings: '쿠팡 API 설정 필요'
+  })[value] || value;
+}
+
+function eventTime(row) {
+  return row.posted_at || row.scheduled_at || row.updated_at || row.created_at || null;
+}
+
+function sortEventsByTime(events, { ascending = false } = {}) {
+  return [...events].sort((a, b) => {
+    const av = a.time ? new Date(a.time).getTime() : 0;
+    const bv = b.time ? new Date(b.time).getTime() : 0;
+    return ascending ? av - bv : bv - av;
+  });
+}
+
 function queueProblemBreakdown(categorizedProblems) {
   return {
     fatal: categorizedProblems.filter((row) => !NON_FATAL_QUEUE_CATEGORIES.has(row.category)).length,
@@ -306,6 +332,157 @@ export async function operationSummary() {
     },
     problemAccounts
   };
+}
+
+export async function operationEvents({ type = 'queue_problems', limit = 200 } = {}) {
+  const { start, end } = kstDayRange();
+  const [accounts, queue, rows, users, userAccounts] = await Promise.all([
+    dbList('accounts'),
+    dbList('post_queue'),
+    operationAccountRows(),
+    dbList('users'),
+    dbList('user_accounts')
+  ]);
+  const activeAccountIds = new Set(accounts.filter((account) => account.status === 'active').map((account) => account.id));
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const rowsByAccountId = new Map(rows.map((row) => [row.accountId, row]));
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  const accountCustomer = new Map();
+
+  for (const account of accounts) {
+    accountCustomer.set(account.id, await customerLabelFor(account.id, userAccounts, usersById));
+  }
+
+  const baseEvent = (accountId) => {
+    const account = accountsById.get(accountId) || {};
+    const row = rowsByAccountId.get(accountId) || {};
+    return {
+      accountId,
+      accountName: row.accountName || account.name || '계정 없음',
+      accountHandle: row.accountHandle || account.account_handle || '',
+      customer: row.customer || accountCustomer.get(accountId) || ''
+    };
+  };
+
+  const visibleQueue = queue.filter((row) => activeAccountIds.has(row.account_id) && !row.customer_hidden_at);
+  let events = [];
+
+  if (type === 'scheduled_today') {
+    events = visibleQueue
+      .filter((row) => ['scheduled', 'posted'].includes(row.status) && inRange(row.posted_at || row.scheduled_at, start, end))
+      .map((row) => ({
+        id: row.id,
+        kind: 'queue',
+        severity: row.status === 'posted' ? 'ok' : 'running',
+        status: row.status,
+        title: row.status === 'posted' ? '오늘 업로드 완료' : '오늘 예약됨',
+        message: row.post_url ? `업로드 링크: ${row.post_url}` : '예약된 시간에 자동 업로드됩니다.',
+        time: eventTime(row),
+        actionTarget: 'queue',
+        ...baseEvent(row.account_id)
+      }));
+    events = sortEventsByTime(events, { ascending: true });
+  } else if (type === 'connection_problems') {
+    events = rows.flatMap((row) => {
+      const items = [];
+      if (row.threads?.status !== 'ok') {
+        items.push({
+          id: `${row.accountId}:threads`,
+          kind: 'connection',
+          severity: row.threads?.status === 'error' ? 'error' : 'warn',
+          status: row.threads?.status || 'warn',
+          title: row.threads?.label || 'Threads 연결 확인 필요',
+          message: row.threads?.status === 'error' ? 'Threads 계정을 다시 연결해야 자동화가 가능합니다.' : '토큰 만료일이 가까워졌습니다.',
+          time: row.lastActivity?.createdAt || row.pipelineRun?.startedAt || null,
+          actionTarget: 'settings',
+          ...baseEvent(row.accountId)
+        });
+      }
+      if (row.coupang?.status !== 'ok' || ['rate_limited', 'api_error'].includes(row.coupang?.searchStatus)) {
+        items.push({
+          id: `${row.accountId}:coupang`,
+          kind: 'connection',
+          severity: row.coupang?.status === 'error' ? 'error' : 'warn',
+          status: row.coupang?.searchStatus || row.coupang?.status || 'warn',
+          title: row.coupang?.label || '쿠팡 API 확인 필요',
+          message: row.coupang?.missing?.length
+            ? `누락된 설정: ${row.coupang.missing.join(', ')}`
+            : (row.coupang?.cooldownUntil ? `검색 제한 해제 예정: ${row.coupang.cooldownUntil}` : '쿠팡 API 상태를 확인해주세요.'),
+          time: row.lastActivity?.createdAt || row.pipelineRun?.startedAt || null,
+          actionTarget: 'settings',
+          ...baseEvent(row.accountId)
+        });
+      }
+      return items;
+    });
+    events = sortEventsByTime(events);
+  } else if (type === 'account_issues') {
+    events = rows.flatMap((row) => row.problems.map((problem, index) => ({
+      id: `${row.accountId}:${problem.type}:${index}`,
+      kind: 'account_issue',
+      severity: problem.severity,
+      status: problem.type,
+      title: displayActivityCode(problem.label),
+      message: displayActivityCode(problem.detail) || runCategoryLabelForEvent(row.runCategory),
+      time: row.lastActivity?.createdAt || row.pipelineRun?.startedAt || null,
+      actionTarget: problem.type === 'no_schedule' || problem.type === 'queue_failed' ? 'queue' : 'settings',
+      ...baseEvent(row.accountId)
+    })));
+    events = sortEventsByTime(events);
+  } else {
+    const threadsOkByAccountId = new Map(rows.map((row) => [row.accountId, row.threads.status !== 'error']));
+    const queueEvents = visibleQueue
+      .filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status))
+      .map((row) => {
+        const classification = normalizeQueueClassification(row, {
+          currentThreadsOk: threadsOkByAccountId.get(row.account_id) ?? true
+        });
+        return {
+          id: row.id,
+          kind: 'queue_problem',
+          severity: NON_FATAL_QUEUE_CATEGORIES.has(classification.category) ? 'warn' : 'error',
+          status: classification.category,
+          title: displayActivityCode(classification.title),
+          message: displayActivityCode(classification.message || row.error_message || '확인이 필요합니다.'),
+          time: eventTime(row),
+          actionTarget: 'queue',
+          ...baseEvent(row.account_id)
+        };
+      });
+    const pipelineEvents = rows
+      .filter((row) => ['stuck', 'failed', 'expired'].includes(row.pipelineRun?.status))
+      .map((row) => ({
+        id: row.pipelineRun?.id || `${row.accountId}:pipeline`,
+        kind: 'pipeline_problem',
+        severity: row.pipelineRun?.status === 'stuck' ? 'error' : 'warn',
+        status: row.pipelineRun?.status,
+        title: row.pipelineRun?.label || '예약 작업 확인 필요',
+        message: displayActivityCode(row.pipelineRun?.errorMessage || row.pipelineRun?.staleCode || '최근 예약 작업 상태를 확인해주세요.'),
+        time: row.pipelineRun?.finishedAt || row.pipelineRun?.startedAt || row.lastActivity?.createdAt || null,
+        actionTarget: 'queue',
+        ...baseEvent(row.accountId)
+      }));
+    events = [...queueEvents, ...pipelineEvents];
+    events = sortEventsByTime(events);
+  }
+
+  const cappedLimit = Math.max(1, Math.min(Number(limit) || 200, 500));
+  return {
+    type,
+    count: events.length,
+    events: events.slice(0, cappedLimit)
+  };
+}
+
+function runCategoryLabelForEvent(category) {
+  return ({
+    ready: '실행 가능',
+    threads_reconnect: 'Threads 재연결 필요',
+    coupang_settings: '쿠팡 API 설정 필요',
+    queue_cleanup: '실패 큐 확인 필요',
+    pipeline_stuck: '멈춘 예약 작업 확인 필요',
+    blocked: '실행 전 확인 필요'
+  })[category] || '상태 확인 필요';
 }
 
 export async function cleanupQueueErrors({ mode = 'dry-run' } = {}) {
