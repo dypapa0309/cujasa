@@ -88,7 +88,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
   const runAccount = async (row) => {
     setRunningAccountId(row.accountId);
     try {
-      const preflight = await api.get(`/api/accounts/${row.accountId}/preflight`);
+      const preflight = await api.get(`/api/accounts/${row.accountId}/preflight?mode=start`);
       if (!preflight.canPublish) {
         setPreflightModal({ accountName: row.accountName, result: preflight });
         toast(`${row.accountName} 실행 전 확인이 필요합니다.`, 'error');
@@ -430,10 +430,10 @@ function PreflightModal({ accountName, result, onClose, onOpenSettings }) {
 
 function CheckDetails({ details }) {
   if (!details || typeof details !== 'object') return null;
-  if (details.linkPostRatioPercent === undefined) return null;
+  if (details.realProductCount === undefined && details.selectedRealCount === undefined) return null;
   return (
     <div className="mt-3 grid gap-1 rounded bg-white/70 px-3 py-2 text-[11px] font-bold leading-relaxed text-slate-600">
-      <div>실상품 {details.realProductCount ?? 0}개 · 선택된 실상품 {details.selectedRealCount ?? 0}개 · 링크 글 비율 {details.linkPostRatioPercent ?? 0}%</div>
+      <div>실상품 {details.realProductCount ?? 0}개 · 선택된 실상품 {details.selectedRealCount ?? 0}개</div>
       <div className="font-medium text-slate-500">사용불가 상품 {details.fallbackProductCount ?? 0}개 · 과거/무효 선택 {details.selectedInvalidCount ?? 0}개</div>
     </div>
   );

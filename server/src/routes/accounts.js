@@ -252,6 +252,8 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
     }
     if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
     if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
+    const preflight = await preflightAccount(req.params.accountId, { mode: 'start' });
+    assertPreflightCanPublish(preflight);
     const runningRun = await getRunningPipeline(req.params.accountId);
     if (runningRun) {
       return res.status(202).json({
@@ -259,6 +261,7 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
         status: 'running',
         alreadyRunning: true,
         run: mapPipelineRun(runningRun),
+        preflight,
         message: '이미 예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.'
       });
     }
@@ -271,6 +274,7 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
     res.status(202).json({
       ok: true,
       status: 'accepted',
+      preflight,
       message: '예약 작업을 시작했습니다. 진행 상태를 확인하고 있습니다.'
     });
   } catch (e) { next(e); }
