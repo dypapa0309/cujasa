@@ -122,7 +122,8 @@ const tables = {
   ],
   billing_payments: [],
   billing_subscriptions: [],
-  setup_tasks: []
+  setup_tasks: [],
+  purchase_inquiries: []
 };
 
 const matches = (row, filters) => Object.entries(filters).every(([key, value]) => row[key] === value);

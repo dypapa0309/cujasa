@@ -484,3 +484,30 @@ create table if not exists setup_tasks (
 
 create index if not exists idx_setup_tasks_status on setup_tasks(status, created_at desc);
 create index if not exists idx_setup_tasks_user on setup_tasks(user_id, created_at desc);
+
+create table if not exists purchase_inquiries (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  phone text not null,
+  plan text not null default 'onetime',
+  source text not null default 'cujasa',
+  product_id text,
+  topic text,
+  question_path jsonb not null default '[]',
+  message text,
+  status text not null default 'new' check (status in ('new', 'contacted', 'closed')),
+  created_at timestamptz not null default now()
+);
+
+alter table purchase_inquiries add column if not exists product_id text;
+alter table purchase_inquiries add column if not exists topic text;
+alter table purchase_inquiries add column if not exists question_path jsonb not null default '[]';
+alter table purchase_inquiries add column if not exists message text;
+alter table purchase_inquiries add column if not exists status text not null default 'new';
+alter table purchase_inquiries drop constraint if exists purchase_inquiries_status_check;
+alter table purchase_inquiries add constraint purchase_inquiries_status_check
+  check (status in ('new', 'contacted', 'closed'));
+
+create index if not exists idx_inquiries_created on purchase_inquiries(created_at desc);
+create index if not exists idx_purchase_inquiries_status_created on purchase_inquiries(status, created_at desc);
+create index if not exists idx_purchase_inquiries_product_topic on purchase_inquiries(product_id, topic);

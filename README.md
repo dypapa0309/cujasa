@@ -179,6 +179,8 @@ COUPANG_TRACKING_CODE=
 MOCK_UPLOAD=true
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_CHAT_IDS=
+SUPPORT_PHONE_DISPLAY=
+SUPPORT_PHONE_TEL=
 TRACKING_RATE_LIMIT_WINDOW_MS=60000
 TRACKING_RATE_LIMIT_MAX=120
 ```
@@ -188,6 +190,16 @@ TRACKING_RATE_LIMIT_MAX=120
 ```env
 CLIENT_BASE_URL=http://localhost:5175,https://app.jasain.kr,https://cujasa.jasain.kr,https://dexor.jasain.kr,https://jasain.kr
 ```
+
+### JASAIN 상담 위젯
+
+`jasain.kr` 홈페이지에는 아래 스크립트를 삽입하면 오른쪽 아래 Q&A 상담 버튼이 표시됩니다.
+
+```html
+<script src="https://api.jasain.kr/support/widget.js" data-product="jasain"></script>
+```
+
+제품별 랜딩에는 `data-product="cujasa"` 또는 `data-product="dexor"`를 사용할 수 있습니다.
 
 ### Vercel 클라이언트
 
@@ -204,6 +216,7 @@ VITE_API_BASE_URL=https://your-render-api.onrender.com
 
 ```bash
 curl -I https://your-render-api.onrender.com/api/health
+curl -I https://your-render-api.onrender.com/support/widget.js
 ```
 
 프론트에서 로그인 후 아래 순서로 최종 확인합니다.
