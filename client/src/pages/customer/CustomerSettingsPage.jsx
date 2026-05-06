@@ -3,6 +3,13 @@ import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import SensitiveInput from '../../components/SensitiveInput.jsx';
 import TrialStatusCard from './TrialStatusCard.jsx';
+import {
+  commentStyleOptions,
+  contentIntensityOptions,
+  contentModeOptions,
+  emojiLevelOptions,
+  productMentionOptions
+} from '../../config/contentStrategy.js';
 
 export default function CustomerSettingsPage({ account, reloadAccounts, trialStatus, reloadSetupStatus, setTab }) {
   const toast = useToast();
@@ -24,6 +31,14 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
       content_scope: account.content_scope || '',
       tone: account.tone || '',
       cta_style: account.cta_style || '',
+      content_mode: account.content_mode || 'empathy',
+      content_intensity: account.content_intensity || 'normal',
+      seasonality_enabled: account.seasonality_enabled !== false,
+      comment_induction_style: account.comment_induction_style || 'soft_question',
+      product_mention_style: account.product_mention_style || 'natural',
+      emoji_level: account.emoji_level || 'low',
+      safe_debate_enabled: Boolean(account.safe_debate_enabled),
+      content_style_note: account.content_style_note || '',
       forbidden_topics: Array.isArray(account.forbidden_topics) ? account.forbidden_topics.join('\n') : '',
       forbidden_words: Array.isArray(account.forbidden_words) ? account.forbidden_words.join('\n') : '',
       daily_post_min: account.daily_post_min ?? 2,
@@ -93,6 +108,13 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
       ...prev,
       link_post_ratio: next,
       no_link_post_ratio: Number((1 - next).toFixed(2))
+    }));
+  };
+  const updateContentMode = (value) => {
+    setForm((prev) => ({
+      ...prev,
+      content_mode: value,
+      safe_debate_enabled: value === 'safe_debate' ? true : prev.safe_debate_enabled
     }));
   };
   const revealSensitiveAccountField = async (field) => {
@@ -225,13 +247,55 @@ export default function CustomerSettingsPage({ account, reloadAccounts, trialSta
             placeholder="예: 주방용품, 청소, 수납" className={`${input} ${errors.content_scope ? 'border-red-400' : ''}`} />
           {errors.content_scope && <span className="text-xs text-red-500">{errors.content_scope}</span>}
         </Field>
-        <Field label="말투 / 톤">
-          <input type="text" value={form.tone} onChange={(e) => setForm((p) => ({ ...p, tone: e.target.value }))}
-            placeholder="예: 친근하고 솔직하게, MZ 감성" className={input} />
-        </Field>
-        <Field label="CTA 스타일">
-          <input type="text" value={form.cta_style} onChange={(e) => setForm((p) => ({ ...p, cta_style: e.target.value }))}
-            placeholder="예: 링크는 댓글에, 자세한 건 아래 링크" className={input} />
+        <div className="grid gap-3">
+          <div>
+            <div className="text-sm font-bold text-gray-800">콘텐츠 방식</div>
+            <div className="mt-1 text-xs text-gray-400">선택한 방식이 말투 메모보다 우선 반영됩니다.</div>
+          </div>
+          <div className="grid gap-2">
+            {contentModeOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => updateContentMode(option.value)}
+                className={`rounded-xl border px-4 py-3 text-left text-sm ${form.content_mode === option.value ? 'border-coupang bg-blue-50 text-coupang' : 'border-gray-100 bg-white text-gray-600'}`}
+              >
+                <div className="font-black">{option.label}</div>
+                <div className="mt-1 text-xs text-gray-400">{option.description}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <SelectField label="강도" value={form.content_intensity} onChange={(value) => setForm((p) => ({ ...p, content_intensity: value }))} options={contentIntensityOptions} />
+          <SelectField label="댓글 유도" value={form.comment_induction_style} onChange={(value) => setForm((p) => ({ ...p, comment_induction_style: value }))} options={commentStyleOptions} />
+          <SelectField label="상품 언급" value={form.product_mention_style} onChange={(value) => setForm((p) => ({ ...p, product_mention_style: value }))} options={productMentionOptions} />
+          <SelectField label="이모지" value={form.emoji_level} onChange={(value) => setForm((p) => ({ ...p, emoji_level: value }))} options={emojiLevelOptions} />
+        </div>
+        <div className="grid gap-2 rounded-xl border border-gray-100 bg-gray-50 p-4 text-sm">
+          <label className="flex items-center justify-between gap-3">
+            <span className="font-bold text-gray-700">계절감 반영</span>
+            <input type="checkbox" checked={form.seasonality_enabled} onChange={(e) => setForm((p) => ({ ...p, seasonality_enabled: e.target.checked }))} />
+          </label>
+          <label className="flex items-center justify-between gap-3">
+            <span>
+              <span className="block font-bold text-gray-700">안전 논쟁형 허용</span>
+              <span className="text-xs text-gray-400">비하/혐오 없이 취향 차이 질문만 사용합니다.</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={form.safe_debate_enabled}
+              onChange={(e) => setForm((p) => ({
+                ...p,
+                safe_debate_enabled: e.target.checked,
+                content_mode: !e.target.checked && p.content_mode === 'safe_debate' ? 'question' : p.content_mode
+              }))}
+            />
+          </label>
+        </div>
+        <Field label="추가 요청사항">
+          <textarea rows="3" value={form.content_style_note} onChange={(e) => setForm((p) => ({ ...p, content_style_note: e.target.value }))}
+            placeholder="예: 너무 광고처럼 쓰지 말기, 자취생 말투 유지" className={input} />
         </Field>
         <Field label="다루지 말 것 (줄바꿈으로 구분)">
           <textarea rows="3" value={form.forbidden_topics} onChange={(e) => setForm((p) => ({ ...p, forbidden_topics: e.target.value }))}
@@ -348,6 +412,16 @@ function Field({ label, children }) {
       <span className="font-medium text-gray-600">{label}</span>
       {children}
     </label>
+  );
+}
+
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <Field label={label}>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className={input}>
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </Field>
   );
 }
 

@@ -83,6 +83,7 @@ export async function preflightAccount(accountId, options = {}) {
   }
 
   const checks = [];
+  const allowInitialLinkDiscovery = Boolean(options.allowInitialLinkDiscovery || options.mode === 'start');
   let currentThreadsError = false;
   let currentThreadsOk = false;
   if (account.status !== 'active') {
@@ -180,7 +181,13 @@ export async function preflightAccount(accountId, options = {}) {
         'wait_coupang_cooldown'
       ));
     } else if (!hasCoupang) {
-      checks.push(makeCheck('coupang', 'warn', '쿠팡 API 설정을 확인해주세요', '링크 포함 글을 만들려면 쿠팡 Access Key, Secret Key, Partner ID가 필요합니다.'));
+      checks.push(makeCheck(
+        'COUPANG_CREDENTIALS_REQUIRED',
+        'error',
+        '쿠팡 API 설정이 필요합니다',
+        '링크 포함 글을 만들려면 쿠팡 Access Key, Secret Key, Partner ID가 필요합니다.',
+        'configure_coupang'
+      ));
     } else {
       checks.push(makeCheck('coupang', 'ok', '쿠팡 API 설정 확인', '링크 포함 글을 만들 수 있는 기본 설정이 있습니다.'));
     }
@@ -194,10 +201,12 @@ export async function preflightAccount(accountId, options = {}) {
     if (readiness.selectedRealCount === 0) {
       checks.push(makeCheck(
         'real_coupang_links',
-        'error',
-        '실상품 링크 확보가 필요합니다',
-        `현재 실상품 ${readiness.realProductCount}개, 선택된 실상품 ${readiness.selectedRealCount}개, 링크 글 비율 ${linkRatioPercent}%입니다. 상품 추천 결과에서 실제 쿠팡 상품을 먼저 검색하고 선택해야 링크 글 예약이 가능합니다.`,
-        'select_real_coupang_product',
+        allowInitialLinkDiscovery ? 'warn' : 'error',
+        allowInitialLinkDiscovery ? '실상품 링크를 자동으로 확보합니다' : '실상품 링크 확보가 필요합니다',
+        allowInitialLinkDiscovery
+          ? `현재 선택된 실상품은 없지만 자동화 시작 과정에서 주제 생성 후 쿠팡 상품을 검색하고 연결합니다. 링크 글 비율 ${linkRatioPercent}% 기준으로 예약을 시도합니다.`
+          : `현재 실상품 ${readiness.realProductCount}개, 선택된 실상품 ${readiness.selectedRealCount}개, 링크 글 비율 ${linkRatioPercent}%입니다. 상품 추천 결과에서 실제 쿠팡 상품을 먼저 검색하고 선택해야 링크 글 예약이 가능합니다.`,
+        allowInitialLinkDiscovery ? 'initial_link_discovery' : 'select_real_coupang_product',
         readinessDetails
       ));
     } else {

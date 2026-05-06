@@ -1,6 +1,12 @@
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { normalizeAutomationStatus } from './accountAutomationService.js';
 
+const CONTENT_MODES = new Set(['daily', 'empathy', 'problem_solution', 'checklist', 'question', 'safe_debate']);
+const CONTENT_INTENSITIES = new Set(['soft', 'normal', 'strong']);
+const COMMENT_STYLES = new Set(['none', 'soft_question', 'experience_question', 'choice_question']);
+const PRODUCT_MENTION_STYLES = new Set(['none', 'natural', 'direct']);
+const EMOJI_LEVELS = new Set(['none', 'low', 'medium']);
+
 function normalizeAccount(payload) {
   const next = { ...payload };
   if (next.status && !['active', 'paused', 'archived'].includes(next.status)) next.status = 'paused';
@@ -23,6 +29,15 @@ function normalizeAccount(payload) {
   next.link_post_ratio = Math.min(1, Math.max(0, Number(next.link_post_ratio ?? 0.3)));
   next.no_link_post_ratio = Math.min(1, Math.max(0, Number(next.no_link_post_ratio ?? (1 - next.link_post_ratio))));
   next.rest_days_per_week = Math.min(7, Math.max(0, Number(next.rest_days_per_week ?? 1)));
+  if (!CONTENT_MODES.has(next.content_mode)) next.content_mode = 'empathy';
+  if (!CONTENT_INTENSITIES.has(next.content_intensity)) next.content_intensity = 'normal';
+  if (!COMMENT_STYLES.has(next.comment_induction_style)) next.comment_induction_style = 'soft_question';
+  if (!PRODUCT_MENTION_STYLES.has(next.product_mention_style)) next.product_mention_style = 'natural';
+  if (!EMOJI_LEVELS.has(next.emoji_level)) next.emoji_level = 'low';
+  next.seasonality_enabled = next.seasonality_enabled !== false;
+  next.safe_debate_enabled = Boolean(next.safe_debate_enabled);
+  if (next.content_mode === 'safe_debate' && !next.safe_debate_enabled) next.content_mode = 'question';
+  next.content_style_note = next.content_style_note == null ? '' : String(next.content_style_note).slice(0, 1000);
   return next;
 }
 
@@ -47,6 +62,14 @@ export const createAccount = (payload) => dbInsert('accounts', normalizeAccount(
   automation_status: 'paused',
   forbidden_topics: [],
   forbidden_words: ['100%', '무조건', '완벽', '보장', '치료', '예방', '다이어트 약', '보조제', '가르시니아', '효과 보장', '체중감량 보장'],
+  content_mode: 'empathy',
+  content_intensity: 'normal',
+  seasonality_enabled: true,
+  comment_induction_style: 'soft_question',
+  product_mention_style: 'natural',
+  emoji_level: 'low',
+  safe_debate_enabled: false,
+  content_style_note: '',
   daily_post_min: 1,
   daily_post_max: 3,
   active_time_windows: [{ start: '09:00', end: '11:00' }, { start: '20:00', end: '23:00' }],

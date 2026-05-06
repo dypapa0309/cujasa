@@ -27,12 +27,13 @@ export default function CustomerRunPage({
   const automationRunning = automationStatus === 'running';
   const scheduleText = formatSchedule(account);
 
-  const runPreflight = async ({ showModal = true } = {}) => {
+  const runPreflight = async ({ showModal = true, mode = null } = {}) => {
     if (!account?.id) return null;
     setChecking(true);
     setRunError(null);
     try {
-      const result = await api.get(`/api/accounts/${account.id}/preflight`);
+      const suffix = mode ? `?mode=${encodeURIComponent(mode)}` : '';
+      const result = await api.get(`/api/accounts/${account.id}/preflight${suffix}`);
       setLastCheck(result);
       if (showModal) setPreflight(result);
       toast(result.canPublish ? '현재 설정 점검을 통과했습니다.' : '자동화 전에 조치할 항목이 있습니다.', result.canPublish ? 'success' : 'error');
@@ -66,7 +67,7 @@ export default function CustomerRunPage({
 
     try {
       if (nextStatus === 'running') {
-        const check = await runPreflight({ showModal: false });
+        const check = await runPreflight({ showModal: false, mode: 'start' });
         if (!check?.canPublish) {
           setPreflight(check);
           toast('자동화 실행 전에 조치할 항목이 있습니다.', 'error');
@@ -116,6 +117,12 @@ export default function CustomerRunPage({
       toast('자동화가 켜졌고 오늘 예약을 생성했습니다.', 'success');
       onPipelineDone?.(pipelineResult);
     } catch (err) {
+      if (err.code === 'FREE_TRIAL_LIMIT_REACHED' || err.upgradeRequired) {
+        toast('무료 체험 포스팅 3회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
+        setTab?.('billing');
+        onPipelineRunningChange?.(false);
+        return;
+      }
       if (err.preflight) {
         setPreflight(err.preflight);
         toast('자동화 실행 전에 조치할 항목이 있습니다.', 'error');
@@ -204,7 +211,7 @@ export default function CustomerRunPage({
           <button
             type="button"
             onClick={() => setAutomation(automationRunning ? 'paused' : 'running')}
-            disabled={checking || actioning || (!automationRunning && trialBlocked)}
+            disabled={checking || actioning}
             className={`rounded-xl px-4 py-3 text-sm font-black disabled:cursor-not-allowed disabled:opacity-50 ${
               automationRunning
                 ? 'border border-rose-200 bg-white text-rose-600'
@@ -215,7 +222,7 @@ export default function CustomerRunPage({
               ? '처리 중...'
               : automationRunning
                 ? <span className="inline-flex items-center justify-center gap-2"><PauseCircle size={18} /> 자동화 중지</span>
-                : trialBlocked ? '무료 체험 종료' : '자동화 시작'}
+                : trialBlocked ? '결제하고 계속하기' : '자동화 시작'}
           </button>
         </div>
       </div>

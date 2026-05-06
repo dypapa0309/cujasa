@@ -45,7 +45,8 @@ export async function runPipelineForAccount(accountId, options = {}) {
   const account = await getAccount(accountId);
   await assertAccountOwnerCanOperate(account.id);
   assertAutomationRunning(account, 'create reservations');
-  const preflight = await preflightAccount(account.id);
+  const allowInitialLinkDiscovery = Boolean(options.allowInitialLinkDiscovery || options.mode === 'start');
+  const preflight = await preflightAccount(account.id, { allowInitialLinkDiscovery });
   assertPreflightCanPublish(preflight);
   const run = await startPipelineRun(account, options.requestedBy || 'manual');
   const preflightWarnings = (preflight.checks || [])
@@ -154,7 +155,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
     await progress({ percent: 85, stage: 'posts_done', label: `${totalPosts}개 콘텐츠를 준비했습니다`, topicsTotal: topics.length, topicsDone: topics.length, postsCreated: totalPosts });
 
     await progress({ percent: 90, stage: 'queue', label: '예약 큐에 등록하고 있습니다', topicsTotal: topics.length, topicsDone: topics.length, postsCreated: totalPosts });
-    const queued = await createDailyQueue(account.id);
+    const queued = await createDailyQueue(account.id, { skipPreflight: allowInitialLinkDiscovery });
     result.steps.queued = queued.length;
     result.topicsCount = topics.length;
     result.postsCount = totalPosts;
@@ -164,7 +165,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
       const message = createNoQueueMessage(queued.diagnostics);
       result.ok = false;
       result.status = 'error';
-      result.code = 'NO_QUEUE_CREATED';
+      result.code = queued.diagnostics?.reasonCode || 'NO_QUEUE_CREATED';
       result.message = message;
       result.error = message;
       await progress({

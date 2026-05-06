@@ -1,4 +1,4 @@
-import { dbGet, dbList, dbUpdate } from './supabaseService.js';
+import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
 
 const DEFAULT_FREE_LIMIT = 3;
 
@@ -89,6 +89,39 @@ export async function assertAccountCanUpload(accountId) {
   return assertUserCanStartTrialAction(owner.user_id);
 }
 
+export async function getTrialStatusForAccount(accountId) {
+  const owner = await ownerForAccount(accountId);
+  if (!owner) return null;
+  return getTrialStatusForUser(owner.user_id);
+}
+
+async function pauseFreeTrialUserAutomation(userId, sourceAccountId, status) {
+  const assignments = await dbList('user_accounts', { user_id: userId });
+  const accountIds = assignments.map((row) => row.account_id).filter(Boolean);
+  const now = new Date().toISOString();
+  for (const accountId of accountIds) {
+    await dbUpdate('accounts', { id: accountId }, {
+      automation_status: 'paused',
+      automation_stopped_at: now
+    }).catch(() => []);
+    const queueRows = await dbList('post_queue', { account_id: accountId }).catch(() => []);
+    for (const row of queueRows.filter((item) => ['scheduled', 'retry'].includes(item.status))) {
+      await dbUpdate('post_queue', { id: row.id }, {
+        status: 'skipped',
+        error_message: '무료 체험 포스팅 3회 완료로 자동화가 중지되었습니다.'
+      }).catch(() => []);
+    }
+  }
+  await logActivity({
+    account_id: sourceAccountId,
+    user_id: userId,
+    action: 'free_trial_limit_reached_automation_paused',
+    level: 'info',
+    message: '무료 체험 3회 업로드 완료로 자동화를 중지했습니다.',
+    payload: { limit: status.limit, used: status.used, accountIds }
+  }).catch(() => null);
+}
+
 export async function recordSuccessfulUpload(accountId) {
   const owner = await ownerForAccount(accountId);
   if (!owner) return null;
@@ -104,5 +137,9 @@ export async function recordSuccessfulUpload(accountId) {
     ...(nextUsed >= limit ? { trial_blocked_at: new Date().toISOString() } : {})
   };
   const [updated] = await dbUpdate('users', { id: user.id }, patch);
-  return mapTrialStatus(updated || { ...user, ...patch });
+  const status = mapTrialStatus(updated || { ...user, ...patch });
+  if (nextUsed >= limit && Number(user.free_post_used ?? 0) < limit) {
+    await pauseFreeTrialUserAutomation(owner.user_id, accountId, status);
+  }
+  return status;
 }

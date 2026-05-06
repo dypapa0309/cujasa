@@ -75,10 +75,8 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
-    let user = null;
     if (req.user?.type === 'user') {
       await assertUserCanOperate(req.user.userId);
-      user = await dbGet('users', { id: req.user.userId });
       const current = await dbList('user_accounts', { user_id: req.user.userId });
       if (current.length >= req.user.maxAccounts) {
         const error = new Error(`계정은 최대 ${req.user.maxAccounts}개까지 생성할 수 있습니다. 추가 계정은 별도 문의해주세요.`);
@@ -87,10 +85,6 @@ router.post('/', async (req, res, next) => {
       }
     }
     const payload = stripBlankSensitiveAccountFields(req.body);
-    if (req.user?.type === 'user' && user?.plan === 'free' && payload.link_post_ratio === undefined) {
-      payload.link_post_ratio = 0;
-      payload.no_link_post_ratio = 1;
-    }
     const account = await createAccount(payload);
     if (req.user?.type === 'user') {
       await dbInsert('user_accounts', { user_id: req.user.userId, account_id: account.id });
@@ -113,7 +107,8 @@ router.get('/:accountId/preflight', async (req, res, next) => {
     if (req.user?.type === 'user' && !req.user.allowedAccountIds.includes(req.params.accountId)) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    res.json(await preflightAccount(req.params.accountId));
+    const mode = req.query.mode === 'start' ? 'start' : undefined;
+    res.json(await preflightAccount(req.params.accountId, { mode }));
   } catch (e) { next(e); }
 });
 
@@ -153,11 +148,15 @@ router.patch('/:accountId', async (req, res, next) => {
       ? (({ daily_post_min, daily_post_max, active_time_windows, min_interval_minutes,
              link_post_ratio, no_link_post_ratio,
              name, account_handle, target_audience, content_scope, tone, cta_style,
+             content_mode, content_intensity, seasonality_enabled, comment_induction_style,
+             product_mention_style, emoji_level, safe_debate_enabled, content_style_note,
              forbidden_topics, forbidden_words,
              coupang_access_key, coupang_secret_key, coupang_partner_id, coupang_tracking_code }) =>
           ({ daily_post_min, daily_post_max, active_time_windows, min_interval_minutes,
              link_post_ratio, no_link_post_ratio,
              name, account_handle, target_audience, content_scope, tone, cta_style,
+             content_mode, content_intensity, seasonality_enabled, comment_induction_style,
+             product_mention_style, emoji_level, safe_debate_enabled, content_style_note,
              forbidden_topics, forbidden_words,
              coupang_access_key, coupang_secret_key, coupang_partner_id, coupang_tracking_code })
         )(req.body)
@@ -198,7 +197,7 @@ router.patch('/:accountId/automation', async (req, res, next) => {
     }
 
     if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
-    const preflight = await preflightAccount(accountId);
+    const preflight = await preflightAccount(accountId, { mode: 'start' });
     assertPreflightCanPublish(preflight);
 
     const updated = await setAutomationStatus(accountId, AUTOMATION_RUNNING);
@@ -229,7 +228,11 @@ router.patch('/:accountId/automation', async (req, res, next) => {
 
     let pipelineResult;
     try {
-      pipelineResult = await runPipelineForAccount(accountId, { requestedBy: req.user?.email || req.user?.type || 'manual' });
+      pipelineResult = await runPipelineForAccount(accountId, {
+        requestedBy: req.user?.email || req.user?.type || 'manual',
+        mode: 'start',
+        allowInitialLinkDiscovery: true
+      });
     } catch (pipelineError) {
       const paused = await setAutomationStatus(accountId, AUTOMATION_PAUSED);
       await safeLogActivity({
@@ -301,7 +304,11 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
         message: '이미 예약 작업 실행 중입니다. 완료될 때까지 잠시만 기다려주세요.'
       });
     }
-    const pipelineResult = await runPipelineForAccount(req.params.accountId, { requestedBy: req.user?.email || req.user?.type || 'manual' });
+    const pipelineResult = await runPipelineForAccount(req.params.accountId, {
+      requestedBy: req.user?.email || req.user?.type || 'manual',
+      mode: 'start',
+      allowInitialLinkDiscovery: true
+    });
     const queuedCount = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? null;
     if (pipelineResult?.ok === false || pipelineResult?.status === 'error' || queuedCount === 0) {
       const paused = await setAutomationStatus(req.params.accountId, AUTOMATION_PAUSED);

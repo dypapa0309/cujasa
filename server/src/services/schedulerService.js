@@ -110,10 +110,13 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
     throw error;
   }
   const status = post.status === 'manual_required' || post.risk_level === 'high' ? 'manual_required' : 'scheduled';
-  const linkCandidate = await assertRealLinkCandidateForPost(post, account, 'add post to queue');
-  const postMode = ['link', 'no_link'].includes(options.postMode)
+  const requestedPostMode = ['link', 'no_link'].includes(options.postMode)
     ? options.postMode
-    : (linkCandidate.product ? 'link' : 'no_link');
+    : null;
+  const linkCandidate = requestedPostMode === 'no_link'
+    ? { postProduct: null, product: null }
+    : await assertRealLinkCandidateForPost(post, account, 'add post to queue');
+  const postMode = requestedPostMode || (linkCandidate.product ? 'link' : 'no_link');
   if (postMode === 'link' && !linkCandidate.product) {
     throw createNoRealCoupangLinksError('링크 글로 큐에 추가하려면 실제 쿠팡 상품 선택이 필요합니다.');
   }
@@ -139,7 +142,7 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
 
 export async function createDailyQueue(accountId, options = {}) {
   await assertAccountOwnerCanOperate(accountId);
-  await assertAccountCanUpload(accountId);
+  const trialStatus = await assertAccountCanUpload(accountId);
   const account = await dbGet('accounts', { id: accountId });
   if (account?.status !== 'active') {
     const error = new Error(`Account is ${account?.status || 'missing'}; cannot create daily queue`);
@@ -218,7 +221,10 @@ export async function createDailyQueue(accountId, options = {}) {
   }
 
   // link_post_ratio 적용: 링크 있는 것과 없는 것을 비율에 맞게 섞기
-  const times = createDailySchedule(account);
+  const scheduleTimes = createDailySchedule(account);
+  const times = trialStatus?.plan === 'free'
+    ? scheduleTimes.slice(0, Math.max(0, Number(trialStatus.remaining ?? scheduleTimes.length)))
+    : scheduleTimes;
   const total = times.length;
   const linkCount = Math.round(total * linkRatio);
   const repairOutcomes = [];
@@ -242,6 +248,9 @@ export async function createDailyQueue(accountId, options = {}) {
     availableNoLinkPosts: allDrafts.length - withLink.length,
     selectedLinkPosts: primaryWithLink.length,
     selectedNoLinkPosts: primaryWithoutLink.length,
+    trialPlan: trialStatus?.plan || null,
+    trialRemaining: trialStatus?.remaining ?? null,
+    uncappedScheduleCount: scheduleTimes.length,
     productRepairAttempts: repairOutcomes.length,
     productRepairFallbacks: repairOutcomes.filter((row) => row.finalMode === 'no_link').length,
     repairOutcomes: repairOutcomes.map((row) => ({

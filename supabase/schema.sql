@@ -22,6 +22,14 @@ create table if not exists accounts (
   forbidden_words jsonb not null default '[]',
   tone text,
   cta_style text,
+  content_mode text not null default 'empathy' check (content_mode in ('daily', 'empathy', 'problem_solution', 'checklist', 'question', 'safe_debate')),
+  content_intensity text not null default 'normal' check (content_intensity in ('soft', 'normal', 'strong')),
+  seasonality_enabled boolean not null default true,
+  comment_induction_style text not null default 'soft_question' check (comment_induction_style in ('none', 'soft_question', 'experience_question', 'choice_question')),
+  product_mention_style text not null default 'natural' check (product_mention_style in ('none', 'natural', 'direct')),
+  emoji_level text not null default 'low' check (emoji_level in ('none', 'low', 'medium')),
+  safe_debate_enabled boolean not null default false,
+  content_style_note text,
   daily_post_min int not null default 1,
   daily_post_max int not null default 3,
   active_time_windows jsonb not null default '[]',
@@ -65,6 +73,14 @@ alter table accounts add column if not exists coupang_partner_id text;
 alter table accounts add column if not exists coupang_tracking_code text;
 alter table accounts add column if not exists coupang_search_cooldown_until timestamptz;
 alter table accounts add column if not exists coupang_search_status text default 'ok';
+alter table accounts add column if not exists content_mode text not null default 'empathy';
+alter table accounts add column if not exists content_intensity text not null default 'normal';
+alter table accounts add column if not exists seasonality_enabled boolean not null default true;
+alter table accounts add column if not exists comment_induction_style text not null default 'soft_question';
+alter table accounts add column if not exists product_mention_style text not null default 'natural';
+alter table accounts add column if not exists emoji_level text not null default 'low';
+alter table accounts add column if not exists safe_debate_enabled boolean not null default false;
+alter table accounts add column if not exists content_style_note text;
 
 create table if not exists topics (
   id uuid primary key default gen_random_uuid(),

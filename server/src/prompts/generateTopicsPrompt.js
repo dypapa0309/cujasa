@@ -18,10 +18,13 @@ export function generateTopicsPrompt(account) {
           contentScope: account.content_scope,
           forbiddenTopics: account.forbidden_topics,
           forbiddenWords: account.forbidden_words,
-          tone: account.tone
+          tone: account.tone,
+          contentStrategy: accountProfile.strategy
         },
         guardrails: [
-          'Use currentDateKST and seasonKST as the only seasonal context.',
+          accountProfile.strategy.seasonalityEnabled
+            ? 'Use currentDateKST and seasonKST as the only seasonal context.'
+            : 'Do not force seasonal context into topic titles or angles.',
           'For spring/early-summer months, do not mention winter, cold wave, cold winter, thermal, padded jackets, gloves, or hot packs.',
           'Do not generate diet, supplement, medicine, treatment, prevention, or guaranteed-effect topics.',
           'stayWithinContentScope: topics must stay inside contentScope and targetAudience.',
@@ -31,7 +34,8 @@ export function generateTopicsPrompt(account) {
           'Prefer specific Korean product terms such as 수납함, 접이식 테이블, 차량용 청소기, 미끄럼방지 매트, 멀티탭 정리함.',
           'Generate 3-5 searchKeywords per topic and make each keyword meaningfully different.',
           'If tone includes review/emotional wording, topic angles must support that exact style instead of generic tips.',
-          'Avoid all forbiddenTopics and forbiddenWords.'
+          'Avoid all forbiddenTopics and forbiddenWords.',
+          ...accountProfile.rules
         ],
         schema: {
           topics: [{

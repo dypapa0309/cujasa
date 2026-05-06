@@ -9,6 +9,19 @@ import { prepareGeneratedPostBody } from '../utils/koreanContentQuality.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { validatePostsResponse } from '../utils/aiResponseSchemas.js';
 
+function getFallbackContentType(account = {}) {
+  const mode = account.content_mode || 'empathy';
+  const typeMap = {
+    daily: '일상형',
+    empathy: '공감형',
+    problem_solution: '문제 해결형',
+    checklist: '체크리스트형',
+    question: '질문형',
+    safe_debate: '질문형'
+  };
+  return typeMap[mode] || '공감형';
+}
+
 export async function generatePosts(topicId) {
   const topic = await dbGet('topics', { id: topicId });
   const account = await getAccount(topic.account_id);
@@ -19,7 +32,7 @@ export async function generatePosts(topicId) {
   }))).filter(Boolean);
   const fallback = {
     posts: [{
-      contentType: '공감형',
+      contentType: getFallbackContentType(account),
       body: buildFallbackPostBody(topic, account),
       riskLevel: 'low'
     }]
@@ -37,6 +50,7 @@ export async function generatePosts(topicId) {
   for (const item of result.posts || []) {
     const risk = checkAndRewriteRisk(item.body);
     let prepared = prepareGeneratedPostBody(risk.body);
+    let contentTypeToSave = item.contentType || getFallbackContentType(account);
     if (!prepared.body || prepared.body.length < 20) {
       prepared = prepareGeneratedPostBody(buildFallbackPostBody(topic, account));
       prepared.warnings.push('fallback_body_used_after_cta_cleanup');
@@ -68,21 +82,36 @@ export async function generatePosts(topicId) {
     }
     const styleFit = validatePostStyleFit(prepared.body, account);
     if (!styleFit.allowed) {
+      const originalBody = prepared.body;
+      const fallbackPrepared = prepareGeneratedPostBody(buildFallbackPostBody(topic, account));
+      const fallbackStyleFit = validatePostStyleFit(fallbackPrepared.body, account);
       await logActivity({
         account_id: topic.account_id,
         project_id: topic.project_id,
         topic_id: topic.id,
-        action: 'post_style_warning',
+        action: fallbackStyleFit.allowed ? 'post_style_rewritten' : 'post_style_blocked',
         level: 'info',
         message: styleFit.reasons.join('; '),
-        payload: { contentType: item.contentType, body: prepared.body, tone: styleFit.profile.tone }
+        payload: {
+          contentType: item.contentType,
+          originalBody,
+          fallbackBody: fallbackPrepared.body,
+          reasons: styleFit.reasons,
+          fallbackReasons: fallbackStyleFit.reasons,
+          contentMode: styleFit.profile.strategy.effectiveMode
+        }
       });
+      if (!fallbackStyleFit.allowed) {
+        continue;
+      }
+      prepared = fallbackPrepared;
+      contentTypeToSave = getFallbackContentType(account);
     }
     posts.push(await dbInsert('posts', {
       project_id: topic.project_id,
       account_id: topic.account_id,
       topic_id: topic.id,
-      content_type: item.contentType,
+      content_type: contentTypeToSave,
       body: prepared.body,
       risk_level: risk.riskLevel === 'high' ? 'high' : item.riskLevel || risk.riskLevel,
       status: risk.riskLevel === 'high' ? 'manual_required' : 'draft'

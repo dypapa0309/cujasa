@@ -18,7 +18,8 @@ export function generatePostsPrompt(topic, products, account) {
           targetAudience: account.target_audience,
           contentScope: account.content_scope,
           forbiddenTopics: account.forbidden_topics,
-          forbiddenWords: account.forbidden_words
+          forbiddenWords: account.forbidden_words,
+          contentStrategy: accountProfile.strategy
         },
         topic,
         selectedProducts: products.map((p) => ({
@@ -29,22 +30,26 @@ export function generatePostsPrompt(topic, products, account) {
           reason: p.recommendation_reason
         })),
         rules: [
-          'Use currentDateKST and seasonKST as the seasonal context.',
+          accountProfile.strategy.seasonalityEnabled
+            ? 'Use currentDateKST and seasonKST as the seasonal context.'
+            : 'Do not force seasonal references.',
           'Do not mention off-season winter/cold-wave/thermal/padded/glove/hot-pack themes unless seasonKST is winter.',
           'Do not write diet, supplement, medicine, treatment, prevention, or guaranteed-effect content.',
           'stayWithinContentScope: keep every post inside the account contentScope.',
           'Make the first sentence naturally reflect the target reader and situation.',
           'Write for accountProfile.targetAudience, not a generic reader.',
           'Only use product/category situations inside accountProfile.contentScope.',
-          'When selectedProducts exist, make the post situation naturally explain why those product categories solve the reader problem.',
-          'Do not list unrelated generic categories. Anchor the post in the selected product use case.',
+          accountProfile.strategy.productMentionStyle === 'none'
+            ? 'When selectedProducts exist, use the situation only; do not mention product names or product categories in the body.'
+            : 'When selectedProducts exist, make the post situation naturally explain why those product categories solve the reader problem.',
+          'Do not list unrelated generic categories. Anchor the post in the selected product use case without sounding like an ad.',
           'If tone contains 후기/review, use review-like observation without pretending actual personal use.',
           'If tone contains 설레/emotional, use subtle anticipation only when it fits. Do not force emotional keywords.',
           'Use natural Korean spacing and line breaks. Avoid awkward machine-translated phrasing.',
           'Use zero or one emoji at most. Never decorate every sentence with emoji.',
           'Do not use bland generic phrases if preferredExpressions are provided.',
           'Do not mention links, comments, profile links, prices, cheapest price, or where to buy in the post body.',
-          'The post body must read like a normal standalone Threads post. CTA, link, and ad disclosure are handled separately in a reply.',
+          'The post body must read like a normal standalone Threads post. CTA, link, and ad disclosure are attached later during upload.',
           'Never write phrases like "아래 링크 확인", "자세한 건 링크", "댓글 확인", "최저가", or "할인 정보".',
           'For kitchen, cleaning, home, or homemaking accounts, write like a short natural Threads post, not a blog article.',
           'Avoid long numbered checklists unless the topic explicitly demands a checklist.',
@@ -52,10 +57,11 @@ export function generatePostsPrompt(topic, products, account) {
           'Strong first sentence',
           'Short sentences',
           'Minimize ad tone',
-          'Do not overuse product names',
-          'Avoid 100%, 무조건, 완벽, 보장, 치료, 예방'
+          accountProfile.strategy.productMentionStyle === 'none' ? 'Do not use product names.' : 'Do not overuse product names',
+          'Avoid 100%, 무조건, 완벽, 보장, 치료, 예방',
+          ...accountProfile.rules
         ],
-        contentTypes: ['공감형', '문제 해결형', '체크리스트형', '질문형', '일상형'],
+        contentTypes: accountProfile.strategy.allowedContentTypes,
         schema: { posts: [{ contentType: 'string', body: 'string', styleChecklist: ['string'], riskLevel: 'low | medium | high' }] }
       })
     }

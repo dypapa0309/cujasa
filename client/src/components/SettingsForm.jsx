@@ -1,4 +1,11 @@
 import SensitiveInput from './SensitiveInput.jsx';
+import {
+  commentStyleOptions,
+  contentIntensityOptions,
+  contentModeOptions,
+  emojiLevelOptions,
+  productMentionOptions
+} from '../config/contentStrategy.js';
 
 const sensitiveKeys = new Set([
   'threads_access_token',
@@ -10,6 +17,11 @@ const sensitiveKeys = new Set([
 
 export default function SettingsForm({ form, setForm, onSubmit, saving, onRevealSensitive }) {
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
+  const updateContentMode = (value) => setForm((prev) => ({
+    ...prev,
+    content_mode: value,
+    safe_debate_enabled: value === 'safe_debate' ? true : prev.safe_debate_enabled
+  }));
   const updateList = (key, value) => update(key, value.split('\n').map((item) => item.trim()).filter(Boolean));
   const windows = form.active_time_windows?.length ? form.active_time_windows : [{ start: '09:00', end: '11:00' }];
   const updateWindow = (index, key, value) => {
@@ -48,8 +60,6 @@ export default function SettingsForm({ form, setForm, onSubmit, saving, onReveal
         ['account_handle', '핸들', 'text'],
         ['target_audience', '타깃', 'text'],
         ['content_scope', '주제 범위', 'text'],
-        ['tone', '톤', 'text'],
-        ['cta_style', 'CTA 스타일', 'text'],
         ['threads_access_token', 'Threads 액세스 토큰', 'password'],
         ['coupang_access_key', '쿠팡 Access Key', 'text'],
         ['coupang_secret_key', '쿠팡 Secret Key', 'password'],
@@ -71,6 +81,53 @@ export default function SettingsForm({ form, setForm, onSubmit, saving, onReveal
           )}
         </label>
       ))}
+      <div className="grid gap-4 rounded border border-line p-4 md:col-span-2">
+        <div>
+          <div className="text-sm font-bold text-slate-800">콘텐츠 방식</div>
+          <div className="mt-1 text-xs text-slate-400">자유 입력보다 아래 선택값이 생성에 우선 반영됩니다.</div>
+        </div>
+        <div className="grid gap-2 md:grid-cols-3">
+          {contentModeOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => updateContentMode(option.value)}
+              className={`rounded border px-3 py-2 text-left text-sm ${form.content_mode === option.value ? 'border-coupang bg-blue-50 text-coupang' : 'border-line bg-white text-slate-600'}`}
+            >
+              <div className="font-bold">{option.label}</div>
+              <div className="mt-1 text-xs text-slate-400">{option.description}</div>
+            </button>
+          ))}
+        </div>
+        <div className="grid gap-3 md:grid-cols-4">
+          <SelectField label="강도" value={form.content_intensity || 'normal'} onChange={(value) => update('content_intensity', value)} options={contentIntensityOptions} />
+          <SelectField label="댓글 유도" value={form.comment_induction_style || 'soft_question'} onChange={(value) => update('comment_induction_style', value)} options={commentStyleOptions} />
+          <SelectField label="상품 언급" value={form.product_mention_style || 'natural'} onChange={(value) => update('product_mention_style', value)} options={productMentionOptions} />
+          <SelectField label="이모지" value={form.emoji_level || 'low'} onChange={(value) => update('emoji_level', value)} options={emojiLevelOptions} />
+        </div>
+        <div className="flex flex-wrap gap-4 text-sm">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={form.seasonality_enabled !== false} onChange={(e) => update('seasonality_enabled', e.target.checked)} />
+            계절감 반영
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={Boolean(form.safe_debate_enabled)}
+              onChange={(e) => setForm((prev) => ({
+                ...prev,
+                safe_debate_enabled: e.target.checked,
+                content_mode: !e.target.checked && prev.content_mode === 'safe_debate' ? 'question' : prev.content_mode
+              }))}
+            />
+            안전 논쟁형 허용
+          </label>
+        </div>
+        <label className="grid gap-1 text-sm">
+          <span className="font-medium">추가 요청사항</span>
+          <textarea rows="3" className="rounded border border-line px-3 py-2" value={form.content_style_note || ''} onChange={(e) => update('content_style_note', e.target.value)} />
+        </label>
+      </div>
       <label className="grid gap-1 text-sm md:col-span-2">
         <span className="font-medium">금지 주제</span>
         <textarea
@@ -133,5 +190,16 @@ export default function SettingsForm({ form, setForm, onSubmit, saving, onReveal
         </button>
       </div>
     </form>
+  );
+}
+
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <label className="grid gap-1 text-sm">
+      <span className="font-medium">{label}</span>
+      <select className="rounded border border-line px-3 py-2" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
   );
 }
