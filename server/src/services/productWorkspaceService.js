@@ -2,6 +2,7 @@ import { productById } from '../config/products.js';
 import { dbGet, dbUpdate } from './supabaseService.js';
 import {
   buildPolibotCatalog,
+  buildPolibotCatalogItems,
   inferPolibotFileType,
   normalizePolibotKnowledgeItems,
   polibotSeedKnowledgeSources,
@@ -306,7 +307,11 @@ export async function getProductWorkspace(userId, productId) {
     next.knowledgeSources = merged
       .filter((item, index, all) => all.findIndex((row) => row.id === item.id || `${row.month}-${row.fileName}` === `${item.month}-${item.fileName}`) === index)
       .sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')))
-      .slice(0, 500);
+      .slice(0, 500)
+      .map((source) => ({
+        ...source,
+        catalogItems: sourceCatalogItems(source)
+      }));
     next.latestKnowledgeMonth = next.knowledgeSources[0]?.month || next.latestKnowledgeMonth || '';
     next.catalog = buildPolibotCatalog(next.knowledgeSources);
     next.qualityReport = buildPolibotQualityReport(next.knowledgeSources);
@@ -506,13 +511,15 @@ export async function savePolibotKnowledge(userId, { files = [], month = '', not
 }
 
 function polibotEvidencePayload(source = {}) {
+  const catalogItems = sourceCatalogItems(source);
   return {
     fileName: source.fileName,
     month: source.month,
     company: source.company,
     companies: source.companies || [],
     productGroup: source.productGroup,
-    productNames: cleanPolibotProductNames(sourceProductNameCandidates(source)),
+    productNames: catalogItems.map((item) => item.productName),
+    catalogItems,
     keywords: source.keywordHits?.length ? source.keywordHits : source.keywords || [],
     matchScore: source.matchScore || 0,
     targetAudience: source.targetAudience || [],
@@ -559,6 +566,11 @@ function sourceProductNameCandidates(source = {}) {
   ];
 }
 
+function sourceCatalogItems(source = {}) {
+  const items = buildPolibotCatalogItems([source]);
+  return items.filter((item) => ['confirmed', 'auto'].includes(item.status) && Number(item.confidence || 0) >= 65);
+}
+
 function cleanPolibotProductNames(names = []) {
   return [...new Set((Array.isArray(names) ? names : [])
     .flatMap(splitPolibotProductText)
@@ -573,16 +585,21 @@ function cleanPolibotProductNames(names = []) {
 
 function classifyPolibotProducts(source = {}) {
   const rawCandidates = sourceProductNameCandidates(source).flatMap(splitPolibotProductText);
-  const cleanNames = cleanPolibotProductNames(sourceProductNameCandidates(source));
+  const catalogItems = sourceCatalogItems(source);
+  const cleanNames = catalogItems.map((item) => item.productName);
   const cleanSet = new Set(cleanNames);
+  const productCandidates = Array.isArray(source.productCandidates) ? source.productCandidates : [];
   const excluded = [...new Set(rawCandidates
     .map(normalizePolibotProductName)
     .filter((name) => name && !cleanSet.has(name))
     .filter((name) => POLIBOT_BAD_PRODUCT_PATTERN.test(name) || POLIBOT_GENERIC_PRODUCT_NAMES.has(name.replace(/\s+/g, ''))))]
+    .concat(productCandidates.filter((item) => item.status === 'excluded').map((item) => item.name))
     .slice(0, 8);
-  const status = cleanNames.length > 0
-    ? (cleanNames.some((name) => /\(무\)|무배당|The|THE|Plus|플러스|마이라이프|슬기로운|알뜰한|경영인/i.test(name)) ? 'confirmed' : 'auto')
-    : (rawCandidates.length > 0 ? 'review' : 'none');
+  const status = catalogItems.some((item) => item.status === 'confirmed')
+    ? 'confirmed'
+    : catalogItems.length > 0
+      ? 'auto'
+      : (rawCandidates.length > 0 || productCandidates.some((item) => item.status === 'review') ? 'review' : 'none');
   return {
     sourceId: source.id || `${source.month}-${source.fileName}`,
     fileName: source.fileName,
@@ -598,13 +615,15 @@ function classifyPolibotProducts(source = {}) {
       none: '상품명 부족'
     }[status],
     productNames: cleanNames,
-    excludedPhrases: excluded
+    excludedPhrases: excluded,
+    catalogItems
   };
 }
 
 function buildPolibotQualityReport(knowledgeSources = []) {
   const catalog = knowledgeSources.map(classifyPolibotProducts);
-  const recommended = catalog.filter((item) => ['confirmed', 'auto'].includes(item.status) && item.productNames.length > 0);
+  const catalogItems = buildPolibotCatalogItems(knowledgeSources);
+  const recommended = catalogItems.filter((item) => ['confirmed', 'auto'].includes(item.status) && item.productName);
   const review = catalog.filter((item) => item.status === 'review');
   const ocrNeeded = knowledgeSources.filter((item) => item.fileType === 'image').length;
   const excludedPhrases = catalog.flatMap((item) => item.excludedPhrases || []);
@@ -616,13 +635,14 @@ function buildPolibotQualityReport(knowledgeSources = []) {
     .slice(0, 20);
   return {
     totalSources: knowledgeSources.length,
-    recommendableProducts: recommended.reduce((sum, item) => sum + item.productNames.length, 0),
+    recommendableProducts: new Set(recommended.map((item) => `${item.company}-${item.productName}`)).size,
     reviewNeededProducts: review.length,
     excludedPhrases: excludedPhrases.length,
     ocrNeeded,
     companies,
     productGroups,
     keywords,
+    catalogItems: catalogItems.slice(0, 120),
     catalog: catalog.slice(0, 80)
   };
 }
@@ -697,7 +717,7 @@ function polibotConfidence({ profile, sources, keywordHits, productNames, qualit
 
 function buildPolibotExcludedCandidates(evidence = [], profile = {}) {
   return evidence
-    .filter((source) => cleanPolibotProductNames(sourceProductNameCandidates(source)).length === 0)
+    .filter((source) => sourceCatalogItems(source).length === 0)
     .slice(0, 4)
     .map((source) => ({
       name: source.fileName || '자료명 미입력',
@@ -714,10 +734,11 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
   const primary = sources[0] || {};
   const keywordHits = [...new Set(sources.flatMap((source) => source.keywordHits || []).filter(Boolean))].slice(0, 6);
   const productGroup = primary.productGroup || label;
-  const productNames = cleanPolibotProductNames(sources.flatMap(sourceProductNameCandidates));
+  const catalogItems = sources.flatMap(sourceCatalogItems);
+  const productNames = [...new Set(catalogItems.map((item) => item.productName).filter(Boolean))];
   if (productNames.length === 0) return null;
   if (type === 'bundle' && productNames.length < 2) return null;
-  const sourceCompanies = [...new Set(sources.flatMap((source) => source.companies?.length ? source.companies : [source.company]).filter((company) => company && company !== '미분류'))];
+  const sourceCompanies = [...new Set(catalogItems.flatMap((item) => item.companies?.length ? item.companies : [item.company]).filter((company) => company && company !== '미분류'))];
   const mainName = productNames[0];
   const prefix = sourceCompanies[0] && !mainName.includes(sourceCompanies[0]) ? `${sourceCompanies[0]} ` : '';
   const name = type === 'bundle'
@@ -793,9 +814,9 @@ export async function savePolibotRecommendation(userId, {
     .filter((source) => Number(source.matchScore || 0) >= 9 || (source.keywordHits || []).length > 0)
     .slice(0, 8);
   const productEvidence = evidence
-    .filter((source) => cleanPolibotProductNames(sourceProductNameCandidates(source)).length > 0)
+    .filter((source) => sourceCatalogItems(source).length > 0)
     .slice(0, 6);
-  const recommendationEvidence = productEvidence.length ? productEvidence : evidence.slice(0, 3);
+  const recommendationEvidence = productEvidence;
   const labels = recommendationEvidence.map((source) => source.productGroup || '보장 검토');
   const singleRecommendations = labels.slice(0, 4).map((label, index) => buildPolibotRecommendation({
     profile: enrichedProfile,
@@ -825,7 +846,9 @@ export async function savePolibotRecommendation(userId, {
     excludedCandidates: buildPolibotExcludedCandidates(evidence, profile),
     recommendationNotice: recommendations.length
       ? ''
-      : '입력한 고객 조건과 직접 맞는 자료를 찾지 못했어요. 암/뇌/심장/실손 같은 보장 키워드가 들어간 최신 상품 비교표나 설계 자료를 먼저 추가해 주세요.'
+      : (qualityReport.recommendableProducts > 0
+        ? '추천 가능한 상품은 있지만 입력한 고객 조건과 직접 맞는 조합을 찾지 못했어요. 니즈, 예산, 보험사 조건을 조금 더 구체화해 주세요.'
+        : '추천 가능한 확정 상품 데이터가 부족해요. 상품 비교표나 설계 자료를 추가하거나 검수 필요 상품을 먼저 정리해 주세요.')
   };
   return recommendations.length
     ? updateWorkspaceAndConsume(userId, 'polibot', patch)

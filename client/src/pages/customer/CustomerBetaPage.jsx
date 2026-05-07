@@ -2868,6 +2868,12 @@ function PolibotConsultationDraft({ draft, profile }) {
 }
 
 function PolibotRecommendationModal({ recommendation, profile, onClose, onSave }) {
+  const [feedback, setFeedback] = useState(recommendation.feedback || '');
+  const saveWithFeedback = () => onSave({
+    ...recommendation,
+    feedback,
+    feedbackSavedAt: feedback ? new Date().toISOString() : recommendation.feedbackSavedAt
+  });
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-4 backdrop-blur-sm">
       <div className="max-h-[86vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/10 bg-[#191919] p-5 shadow-2xl shadow-black/60">
@@ -2902,6 +2908,21 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave }
             </div>
           )}
           <div className="grid gap-2">
+            <div className="text-xs font-black text-zinc-500">검토 피드백</div>
+            <div className="grid grid-cols-3 gap-2 rounded-2xl bg-black/25 p-1">
+              {['좋음', '애매함', '틀림'].map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setFeedback(value)}
+                  className={`rounded-xl px-3 py-2 text-sm font-black ${feedback === value ? 'bg-white text-zinc-950' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-2">
             <div className="text-xs font-black text-zinc-500">근거 자료</div>
             {(recommendation.evidence || []).map((source) => (
               <div key={`${source.month}-${source.fileName}`} className="rounded-2xl bg-black/25 px-4 py-3 text-sm">
@@ -2913,7 +2934,7 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave }
               </div>
             ))}
           </div>
-          <DarkButton onClick={onSave}>고객목록에 저장</DarkButton>
+          <DarkButton onClick={saveWithFeedback}>고객목록에 저장</DarkButton>
         </div>
       </div>
     </div>
@@ -3053,7 +3074,7 @@ function PolibotDownloadPanel() {
         ].map(csvEscape).join(',');
       });
     } else if (filters.type === 'customers') {
-      header = ['customerName', 'age', 'gender', 'needs', 'budget', 'selectedRecommendation', 'confidence', 'excludedCandidates', 'memo', 'savedAt'];
+      header = ['customerName', 'age', 'gender', 'needs', 'budget', 'selectedRecommendation', 'confidence', 'feedback', 'excludedCandidates', 'memo', 'savedAt'];
       rows = rowsSource.map((customer) => [
         customer.name,
         customer.age,
@@ -3062,6 +3083,7 @@ function PolibotDownloadPanel() {
         customer.budget,
         customer.selectedRecommendation?.name || '',
         customer.selectedRecommendation?.confidence?.level || '',
+        customer.selectedRecommendation?.feedback || '',
         (customer.excludedCandidates || customer.selectedRecommendation?.excludedCandidates || []).map((item) => `${item.name}: ${item.reason}`).join(' | '),
         customer.memo || '',
         customer.updatedAt || customer.createdAt || ''
@@ -3079,13 +3101,14 @@ function PolibotDownloadPanel() {
         source.summary || ''
       ].map(csvEscape).join(','))));
     } else {
-      header = ['customerName', 'recommendationName', 'type', 'score', 'confidence', 'coverageGap', 'premium', 'cautions', 'excludedCandidates', 'nextQuestions', 'evidenceProducts', 'evidenceFiles'];
+      header = ['customerName', 'recommendationName', 'type', 'score', 'confidence', 'feedback', 'coverageGap', 'premium', 'cautions', 'excludedCandidates', 'nextQuestions', 'evidenceProducts', 'evidenceFiles'];
       rows = rowsSource.flatMap((customer) => (customer.recommendations || workspace.recommendations || []).map((rec) => [
         customer.name,
         rec.name,
         rec.type === 'bundle' ? '조합' : '단품',
         rec.score,
         rec.confidence?.level || '',
+        rec.feedback || '',
         rec.coverageGap,
         rec.premium,
         (rec.cautions || []).join(' | '),
