@@ -1013,8 +1013,8 @@ export default function CustomerBetaPage({
             )}
           </header>
 
-          <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4 pb-3 lg:px-10 lg:py-6">
-            <div className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col ${messages.length > 0 ? 'justify-end' : 'justify-start pt-5 sm:pt-8 lg:pt-[7vh]'}`}>
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4 pb-3 lg:px-10 lg:py-4">
+            <div className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col ${messages.length > 0 ? 'justify-end lg:pb-6' : 'justify-start pt-5 sm:pt-8 lg:pt-[4vh]'}`}>
               {messages.length === 0 && (
               <div className="text-center">
                 <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-400 lg:mb-5">
@@ -1042,8 +1042,8 @@ export default function CustomerBetaPage({
               )}
 
               {messages.length > 0 && (
-                <section className="mb-5 min-h-0 flex-1 overflow-y-auto px-1 py-4 text-left">
-                  <div className="mx-auto grid w-full max-w-3xl gap-3">
+                <section className="mb-5 min-h-0 flex-1 overflow-y-auto px-1 py-4 text-left lg:mb-3 lg:max-h-[min(52vh,520px)] lg:flex-none lg:py-2">
+                  <div className="mx-auto grid w-full max-w-3xl gap-3 lg:gap-2.5">
                     {messages.map((message) => (
                       <BetaChatMessage key={message.id} message={message} onOpenAction={openWorkspaceAction} />
                     ))}
@@ -1052,8 +1052,8 @@ export default function CustomerBetaPage({
                 </section>
               )}
 
-              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl min-w-0 ${messages.length > 0 ? 'sticky bottom-3 lg:bottom-5' : 'mt-5 lg:mt-6'}`}>
-                <div className="overflow-hidden rounded-[22px] border border-white/10 bg-[#242424] p-3 shadow-2xl shadow-black/30 lg:rounded-[28px] lg:p-3">
+              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl min-w-0 ${messages.length > 0 ? 'sticky bottom-3 lg:static' : 'mt-5 lg:mt-5'}`}>
+                <div className="overflow-hidden rounded-[22px] border border-white/10 bg-[#242424] p-3 shadow-2xl shadow-black/30 lg:rounded-[24px] lg:p-2.5">
                   <textarea
                     value={prompt}
                     disabled={assistantLoading}
@@ -1067,12 +1067,12 @@ export default function CustomerBetaPage({
                     }}
                     rows={messages.length > 0 ? 2 : 2}
                     placeholder="예: 오늘 자동화 실행해줘, 설정 확인하고 싶어, 포스팅 현황 보여줘"
-                    className="min-h-[56px] w-full resize-none bg-transparent px-2 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:text-base lg:min-h-[68px]"
+                    className="min-h-[56px] w-full resize-none bg-transparent px-2 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:text-base lg:min-h-[52px]"
                   />
                   {assistantLoading && (
                     <div className="px-2 pb-1 text-xs font-bold text-zinc-600">JASAIN Assistant가 확인 중이에요...</div>
                   )}
-                  <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/5 pt-3 lg:mt-3">
+                  <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/5 pt-3 lg:mt-1.5 lg:pt-2">
                     <div className="flex min-w-0 flex-wrap gap-2">
                       <span className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-500">CUJASA</span>
                       <span className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-500">{selectedProduct.name}</span>
