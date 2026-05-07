@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, Lock, UserPlus } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { api, setAuthToken } from '../lib/api.js';
 import { CURRENT_PRODUCT, PRODUCTS, productById } from '../config/products.js';
 
@@ -21,8 +21,10 @@ export default function LoginPage({ onLogin }) {
     privacyConsent: false
   });
   const [mode, setMode] = useState(requestedMode);
+  const [previewProductId, setPreviewProductId] = useState(requestedProduct);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const previewProduct = productById(previewProductId) || CURRENT_PRODUCT;
 
   const submit = async (event) => {
     event.preventDefault();
@@ -61,6 +63,13 @@ export default function LoginPage({ onLogin }) {
     setError('');
   };
 
+  const selectPreviewProduct = (productId) => {
+    setPreviewProductId(productId);
+    if (mode === 'register') {
+      setRegisterForm((prev) => ({ ...prev, productId }));
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#111111] text-zinc-100">
       <div className="grid min-h-screen lg:grid-cols-[292px_minmax(0,1fr)]">
@@ -78,13 +87,20 @@ export default function LoginPage({ onLogin }) {
             <div className="mt-10 grid gap-2 px-2">
               <div className="text-xs font-black uppercase tracking-wide text-zinc-500">Solutions</div>
               {PRODUCTS.map((product) => (
-                <div
+                <button
                   key={product.id}
-                  className={`rounded-xl px-3 py-2 text-sm font-bold ${registerForm.productId === product.id ? 'bg-white/10 text-white' : 'text-zinc-500'}`}
+                  type="button"
+                  onClick={() => selectPreviewProduct(product.id)}
+                  className={`rounded-xl px-3 py-2 text-left text-sm font-bold outline-none transition ${previewProduct.id === product.id ? 'bg-white/10 text-white' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300 focus:bg-white/5 focus:text-zinc-300'}`}
                 >
                   {product.name}
-                </div>
+                </button>
               ))}
+              <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+                <div className="text-sm font-black text-zinc-100">{previewProduct.name}</div>
+                <div className="mt-1 text-xs font-bold text-zinc-500">{previewProduct.supportLabel}</div>
+                <p className="mt-3 text-xs leading-relaxed text-zinc-400">{previewProduct.description}</p>
+              </div>
             </div>
             <div className="mt-auto border-t border-white/10 pt-4 text-[11px] leading-relaxed text-zinc-600">
               <div>개인정보처리방침 · 사업자정보</div>
@@ -94,22 +110,7 @@ export default function LoginPage({ onLogin }) {
         </aside>
 
         <main className="flex min-h-screen items-center justify-center px-5 py-10">
-          <div className="w-full max-w-5xl">
-            <div className="mx-auto mb-8 flex w-full max-w-3xl items-center justify-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-400">
-              {mode === 'login' ? <Lock size={14} /> : <UserPlus size={14} />}
-              {mode === 'login' ? 'JASAIN 계정으로 계속하기' : 'JASAIN 워크스페이스 시작하기'}
-            </div>
-
-            <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center">
-              <section className="text-center lg:text-left">
-                <h1 className="text-4xl font-semibold tracking-normal text-zinc-100 sm:text-6xl">
-                  무엇을 자동화할까요?
-                </h1>
-                <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-zinc-500 lg:mx-0">
-                  로그인하면 CUJASA, DEXOR, SPREAD를 한 워크스페이스에서 선택하고 작업을 이어갈 수 있어요.
-                </p>
-              </section>
-
+          <div className="w-full max-w-[420px]">
               <form onSubmit={mode === 'login' ? submit : submitRegister} className="rounded-[28px] border border-white/10 bg-[#191919] p-5 shadow-2xl shadow-black/40">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -132,7 +133,7 @@ export default function LoginPage({ onLogin }) {
                       <label className={labelClass}>고객명<input className={inputClass} type="text" autoComplete="name" value={registerForm.buyerName} placeholder="예: 홍길동" onChange={(e) => setRegisterForm((prev) => ({ ...prev, buyerName: e.target.value }))} /></label>
                       <label className={labelClass}>연락처<input className={inputClass} type="tel" autoComplete="tel" value={registerForm.phone} placeholder="01012345678" onChange={(e) => setRegisterForm((prev) => ({ ...prev, phone: e.target.value }))} /></label>
                     </div>
-                    <label className={labelClass}>사용할 솔루션<select className={inputClass} value={registerForm.productId} onChange={(e) => setRegisterForm((prev) => ({ ...prev, productId: e.target.value }))}>{PRODUCTS.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.supportLabel}</option>)}</select></label>
+                    <label className={labelClass}>사용할 솔루션<select className={inputClass} value={registerForm.productId} onChange={(e) => { setRegisterForm((prev) => ({ ...prev, productId: e.target.value })); setPreviewProductId(e.target.value); }}>{PRODUCTS.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.supportLabel}</option>)}</select></label>
                     <label className={labelClass}>아이디<input className={inputClass} type="text" autoComplete="username" value={registerForm.username} placeholder="영문/숫자 3자 이상" onChange={(e) => setRegisterForm((prev) => ({ ...prev, username: e.target.value }))} /></label>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className={labelClass}>비밀번호<input className={inputClass} type="password" autoComplete="new-password" value={registerForm.password} placeholder="8자 이상" onChange={(e) => setRegisterForm((prev) => ({ ...prev, password: e.target.value }))} /></label>
@@ -156,7 +157,6 @@ export default function LoginPage({ onLogin }) {
                   <ChevronRight size={18} />
                 </button>
               </form>
-            </div>
           </div>
         </main>
       </div>
