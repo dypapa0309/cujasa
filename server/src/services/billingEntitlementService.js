@@ -3,8 +3,15 @@ import { grantUserProduct } from './authService.js';
 import { ensureSetupTaskForPayment } from './setupTaskService.js';
 
 const CUJASA_PRODUCT_ID = 'cujasa';
+const DEXOR_PRODUCT_ID = 'dexor';
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const BASIC_MAX_ACCOUNTS = 2;
+export const DEXOR_CREDIT_PRODUCTS = {
+  dexor_credit_5000: 10,
+  dexor_credit_10000: 25,
+  dexor_credit_50000: 150,
+  dexor_credit_100000: 350
+};
 
 export function addEntitlementDays(date = new Date(), days = 30) {
   return new Date(new Date(date).getTime() + days * 24 * 60 * 60 * 1000);
@@ -12,6 +19,41 @@ export function addEntitlementDays(date = new Date(), days = 30) {
 
 export async function applyPaidEntitlement({ userId, product, payment, paidAt = new Date(), source = 'payment' }) {
   if (!userId || !product) return null;
+  const appProductId = product.app_product_id || CUJASA_PRODUCT_ID;
+  if (appProductId === DEXOR_PRODUCT_ID) {
+    const creditAmount = DEXOR_CREDIT_PRODUCTS[product.id] || 0;
+    await grantUserProduct(userId, DEXOR_PRODUCT_ID, { status: 'active', role: 'customer' });
+    if (creditAmount > 0) {
+      const grant = await dbGet('user_products', { user_id: userId, product_id: DEXOR_PRODUCT_ID });
+      const current = grant?.settings && typeof grant.settings === 'object' ? grant.settings : {};
+      const usageRoot = current.usage && typeof current.usage === 'object' ? current.usage : {};
+      const currentUsage = usageRoot[DEXOR_PRODUCT_ID] && typeof usageRoot[DEXOR_PRODUCT_ID] === 'object'
+        ? usageRoot[DEXOR_PRODUCT_ID]
+        : {};
+      const limit = Number.isFinite(Number(currentUsage.limit)) ? Math.max(0, Number(currentUsage.limit)) : 5;
+      const used = Number.isFinite(Number(currentUsage.used)) ? Math.max(0, Number(currentUsage.used)) : 0;
+      await dbUpdate('user_products', { user_id: userId, product_id: DEXOR_PRODUCT_ID }, {
+        settings: {
+          ...current,
+          usage: {
+            ...usageRoot,
+            [DEXOR_PRODUCT_ID]: {
+              limit: limit + creditAmount,
+              used
+            }
+          },
+          lastCreditPayment: {
+            productId: product.id,
+            paymentId: payment?.id || null,
+            credits: creditAmount,
+            paidAt: new Date(paidAt).toISOString(),
+            source
+          }
+        }
+      });
+    }
+    return dbGet('users', { id: userId });
+  }
   const paidDate = new Date(paidAt);
   const user = await dbGet('users', { id: userId });
   const isMonthly = product.billing_cycle === 'monthly' || product.plan === 'monthly';

@@ -103,12 +103,33 @@ const tables = {
       status: 'active',
       created_at: now(),
       updated_at: now()
+    },
+    {
+      id: 'polibot',
+      name: 'PoliBot',
+      description: '보험 보장분석 및 상품 추천 자동화',
+      app_url: 'https://app.jasain.kr',
+      landing_url: 'https://jasain.kr/polibot',
+      status: 'active',
+      created_at: now(),
+      updated_at: now()
+    },
+    {
+      id: 'infludex',
+      name: 'INFLUDEX',
+      description: '인스타그램 인플루언서 등급 분석',
+      app_url: 'https://app.jasain.kr',
+      landing_url: 'https://jasain.kr/infludex',
+      status: 'active',
+      created_at: now(),
+      updated_at: now()
     }
   ],
   user_products: [],
   billing_products: [
     {
       id: 'onetime_590000',
+      app_product_id: 'cujasa',
       name: 'CUJASA 베이직 일시불',
       plan: 'onetime',
       amount: 590000,
@@ -119,6 +140,7 @@ const tables = {
     },
     {
       id: 'monthly_59000',
+      app_product_id: 'cujasa',
       name: 'CUJASA 베이직 월정액',
       plan: 'monthly',
       amount: 59000,
@@ -129,12 +151,57 @@ const tables = {
     },
     {
       id: 'monthly_129000',
+      app_product_id: 'cujasa',
       name: 'CUJASA 베이직 월정액(판매 중단)',
       plan: 'monthly',
       amount: 129000,
       billing_cycle: 'monthly',
       max_accounts: 2,
       active: false,
+      created_at: now()
+    },
+    {
+      id: 'dexor_credit_5000',
+      app_product_id: 'dexor',
+      name: 'DEXOR 크레딧 10회 충전',
+      plan: 'onetime',
+      amount: 5000,
+      billing_cycle: 'once',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'dexor_credit_10000',
+      app_product_id: 'dexor',
+      name: 'DEXOR 크레딧 25회 충전',
+      plan: 'onetime',
+      amount: 10000,
+      billing_cycle: 'once',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'dexor_credit_50000',
+      app_product_id: 'dexor',
+      name: 'DEXOR 크레딧 150회 충전',
+      plan: 'onetime',
+      amount: 50000,
+      billing_cycle: 'once',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'dexor_credit_100000',
+      app_product_id: 'dexor',
+      name: 'DEXOR 크레딧 350회 충전',
+      plan: 'onetime',
+      amount: 100000,
+      billing_cycle: 'once',
+      max_accounts: 0,
+      active: true,
       created_at: now()
     }
   ],

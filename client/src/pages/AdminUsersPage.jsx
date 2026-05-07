@@ -398,30 +398,29 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                     {user.status === 'active' ? '정지' : '활성화'}
                   </button>
                 </div>
-                <div className="mb-4 flex flex-wrap gap-2 rounded border border-line bg-gray-50 p-3">
-                  {[
-                    ['free', '무료'],
-                    ['onetime', '영구구매'],
-                    ['monthly', '월회원'],
-                    ['suspended', '정지']
-                  ].map(([plan, label]) => (
-                    <button
-                      key={plan}
-                      type="button"
-                      onClick={() => changePlan(user, plan)}
-                      disabled={planBusyUserId === user.id}
-                      className={`rounded border px-3 py-1.5 text-xs font-bold disabled:opacity-50 ${
-                        isCurrentPlan(user, plan)
-                          ? 'border-coupang bg-blue-50 text-coupang'
-                          : plan === 'suspended'
-                            ? 'border-rose-200 bg-white text-rose-600'
-                            : 'border-line bg-white text-slate-600 hover:border-coupang hover:text-coupang'
-                      }`}
-                    >
-                      {planBusyUserId === user.id ? '처리 중...' : label}
-                    </button>
-                  ))}
-                  {user.paid_until && <span className="self-center text-xs text-slate-400">유효기간 {formatDateTime(user.paid_until)}</span>}
+                <div className="mb-4 flex flex-wrap items-center gap-2 rounded border border-line bg-gray-50 p-3">
+                  <span className="text-xs font-semibold text-slate-500">계정 상태</span>
+                  <button
+                    type="button"
+                    onClick={() => { if (user.status !== 'active') toggleStatus(user); }}
+                    disabled={planBusyUserId === user.id}
+                    className={`rounded border px-3 py-1.5 text-xs font-bold disabled:opacity-50 ${
+                      user.status === 'active' ? 'border-slate-900 bg-slate-900 text-white' : 'border-line bg-white text-slate-600 hover:border-slate-900'
+                    }`}
+                  >
+                    활성
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { if (user.status !== 'suspended') toggleStatus(user); }}
+                    disabled={planBusyUserId === user.id}
+                    className={`rounded border px-3 py-1.5 text-xs font-bold disabled:opacity-50 ${
+                      user.status === 'suspended' ? 'border-rose-600 bg-rose-600 text-white' : 'border-rose-200 bg-white text-rose-600'
+                    }`}
+                  >
+                    정지
+                  </button>
+                  <span className="text-xs text-slate-400">제품 결제 상태는 아래 제품 카드에서 각각 관리합니다.</span>
                 </div>
 
                 <div className="grid gap-2 border-t border-line pt-4">
@@ -572,10 +571,23 @@ function isCurrentPlan(user, plan) {
   return (user.plan || 'free') === plan;
 }
 
+function productBillingPlan(billing = {}, productStatus = 'active') {
+  if (productStatus === 'suspended') return 'suspended';
+  return billing.plan || 'free';
+}
+
+function productBillingLabel(billing = {}, productStatus = 'active') {
+  const plan = productBillingPlan(billing, productStatus);
+  if (plan === 'suspended') return '정지';
+  if (plan === 'onetime') return '영구구매';
+  if (plan === 'monthly') return billing.status === 'past_due' ? '월회원 연체' : '월회원';
+  return '무료';
+}
+
 function ConflictPanel({ conflicts, onDisconnect }) {
   if (!conflicts?.length) {
     return (
-      <div className="rounded border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+      <div className="rounded border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
         계정 충돌 점검: 현재 감지된 중복 연결/다중 할당 문제가 없습니다.
       </div>
     );
@@ -624,7 +636,7 @@ function MisassignmentPanel({ report, onDryRun, onApply, onUnassign, onReassign,
   const total = separable.length + needsReview.length;
   if (!total) {
     return (
-      <div className="rounded border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+      <div className="rounded border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm">
         잘못 배정 의심: 현재 고객명/핸들 기준으로 의심되는 계정 노출 문제가 없습니다.
       </div>
     );
@@ -701,12 +713,16 @@ function MisassignmentGroup({ title, rows, tone, onUnassign, onReassign, onMarkO
 
 function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
   const settings = product.settings || {};
+  const usage = getProductUsage(settings, product.productId);
+  const workspaceSummary = settings.workspaceSummary || {};
+  const billing = settings.billing || {};
   const [draft, setDraft] = useState({
     coupangAccessKey: '',
     coupangSecretKey: '',
     coupangPartnerId: '',
     defaultTrackingCode: ''
   });
+  const [usageDraft, setUsageDraft] = useState({ limit: usage.limit, used: usage.used });
 
   useEffect(() => {
     setDraft({
@@ -717,8 +733,17 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
     });
   }, [settings.hasCoupangAccessKey, settings.hasCoupangSecretKey, settings.hasCoupangPartnerId, settings.hasDefaultTrackingCode]);
 
+  useEffect(() => {
+    setUsageDraft({ limit: usage.limit, used: usage.used });
+  }, [usage.limit, usage.used]);
+
   const update = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
   const save = () => onSaveSettings(userId, product.productId, draft);
+  const saveUsage = () => onSaveSettings(userId, product.productId, { usage: { limit: usageDraft.limit, used: usageDraft.used } });
+  const saveBilling = (plan) => {
+    if (plan === 'suspended' && !confirm(`${product.name || product.productId} 제품을 정지할까요?`)) return;
+    onSaveSettings(userId, product.productId, { billing: { plan } });
+  };
   const isCujasa = product.productId === 'cujasa';
   const revealProductSetting = async (field) => {
     const payload = await api.get(`/api/admin/users/${userId}/products/${product.productId}/settings/${field}`);
@@ -726,11 +751,37 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
   };
 
   return (
-    <div className="rounded border border-blue-100 bg-blue-50/50 p-3">
+    <div className="rounded border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded bg-blue-100 px-2 py-1 text-xs font-bold text-blue-700">{product.name || product.productId}</span>
-        <span className="text-xs text-slate-500">{product.status || 'active'} · {product.role || 'customer'}</span>
-        <button onClick={onRevoke} className="ml-auto text-xs font-bold text-blue-300 hover:text-red-500">제품 권한 해제</button>
+        <span className="rounded bg-slate-100 px-2 py-1 text-xs font-bold text-slate-800">{product.name || product.productId}</span>
+        <span className="text-xs text-slate-500">{product.status || 'active'} · {product.role || 'customer'} · {productBillingLabel(billing, product.status)}</span>
+        <button onClick={onRevoke} className="ml-auto text-xs font-bold text-slate-400 hover:text-rose-600">제품 권한 해제</button>
+      </div>
+
+      <div className="mt-3 flex flex-wrap gap-2 rounded border border-line bg-gray-50 p-3">
+        {[
+          ['free', '무료'],
+          ['onetime', '영구구매'],
+          ['monthly', '월회원'],
+          ['suspended', '정지']
+        ].map(([plan, label]) => {
+          const active = productBillingPlan(billing, product.status) === plan;
+          return (
+            <button
+              key={plan}
+              type="button"
+              onClick={() => saveBilling(plan)}
+              className={`rounded border px-3 py-1.5 text-xs font-bold ${
+                active
+                  ? plan === 'suspended' ? 'border-rose-600 bg-rose-600 text-white' : 'border-slate-900 bg-slate-900 text-white'
+                  : plan === 'suspended' ? 'border-rose-200 bg-white text-rose-600' : 'border-line bg-white text-slate-600 hover:border-slate-900'
+              }`}
+            >
+              {label}
+            </button>
+          );
+        })}
+        {billing.paidUntil && <span className="self-center text-xs text-slate-400">유효기간 {formatDateTime(billing.paidUntil)}</span>}
       </div>
 
       {isCujasa && (
@@ -786,8 +837,78 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
           </div>
         </div>
       )}
+      {!isCujasa && (
+        <div className="mt-3 grid gap-3 rounded border border-line bg-white p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold text-slate-500">제품 무료 사용량</div>
+              <div className="mt-1 text-sm font-bold text-slate-800">남은 {usage.remaining}회 · 사용 {usage.used} / {usage.limit}회</div>
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="grid gap-1 text-xs">
+                <span className="font-semibold text-slate-500">전체 횟수</span>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-20 rounded border border-line px-2 py-1.5"
+                  value={usageDraft.limit}
+                  onChange={(event) => setUsageDraft((prev) => ({ ...prev, limit: Number(event.target.value) }))}
+                />
+              </label>
+              <label className="grid gap-1 text-xs">
+                <span className="font-semibold text-slate-500">사용 횟수</span>
+                <input
+                  type="number"
+                  min="0"
+                  className="w-20 rounded border border-line px-2 py-1.5"
+                  value={usageDraft.used}
+                  onChange={(event) => setUsageDraft((prev) => ({ ...prev, used: Number(event.target.value) }))}
+                />
+              </label>
+              <button type="button" onClick={saveUsage} className="rounded bg-slate-900 px-3 py-2 text-xs font-bold text-white">횟수 저장</button>
+            </div>
+          </div>
+          <div className="grid gap-2 rounded border border-line bg-gray-50 p-3 text-xs text-slate-500 md:grid-cols-3">
+            <div>후보 {workspaceSummary.candidateCount || 0}개</div>
+            <div>분석 {workspaceSummary.analysisCount || 0}개</div>
+            <div>최근 작업 {workspaceSummary.updatedAt ? formatDateTime(workspaceSummary.updatedAt) : '없음'}</div>
+            {product.productId === 'spread' && (
+              <>
+                <div>참여자 {workspaceSummary.applicantCount || 0}명</div>
+                <div>{workspaceSummary.hasCampaignDraft ? '캠페인 초안 있음' : '캠페인 초안 없음'}</div>
+                <div>{workspaceSummary.hasSubmissionReview ? '검수 기록 있음' : '검수 기록 없음'}</div>
+              </>
+            )}
+            {product.productId === 'polibot' && (
+              <>
+                <div>고객 {workspaceSummary.customerCount || 0}명</div>
+                <div>{workspaceSummary.hasPolibotUpload ? 'PDF 기록 있음' : 'PDF 기록 없음'}</div>
+                <div>{workspaceSummary.hasPolibotRecommendations ? '추천 결과 있음' : '추천 결과 없음'}</div>
+              </>
+            )}
+            {product.productId === 'infludex' && (
+              <>
+                <div>인스타 분석 {workspaceSummary.infludexAnalysisCount || 0}개</div>
+                <div>후보 {workspaceSummary.candidateCount || 0}개</div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+function getProductUsage(settings = {}, productId) {
+  const usageRoot = settings.usage && typeof settings.usage === 'object' ? settings.usage : {};
+  const raw = usageRoot[productId] && typeof usageRoot[productId] === 'object' ? usageRoot[productId] : {};
+  const limit = Number.isFinite(Number(raw.limit)) ? Math.max(0, Number(raw.limit)) : 5;
+  const used = Number.isFinite(Number(raw.used)) ? Math.max(0, Number(raw.used)) : 0;
+  return {
+    limit,
+    used,
+    remaining: Math.max(0, Number.isFinite(Number(raw.remaining)) ? Number(raw.remaining) : limit - used)
+  };
 }
 
 function AccountTrackingCodeInput({ account, onSave }) {

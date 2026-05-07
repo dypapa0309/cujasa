@@ -392,7 +392,9 @@ insert into jasain_products (id, name, description, app_url, landing_url, status
 values
   ('cujasa', 'CUJASA', '쿠팡 파트너스 자동화 콘솔', 'https://app.jasain.kr', 'https://jasain.kr/cujasa', 'active'),
   ('dexor', 'DEXOR', '블로그 분석 및 선정 자동화', 'https://app.jasain.kr', 'https://jasain.kr/dexor', 'active'),
-  ('spread', 'SPREAD', '추천 캠페인 운영 자동화', 'https://app.jasain.kr', 'https://jasain.kr', 'active')
+  ('spread', 'SPREAD', '추천 캠페인 운영 자동화', 'https://app.jasain.kr', 'https://jasain.kr', 'active'),
+  ('polibot', 'PoliBot', '보험 보장분석 및 상품 추천 자동화', 'https://app.jasain.kr', 'https://jasain.kr/polibot', 'active'),
+  ('infludex', 'INFLUDEX', '인스타그램 인플루언서 등급 분석', 'https://app.jasain.kr', 'https://jasain.kr/infludex', 'active')
 on conflict (id) do update set
   name = excluded.name,
   description = excluded.description,
@@ -435,12 +437,17 @@ create table if not exists billing_products (
 
 alter table billing_products add column if not exists app_product_id text not null default 'cujasa';
 
-insert into billing_products (id, name, plan, amount, billing_cycle, max_accounts, active)
+insert into billing_products (id, app_product_id, name, plan, amount, billing_cycle, max_accounts, active)
 values
-  ('onetime_590000', 'CUJASA 베이직 일시불', 'onetime', 590000, 'once', 2, true),
-  ('monthly_59000', 'CUJASA 베이직 월정액', 'monthly', 59000, 'monthly', 2, true),
-  ('monthly_129000', 'CUJASA 베이직 월정액(판매 중단)', 'monthly', 129000, 'monthly', 2, false)
+  ('onetime_590000', 'cujasa', 'CUJASA 베이직 일시불', 'onetime', 590000, 'once', 2, true),
+  ('monthly_59000', 'cujasa', 'CUJASA 베이직 월정액', 'monthly', 59000, 'monthly', 2, true),
+  ('monthly_129000', 'cujasa', 'CUJASA 베이직 월정액(판매 중단)', 'monthly', 129000, 'monthly', 2, false),
+  ('dexor_credit_5000', 'dexor', 'DEXOR 크레딧 10회 충전', 'onetime', 5000, 'once', 0, true),
+  ('dexor_credit_10000', 'dexor', 'DEXOR 크레딧 25회 충전', 'onetime', 10000, 'once', 0, true),
+  ('dexor_credit_50000', 'dexor', 'DEXOR 크레딧 150회 충전', 'onetime', 50000, 'once', 0, true),
+  ('dexor_credit_100000', 'dexor', 'DEXOR 크레딧 350회 충전', 'onetime', 100000, 'once', 0, true)
 on conflict (id) do update set
+  app_product_id = excluded.app_product_id,
   name = excluded.name,
   plan = excluded.plan,
   amount = excluded.amount,

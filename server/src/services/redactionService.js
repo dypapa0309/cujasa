@@ -55,6 +55,14 @@ export function redactPayment(payment) {
 }
 
 export function redactBillingSettings(settings = {}) {
+  const usage = settings.usage && typeof settings.usage === 'object' ? settings.usage : {};
+  const workspace = settings.workspace && typeof settings.workspace === 'object' ? settings.workspace : {};
+  const usageSummary = Object.fromEntries(Object.entries(usage).map(([productId, value]) => {
+    const raw = value && typeof value === 'object' ? value : {};
+    const limit = Number.isFinite(Number(raw.limit)) ? Math.max(0, Number(raw.limit)) : 5;
+    const used = Number.isFinite(Number(raw.used)) ? Math.max(0, Number(raw.used)) : 0;
+    return [productId, { limit, used, remaining: Math.max(0, limit - used) }];
+  }));
   return {
     hasCoupangAccessKey: Boolean(settings.coupangAccessKey),
     maskedCoupangAccessKey: maskValue(settings.coupangAccessKey),
@@ -62,7 +70,26 @@ export function redactBillingSettings(settings = {}) {
     hasCoupangPartnerId: Boolean(settings.coupangPartnerId),
     maskedCoupangPartnerId: maskValue(settings.coupangPartnerId),
     hasDefaultTrackingCode: Boolean(settings.defaultTrackingCode),
-    maskedDefaultTrackingCode: maskValue(settings.defaultTrackingCode)
+    maskedDefaultTrackingCode: maskValue(settings.defaultTrackingCode),
+    usage: usageSummary,
+    billing: settings.billing && typeof settings.billing === 'object' ? {
+      plan: settings.billing.plan || 'free',
+      status: settings.billing.status || 'none',
+      paidUntil: settings.billing.paidUntil || null,
+      updatedAt: settings.billing.updatedAt || null
+    } : { plan: 'free', status: 'none', paidUntil: null, updatedAt: null },
+    workspaceSummary: {
+      candidateCount: Array.isArray(workspace.candidates) ? workspace.candidates.length : 0,
+      analysisCount: Array.isArray(workspace.analysisResults) ? workspace.analysisResults.length : 0,
+      infludexAnalysisCount: Array.isArray(workspace.infludexResults) ? workspace.infludexResults.length : 0,
+      applicantCount: Array.isArray(workspace.applicants) ? workspace.applicants.length : 0,
+      customerCount: Array.isArray(workspace.customers) ? workspace.customers.length : 0,
+      hasCampaignDraft: Boolean(workspace.campaignDraft),
+      hasSubmissionReview: Boolean(workspace.submissionReview),
+      hasPolibotUpload: Boolean(workspace.upload),
+      hasPolibotRecommendations: Array.isArray(workspace.recommendations) && workspace.recommendations.length > 0,
+      updatedAt: workspace.updatedAt || null
+    }
   };
 }
 

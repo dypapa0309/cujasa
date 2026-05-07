@@ -531,9 +531,6 @@ router.get('/users/:id/products/:productId/settings/:field', async (req, res, ne
 
 router.patch('/users/:id/products/:productId/settings', async (req, res, next) => {
   try {
-    if (req.params.productId !== 'cujasa') {
-      return res.status(400).json({ error: 'CUJASA 제품 설정만 지원합니다.' });
-    }
     const updated = await updateUserProductSettings(req.params.id, req.params.productId, req.body || {});
     const settings = updated.settings && typeof updated.settings === 'object' ? updated.settings : {};
     res.json({

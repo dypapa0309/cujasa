@@ -23,12 +23,14 @@ const cujasaActions = [
 
 const productPreviewActions = [
   { key: 'dexor', label: 'DEXOR', icon: Search, hint: '캠페인에 맞는 블로그 후보를 고르는 솔루션이에요.' },
-  { key: 'spread', label: 'SPREAD', icon: Sparkles, hint: '캠페인 운영과 제출물 확인을 줄이는 솔루션이에요.' }
+  { key: 'spread', label: 'SPREAD', icon: Sparkles, hint: '캠페인 운영과 제출물 확인을 줄이는 솔루션이에요.' },
+  { key: 'polibot', label: 'PoliBot', icon: ShieldCheck, hint: '보험 보장분석과 상품 추천을 정리하는 솔루션이에요.' },
+  { key: 'infludex', label: 'INFLUDEX', icon: BarChart3, hint: '인스타그램 인플루언서를 카테고리와 등급으로 분석해요.' }
 ];
 
 const dexorActions = [
   { key: 'dexor-upload', productId: 'dexor', label: '후보 업로드', icon: Upload, hint: '블로그 URL이나 후보 파일을 넣는 첫 화면이에요.' },
-  { key: 'dexor-grade', productId: 'dexor', label: '등급 분석', icon: Search, hint: 'S/A/B/C/D 후보 등급과 분석 기준을 확인해요.' },
+  { key: 'dexor-grade', productId: 'dexor', label: '등급 분석', icon: Search, hint: 'S/A/B/C/D 기준으로 후보 등급과 분석 기준을 확인해요.' },
   { key: 'dexor-download', productId: 'dexor', label: '후보 다운로드', icon: Download, hint: '선정 후보 내보내기 흐름을 준비해요.' }
 ];
 
@@ -36,6 +38,19 @@ const spreadActions = [
   { key: 'spread-campaign', productId: 'spread', label: '캠페인 추천', icon: Sparkles, hint: '목표와 상품 유형으로 캠페인 초안을 만들어요.' },
   { key: 'spread-applicants', productId: 'spread', label: '참여자 선정', icon: Users, hint: '신청자와 선정 기준을 비교해요.' },
   { key: 'spread-review', productId: 'spread', label: '제출물 검수', icon: ClipboardCheck, hint: '제출 URL과 필수 조건을 점검해요.' }
+];
+
+const polibotActions = [
+  { key: 'polibot-upload', productId: 'polibot', label: 'PDF 업로드', icon: Upload, hint: '보험 상품 PDF와 메모를 넣고 분석 준비 상태를 만들어요.' },
+  { key: 'polibot-recommend', productId: 'polibot', label: '상품 추천', icon: Sparkles, hint: '고객 조건과 보장 니즈로 추천 초안을 만들어요.' },
+  { key: 'polibot-customers', productId: 'polibot', label: '고객 관리', icon: Users, hint: '상담 고객과 메모를 정리해요.' },
+  { key: 'polibot-download', productId: 'polibot', label: '결과 다운로드', icon: Download, hint: '추천 결과를 CSV로 내려받아요.' }
+];
+
+const infludexActions = [
+  { key: 'infludex-upload', productId: 'infludex', label: '후보 업로드', icon: Upload, hint: '인스타그램 계정 URL, 카테고리, 반응 지표를 넣어요.' },
+  { key: 'infludex-grade', productId: 'infludex', label: '씨랭 분석', icon: Search, hint: 'DIAMOND/S/A/B/C/D 등급과 카테고리를 확인해요.' },
+  { key: 'infludex-download', productId: 'infludex', label: '결과 다운로드', icon: Download, hint: '분석 결과를 CSV로 내려받아요.' }
 ];
 
 const workspaceActions = [
@@ -46,15 +61,37 @@ const workspaceActions = [
 const productTaskActions = {
   cujasa: cujasaActions,
   dexor: dexorActions,
-  spread: spreadActions
+  spread: spreadActions,
+  polibot: polibotActions,
+  infludex: infludexActions
 };
 
-const actions = [...cujasaActions, ...workspaceActions, ...productPreviewActions, ...dexorActions, ...spreadActions];
+const actions = [...cujasaActions, ...workspaceActions, ...productPreviewActions, ...dexorActions, ...spreadActions, ...polibotActions, ...infludexActions];
 const pendingSubscriptionKey = 'cujasa_pending_subscription';
 
 const inputClass = 'w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-700 outline-none focus:border-white/25';
 const labelClass = 'grid gap-2 text-sm font-bold text-zinc-300';
+const dexorCategoryOptions = ['맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
+const dexorScoreRows = [
+  ['S', '90점 이상', '최우선 후보'],
+  ['A', '80-89점', '우선 선정 후보'],
+  ['B', '70-79점', '검토 가능 후보'],
+  ['C', '60-69점', '보조 후보'],
+  ['D', '60점 미만', '제외 또는 재검토']
+];
 const betaFaqItems = [
+  {
+    id: 'what-cujasa',
+    patterns: ['쿠자사 뭐야', 'cujasa 뭐야', '쿠자사란', 'cujasa란', '쿠자사 설명', 'cujasa 설명'],
+    answer: 'CUJASA는 주제 선정, 쿠팡 파트너스 상품 검색, 콘텐츠 생성, Threads 예약 업로드를 한 화면에서 처리하는 자동화 솔루션이에요. 지금은 텍스트 기반 Threads 자동화가 중심이고, 이후 이미지/영상 포맷과 다른 제휴 채널까지 확장할 예정이에요.',
+    actions: [{ label: '자동화 실행', actionKey: 'run' }, { label: '설정 열기', actionKey: 'settings' }]
+  },
+  {
+    id: 'jasain-products',
+    patterns: ['자사인 뭐야', 'jasain 뭐야', '솔루션 뭐 있어', '제품 뭐 있어', '무슨 서비스'],
+    answer: 'JASAIN은 자동화 솔루션 허브예요. CUJASA는 제휴 콘텐츠와 Threads 업로드, DEXOR는 블로그 후보 분석, SPREAD는 캠페인 운영, PoliBot은 보험 보장분석, INFLUDEX는 인스타그램 인플루언서 분석을 맡아요.',
+    actions: [{ label: 'DEXOR 열기', actionKey: 'dexor-upload' }, { label: 'INFLUDEX 열기', actionKey: 'infludex-upload' }]
+  },
   {
     id: 'coupang-api',
     patterns: ['쿠팡 api', 'api 키', 'access key', 'secret key', '파트너', 'tracking', '트래킹'],
@@ -90,6 +127,42 @@ const betaFaqItems = [
     patterns: ['결제', '가격', '월정액', '영구', '환불', '입금', '구매'],
     answer: '결제는 JASAIN 계정 단위로 관리해요. 무료 체험 이후에는 결제 상태에 따라 자동화 사용 권한이 유지돼요. 결제 패널에서 현재 상태와 상품을 확인할 수 있어요.',
     actions: [{ label: '결제 확인', actionKey: 'billing' }]
+  },
+  {
+    id: 'dexor-credit',
+    patterns: ['덱서 크레딧', 'dexor 크레딧', '크레딧 충전', '남은 횟수', '분석 횟수', '5천원', '만원', '가상계좌'],
+    answer: 'DEXOR는 무료 5회 이후 크레딧을 충전해서 써요. 충전은 가상계좌 전용이고 5천원 10회, 1만원 25회, 5만원 150회, 10만원 350회 기준이에요. 입금 확인이 서버에 들어온 뒤 크레딧이 반영돼요.',
+    actions: [{ label: '결제 확인', actionKey: 'billing' }, { label: '등급 분석', actionKey: 'dexor-grade' }]
+  },
+  {
+    id: 'dexor-quality',
+    patterns: ['블로그 품질', '품질 분석', '등급 기준', '씨랭', '씨랭크', '최적화', '준최적화', '좋은 블로그', '광고성'],
+    answer: 'DEXOR는 분석 카테고리를 먼저 정한 뒤 후보 URL, 네이버 블로그 여부, 최근글일, 방문/조회 추정, 댓글/공감, 광고성 메모를 기준으로 S/A/B/C/D 순서로 정리해요. CSV에 후보 카테고리와 품질 컬럼을 넣으면 이유와 점수가 더 구체적으로 나와요.',
+    actions: [{ label: '후보 업로드', actionKey: 'dexor-upload' }, { label: '등급 분석', actionKey: 'dexor-grade' }]
+  },
+  {
+    id: 'affiliate-expansion',
+    patterns: ['어필리에이트', '제휴 채널', '토스 쉐어', '토스쉐어', '쿠팡 말고', '링크 비율', '1:1', '1:2:1'],
+    answer: 'CUJASA 확장은 제휴 채널을 최대 3개까지 붙이는 방향으로 잡고 있어요. 1차는 쿠팡 파트너스, 토스 쉐어링크/수동 링크, 커스텀 제휴 링크로 보고 있고, 링크 노출은 1:1 또는 1:2:1 같은 가중치로 랜덤 배치하는 구조가 적합해요.',
+    actions: [{ label: '설정 열기', actionKey: 'settings' }]
+  },
+  {
+    id: 'spread-automation',
+    patterns: ['스프레드 자동화', 'spread 자동화', '캠페인 등록', '신청자', '신청 마감', '리스트 다운로드', '제출물'],
+    answer: 'SPREAD는 광고주가 캠페인을 등록하고, 신청자가 들어오고, 마감 후 참여자 리스트와 제출물 검수를 정리하는 방향의 자동화로 확장할 수 있어요. 지금은 캠페인 추천, 참여자 선정, 제출물 검수 v1 작업 패널이 준비돼 있어요.',
+    actions: [{ label: '캠페인 추천', actionKey: 'spread-campaign' }, { label: '참여자 선정', actionKey: 'spread-applicants' }]
+  },
+  {
+    id: 'polibot',
+    patterns: ['polibot', '폴리봇', '보험 분석', '보장분석', '보험 추천', '보험 pdf'],
+    answer: 'PoliBot은 보험 상품 PDF와 고객 조건을 정리해서 보장분석과 상품 추천 초안을 만드는 솔루션이에요. PDF 업로드, 고객 프로필, 추천 결과 다운로드 흐름으로 써요.',
+    actions: [{ label: 'PDF 업로드', actionKey: 'polibot-upload' }, { label: '상품 추천', actionKey: 'polibot-recommend' }]
+  },
+  {
+    id: 'infludex',
+    patterns: ['infludex', '인플루덱스', '인스타 분석', '인스타그램 분석', '씨랭', 'c-rank', '카테고리 어디'],
+    answer: 'INFLUDEX는 인스타그램 후보 계정을 카테고리, 팔로워, 평균 좋아요/댓글, 최근 활동, 광고성 메모 기준으로 DIAMOND/S/A/B/C/D 등급으로 정리해요. 결과에는 카테고리와 등급 사유가 같이 보여요.',
+    actions: [{ label: '후보 업로드', actionKey: 'infludex-upload' }, { label: '씨랭 분석', actionKey: 'infludex-grade' }]
   },
   {
     id: 'dexor-spread',
@@ -222,6 +295,63 @@ function parseSettingsDraft(value = '') {
   return values;
 }
 
+function getGrantUsage(grant, productId) {
+  const settings = grant?.settingsSummary || grant?.settings || {};
+  const usageRoot = settings.usage && typeof settings.usage === 'object' ? settings.usage : {};
+  const usage = usageRoot[productId] && typeof usageRoot[productId] === 'object' ? usageRoot[productId] : {};
+  const limit = Number.isFinite(Number(usage.limit)) ? Math.max(0, Number(usage.limit)) : 5;
+  const used = Number.isFinite(Number(usage.used)) ? Math.max(0, Number(usage.used)) : 0;
+  return {
+    limit,
+    used,
+    remaining: Math.max(0, Number.isFinite(Number(usage.remaining)) ? Number(usage.remaining) : limit - used)
+  };
+}
+
+function workspaceUsage(workspace) {
+  const usage = workspace?.usage && typeof workspace.usage === 'object' ? workspace.usage : {};
+  const limit = Number.isFinite(Number(usage.limit)) ? Math.max(0, Number(usage.limit)) : 5;
+  const used = Number.isFinite(Number(usage.used)) ? Math.max(0, Number(usage.used)) : 0;
+  return {
+    limit,
+    used,
+    remaining: Math.max(0, Number.isFinite(Number(usage.remaining)) ? Number(usage.remaining) : limit - used)
+  };
+}
+
+function sortDexorResults(results = []) {
+  const order = { S: 0, A: 1, B: 2, C: 3, D: 4, '씨랭크/다이아': 0, '최적화': 1, '준최적화': 2, '일반': 3, '제외/재검토': 4 };
+  return [...results].sort((a, b) => {
+    const aLabel = a.scoreLabel || a.grade || '';
+    const bLabel = b.scoreLabel || b.grade || '';
+    const gradeDelta = (order[aLabel] ?? 99) - (order[bLabel] ?? 99);
+    if (gradeDelta) return gradeDelta;
+    const scoreDelta = Number(b.score || 0) - Number(a.score || 0);
+    if (scoreDelta) return scoreDelta;
+    return String(a.url || '').localeCompare(String(b.url || ''));
+  });
+}
+
+function dexorScoreComment(score) {
+  const value = Number(score || 0);
+  if (value >= 90) return '최우선으로 볼 만한 후보예요.';
+  if (value >= 80) return '우선 선정 후보에 가까워요.';
+  if (value >= 70) return '조건을 확인하며 검토할 후보예요.';
+  if (value >= 60) return '보조 후보로 보는 편이 좋아요.';
+  return '제외하거나 다시 검토하는 편이 좋아요.';
+}
+
+function sortInfludexResults(results = []) {
+  const order = { DIAMOND: 0, S: 1, A: 2, B: 3, C: 4, D: 5 };
+  return [...results].sort((a, b) => {
+    const gradeDelta = (order[a.grade] ?? 99) - (order[b.grade] ?? 99);
+    if (gradeDelta) return gradeDelta;
+    const scoreDelta = Number(b.score || 0) - Number(a.score || 0);
+    if (scoreDelta) return scoreDelta;
+    return String(a.handle || a.url || '').localeCompare(String(b.handle || b.url || ''));
+  });
+}
+
 export default function CustomerBetaPage({
   account,
   accounts = [],
@@ -317,7 +447,10 @@ export default function CustomerBetaPage({
     || visibleProducts[0]
     || productById(selectedProductId)
     || CURRENT_PRODUCT;
+  const productGrantById = useMemo(() => Object.fromEntries((currentUser?.products || []).map((grant) => [grant.productId, grant])), [currentUser?.products]);
+  const selectedProductGrant = productGrantById[selectedProduct.id];
   const selectedProductGranted = grantedProductIds.has(selectedProduct.id);
+  const selectedProductUsage = getGrantUsage(selectedProductGrant, selectedProduct.id);
   const productActions = selectedProductGranted ? (productTaskActions[selectedProduct.id] || []) : [];
   const activeAction = actions.find((action) => action.key === activeActionKey) || null;
   const needsThreadsReconnect = selectedProduct.id === CURRENT_PRODUCT.id
@@ -358,7 +491,8 @@ export default function CustomerBetaPage({
       : actionOrKey;
     if (!action) return;
 
-    const productId = action.productId || (['dexor', 'spread'].includes(action.key) ? action.key : '');
+    const previewProductIds = ['dexor', 'spread', 'polibot', 'infludex'];
+    const productId = action.productId || (previewProductIds.includes(action.key) ? action.key : '');
     if (action.productId && !grantedProductIds.has(action.productId)) {
       const product = productById(action.productId);
       if (product) {
@@ -367,7 +501,7 @@ export default function CustomerBetaPage({
       }
       return;
     }
-    if (['dexor', 'spread'].includes(action.key) && !grantedProductIds.has(action.key)) {
+    if (previewProductIds.includes(action.key) && !grantedProductIds.has(action.key)) {
       const product = productById(action.key);
       if (product) {
         setShowOtherProducts(true);
@@ -388,7 +522,7 @@ export default function CustomerBetaPage({
     if (/결제|가격|월정액|영구|환불|입금|구매|카드/.test(text)) return byKey('billing');
     if (/덱서|dexor|블로그|후보/.test(text)) {
       if (!grantedProductIds.has('dexor')) return byKey('dexor');
-      if (/분석|등급|점수|s\/a|s등급|a등급/.test(text)) return byKey('dexor-grade');
+      if (/분석|등급|점수|씨랭|씨랭크|최적화|준최적화|s\/a|s등급|a등급/.test(text)) return byKey('dexor-grade');
       if (/다운로드|내보내|csv|엑셀|xlsx/.test(text)) return byKey('dexor-download');
       return byKey('dexor-upload');
     }
@@ -444,6 +578,10 @@ export default function CustomerBetaPage({
     event.preventDefault();
     const value = prompt.trim();
     if (!value) return;
+    if ([...value].length < 2) {
+      setPrompt('');
+      return;
+    }
     const now = Date.now();
     if (lastPromptRef.current.value === value && now - lastPromptRef.current.at < 900) {
       return;
@@ -524,7 +662,7 @@ export default function CustomerBetaPage({
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-black">JASAIN</div>
-                <div className="truncate text-xs text-zinc-500">{currentUser?.username || currentUser?.email || '워크스페이스'}</div>
+                <div className="truncate text-xs text-zinc-500">워크스페이스</div>
               </div>
             </div>
 
@@ -585,24 +723,34 @@ export default function CustomerBetaPage({
                 </SidebarGroup>
               )}
 
-              <SidebarGroup label="CUJASA 계정">
-                {accounts.slice(0, 6).map((item, index) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => onSelectAccount?.(index)}
-                    className={`rounded-xl px-3 py-2 text-left text-sm ${item.id === account?.id ? 'bg-white/10 text-white' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'}`}
-                  >
-                    <div className="truncate font-semibold">{item.name}</div>
-                    <div className="mt-0.5 truncate text-xs text-zinc-600">{item.account_handle || 'Threads 미연결'}</div>
-                  </button>
-                ))}
-                {accounts.length === 0 && (
-                  <div className="rounded-xl px-3 py-2 text-xs leading-relaxed text-zinc-600">
-                    연결된 CUJASA 계정이 없어요. 설정에서 Threads 계정을 먼저 연결해 주세요.
+              {selectedProduct.id === CURRENT_PRODUCT.id ? (
+                <SidebarGroup label="CUJASA 계정">
+                  {accounts.slice(0, 6).map((item, index) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => onSelectAccount?.(index)}
+                      className={`rounded-xl px-3 py-2 text-left text-sm ${item.id === account?.id ? 'bg-white/10 text-white' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'}`}
+                    >
+                      <div className="truncate font-semibold">{item.name}</div>
+                      <div className="mt-0.5 truncate text-xs text-zinc-600">{item.account_handle || 'Threads 미연결'}</div>
+                    </button>
+                  ))}
+                  {accounts.length === 0 && (
+                    <div className="rounded-xl px-3 py-2 text-xs leading-relaxed text-zinc-600">
+                      연결된 CUJASA 계정이 없어요. 설정에서 Threads 계정을 먼저 연결해 주세요.
+                    </div>
+                  )}
+                </SidebarGroup>
+              ) : (
+                <SidebarGroup label={`${selectedProduct.name} 상태`}>
+                  <div className="rounded-xl bg-black/20 px-3 py-3">
+                    <div className="text-xs font-bold text-zinc-500">남은 무료 사용</div>
+                    <div className="mt-1 text-2xl font-black text-zinc-100">{selectedProductUsage.remaining}</div>
+                    <div className="mt-1 text-[11px] text-zinc-600">{selectedProductUsage.used} / {selectedProductUsage.limit}회 사용</div>
                   </div>
-                )}
-              </SidebarGroup>
+                </SidebarGroup>
+              )}
             </div>
 
             <div className="border-t border-white/10 pt-4">
@@ -649,7 +797,7 @@ export default function CustomerBetaPage({
                 </div>
                 <div className="min-w-0">
                   <div className="text-sm font-black">JASAIN</div>
-                  <div className="truncate text-xs text-zinc-500">{currentUser?.username || currentUser?.email || '워크스페이스'}</div>
+                  <div className="truncate text-xs text-zinc-500">워크스페이스</div>
                 </div>
               </div>
               <button type="button" onClick={() => openWorkspaceAction('account-settings')} className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-zinc-400">
@@ -691,7 +839,7 @@ export default function CustomerBetaPage({
                 ))}
               </div>
             )}
-            {accounts.length > 0 && (
+            {selectedProduct.id === CURRENT_PRODUCT.id && accounts.length > 0 && (
               <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
                 {accounts.slice(0, 6).map((item, index) => (
                   <button
@@ -713,7 +861,7 @@ export default function CustomerBetaPage({
               <div className="text-center">
                 <div className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-400">
                   <Bot size={14} />
-                  {currentUser?.username || currentUser?.email || 'JASAIN 계정'}
+                  {selectedProduct.name}
                 </div>
                 <h1 className="text-3xl font-semibold tracking-normal text-zinc-100 sm:text-5xl">무엇을 자동화할까요?</h1>
                 <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-zinc-500">
@@ -810,6 +958,7 @@ export default function CustomerBetaPage({
               setupStatus={setupStatus}
               reloadSetupStatus={reloadSetupStatus}
               reloadAccounts={reloadAccounts}
+              reloadCurrentUser={reloadCurrentUser}
               reloadWorkspaceData={loadWorkspaceData}
               settingsDraft={settingsDraft}
               pipelineResult={pipelineResult}
@@ -818,6 +967,7 @@ export default function CustomerBetaPage({
               onLogout={onLogout}
               onOpenPrivacy={() => setPrivacyOpen(true)}
               onStartProduct={startProduct}
+              onOpenAction={openWorkspaceAction}
               startingProductId={startingProductId}
               closing={drawerClosing}
               onClose={closeDrawer}
@@ -872,7 +1022,7 @@ function BetaChatMessage({ message, onOpenAction }) {
 function TaskDrawer(props) {
   const { action, loadError, closing, onClose } = props;
   const Icon = action.icon;
-  const compactPreview = ['dexor', 'spread'].includes(action.key);
+  const compactPreview = ['dexor', 'spread', 'polibot', 'infludex'].includes(action.key);
 
   return (
     <div className={`fixed inset-0 z-40 transition-opacity duration-300 lg:pointer-events-none ${closing ? 'bg-black/0 opacity-0 lg:bg-transparent' : 'bg-black/30 opacity-100 lg:bg-transparent'}`}>
@@ -901,13 +1051,20 @@ function TaskDrawer(props) {
           {action.key === 'home' && <BetaHomePanel {...props} />}
           {action.key === 'account-settings' && <BetaAccountSettingsPanel {...props} />}
           {action.key === 'billing' && <BetaBillingPanel {...props} />}
-          {action.key === 'dexor-upload' && <DexorUploadPanel />}
-          {action.key === 'dexor-grade' && <DexorGradePanel />}
-          {action.key === 'dexor-download' && <DexorDownloadPanel />}
-          {action.key === 'spread-campaign' && <SpreadCampaignPanel />}
-          {action.key === 'spread-applicants' && <SpreadApplicantsPanel />}
-          {action.key === 'spread-review' && <SpreadReviewPanel />}
-          {['dexor', 'spread'].includes(action.key) && <ProductPreview action={action} onStartProduct={props.onStartProduct} starting={props.startingProductId === action.key} />}
+          {action.key === 'dexor-upload' && <DexorUploadPanel onOpenGrade={() => props.onOpenAction?.('dexor-grade')} />}
+          {action.key === 'dexor-grade' && <DexorGradePanel reloadCurrentUser={props.reloadCurrentUser} onOpenUpload={() => props.onOpenAction?.('dexor-upload')} onOpenBilling={() => props.onOpenAction?.('billing')} />}
+          {action.key === 'dexor-download' && <DexorDownloadPanel onOpenUpload={() => props.onOpenAction?.('dexor-upload')} />}
+          {action.key === 'spread-campaign' && <SpreadCampaignPanel reloadCurrentUser={props.reloadCurrentUser} />}
+          {action.key === 'spread-applicants' && <SpreadApplicantsPanel reloadCurrentUser={props.reloadCurrentUser} />}
+          {action.key === 'spread-review' && <SpreadReviewPanel reloadCurrentUser={props.reloadCurrentUser} />}
+          {action.key === 'polibot-upload' && <PolibotUploadPanel />}
+          {action.key === 'polibot-recommend' && <PolibotRecommendPanel reloadCurrentUser={props.reloadCurrentUser} />}
+          {action.key === 'polibot-customers' && <PolibotCustomersPanel />}
+          {action.key === 'polibot-download' && <PolibotDownloadPanel />}
+          {action.key === 'infludex-upload' && <InfludexUploadPanel onOpenGrade={() => props.onOpenAction?.('infludex-grade')} />}
+          {action.key === 'infludex-grade' && <InfludexGradePanel reloadCurrentUser={props.reloadCurrentUser} onOpenUpload={() => props.onOpenAction?.('infludex-upload')} />}
+          {action.key === 'infludex-download' && <InfludexDownloadPanel onOpenUpload={() => props.onOpenAction?.('infludex-upload')} />}
+          {['dexor', 'spread', 'polibot', 'infludex'].includes(action.key) && <ProductPreview action={action} onStartProduct={props.onStartProduct} starting={props.startingProductId === action.key} />}
         </div>
       </aside>
     </div>
@@ -1347,7 +1504,7 @@ function BetaAccountSettingsPanel({ currentUser, account, accounts, onLogout, on
   );
 }
 
-function BetaBillingPanel({ currentUser }) {
+function BetaBillingPanel({ currentUser, reloadCurrentUser }) {
   const toast = useToast();
   const [products, setProducts] = useState([]);
   const [billing, setBilling] = useState(null);
@@ -1359,6 +1516,9 @@ function BetaBillingPanel({ currentUser }) {
   const productsById = useMemo(() => Object.fromEntries(products.map((product) => [product.id, product])), [products]);
   const latestWaiting = payments.find((payment) => payment.status === 'waiting_for_deposit');
   const activeSubscription = subscriptions.find((subscription) => subscription.status === 'active');
+  const dexorProducts = products.filter((product) => (product.app_product_id || product.appProductId) === 'dexor');
+  const dexorGrant = (currentUser?.products || []).find((grant) => grant.productId === 'dexor');
+  const dexorUsage = getGrantUsage(dexorGrant, 'dexor');
 
   const load = useCallback(async () => {
     const [{ products: nextProducts }, status] = await Promise.all([
@@ -1411,6 +1571,7 @@ function BetaBillingPanel({ currentUser }) {
           toast('월정액 자동결제를 등록했어요.', 'success');
         }
         await load();
+        await reloadCurrentUser?.();
       } catch (err) {
         toast(err.message || '결제 처리에 실패했어요.', 'error');
       } finally {
@@ -1445,6 +1606,19 @@ function BetaBillingPanel({ currentUser }) {
       await requestBillingAuth(payload.toss);
     } catch (err) {
       toast(err.message || '자동결제를 시작하지 못했어요.', 'error');
+      await load().catch(() => {});
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const startDexorCredit = async (productId) => {
+    setBusy(productId);
+    try {
+      const payload = await api.post('/api/billing/checkout/virtual-account', { productId });
+      await requestTossPayment(payload.toss);
+    } catch (err) {
+      toast(err.message || '크레딧 충전을 시작하지 못했어요.', 'error');
       await load().catch(() => {});
     } finally {
       setBusy('');
@@ -1507,12 +1681,34 @@ function BetaBillingPanel({ currentUser }) {
           icon={CreditCard}
           title={billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액'}
           priceText="59,000원 / 월"
-          caption={activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '카드 자동결제'}
+          caption={activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '자동결제 준비 중'}
           product={productsById.monthly_59000}
           busy={busy === 'monthly'}
           onClick={startMonthly}
         />
       </div>
+
+      <PanelCard title="DEXOR 크레딧 충전">
+        <ProductUsageStrip usage={dexorUsage} />
+        <div className="grid gap-2">
+          {dexorProducts.map((product) => (
+            <button
+              key={product.id}
+              type="button"
+              onClick={() => startDexorCredit(product.id)}
+              disabled={busy === product.id}
+              className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-left hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span>
+                <span className="block text-sm font-black text-zinc-100">{product.name}</span>
+                <span className="mt-0.5 block text-xs text-zinc-600">가상계좌 입금 확인 후 크레딧이 반영돼요.</span>
+              </span>
+              <span className="shrink-0 text-sm font-black text-zinc-100">{price(product.amount)}</span>
+            </button>
+          ))}
+          {dexorProducts.length === 0 && <Notice>DEXOR 크레딧 상품이 아직 등록되지 않았어요.</Notice>}
+        </div>
+      </PanelCard>
 
       <PanelCard title="최근 결제">
         {payments.length > 0 ? (
@@ -1668,13 +1864,32 @@ function BetaHomePanel({ queue, analytics, loading, summary }) {
   );
 }
 
-function DexorUploadPanel() {
+function DexorUploadPanel({ onOpenGrade }) {
   const toast = useToast();
   const [urls, setUrls] = useState('');
   const [fileName, setFileName] = useState('');
+  const [targetCategory, setTargetCategory] = useState('맛집');
   const [saving, setSaving] = useState(false);
   const [workspace, setWorkspace] = useState(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const urlCount = urls.split(/\s+/).map((item) => item.trim()).filter(Boolean).length;
+  const usage = workspaceUsage(workspace);
+
+  const loadCandidateFile = (file) => {
+    if (!file) return;
+    setFileName(file.name);
+    if (!/\.csv$|\.txt$/i.test(file.name)) {
+      toast('CSV 파일은 URL과 품질 컬럼을 읽고, 엑셀 파일은 우선 파일명만 저장해요.', 'info');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || '').trim();
+      if (text) setUrls((prev) => [prev.trim(), text].filter(Boolean).join('\n'));
+    };
+    reader.onerror = () => toast('파일을 읽지 못했어요.', 'error');
+    reader.readAsText(file);
+  };
 
   useEffect(() => {
     api.get('/api/product-workspace/dexor')
@@ -1682,6 +1897,7 @@ function DexorUploadPanel() {
         setWorkspace(data || {});
         if (Array.isArray(data?.candidates)) setUrls(data.candidates.map((item) => item.url).join('\n'));
         if (data?.fileName) setFileName(data.fileName);
+        if (data?.targetCategory) setTargetCategory(data.targetCategory);
       })
       .catch((err) => toast(err.message || 'DEXOR 후보를 불러오지 못했어요.', 'error'));
   }, [toast]);
@@ -1689,11 +1905,28 @@ function DexorUploadPanel() {
   const save = async () => {
     setSaving(true);
     try {
-      const next = await api.post('/api/product-workspace/dexor/candidates', { urls, fileName });
+      const next = await api.post('/api/product-workspace/dexor/candidates', { urls, fileName, targetCategory });
       setWorkspace(next);
-      toast('후보를 저장했어요.', 'success');
+      setConfirmOpen(true);
     } catch (err) {
       toast(err.message || '후보 저장에 실패했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reset = async () => {
+    setSaving(true);
+    try {
+      const next = await api.post('/api/product-workspace/dexor/reset', {});
+      setWorkspace(next);
+      setUrls('');
+      setFileName('');
+      setTargetCategory('맛집');
+      setConfirmOpen(false);
+      toast('새 후보를 올릴 준비가 됐어요.', 'success');
+    } catch (err) {
+      toast(err.message || '초기화에 실패했어요.', 'error');
     } finally {
       setSaving(false);
     }
@@ -1702,6 +1935,28 @@ function DexorUploadPanel() {
   return (
     <>
       <PanelCard title="후보 입력">
+        <ProductUsageStrip usage={usage} />
+        <div className="grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
+          <label className={labelClass}>
+            기본 카테고리
+            <select
+              className={inputClass}
+              value={dexorCategoryOptions.includes(targetCategory) ? targetCategory : '기타'}
+              onChange={(event) => setTargetCategory(event.target.value)}
+            >
+              {dexorCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
+            </select>
+          </label>
+          <label className={labelClass}>
+            분석 카테고리
+            <input
+              className={inputClass}
+              value={targetCategory}
+              onChange={(event) => setTargetCategory(event.target.value)}
+              placeholder="예: 맛집, 뷰티, 육아"
+            />
+          </label>
+        </div>
         <label className={labelClass}>
           블로그 URL
           <textarea
@@ -1713,11 +1968,16 @@ function DexorUploadPanel() {
           />
         </label>
         <div className="mt-3 rounded-2xl bg-black/25 px-4 py-3 text-sm text-zinc-500">
-          현재 입력 후보 {urlCount}개 · 저장하면 DEXOR 등급 분석에서 바로 사용할 수 있어요.
+          현재 입력 후보 {urlCount}개 · {targetCategory || '선택한'} 카테고리 기준으로 S/A/B/C/D 랭크를 분석해요.
         </div>
-        <DarkButton className="mt-3 w-full" onClick={save} disabled={saving || urlCount === 0}>
+        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+        <DarkButton onClick={save} disabled={saving || (urlCount === 0 && !fileName)}>
           {saving ? '저장 중...' : '후보 저장'}
         </DarkButton>
+          <DarkButton variant="ghost" onClick={reset} disabled={saving || (!workspace?.candidates?.length && !workspace?.analysisResults?.length && !fileName)}>
+            새로 올리기
+          </DarkButton>
+        </div>
       </PanelCard>
       <PanelCard title="파일 업로드">
         <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 bg-black/25 px-4 py-5 text-sm font-bold text-zinc-300 hover:bg-white/5">
@@ -1729,32 +1989,47 @@ function DexorUploadPanel() {
             type="file"
             accept=".xlsx,.xls,.csv"
             className="hidden"
-            onChange={(event) => setFileName(event.target.files?.[0]?.name || '')}
+            onChange={(event) => loadCandidateFile(event.target.files?.[0])}
           />
         </label>
         <p className="mt-3 text-xs leading-relaxed text-zinc-600">
-          v1에서는 파일 이름과 직접 입력한 URL을 저장해요. 실제 엑셀 파싱은 다음 단계에서 붙일게요.
+          CSV는 URL, 블로그명, 후보 카테고리, 최근글일, 방문/조회, 댓글/공감, 광고성 메모 컬럼을 읽어 분석에 반영해요. 엑셀 파일은 이번 단계에서 파일명만 저장해요.
         </p>
       </PanelCard>
       {workspace?.candidates?.length > 0 && (
         <PanelCard title="저장된 후보">
-          <SimpleInfoList items={workspace.candidates.slice(0, 8).map((item) => item.url)} />
+          <SimpleInfoList items={workspace.candidates.slice(0, 8).map((item) => `${item.url}${item.candidateCategory ? ` · ${item.candidateCategory}` : ''}`)} />
         </PanelCard>
+      )}
+      {confirmOpen && (
+        <DarkConfirmModal
+          title="후보를 저장했어요"
+          description="이제 저장한 후보를 기준으로 등급 분석을 볼 수 있어요."
+          primaryLabel="등급 분석 열기"
+          secondaryLabel="계속 업로드"
+          onPrimary={() => {
+            setConfirmOpen(false);
+            onOpenGrade?.();
+          }}
+          onSecondary={() => setConfirmOpen(false)}
+        />
       )}
     </>
   );
 }
 
-function DexorGradePanel() {
+function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
   const toast = useToast();
   const [workspace, setWorkspace] = useState({});
   const [analyzing, setAnalyzing] = useState(false);
-  const results = Array.isArray(workspace.analysisResults) ? workspace.analysisResults : [];
+  const [scoreHelpOpen, setScoreHelpOpen] = useState(false);
+  const results = sortDexorResults(Array.isArray(workspace.analysisResults) ? workspace.analysisResults : []);
   const candidates = Array.isArray(workspace.candidates) ? workspace.candidates : [];
-  const gradeRows = ['S', 'A', 'B', 'C', 'D'].map((grade) => [
+  const usage = workspaceUsage(workspace);
+  const gradeRows = dexorScoreRows.map(([grade, range, description]) => [
     grade,
-    results.filter((item) => item.grade === grade).length,
-    ({ S: '즉시 선정 후보', A: '우선 검토 후보', B: '조건부 후보', C: '주의 후보', D: '제외 후보' })[grade]
+    results.filter((item) => (item.scoreLabel || item.grade) === grade).length,
+    `${range} · ${description}`
   ]);
 
   const load = useCallback(() => {
@@ -1772,6 +2047,7 @@ function DexorGradePanel() {
     try {
       const next = await api.post('/api/product-workspace/dexor/analyze');
       setWorkspace(next);
+      await reloadCurrentUser?.();
       toast('등급 분석을 완료했어요.', 'success');
     } catch (err) {
       toast(err.message || '등급 분석에 실패했어요.', 'error');
@@ -1780,36 +2056,96 @@ function DexorGradePanel() {
     }
   };
 
+  const reset = async () => {
+    setAnalyzing(true);
+    try {
+      const next = await api.post('/api/product-workspace/dexor/reset', {});
+      setWorkspace(next);
+      onOpenUpload?.();
+      toast('새 후보를 올릴 준비가 됐어요.', 'success');
+    } catch (err) {
+      toast(err.message || '초기화에 실패했어요.', 'error');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   return (
     <>
-      <PanelCard title="등급 요약">
+      <PanelCard
+        title={(
+          <span className="inline-flex items-center gap-2">
+            등급 요약
+            <button
+              type="button"
+              onClick={() => setScoreHelpOpen((prev) => !prev)}
+              className="grid h-5 w-5 place-items-center rounded-full border border-white/15 text-[11px] font-black text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
+              aria-label="등급 기준 보기"
+            >
+              ?
+            </button>
+          </span>
+        )}
+      >
+        <ProductUsageStrip usage={usage} />
+        {scoreHelpOpen && (
+          <div className="mb-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs leading-relaxed text-zinc-500">
+            <div className="grid gap-1">
+              {dexorScoreRows.map(([label, range, description]) => (
+                <div key={label} className="flex items-center justify-between gap-3">
+                  <span className="font-bold text-zinc-300">{label}</span>
+                  <span className="text-right">{range} · {description}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
           {gradeRows.map(([grade, count, label]) => (
             <div key={grade} className="rounded-2xl bg-black/25 px-3 py-4 text-center">
-              <div className="text-2xl font-black text-zinc-100">{grade}</div>
+              <div className="text-base font-black text-zinc-100">{grade}</div>
               <div className="mt-2 text-lg font-black text-zinc-300">{count}</div>
-              <div className="mt-1 text-[11px] leading-tight text-zinc-600">{label}</div>
             </div>
           ))}
         </div>
-        <DarkButton className="mt-3 w-full" onClick={analyze} disabled={analyzing || candidates.length === 0}>
-          {analyzing ? '분석 중...' : `후보 ${candidates.length}개 분석`}
-        </DarkButton>
+        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+          <DarkButton onClick={analyze} disabled={analyzing || candidates.length === 0 || usage.remaining <= 0}>
+            {analyzing ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : `후보 ${candidates.length}개 분석`}
+          </DarkButton>
+          <DarkButton variant="ghost" onClick={reset} disabled={analyzing || (candidates.length === 0 && results.length === 0)}>
+            새로 올리기
+          </DarkButton>
+        </div>
+        {usage.remaining <= 0 && (
+          <div className="mt-3 grid gap-2">
+            <Notice>무료 분석 횟수를 모두 사용했어요. 크레딧을 충전하면 바로 다시 분석할 수 있어요.</Notice>
+            <DarkButton variant="ghost" onClick={onOpenBilling}>크레딧 충전</DarkButton>
+          </div>
+        )}
       </PanelCard>
       <PanelCard title="분석 결과">
         {results.length === 0 ? (
           <Notice>후보 업로드 후 분석을 실행하면 이곳에 결과가 표시돼요.</Notice>
         ) : (
           <div className="grid gap-2">
-            {results.slice(0, 10).map((item) => (
+          {results.slice(0, 10).map((item) => {
+            const displayRank = ({ '씨랭크/다이아': 'S', '최적화': 'A', '준최적화': 'B', '일반': 'C', '제외/재검토': 'D' })[item.scoreLabel || item.grade] || item.scoreLabel || item.grade;
+            return (
               <div key={item.id} className="rounded-2xl bg-black/25 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
-                  <div className="truncate text-sm font-black text-zinc-200">{item.url}</div>
-                  <div className="shrink-0 rounded-full border border-white/10 px-2.5 py-1 text-xs font-black text-zinc-100">{item.grade} · {item.score}</div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-black text-zinc-200">{item.blogName || item.url}</div>
+                    <div className="mt-0.5 truncate text-xs text-zinc-600">{item.url}</div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-black text-zinc-100">{displayRank}</div>
+                    <div className="mt-1 text-xs font-black text-zinc-500">{item.score}점</div>
+                  </div>
                 </div>
-                <div className="mt-2 text-xs text-zinc-600">{item.reasons?.join(' · ')}</div>
+                <div className="mt-2 text-xs font-bold text-zinc-300">{item.scoreComment || dexorScoreComment(item.score)}</div>
               </div>
-            ))}
+            );
+          })}
           </div>
         )}
       </PanelCard>
@@ -1817,10 +2153,12 @@ function DexorGradePanel() {
   );
 }
 
-function DexorDownloadPanel() {
+function DexorDownloadPanel({ onOpenUpload }) {
   const toast = useToast();
   const [workspace, setWorkspace] = useState({});
-  const results = Array.isArray(workspace.analysisResults) ? workspace.analysisResults : [];
+  const [resetting, setResetting] = useState(false);
+  const results = sortDexorResults(Array.isArray(workspace.analysisResults) ? workspace.analysisResults : []);
+  const usage = workspaceUsage(workspace);
 
   useEffect(() => {
     api.get('/api/product-workspace/dexor')
@@ -1829,18 +2167,46 @@ function DexorDownloadPanel() {
   }, [toast]);
 
   const downloadCsv = () => {
-    const header = ['url', 'grade', 'score', 'reasons'];
-    const rows = results.map((item) => [item.url, item.grade, item.score, item.reasons?.join(' | ')].map(csvEscape).join(','));
-    downloadTextFile('dexor-candidates.csv', [header.join(','), ...rows].join('\n'), 'text/csv;charset=utf-8');
+    const header = ['url', 'blogName', 'targetCategory', 'candidateCategory', 'rank', 'score', 'comment', 'summary'];
+    const rows = results.map((item) => [
+      item.url || '미입력',
+      item.blogName || '미입력',
+      item.targetCategory || workspace.targetCategory || '미입력',
+      item.candidateCategory || '미입력',
+      item.scoreLabel || item.grade || '미입력',
+      item.score ?? '미입력',
+      item.scoreComment || dexorScoreComment(item.score),
+      item.reasonSummary || item.reasons?.slice(0, 2).join(' | ') || '기본 지표 기준'
+    ].map(csvEscape).join(','));
+    const csv = `\uFEFF${[header.join(','), ...rows].join('\r\n')}`;
+    downloadTextFile('dexor-candidates.csv', csv, 'text/csv;charset=utf-8');
+  };
+
+  const reset = async () => {
+    setResetting(true);
+    try {
+      const next = await api.post('/api/product-workspace/dexor/reset', {});
+      setWorkspace(next);
+      onOpenUpload?.();
+      toast('새 후보를 올릴 준비가 됐어요.', 'success');
+    } catch (err) {
+      toast(err.message || '초기화에 실패했어요.', 'error');
+    } finally {
+      setResetting(false);
+    }
   };
 
   return (
     <>
       <PanelCard title="내보내기">
+        <ProductUsageStrip usage={usage} />
         <div className="grid gap-2">
           <DarkButton onClick={downloadCsv} disabled={results.length === 0}>
             <Download size={16} />
             CSV 다운로드
+          </DarkButton>
+          <DarkButton variant="ghost" onClick={reset} disabled={resetting || results.length === 0}>
+            새로 올리기
           </DarkButton>
         </div>
         <p className="mt-3 text-xs leading-relaxed text-zinc-600">
@@ -1848,17 +2214,18 @@ function DexorDownloadPanel() {
         </p>
       </PanelCard>
       <PanelCard title="포함 항목">
-        <SimpleInfoList items={['블로그 URL', '최종 등급', '점수', '주요 판단 이유']} />
+        <SimpleInfoList items={['블로그 URL', '블로그명', '목표/후보 카테고리', 'S/A/B/C/D 랭크', '점수와 점수 해석', '주요 판단 이유']} />
       </PanelCard>
     </>
   );
 }
 
-function SpreadCampaignPanel() {
+function SpreadCampaignPanel({ reloadCurrentUser }) {
   const toast = useToast();
   const [draft, setDraft] = useState({ goal: '', channel: '', product: '' });
   const [workspace, setWorkspace] = useState({});
   const [saving, setSaving] = useState(false);
+  const usage = workspaceUsage(workspace);
   const update = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
 
   useEffect(() => {
@@ -1881,6 +2248,7 @@ function SpreadCampaignPanel() {
     try {
       const next = await api.post('/api/product-workspace/spread/campaign', draft);
       setWorkspace(next);
+      await reloadCurrentUser?.();
       toast('캠페인 초안을 만들었어요.', 'success');
     } catch (err) {
       toast(err.message || '캠페인 초안 생성에 실패했어요.', 'error');
@@ -1892,11 +2260,13 @@ function SpreadCampaignPanel() {
   return (
     <>
       <PanelCard title="캠페인 추천 초안">
+        <ProductUsageStrip usage={usage} />
         <div className="grid gap-3">
           <label className={labelClass}>목표<input className={inputClass} value={draft.goal} onChange={(event) => update('goal', event.target.value)} placeholder="예: 신제품 체험단 모집" /></label>
           <label className={labelClass}>채널<input className={inputClass} value={draft.channel} onChange={(event) => update('channel', event.target.value)} placeholder="예: 블로그, Threads, 인스타그램" /></label>
           <label className={labelClass}>상품 유형<input className={inputClass} value={draft.product} onChange={(event) => update('product', event.target.value)} placeholder="예: 주방용품, 뷰티, 생활가전" /></label>
-          <DarkButton onClick={save} disabled={saving}>{saving ? '생성 중...' : '추천 초안 만들기'}</DarkButton>
+          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '생성 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}</DarkButton>
+          {usage.remaining <= 0 && <Notice>무료 사용 횟수를 모두 사용했어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
       {workspace.campaignDraft && (
@@ -1914,11 +2284,12 @@ function SpreadCampaignPanel() {
   );
 }
 
-function SpreadApplicantsPanel() {
+function SpreadApplicantsPanel({ reloadCurrentUser }) {
   const toast = useToast();
   const [form, setForm] = useState({ applicants: '', criteria: '' });
   const [workspace, setWorkspace] = useState({});
   const [saving, setSaving] = useState(false);
+  const usage = workspaceUsage(workspace);
 
   useEffect(() => {
     api.get('/api/product-workspace/spread')
@@ -1931,6 +2302,7 @@ function SpreadApplicantsPanel() {
     try {
       const next = await api.post('/api/product-workspace/spread/applicants', form);
       setWorkspace(next);
+      await reloadCurrentUser?.();
       toast('참여자 선정 초안을 저장했어요.', 'success');
     } catch (err) {
       toast(err.message || '참여자 선정에 실패했어요.', 'error');
@@ -1944,10 +2316,12 @@ function SpreadApplicantsPanel() {
   return (
     <>
       <PanelCard title="참여자 입력">
+        <ProductUsageStrip usage={usage} />
         <div className="grid gap-3">
           <label className={labelClass}>신청자 목록<textarea className={inputClass} rows="4" value={form.applicants} onChange={(event) => setForm((prev) => ({ ...prev, applicants: event.target.value }))} placeholder={'신청자 A\n신청자 B\n신청자 C'} /></label>
           <label className={labelClass}>선정 기준<textarea className={inputClass} rows="3" value={form.criteria} onChange={(event) => setForm((prev) => ({ ...prev, criteria: event.target.value }))} placeholder={'최근 활동성\n카테고리 적합도\n제출 가능 일정'} /></label>
-          <DarkButton onClick={save} disabled={saving}>{saving ? '정리 중...' : '참여자 선정 정리'}</DarkButton>
+          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '정리 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '참여자 선정 정리'}</DarkButton>
+          {usage.remaining <= 0 && <Notice>무료 사용 횟수를 모두 사용했어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
       <PanelCard title="참여자 선정">
@@ -1968,11 +2342,12 @@ function SpreadApplicantsPanel() {
   );
 }
 
-function SpreadReviewPanel() {
+function SpreadReviewPanel({ reloadCurrentUser }) {
   const toast = useToast();
   const [form, setForm] = useState({ url: '', required: '', forbidden: '' });
   const [workspace, setWorkspace] = useState({});
   const [saving, setSaving] = useState(false);
+  const usage = workspaceUsage(workspace);
 
   useEffect(() => {
     api.get('/api/product-workspace/spread')
@@ -1985,6 +2360,7 @@ function SpreadReviewPanel() {
     try {
       const next = await api.post('/api/product-workspace/spread/review', form);
       setWorkspace(next);
+      await reloadCurrentUser?.();
       toast('제출물 검수 초안을 만들었어요.', 'success');
     } catch (err) {
       toast(err.message || '제출물 검수에 실패했어요.', 'error');
@@ -1998,11 +2374,13 @@ function SpreadReviewPanel() {
   return (
     <>
       <PanelCard title="제출물 입력">
+        <ProductUsageStrip usage={usage} />
         <div className="grid gap-3">
           <label className={labelClass}>제출 URL<input className={inputClass} value={form.url} onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))} placeholder="https://..." /></label>
           <label className={labelClass}>필수 키워드<textarea className={inputClass} rows="3" value={form.required} onChange={(event) => setForm((prev) => ({ ...prev, required: event.target.value }))} placeholder={'브랜드명\n제품명\n필수 해시태그'} /></label>
           <label className={labelClass}>금지 표현<textarea className={inputClass} rows="3" value={form.forbidden} onChange={(event) => setForm((prev) => ({ ...prev, forbidden: event.target.value }))} placeholder={'100% 보장\n치료\n과장 표현'} /></label>
-          <DarkButton onClick={save} disabled={saving}>{saving ? '검수 중...' : '제출물 검수'}</DarkButton>
+          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '검수 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '제출물 검수'}</DarkButton>
+          {usage.remaining <= 0 && <Notice>무료 사용 횟수를 모두 사용했어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
       <PanelCard title="제출물 검수">
@@ -2026,12 +2404,408 @@ function SpreadReviewPanel() {
   );
 }
 
+function PolibotUploadPanel() {
+  const toast = useToast();
+  const [form, setForm] = useState({ month: '', note: '' });
+  const [files, setFiles] = useState([]);
+  const [workspace, setWorkspace] = useState({});
+  const [saving, setSaving] = useState(false);
+  const usage = workspaceUsage(workspace);
+
+  useEffect(() => {
+    api.get('/api/product-workspace/polibot')
+      .then((data) => setWorkspace(data || {}))
+      .catch((err) => toast(err.message || 'PoliBot 데이터를 불러오지 못했어요.', 'error'));
+  }, [toast]);
+
+  const loadKnowledgeFiles = async (fileList) => {
+    const selected = Array.from(fileList || []).slice(0, 40);
+    const loaded = await Promise.all(selected.map((file) => new Promise((resolve) => {
+      const base = { name: file.name, size: file.size, type: file.type };
+      if (!/\.(csv|txt)$/i.test(file.name)) {
+        resolve(base);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => resolve({ ...base, text: String(reader.result || '').slice(0, 12000) });
+      reader.onerror = () => resolve(base);
+      reader.readAsText(file);
+    })));
+    setFiles(loaded);
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const next = await api.post('/api/product-workspace/polibot/knowledge', { ...form, files });
+      setWorkspace(next);
+      toast('월별 보험 자료를 지식베이스에 저장했어요.', 'success');
+    } catch (err) {
+      toast(err.message || '저장에 실패했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <PanelCard title="월별 보험 자료">
+        <ProductUsageStrip usage={usage} />
+        <div className="grid gap-3">
+          <label className={labelClass}>자료 월<input className={inputClass} value={form.month} onChange={(event) => setForm((prev) => ({ ...prev, month: event.target.value }))} placeholder="예: 2026-05" /></label>
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 bg-black/25 px-4 py-5 text-sm font-bold text-zinc-300 hover:bg-white/5">
+            <span className="inline-flex items-center gap-2">
+              <Upload size={17} />
+              {files.length ? `${files.length}개 자료 선택됨` : 'PDF/PPTX/CSV/JPEG 자료 선택'}
+            </span>
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.ppt,.pptx,.csv,.txt,.jpg,.jpeg,.png"
+              className="hidden"
+              onChange={(event) => loadKnowledgeFiles(event.target.files)}
+            />
+          </label>
+          <label className={labelClass}>메모<textarea className={inputClass} rows="4" value={form.note} onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))} placeholder="상품군, 보험사, 보장 특이사항을 적어주세요." /></label>
+          <DarkButton onClick={save} disabled={saving || (files.length === 0 && !form.note.trim())}>{saving ? '저장 중...' : '월별 자료 저장'}</DarkButton>
+        </div>
+        <p className="mt-3 text-xs leading-relaxed text-zinc-600">
+          v1은 모델 재학습이 아니라 월별 지식베이스 방식이에요. CSV/TXT는 일부 내용을 읽고, PDF/PPTX/JPEG는 파일명과 메모를 근거로 저장해요.
+        </p>
+      </PanelCard>
+      {workspace.knowledgeSources?.length > 0 && (
+        <PanelCard title="월별 자료 목록">
+          <SimpleInfoList items={workspace.knowledgeSources.slice(0, 10).map((item) => `${item.month} · ${item.fileName} · ${item.company || '미분류'} · ${item.productGroup || '종합 보장'}`)} />
+        </PanelCard>
+      )}
+    </>
+  );
+}
+
+function PolibotRecommendPanel({ reloadCurrentUser }) {
+  const toast = useToast();
+  const [form, setForm] = useState({ age: '', gender: '', needs: '', budget: '', company: '' });
+  const [workspace, setWorkspace] = useState({});
+  const [saving, setSaving] = useState(false);
+  const usage = workspaceUsage(workspace);
+
+  useEffect(() => {
+    api.get('/api/product-workspace/polibot')
+      .then((data) => setWorkspace(data || {}))
+      .catch((err) => toast(err.message || '추천 데이터를 불러오지 못했어요.', 'error'));
+  }, [toast]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const next = await api.post('/api/product-workspace/polibot/recommend', form);
+      setWorkspace(next);
+      await reloadCurrentUser?.();
+      toast('추천 초안을 만들었어요.', 'success');
+    } catch (err) {
+      toast(err.message || '추천 생성에 실패했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <PanelCard title="고객 조건">
+        <ProductUsageStrip usage={usage} />
+        <div className="grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className={labelClass}>나이<input className={inputClass} value={form.age} onChange={(event) => setForm((prev) => ({ ...prev, age: event.target.value }))} placeholder="45" /></label>
+            <label className={labelClass}>성별<input className={inputClass} value={form.gender} onChange={(event) => setForm((prev) => ({ ...prev, gender: event.target.value }))} placeholder="남성/여성" /></label>
+          </div>
+          <label className={labelClass}>필요 보장<textarea className={inputClass} rows="3" value={form.needs} onChange={(event) => setForm((prev) => ({ ...prev, needs: event.target.value }))} placeholder={'암\n입원\n수술'} /></label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className={labelClass}>예산<input className={inputClass} value={form.budget} onChange={(event) => setForm((prev) => ({ ...prev, budget: event.target.value }))} placeholder="10" /></label>
+            <label className={labelClass}>선호 보험사<input className={inputClass} value={form.company} onChange={(event) => setForm((prev) => ({ ...prev, company: event.target.value }))} placeholder="삼성화재" /></label>
+          </div>
+          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '추천 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}</DarkButton>
+        </div>
+      </PanelCard>
+      <PanelCard title="추천 결과">
+        {workspace.recommendations?.length ? (
+          <div className="grid gap-2">
+            {workspace.recommendations.map((item) => (
+              <div key={item.id} className="rounded-2xl bg-black/25 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-black text-zinc-200">{item.name}</div>
+                  <span className="text-sm font-black text-zinc-100">{item.score}</span>
+                </div>
+                <div className="mt-1 text-xs leading-relaxed text-zinc-500">{item.reason} · {item.premium}</div>
+                {item.evidence?.length > 0 && (
+                  <div className="mt-2 text-[11px] leading-relaxed text-zinc-600">
+                    근거 자료: {item.evidence.map((source) => `${source.month} ${source.fileName}`).join(', ')}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : <Notice>고객 조건을 입력하면 추천 초안이 표시돼요.</Notice>}
+      </PanelCard>
+    </>
+  );
+}
+
+function PolibotCustomersPanel() {
+  const toast = useToast();
+  const [form, setForm] = useState({ name: '', age: '', memo: '' });
+  const [workspace, setWorkspace] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get('/api/product-workspace/polibot')
+      .then((data) => setWorkspace(data || {}))
+      .catch((err) => toast(err.message || '고객 데이터를 불러오지 못했어요.', 'error'));
+  }, [toast]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const next = await api.post('/api/product-workspace/polibot/customers', form);
+      setWorkspace(next);
+      setForm({ name: '', age: '', memo: '' });
+      toast('고객 메모를 저장했어요.', 'success');
+    } catch (err) {
+      toast(err.message || '고객 저장에 실패했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <PanelCard title="고객 메모">
+        <div className="grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className={labelClass}>고객명<input className={inputClass} value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} /></label>
+            <label className={labelClass}>나이<input className={inputClass} value={form.age} onChange={(event) => setForm((prev) => ({ ...prev, age: event.target.value }))} /></label>
+          </div>
+          <label className={labelClass}>메모<textarea className={inputClass} rows="4" value={form.memo} onChange={(event) => setForm((prev) => ({ ...prev, memo: event.target.value }))} /></label>
+          <DarkButton onClick={save} disabled={saving}>{saving ? '저장 중...' : '고객 저장'}</DarkButton>
+        </div>
+      </PanelCard>
+      <PanelCard title="고객 목록">
+        {workspace.customers?.length ? <SimpleInfoList items={workspace.customers.map((item) => `${item.name}${item.age ? ` · ${item.age}세` : ''} · ${item.memo || '메모 없음'}`)} /> : <Notice>저장된 고객 메모가 없어요.</Notice>}
+      </PanelCard>
+    </>
+  );
+}
+
+function PolibotDownloadPanel() {
+  const toast = useToast();
+  const [workspace, setWorkspace] = useState({});
+
+  useEffect(() => {
+    api.get('/api/product-workspace/polibot')
+      .then((data) => setWorkspace(data || {}))
+      .catch((err) => toast(err.message || '다운로드 데이터를 불러오지 못했어요.', 'error'));
+  }, [toast]);
+
+  const downloadCsv = () => {
+    const header = ['name', 'score', 'reason', 'premium', 'evidence'];
+    const rows = (workspace.recommendations || []).map((item) => [
+      item.name,
+      item.score,
+      item.reason,
+      item.premium,
+      item.evidence?.map((source) => `${source.month} ${source.fileName}`).join(' | ') || ''
+    ].map(csvEscape).join(','));
+    downloadTextFile('polibot-recommendations.csv', `\uFEFF${[header.join(','), ...rows].join('\r\n')}`, 'text/csv;charset=utf-8');
+  };
+
+  return (
+    <PanelCard title="결과 다운로드">
+      <DarkButton onClick={downloadCsv} disabled={!workspace.recommendations?.length}>
+        <Download size={16} />
+        CSV 다운로드
+      </DarkButton>
+      <p className="mt-3 text-xs leading-relaxed text-zinc-600">추천 결과가 있을 때 CSV로 내려받을 수 있어요.</p>
+    </PanelCard>
+  );
+}
+
+function InfludexUploadPanel({ onOpenGrade }) {
+  const toast = useToast();
+  const [rows, setRows] = useState('');
+  const [fileName, setFileName] = useState('');
+  const [workspace, setWorkspace] = useState({});
+  const [saving, setSaving] = useState(false);
+  const usage = workspaceUsage(workspace);
+
+  useEffect(() => {
+    api.get('/api/product-workspace/infludex')
+      .then((data) => setWorkspace(data || {}))
+      .catch((err) => toast(err.message || 'INFLUDEX 데이터를 불러오지 못했어요.', 'error'));
+  }, [toast]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const next = await api.post('/api/product-workspace/infludex/candidates', { rows, fileName });
+      setWorkspace(next);
+      toast('인스타그램 후보를 저장했어요.', 'success');
+      onOpenGrade?.();
+    } catch (err) {
+      toast(err.message || '후보 저장에 실패했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <PanelCard title="후보 입력">
+        <ProductUsageStrip usage={usage} />
+        <label className={labelClass}>
+          후보 목록
+          <textarea
+            className={inputClass}
+            rows="7"
+            value={rows}
+            onChange={(event) => setRows(event.target.value)}
+            placeholder={'url 또는 @handle, 카테고리, 팔로워, 평균 좋아요, 평균 댓글, 최근 게시일, 광고성 메모\nhttps://instagram.com/example, 뷰티, 35000, 1200, 45, 2026-05-01'}
+          />
+        </label>
+        <label className={`${labelClass} mt-3`}>파일명<input className={inputClass} value={fileName} onChange={(event) => setFileName(event.target.value)} placeholder="infludex_candidates.csv" /></label>
+        <DarkButton className="mt-3 w-full" onClick={save} disabled={saving || !rows.trim()}>{saving ? '저장 중...' : '후보 저장'}</DarkButton>
+      </PanelCard>
+      {workspace.candidates?.length > 0 && (
+        <PanelCard title="저장된 후보">
+          <SimpleInfoList items={workspace.candidates.slice(0, 8).map((item) => item.handle ? `@${item.handle}` : item.url)} />
+        </PanelCard>
+      )}
+    </>
+  );
+}
+
+function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
+  const toast = useToast();
+  const [workspace, setWorkspace] = useState({});
+  const [analyzing, setAnalyzing] = useState(false);
+  const usage = workspaceUsage(workspace);
+  const candidates = Array.isArray(workspace.candidates) ? workspace.candidates : [];
+  const results = sortInfludexResults(Array.isArray(workspace.infludexResults) ? workspace.infludexResults : []);
+
+  useEffect(() => {
+    api.get('/api/product-workspace/infludex')
+      .then((data) => setWorkspace(data || {}))
+      .catch((err) => toast(err.message || '분석 데이터를 불러오지 못했어요.', 'error'));
+  }, [toast]);
+
+  const analyze = async () => {
+    setAnalyzing(true);
+    try {
+      const next = await api.post('/api/product-workspace/infludex/analyze');
+      setWorkspace(next);
+      await reloadCurrentUser?.();
+      toast('씨랭 분석을 완료했어요.', 'success');
+    } catch (err) {
+      toast(err.message || '씨랭 분석에 실패했어요.', 'error');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const reset = async () => {
+    setAnalyzing(true);
+    try {
+      const next = await api.post('/api/product-workspace/infludex/reset', {});
+      setWorkspace(next);
+      onOpenUpload?.();
+      toast('새 후보를 올릴 준비가 됐어요.', 'success');
+    } catch (err) {
+      toast(err.message || '초기화에 실패했어요.', 'error');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  return (
+    <>
+      <PanelCard title="씨랭 분석">
+        <ProductUsageStrip usage={usage} />
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <DarkButton onClick={analyze} disabled={analyzing || candidates.length === 0 || usage.remaining <= 0}>
+            {analyzing ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : `후보 ${candidates.length}개 분석`}
+          </DarkButton>
+          <DarkButton variant="ghost" onClick={reset} disabled={analyzing || (candidates.length === 0 && results.length === 0)}>초기화</DarkButton>
+        </div>
+      </PanelCard>
+      <PanelCard title="분석 결과">
+        {results.length === 0 ? (
+          <Notice>후보를 저장하고 씨랭 분석을 실행하면 결과가 표시돼요.</Notice>
+        ) : (
+          <div className="grid gap-2">
+            {results.map((item) => (
+              <div key={item.id} className="rounded-2xl bg-black/25 px-4 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-black text-zinc-200">{item.handle ? `@${item.handle}` : item.url}</div>
+                    <div className="mt-0.5 text-xs text-zinc-500">{item.category}</div>
+                  </div>
+                  <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-black text-zinc-200">{item.grade} · {item.score}</span>
+                </div>
+                <div className="mt-2 text-xs leading-relaxed text-zinc-600">{item.reasons?.join(' · ')}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </PanelCard>
+    </>
+  );
+}
+
+function InfludexDownloadPanel({ onOpenUpload }) {
+  const toast = useToast();
+  const [workspace, setWorkspace] = useState({});
+  const results = sortInfludexResults(Array.isArray(workspace.infludexResults) ? workspace.infludexResults : []);
+
+  useEffect(() => {
+    api.get('/api/product-workspace/infludex')
+      .then((data) => setWorkspace(data || {}))
+      .catch((err) => toast(err.message || '다운로드 데이터를 불러오지 못했어요.', 'error'));
+  }, [toast]);
+
+  const downloadCsv = () => {
+    const header = ['url', 'handle', 'category', 'grade', 'score', 'followers', 'avgLikes', 'avgComments', 'engagementRate', 'reasons'];
+    const rows = results.map((item) => [
+      item.url,
+      item.handle,
+      item.category,
+      item.grade,
+      item.score,
+      item.followerCount,
+      item.avgLikes,
+      item.avgComments,
+      item.engagementRate,
+      item.reasons?.join(' | ')
+    ].map(csvEscape).join(','));
+    downloadTextFile('infludex-results.csv', `\uFEFF${[header.join(','), ...rows].join('\r\n')}`, 'text/csv;charset=utf-8');
+  };
+
+  return (
+    <PanelCard title="결과 다운로드">
+      <div className="grid gap-2">
+        <DarkButton onClick={downloadCsv} disabled={results.length === 0}>
+          <Download size={16} />
+          CSV 다운로드
+        </DarkButton>
+        <DarkButton variant="ghost" onClick={onOpenUpload}>새 후보 업로드</DarkButton>
+      </div>
+    </PanelCard>
+  );
+}
+
 const productPreviewContent = {
   dexor: {
     title: 'DEXOR',
     subtitle: '블로그 선정 자동화',
     motto: '캠페인 글이 노출될 블로그를 먼저 고릅니다.',
-    description: '후보 URL과 엑셀 목록을 넣으면 활동성, 광고성, 반응성을 기준으로 S/A 후보를 정리해요.',
+    description: '분석 카테고리와 후보 URL을 넣으면 S/A/B/C/D 기준으로 좋은 후보부터 정리해요.',
     cta: 'DEXOR 시작하기'
   },
   spread: {
@@ -2040,6 +2814,20 @@ const productPreviewContent = {
     motto: '캠페인 운영의 반복 작업을 한곳에서 줄여요.',
     description: '캠페인 추천, 참여자 선정, 제출물 검수를 한 흐름으로 묶어 운영자가 판단할 일만 남겨요.',
     cta: 'SPREAD 시작하기'
+  },
+  polibot: {
+    title: 'PoliBot',
+    subtitle: '보험 보장분석 자동화',
+    motto: '보험 상품과 고객 조건을 빠르게 비교해요.',
+    description: 'PDF 업로드, 고객 프로필, 보장 니즈를 바탕으로 추천 초안과 비교 결과를 정리해요.',
+    cta: 'PoliBot 시작하기'
+  },
+  infludex: {
+    title: 'INFLUDEX',
+    subtitle: '인스타그램 인플루언서 분석',
+    motto: '카테고리와 반응 지표로 후보를 먼저 걸러요.',
+    description: '인스타그램 계정 후보를 DIAMOND/S/A/B/C/D 등급으로 정리하고 결과를 다운로드해요.',
+    cta: 'INFLUDEX 시작하기'
   }
 };
 
@@ -2293,6 +3081,34 @@ function DarkSelect({ label, value, onChange, options }) {
         {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
+  );
+}
+
+function ProductUsageStrip({ usage }) {
+  if (!usage) return null;
+  return (
+    <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+      <div>
+        <div className="text-xs font-black text-zinc-500">남은 무료 사용</div>
+        <div className="mt-0.5 text-sm font-bold text-zinc-300">{usage.used} / {usage.limit}회 사용</div>
+      </div>
+      <div className="text-2xl font-black text-zinc-100">{usage.remaining}</div>
+    </div>
+  );
+}
+
+function DarkConfirmModal({ title, description, primaryLabel, secondaryLabel, onPrimary, onSecondary }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-4">
+      <div className="w-full max-w-sm rounded-[28px] border border-white/10 bg-[#191919] p-5 shadow-2xl shadow-black/60">
+        <div className="text-lg font-black text-zinc-100">{title}</div>
+        <p className="mt-2 text-sm leading-relaxed text-zinc-500">{description}</p>
+        <div className="mt-5 grid gap-2">
+          <DarkButton onClick={onPrimary}>{primaryLabel}</DarkButton>
+          <DarkButton variant="ghost" onClick={onSecondary}>{secondaryLabel}</DarkButton>
+        </div>
+      </div>
+    </div>
   );
 }
 

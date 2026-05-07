@@ -29,6 +29,22 @@ export const PRODUCTS = [
     supportLabel: '캠페인 운영 자동화',
     appUrl: 'https://app.jasain.kr',
     landingUrl: 'https://jasain.kr'
+  },
+  {
+    id: 'polibot',
+    name: 'PoliBot',
+    description: '보험 보장분석 및 상품 추천 자동화',
+    supportLabel: '보험 분석 자동화',
+    appUrl: 'https://app.jasain.kr',
+    landingUrl: 'https://jasain.kr/polibot'
+  },
+  {
+    id: 'infludex',
+    name: 'INFLUDEX',
+    description: '인스타그램 인플루언서 등급 분석',
+    supportLabel: '인스타그램 분석 자동화',
+    appUrl: 'https://app.jasain.kr',
+    landingUrl: 'https://jasain.kr/infludex'
   }
 ];
 

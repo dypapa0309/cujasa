@@ -158,26 +158,26 @@ export default function App() {
 
   return (
     <ToastProvider>
-      <div className="min-h-screen bg-[#111111] text-zinc-100">
-        <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-white/10 bg-[#191919] p-4 md:block">
+      <div className="min-h-screen bg-slate-50 text-slate-900">
+        <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-slate-200 bg-white p-4 md:block">
           <div className="px-2">
             <div className="flex items-center gap-3">
               <div className="grid h-9 w-9 place-items-center overflow-hidden rounded-xl bg-white">
                 <img src="/jasain_logo.png" alt="JASAIN" className="h-full w-full object-cover" />
               </div>
               <div>
-                <div className="text-lg font-black">{JASAIN_BRAND.name}</div>
-                <div className="mt-0.5 text-xs text-zinc-500">{isAdmin ? 'Admin workspace' : CURRENT_PRODUCT.supportLabel}</div>
+                <div className="text-lg font-black text-slate-950">{JASAIN_BRAND.name}</div>
+                <div className="mt-0.5 text-xs text-slate-500">{isAdmin ? 'Admin workspace' : CURRENT_PRODUCT.supportLabel}</div>
               </div>
             </div>
             {!isAdmin && currentUser?.maxAccounts && (
-              <div className="mt-3 text-xs text-zinc-500">계정 {accounts.length}/{currentUser.maxAccounts}</div>
+              <div className="mt-3 text-xs text-slate-500">계정 {accounts.length}/{currentUser.maxAccounts}</div>
             )}
           </div>
           <nav className="mt-6 grid gap-1">
             {tabs.map(([key, label, Icon]) => (
               <button key={key} onClick={() => setPage(key)}
-                className={`flex items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-semibold ${page === key ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'} ${key === 'admin-users' ? 'mt-2 border-t border-white/10 pt-3' : ''}`}>
+                className={`flex items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-semibold ${page === key ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'} ${key === 'admin-users' ? 'mt-2 border-t border-slate-200 pt-3' : ''}`}>
                 <Icon size={18} />
                 <span>{label}</span>
               </button>
@@ -186,11 +186,11 @@ export default function App() {
         </aside>
 
         <main className="md:pl-64">
-          <header className="sticky top-0 z-10 border-b border-white/10 bg-[#111111]/90 px-5 py-4 backdrop-blur">
+          <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 px-5 py-4 backdrop-blur">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <h1 className="text-xl font-black text-zinc-100">{tabs.find(([key]) => key === page)?.[1]}</h1>
-                <p className="text-sm text-zinc-500">
+                <h1 className="text-xl font-black text-slate-950">{tabs.find(([key]) => key === page)?.[1]}</h1>
+                <p className="text-sm text-slate-500">
                   {currentUser?.email} · {CURRENT_PRODUCT.name} · {isAdmin ? '관리자' : `계정 ${accounts.length}/${currentUser?.maxAccounts ?? 2}`}
                 </p>
               </div>
@@ -201,13 +201,13 @@ export default function App() {
                   onChange={setSelectedAccountId}
                 />
               )}
-              <button onClick={() => { setAuthToken(''); setCurrentUser(null); }} className="rounded-xl border border-white/10 px-3 py-2 text-sm font-bold text-zinc-400 hover:bg-white/10 hover:text-white">로그아웃</button>
+              <button onClick={() => { setAuthToken(''); setCurrentUser(null); }} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-950">로그아웃</button>
             </div>
             <div className="mt-3 flex gap-2 overflow-x-auto md:hidden">
-              {tabs.map(([key, label]) => <button key={key} onClick={() => setPage(key)} className={`shrink-0 rounded-full border px-3 py-2 text-sm font-bold ${page === key ? 'border-white bg-white text-zinc-950' : 'border-white/10 text-zinc-500'}`}>{label}</button>)}
+              {tabs.map(([key, label]) => <button key={key} onClick={() => setPage(key)} className={`shrink-0 rounded-full border px-3 py-2 text-sm font-bold ${page === key ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-500'}`}>{label}</button>)}
             </div>
           </header>
-          <section className="p-5 [&_.bg-white]:bg-[#191919] [&_.bg-panel]:bg-white/[0.04] [&_.border-line]:border-white/10 [&_.text-slate-900]:text-zinc-100 [&_.text-slate-800]:text-zinc-100 [&_.text-slate-700]:text-zinc-200 [&_.text-slate-600]:text-zinc-400 [&_.text-slate-500]:text-zinc-500 [&_.text-gray-900]:text-zinc-100 [&_.text-gray-800]:text-zinc-100 [&_.text-gray-700]:text-zinc-300 [&_.text-gray-600]:text-zinc-400 [&_.text-gray-500]:text-zinc-500">
+          <section className="p-5">
             <Page
               accounts={accounts}
               selectedAccount={selectedAccount}

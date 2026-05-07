@@ -119,6 +119,7 @@ export function mapPayment(row) {
   return {
     id: row.id,
     productId: row.product_id,
+    appProductId: row.app_product_id || 'cujasa',
     subscriptionId: row.subscription_id,
     orderId: row.order_id,
     provider: row.provider,
@@ -213,9 +214,11 @@ router.post('/checkout/virtual-account', async (req, res, next) => {
     if (product.billing_cycle !== 'once') return res.status(400).json({ error: '일시불 상품만 가상계좌 결제가 가능합니다.' });
     assertTossConfigured();
 
-    const orderId = makeOrderId('CUJASA-ONETIME');
+    const appProductId = product.app_product_id || 'cujasa';
+    const orderId = makeOrderId(appProductId === 'dexor' ? 'DEXOR-CREDIT' : 'CUJASA-ONETIME');
     const payment = await dbInsert('billing_payments', {
       user_id: user.userId,
+      app_product_id: appProductId,
       product_id: product.id,
       order_id: orderId,
       provider: 'toss',
@@ -267,7 +270,7 @@ router.post('/toss/success', async (req, res, next) => {
 
     if (nextStatus === 'paid') {
       await applyPaidEntitlement({ userId: user.userId, product, payment: updated, paidAt: new Date(), source: 'toss' });
-    } else {
+    } else if ((product.app_product_id || 'cujasa') === 'cujasa') {
       await dbUpdate('users', { id: user.userId }, { billing_status: 'pending' });
     }
 
@@ -287,6 +290,7 @@ router.post('/billing-auth', async (req, res, next) => {
     if (!req.body.authKey) {
       const subscription = await dbInsert('billing_subscriptions', {
         user_id: user.userId,
+        app_product_id: product.app_product_id || 'cujasa',
         product_id: product.id,
         customer_key: customerKey,
         status: 'pending'
@@ -323,6 +327,7 @@ router.post('/billing-auth', async (req, res, next) => {
     const nextBillingAt = addMonths(now, 1).toISOString();
     const payment = await dbInsert('billing_payments', {
       user_id: user.userId,
+      app_product_id: product.app_product_id || 'cujasa',
       product_id: product.id,
       subscription_id: subscription.id,
       order_id: orderId,
@@ -376,6 +381,7 @@ router.post('/subscriptions/:id/charge', async (req, res, next) => {
     const nextBillingAt = addMonths(now, 1).toISOString();
     const payment = await dbInsert('billing_payments', {
       user_id: user.userId,
+      app_product_id: product.app_product_id || 'cujasa',
       product_id: product.id,
       subscription_id: subscription.id,
       order_id: orderId,

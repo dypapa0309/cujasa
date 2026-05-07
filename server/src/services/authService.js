@@ -160,25 +160,26 @@ function defaultProductGrant() {
 }
 
 export async function listAvailableProducts() {
+  const configuredProducts = PRODUCTS.map((product) => ({
+    id: product.id,
+    name: product.name,
+    description: product.description,
+    app_url: product.appUrl,
+    landing_url: product.landingUrl,
+    status: product.status || 'active'
+  }));
   try {
     const rows = await dbList('jasain_products', {}, { order: 'name', ascending: true });
-    return rows.length > 0 ? rows : PRODUCTS.map((product) => ({
-      id: product.id,
-      name: product.name,
-      description: product.description,
-      app_url: product.appUrl,
-      landing_url: product.landingUrl,
-      status: product.status
-    }));
+    const merged = new Map(configuredProducts.map((product) => [product.id, product]));
+    rows.forEach((product) => {
+      merged.set(product.id, {
+        ...merged.get(product.id),
+        ...product
+      });
+    });
+    return [...merged.values()];
   } catch {
-    return PRODUCTS.map((product) => ({
-      id: product.id,
-      name: product.name,
-      description: product.description,
-      app_url: product.appUrl,
-      landing_url: product.landingUrl,
-      status: product.status
-    }));
+    return configuredProducts;
   }
 }
 
@@ -190,7 +191,7 @@ export async function listUserProducts(userId, { includeSettings = false } = {})
       listAvailableProducts()
     ]);
     const productById = Object.fromEntries(products.map((product) => [product.id, product]));
-    const activeGrants = grants.filter((grant) => grant.status !== 'suspended');
+    const activeGrants = includeSettings ? grants : grants.filter((grant) => grant.status !== 'suspended');
     if (activeGrants.length === 0) return [];
     return activeGrants.map((grant) => {
       const product = productById[grant.product_id] || {};
@@ -217,6 +218,22 @@ export async function listUserProducts(userId, { includeSettings = false } = {})
 }
 
 export async function grantUserProduct(userId, productId = DEFAULT_PRODUCT_ID, patch = {}) {
+  const product = PRODUCTS.find((item) => item.id === productId);
+  if (product && !(await dbGet('jasain_products', { id: product.id }))) {
+    try {
+      await dbInsert('jasain_products', {
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        app_url: product.appUrl,
+        landing_url: product.landingUrl,
+        status: product.status || 'active',
+        updated_at: new Date().toISOString()
+      });
+    } catch (error) {
+      if (!String(error?.message || '').toLowerCase().includes('duplicate')) throw error;
+    }
+  }
   const existing = await dbGet('user_products', { user_id: userId, product_id: productId });
   const payload = {
     status: patch.status || 'active',
@@ -246,13 +263,55 @@ export async function updateUserProductSettings(userId, productId, settingsPatch
   const next = { ...current };
   const allowed = ['coupangAccessKey', 'coupangSecretKey', 'coupangPartnerId', 'defaultTrackingCode'];
   for (const key of allowed) {
-    if (Object.prototype.hasOwnProperty.call(settingsPatch, key)) {
+    if (productId === 'cujasa' && Object.prototype.hasOwnProperty.call(settingsPatch, key)) {
       const value = String(settingsPatch[key] ?? '').trim();
       if (!value) continue;
       next[key] = value;
     }
   }
-  const [updated] = await dbUpdate('user_products', { user_id: userId, product_id: productId }, { settings: next });
+  if (Object.prototype.hasOwnProperty.call(settingsPatch, 'usage')) {
+    const patchUsage = settingsPatch.usage && typeof settingsPatch.usage === 'object' ? settingsPatch.usage : {};
+    const raw = patchUsage[productId] && typeof patchUsage[productId] === 'object' ? patchUsage[productId] : patchUsage;
+    const usageRoot = next.usage && typeof next.usage === 'object' ? next.usage : {};
+    const currentUsage = usageRoot[productId] && typeof usageRoot[productId] === 'object' ? usageRoot[productId] : {};
+    const limit = Number.isFinite(Number(raw.limit)) ? Math.max(0, Number(raw.limit)) : Number(currentUsage.limit ?? 5);
+    const used = Number.isFinite(Number(raw.used)) ? Math.max(0, Number(raw.used)) : Number(currentUsage.used ?? 0);
+    next.usage = {
+      ...usageRoot,
+      [productId]: {
+        limit: Math.max(0, limit),
+        used: Math.max(0, used)
+      }
+    };
+  }
+  const grantPatch = { settings: next };
+  if (Object.prototype.hasOwnProperty.call(settingsPatch, 'billing')) {
+    const rawBilling = settingsPatch.billing && typeof settingsPatch.billing === 'object' ? settingsPatch.billing : {};
+    const plan = ['free', 'onetime', 'monthly', 'suspended'].includes(rawBilling.plan) ? rawBilling.plan : 'free';
+    const now = new Date();
+    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const billing = {
+      plan,
+      status: plan === 'suspended' ? 'suspended' : plan === 'free' ? 'none' : plan === 'onetime' ? 'paid' : 'active',
+      paidUntil: plan === 'monthly' ? (rawBilling.paidUntil || in30Days) : null,
+      updatedAt: now.toISOString()
+    };
+    next.billing = billing;
+    grantPatch.settings = next;
+    grantPatch.status = plan === 'suspended' ? 'suspended' : 'active';
+    if (productId === DEFAULT_PRODUCT_ID) {
+      const userPatch = plan === 'suspended'
+        ? { status: 'suspended' }
+        : {
+          status: 'active',
+          plan,
+          billing_status: billing.status,
+          paid_until: billing.paidUntil
+        };
+      await dbUpdate('users', { id: userId }, userPatch);
+    }
+  }
+  const [updated] = await dbUpdate('user_products', { user_id: userId, product_id: productId }, grantPatch);
   return updated;
 }
 

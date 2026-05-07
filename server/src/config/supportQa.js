@@ -19,7 +19,7 @@ export const supportQaTree = {
     },
     cujasa: {
       title: 'CUJASA 문의',
-      body: 'CUJASA는 쿠팡 파트너스 상품 검색, 콘텐츠 생성, Threads 예약 업로드를 운영하는 자동화 도구입니다.',
+      body: 'CUJASA는 주제 선정, 쿠팡 파트너스 상품 검색, 콘텐츠 생성, Threads 예약 업로드를 한 화면에서 처리하는 자동화 도구입니다.',
       options: [
         { label: '쿠팡 링크는 어떻게 붙나요?', next: 'cujasa-links' },
         { label: 'Threads 자동 포스팅 방식', next: 'cujasa-threads' },
@@ -62,9 +62,10 @@ export const supportQaTree = {
     },
     dexor: {
       title: 'DEXOR 문의',
-      body: 'DEXOR는 블로그 분석, 키워드 발굴, 콘텐츠 선정 업무를 도와주는 자동화 서비스입니다.',
+      body: 'DEXOR는 분석 카테고리를 정한 뒤 블로그 후보를 업로드하고 S/A/B/C/D 랭크 기준으로 좋은 블로그를 먼저 고르는 자동화 서비스입니다.',
       options: [
         { label: '블로그 분석 자동화', next: 'dexor-analysis' },
+        { label: '크레딧/충전 안내', next: 'dexor-credit' },
         { label: '키워드/콘텐츠 선정', next: 'dexor-keywords' },
         { label: 'DEXOR 시작하기', action: 'link', href: 'https://app.jasain.kr/?mode=register&product=dexor#tab=beta' },
         { label: '상담 신청하기', action: 'inquiry', topic: 'dexor' }
@@ -80,10 +81,18 @@ export const supportQaTree = {
     },
     'dexor-analysis': {
       title: '블로그 분석 자동화',
-      body: '반복적인 블로그 데이터 확인과 선정 과정을 줄이고, 운영자가 판단하기 쉬운 형태로 정리하는 데 초점을 둡니다.',
+      body: '분석 카테고리, URL, 네이버 블로그 여부, 최근글일, 방문/조회 추정, 댓글/공감, 광고성 메모를 기준으로 후보를 점수화하고 S/A/B/C/D 순서로 정렬합니다.',
       options: [
         { label: 'DEXOR 도입 상담', action: 'inquiry', topic: 'dexor_analysis' },
         { label: '문의 남기기', action: 'inquiry', topic: 'dexor_analysis' }
+      ]
+    },
+    'dexor-credit': {
+      title: 'DEXOR 크레딧/충전 안내',
+      body: 'DEXOR는 무료 5회 이후 크레딧을 충전해 사용합니다. 충전은 가상계좌 전용이며 5천원 10회, 1만원 25회, 5만원 150회, 10만원 350회 기준입니다. 입금 확인 후 서버에서 크레딧이 반영됩니다.',
+      options: [
+        { label: 'DEXOR 시작하기', action: 'link', href: 'https://app.jasain.kr/?mode=register&product=dexor#tab=beta' },
+        { label: '문의 남기기', action: 'inquiry', topic: 'dexor_credit' }
       ]
     },
     'dexor-keywords': {

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { DEFAULT_PRODUCT_ID, productById } from '../config/products.js';
-import { grantUserProduct, isAuthConfigured, listUserProducts, loginAdmin, loginUser, registerFreeUser, shouldBypassAuth } from '../services/authService.js';
+import { grantUserProduct, isAuthConfigured, listAvailableProducts, listUserProducts, loginAdmin, loginUser, registerFreeUser, shouldBypassAuth } from '../services/authService.js';
 import { createRateLimit } from '../middleware/rateLimit.js';
 import { completeThreadsOAuth, createThreadsAuthUrl } from '../services/threadsOAuthService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
@@ -71,7 +71,15 @@ router.get('/me', async (req, res, next) => {
 router.post('/products/:productId/start', async (req, res, next) => {
   try {
     if (!req.user || req.user.type !== 'user') return res.status(401).json({ error: 'Unauthorized' });
-    const product = productById(req.params.productId);
+    const requestedProductId = String(req.params.productId || '').trim().toLowerCase();
+    const configuredProduct = productById(requestedProductId);
+    const products = await listAvailableProducts();
+    const dbProduct = products.find((item) => item.id === requestedProductId);
+    const product = dbProduct ? {
+      id: dbProduct.id,
+      name: dbProduct.name,
+      status: dbProduct.status
+    } : configuredProduct;
     if (!product || product.status === 'inactive') return res.status(404).json({ error: 'Product not found' });
 
     await grantUserProduct(req.user.userId, product.id, { status: 'active', role: 'customer' });
