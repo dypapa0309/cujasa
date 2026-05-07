@@ -17,6 +17,32 @@ const ACTION_KEYS = new Set([
 const PRODUCT_IDS = new Set(['cujasa', 'dexor', 'spread', 'polibot', 'infludex']);
 const DEXOR_CATEGORIES = ['맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
 const INSURANCE_NEEDS = ['암', '암보장', '유사암', '뇌', '심장', '질병', '상해', '입원', '수술', '실손', '실비', '간병', '치매', '운전자', '어린이', '태아', '생활비', '진단비'];
+const LOW_CONFIDENCE_THRESHOLD = 0.55;
+
+const ACTION_PRODUCT = {
+  run: 'cujasa',
+  settings: 'cujasa',
+  posts: 'cujasa',
+  home: 'cujasa',
+  billing: 'cujasa',
+  dexor: 'dexor',
+  spread: 'spread',
+  polibot: 'polibot',
+  infludex: 'infludex',
+  'dexor-upload': 'dexor',
+  'dexor-grade': 'dexor',
+  'dexor-download': 'dexor',
+  'spread-campaign': 'spread',
+  'spread-applicants': 'spread',
+  'spread-review': 'spread',
+  'polibot-upload': 'polibot',
+  'polibot-recommend': 'polibot',
+  'polibot-customers': 'polibot',
+  'polibot-download': 'polibot',
+  'infludex-upload': 'infludex',
+  'infludex-grade': 'infludex',
+  'infludex-download': 'infludex'
+};
 
 function normalizeText(value = '') {
   return String(value || '').trim().replace(/\s+/g, ' ');
@@ -30,6 +56,43 @@ function safeButtons(items = []) {
   return items.filter(Boolean).slice(0, 4);
 }
 
+function actionProductId(action = '') {
+  return ACTION_PRODUCT[action] || '';
+}
+
+function normalizeAssistantResult(result = {}, defaults = {}) {
+  const action = ACTION_KEYS.has(result.action) ? result.action : '';
+  const productId = productById(result.productId)?.id || actionProductId(action) || defaults.productId || defaults.currentProduct || 'cujasa';
+  const draft = result.draft && typeof result.draft === 'object' ? result.draft : {};
+  const confidence = Number(result.confidence);
+  return {
+    answer: String(result.answer || '').trim(),
+    intent: String(result.intent || 'assistant'),
+    productId,
+    action,
+    draft,
+    confidence: Number.isFinite(confidence) ? Math.max(0, Math.min(1, confidence)) : Number(defaults.confidence ?? 0.8),
+    source: result.source || defaults.source || 'server_deterministic',
+    requiresConfirmation: Boolean(result.requiresConfirmation),
+    buttons: safeButtons((result.buttons || []).map((item) => button(item.label, item.actionKey || item.action))),
+    clarification: Boolean(result.clarification)
+  };
+}
+
+function clarificationResult({ currentProduct = 'cujasa', buttons = [], answer = '' } = {}) {
+  return normalizeAssistantResult({
+    answer: answer || '어떤 작업을 도와드릴까요? 아래에서 가까운 작업을 골라주세요.',
+    intent: 'clarification_required',
+    productId: currentProduct,
+    action: '',
+    draft: {},
+    confidence: 0.35,
+    requiresConfirmation: true,
+    clarification: true,
+    buttons
+  }, { currentProduct, source: 'server_deterministic' });
+}
+
 function productFromMessage(message = '', currentProduct = 'cujasa') {
   const text = message.toLowerCase();
   if (/폴리봇|polibot|보험|보장/.test(text)) return 'polibot';
@@ -40,6 +103,35 @@ function productFromMessage(message = '', currentProduct = 'cujasa') {
   return 'cujasa';
 }
 
+function taskListResult(currentProduct = 'cujasa') {
+  if (currentProduct === 'dexor') {
+    return clarificationResult({
+      currentProduct,
+      answer: 'DEXOR에서 어떤 작업을 열까요?',
+      buttons: safeButtons([button('후보 업로드', 'dexor-upload'), button('등급 분석', 'dexor-grade'), button('결과 다운로드', 'dexor-download')])
+    });
+  }
+  if (currentProduct === 'spread') {
+    return clarificationResult({
+      currentProduct,
+      answer: 'SPREAD에서 어떤 작업을 열까요?',
+      buttons: safeButtons([button('캠페인 추천', 'spread-campaign'), button('참여자 선정', 'spread-applicants'), button('제출물 검수', 'spread-review')])
+    });
+  }
+  if (currentProduct === 'polibot') {
+    return clarificationResult({
+      currentProduct,
+      answer: 'POLIBOT에서 어떤 작업을 열까요?',
+      buttons: safeButtons([button('PDF 업로드', 'polibot-upload'), button('상품 추천', 'polibot-recommend'), button('고객 관리', 'polibot-customers'), button('결과 다운로드', 'polibot-download')])
+    });
+  }
+  return clarificationResult({
+    currentProduct,
+    answer: 'CUJASA에서 어떤 작업을 열까요?',
+    buttons: safeButtons([button('자동화 실행', 'run'), button('설정 열기', 'settings'), button('포스팅 현황', 'posts'), button('결제 확인', 'billing')])
+  });
+}
+
 function shouldLoadPolibotContext(message = '', currentProduct = 'cujasa') {
   return productFromMessage(message, currentProduct) === 'polibot'
     || /폴리봇|polibot|보험|보장|암|실비|실손|진단비|생활비|추천.*왜|상품.*없|자료|pdf/i.test(message);
@@ -48,6 +140,7 @@ function shouldLoadPolibotContext(message = '', currentProduct = 'cujasa') {
 function deterministicKind(result = {}) {
   const intent = String(result.intent || '');
   if (!intent || intent === 'fallback') return '';
+  if (intent === 'clarification_required') return 'clarification';
   if (intent.includes('draft')) return 'draft_created';
   return 'faq_hit';
 }
@@ -57,10 +150,12 @@ function extractAge(text = '') {
 }
 
 function extractName(text = '') {
-  return text.match(/\d{2}\s*세\s*([가-힣]{2,4})(?:은|는|이|가|님|씨)?/)?.[1]
+  const name = text.match(/\d{2}\s*세\s*(?:남성|남자|여성|여자|남|여)\s*([가-힣]{2,4})(?:은|는|이|가|님|씨|고객)?/)?.[1]
+    || text.match(/\d{2}\s*세\s*([가-힣]{2,4})(?:은|는|이|가|님|씨)?/)?.[1]
     || text.match(/([가-힣]{2,4})(?:은|는|이|가|님|씨)?\s*\d{2}\s*(?:세|살)/)?.[1]
     || text.match(/([가-힣]{2,4})\s*(?:고객|님)/)?.[1]
     || '';
+  return ['남성', '남자', '여성', '여자'].includes(name) ? '' : name;
 }
 
 function extractBudget(text = '') {
@@ -172,41 +267,125 @@ function summarizeWorkspace(workspace = {}, productId = '') {
   };
 }
 
-function deterministicAssistant({ message, currentProduct, workspace, availableProducts = [] }) {
+export function classifyWorkspaceAssistantIntent({ message, currentProduct = 'cujasa', workspace = {}, availableProducts = [] } = {}) {
   const text = normalizeText(message);
+  const lower = text.toLowerCase();
+  if (/작업|기능|메뉴|뭐\s*있|뭐있|할\s*수|뭘\s*할/.test(text)) return taskListResult(currentProduct);
   if (/자사인|jasain|회사|서비스|솔루션|상품.*뭐|제품.*뭐|뭐.*있|무슨\s*서비스/.test(text)) {
-    return {
+    return normalizeAssistantResult({
       answer: 'JASAIN은 자동화 솔루션 허브예요. 현재 CUJASA는 쿠팡 파트너스/Threads 자동화, DEXOR는 블로그 후보 분석, SPREAD는 캠페인 운영, POLIBOT은 보험 보장분석과 추천 초안, INFLUDEX는 인스타그램 후보 분석을 맡아요.',
       intent: 'jasain_product_overview',
+      productId: currentProduct,
       action: '',
       draft: {},
+      confidence: 0.9,
       requiresConfirmation: false,
       buttons: safeButtons([button('CUJASA 설정', 'settings'), button('POLIBOT 상품 추천', 'polibot-recommend'), button('DEXOR 후보 분석', 'dexor-upload')])
-    };
+    }, { currentProduct });
   }
   if (/쿠자사|cujasa|쿠팡.*자동화|threads.*자동화|스레드.*자동화/.test(text) && /뭐|설명|란|어떤|서비스/.test(text)) {
-    return {
+    return normalizeAssistantResult({
       answer: 'CUJASA는 주제 선정, 쿠팡 상품 연결, Threads용 글 생성, 예약 업로드를 한 화면에서 처리하는 자동화 솔루션이에요. 설정에서 Threads와 쿠팡 API를 연결한 뒤 자동화 실행으로 예약 글을 만들 수 있어요.',
       intent: 'cujasa_product_overview',
+      productId: 'cujasa',
       action: 'settings',
       draft: {},
+      confidence: 0.86,
       requiresConfirmation: false,
       buttons: safeButtons([button('설정 열기', 'settings'), button('자동화 실행', 'run'), button('포스팅 현황', 'posts')])
-    };
+    }, { currentProduct });
   }
   const productId = productFromMessage(text, currentProduct);
   const grantedProducts = new Set(availableProducts);
   if (productId !== 'cujasa' && !grantedProducts.has(productId)) {
     const product = productById(productId);
-    return {
+    return normalizeAssistantResult({
       answer: `${product?.name || productId}는 먼저 시작하기를 눌러야 작업을 열 수 있어요. 오른쪽 제품 패널에서 바로 시작할 수 있게 열어둘게요.`,
       intent: 'product_start_required',
+      productId,
       action: productId,
       draft: {},
+      confidence: 0.95,
       requiresConfirmation: true,
       buttons: safeButtons([button(`${product?.name || productId} 시작`, productId), button('결제 확인', 'billing')])
-    };
+    }, { currentProduct });
   }
+
+  if (/결제|가격|월정액|영구|환불|입금|구매|카드|크레딧|충전/.test(text)) {
+    return normalizeAssistantResult({
+      answer: '결제 패널을 열게요. 현재 이용권, 결제 상태, 충전 정보를 확인할 수 있어요.',
+      intent: 'billing_status',
+      productId: currentProduct,
+      action: 'billing',
+      confidence: 0.88,
+      buttons: safeButtons([button('결제 확인', 'billing')])
+    }, { currentProduct });
+  }
+
+  const cujasaDraft = parseCujasaDraft(text);
+  if (cujasaDraft) {
+    return normalizeAssistantResult({
+      answer: 'CUJASA 운영 설정 초안을 채웠어요. 오른쪽 설정 패널에서 타깃, 톤, 카테고리를 확인한 뒤 저장해 주세요.',
+      intent: 'cujasa_settings_draft',
+      productId: 'cujasa',
+      action: 'settings',
+      draft: cujasaDraft,
+      confidence: 0.9,
+      requiresConfirmation: true,
+      buttons: safeButtons([button('설정 열기', 'settings'), button('자동화 실행', 'run')])
+    }, { currentProduct });
+  }
+
+  if (productId === 'cujasa') {
+    if (/계정|로그아웃|비밀번호|아이디|이메일|연락처|회원/.test(text)) {
+      return clarificationResult({
+        currentProduct,
+        answer: '계정 정보는 계정 설정에서 확인해 주세요. 지금은 작업 패널 대신 계정 메뉴로 안내할게요.',
+        buttons: safeButtons([button('결제 확인', 'billing'), button('설정 열기', 'settings')])
+      });
+    }
+    if (/설정|api|threads|스레드|쓰레드|쿠팡|세팅|연결|토큰|트래킹|tracking|시간|스케줄|예약 시간/.test(text)) {
+      return normalizeAssistantResult({
+        answer: 'CUJASA 설정 패널을 열게요. Threads 연결, 쿠팡 API, 스케줄을 확인할 수 있어요.',
+        intent: 'cujasa_settings',
+        productId: 'cujasa',
+        action: 'settings',
+        confidence: 0.88,
+        buttons: safeButtons([button('설정 열기', 'settings'), button('자동화 실행', 'run')])
+      }, { currentProduct });
+    }
+    if (/포스팅|글|현황|결과|예약된|실패|확인 필요/.test(text)) {
+      return normalizeAssistantResult({
+        answer: '포스팅 현황 패널을 열게요. 예약, 완료, 확인 필요 글을 볼 수 있어요.',
+        intent: 'cujasa_posts',
+        productId: 'cujasa',
+        action: 'posts',
+        confidence: 0.82,
+        buttons: safeButtons([button('포스팅 현황', 'posts'), button('자동화 실행', 'run')])
+      }, { currentProduct });
+    }
+    if (/실행|자동화|예약|시작|돌려|생성/.test(text)) {
+      return normalizeAssistantResult({
+        answer: '자동화 실행 패널을 열게요. 사전 점검 후 오늘 예약을 만들 수 있어요.',
+        intent: 'cujasa_run',
+        productId: 'cujasa',
+        action: 'run',
+        confidence: 0.84,
+        buttons: safeButtons([button('자동화 실행', 'run'), button('설정 열기', 'settings')])
+      }, { currentProduct });
+    }
+    if (/성과|분석|클릭|대시|홈/.test(text)) {
+      return normalizeAssistantResult({
+        answer: '성과 화면을 열게요. 예약 수와 클릭 성과를 요약해서 볼 수 있어요.',
+        intent: 'cujasa_home',
+        productId: 'cujasa',
+        action: 'home',
+        confidence: 0.8,
+        buttons: safeButtons([button('성과 보기', 'home'), button('포스팅 현황', 'posts')])
+      }, { currentProduct });
+    }
+  }
+
   if (productId === 'polibot') {
     const summary = summarizePolibot(workspace.polibot || {});
     if (/왜\s*안|안\s*돼|실패|추천.*없|상품.*없|안\s*나/.test(text)) {
@@ -214,25 +393,29 @@ function deterministicAssistant({ message, currentProduct, workspace, availableP
         || (summary.recommendableProducts <= 0
           ? '추천에 쓸 확정 상품 데이터가 아직 부족해요.'
           : '고객 조건과 추천 가능 상품의 매칭이 약해서 보수적으로 추천을 막았어요.');
-      return {
+      return normalizeAssistantResult({
         answer: `${reason} 현재 추천 가능 상품은 ${summary.recommendableProducts || 0}개, 정보 부족 상품은 ${summary.insufficientProducts || 0}개, 검수 필요는 ${summary.reviewNeededProducts || 0}개예요. 자료 화면에서 확정 상품의 가입조건, 담보, 주의 문구를 먼저 확인해 주세요.`,
         intent: 'polibot_recommendation_blocked_reason',
+        productId: 'polibot',
         action: 'polibot-upload',
         draft: {},
+        confidence: 0.9,
         requiresConfirmation: false,
         buttons: safeButtons([button('자료 확인', 'polibot-upload'), button('상품 추천', 'polibot-recommend')])
-      };
+      }, { currentProduct });
     }
     if (/자료|데이터|많|보험사|지식|뭐.*있|얼마나/.test(text)) {
       const companyText = summary.companies.length ? summary.companies.slice(0, 8).join(', ') : '아직 보험사 목록이 부족해요';
-      return {
+      return normalizeAssistantResult({
         answer: `POLIBOT에는 자료 ${summary.knowledgeCount}개가 잡혀 있어요. 추천 가능 상품은 ${summary.recommendableProducts || 0}개, 정보 부족 상품은 ${summary.insufficientProducts || 0}개, 검수 필요는 ${summary.reviewNeededProducts || 0}개, OCR 필요 자료는 ${summary.ocrNeeded || 0}개예요. 최신 자료 월은 ${summary.latestMonth || '미확인'}이고, 보험사는 ${companyText} 기준으로 확인돼요.`,
         intent: 'polibot_knowledge_status',
+        productId: 'polibot',
         action: 'polibot-upload',
         draft: {},
+        confidence: 0.92,
         requiresConfirmation: false,
         buttons: safeButtons([button('월별 자료 보기', 'polibot-upload'), button('상품 추천', 'polibot-recommend')])
-      };
+      }, { currentProduct });
     }
     const needs = extractInsuranceNeeds(text);
     if (/추천|상품|보험|보장/.test(text) && (extractAge(text) || needs.length > 0)) {
@@ -245,92 +428,142 @@ function deterministicAssistant({ message, currentProduct, workspace, availableP
         company: '전체 보험사',
         ...extractInsuranceDetails(text)
       };
-      return {
+      return normalizeAssistantResult({
         answer: 'POLIBOT 상품 추천 초안을 채웠어요. 오른쪽 패널에서 고객 조건을 확인한 뒤 추천 초안 만들기를 눌러주세요.',
         intent: 'polibot_recommendation_draft',
+        productId: 'polibot',
         action: 'polibot-recommend',
         draft,
+        confidence: 0.94,
         requiresConfirmation: true,
         buttons: safeButtons([button('상품 추천 열기', 'polibot-recommend'), button('자료 확인', 'polibot-upload')])
-      };
+      }, { currentProduct });
     }
+    if (/고객|목록|관리|저장/.test(text)) {
+      return normalizeAssistantResult({
+        answer: 'POLIBOT 고객 관리 패널을 열게요. 고객 조건과 추천 기록을 정리할 수 있어요.',
+        intent: 'polibot_customers',
+        productId: 'polibot',
+        action: 'polibot-customers',
+        confidence: 0.86,
+        buttons: safeButtons([button('고객 관리', 'polibot-customers'), button('상품 추천', 'polibot-recommend')])
+      }, { currentProduct });
+    }
+    if (/다운로드|내보내|csv|엑셀|결과/.test(text)) {
+      return normalizeAssistantResult({
+        answer: 'POLIBOT 결과 다운로드 패널을 열게요. 추천 결과를 CSV로 받을 수 있어요.',
+        intent: 'polibot_download',
+        productId: 'polibot',
+        action: 'polibot-download',
+        confidence: 0.84,
+        buttons: safeButtons([button('결과 다운로드', 'polibot-download'), button('상품 추천', 'polibot-recommend')])
+      }, { currentProduct });
+    }
+    return clarificationResult({
+      currentProduct: 'polibot',
+      answer: 'POLIBOT에서 자료 확인, 상품 추천, 고객 관리 중 어떤 작업을 열까요?',
+      buttons: safeButtons([button('PDF 업로드', 'polibot-upload'), button('상품 추천', 'polibot-recommend'), button('고객 관리', 'polibot-customers')])
+    });
   }
 
   if (productId === 'dexor') {
     const category = extractDexorCategory(text);
     if (/다운로드|내보내|csv|엑셀/.test(text)) {
-      return {
+      return normalizeAssistantResult({
         answer: 'DEXOR 결과 다운로드 패널을 열게요. 화면에 보이는 정렬 그대로 CSV를 받을 수 있어요.',
         intent: 'dexor_download',
+        productId: 'dexor',
         action: 'dexor-download',
         draft: {},
+        confidence: 0.9,
         requiresConfirmation: false,
         buttons: safeButtons([button('결과 다운로드', 'dexor-download'), button('등급 분석', 'dexor-grade')])
-      };
+      }, { currentProduct });
     }
     if (/결과|등급|점수|랭크|분석.*봤/.test(text)) {
-      return {
+      return normalizeAssistantResult({
         answer: 'DEXOR 등급 분석 패널을 열게요. 후보를 먼저 저장했다면 S/A/B/C/D 순서로 결과를 확인할 수 있어요.',
         intent: 'dexor_grade',
+        productId: 'dexor',
         action: 'dexor-grade',
         draft: category ? { targetCategory: category } : {},
+        confidence: 0.88,
         requiresConfirmation: false,
         buttons: safeButtons([button('등급 분석', 'dexor-grade'), button('후보 업로드', 'dexor-upload')])
-      };
+      }, { currentProduct });
     }
     if (/분석|후보|블로그|씨랭|등급|맛집|뷰티|육아|가전|여행/.test(text)) {
-      return {
+      return normalizeAssistantResult({
         answer: `${category || '선택한'} 카테고리 기준으로 DEXOR 후보 업로드 화면을 열게요. URL이나 CSV를 넣은 뒤 저장하면 등급 분석으로 넘어갈 수 있어요.`,
         intent: 'dexor_candidate_draft',
+        productId: 'dexor',
         action: 'dexor-upload',
         draft: category ? { targetCategory: category } : {},
+        confidence: 0.86,
         requiresConfirmation: true,
         buttons: safeButtons([button('후보 업로드', 'dexor-upload'), button('등급 분석', 'dexor-grade')])
-      };
+      }, { currentProduct });
     }
+    return clarificationResult({
+      currentProduct: 'dexor',
+      answer: 'DEXOR에서 후보 업로드, 등급 분석, 다운로드 중 어떤 작업을 열까요?',
+      buttons: safeButtons([button('후보 업로드', 'dexor-upload'), button('등급 분석', 'dexor-grade'), button('결과 다운로드', 'dexor-download')])
+    });
   }
 
   if (productId === 'spread') {
-    return {
+    if (/참여자|신청자|선정|후보/.test(text)) {
+      return normalizeAssistantResult({
+        answer: 'SPREAD 참여자 선정 패널을 열게요. 신청자와 선정 기준을 비교할 수 있어요.',
+        intent: 'spread_applicants',
+        productId: 'spread',
+        action: 'spread-applicants',
+        confidence: 0.86,
+        buttons: safeButtons([button('참여자 선정', 'spread-applicants'), button('캠페인 추천', 'spread-campaign')])
+      }, { currentProduct });
+    }
+    if (/제출|검수|url|키워드|금지/.test(text)) {
+      return normalizeAssistantResult({
+        answer: 'SPREAD 제출물 검수 패널을 열게요. 제출 URL과 필수 조건을 점검할 수 있어요.',
+        intent: 'spread_review',
+        productId: 'spread',
+        action: 'spread-review',
+        confidence: 0.86,
+        buttons: safeButtons([button('제출물 검수', 'spread-review'), button('참여자 선정', 'spread-applicants')])
+      }, { currentProduct });
+    }
+    return normalizeAssistantResult({
       answer: 'SPREAD 캠페인 초안 패널을 열게요. 캠페인 목표, 채널, 상품 유형을 확인한 뒤 저장하면 돼요.',
       intent: 'spread_campaign_draft',
+      productId: 'spread',
       action: 'spread-campaign',
       draft: {
         goal: text.match(/(?:목표|목적|캠페인)\s*([가-힣A-Za-z0-9\s]{2,30})/)?.[1]?.trim() || '',
         channel: /인스타|instagram/i.test(text) ? 'Instagram' : /블로그/.test(text) ? 'Blog' : '',
         product: text.match(/(?:상품|제품)\s*([가-힣A-Za-z0-9\s]{2,30})/)?.[1]?.trim() || ''
       },
+      confidence: /스프레드|spread|캠페인/.test(lower) ? 0.84 : 0.64,
       requiresConfirmation: true,
       buttons: safeButtons([button('캠페인 추천', 'spread-campaign')])
-    };
+    }, { currentProduct });
   }
 
-  const cujasaDraft = parseCujasaDraft(text);
-  if (cujasaDraft) {
-    return {
-      answer: 'CUJASA 운영 설정 초안을 채웠어요. 오른쪽 설정 패널에서 타깃, 톤, 카테고리를 확인한 뒤 저장해 주세요.',
-      intent: 'cujasa_settings_draft',
-      action: 'settings',
-      draft: cujasaDraft,
-      requiresConfirmation: true,
-      buttons: safeButtons([button('설정 열기', 'settings'), button('자동화 실행', 'run')])
-    };
-  }
+  return clarificationResult({
+    currentProduct,
+    answer: '정확히 어떤 작업을 열지 한 번만 골라주세요. 그 다음부터는 문장을 더 넓게 이해해서 이어갈게요.',
+    buttons: safeButtons([button('설정 열기', 'settings'), button('자동화 실행', 'run'), button('상품 추천', 'polibot-recommend'), button('후보 분석', 'dexor-upload')])
+  });
+}
 
-  return {
-    answer: '질문을 조금 더 구체적으로 입력해 주세요. 예를 들면 “37세 남성 암보험 추천”, “폴리봇 자료 뭐 있어?”, “맛집 블로그 후보 분석”, “3040 여성 반말로 주방용품 포스팅”처럼 말하면 작업 초안을 만들 수 있어요.',
-    intent: 'fallback',
-    action: '',
-    draft: {},
-    requiresConfirmation: false,
-    buttons: safeButtons([button('설정 열기', 'settings'), button('상품 추천', 'polibot-recommend')])
-  };
+function deterministicAssistant(options) {
+  return classifyWorkspaceAssistantIntent(options);
 }
 
 function validateAssistantResponse(value) {
   if (!value || typeof value !== 'object') return { ok: false, reason: 'response is not object' };
   if (typeof value.answer !== 'string') return { ok: false, reason: 'answer missing' };
   if (value.action && !ACTION_KEYS.has(value.action)) return { ok: false, reason: 'invalid action' };
+  if (value.productId && !PRODUCT_IDS.has(value.productId)) return { ok: false, reason: 'invalid productId' };
   if (value.draft && typeof value.draft !== 'object') return { ok: false, reason: 'invalid draft' };
   return true;
 }
@@ -374,7 +607,8 @@ export async function logWorkspaceAssistantEvent(userId, payload = {}) {
     'workspace_assistant_fallback',
     'workspace_assistant_draft_created',
     'workspace_assistant_wrong_panel',
-    'workspace_assistant_slow_ai'
+    'workspace_assistant_slow_ai',
+    'workspace_assistant_clarification'
   ]);
   if (!allowed.has(event)) return { ok: false };
   await logWorkspaceAssistant(userId, {
@@ -418,6 +652,10 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
         source: 'server_deterministic',
         intent: deterministic.intent,
         action: deterministic.action || '',
+        productId: deterministic.productId || '',
+        confidence: deterministic.confidence,
+        hasDraft: Object.keys(deterministic.draft || {}).length > 0,
+        clarification: Boolean(deterministic.clarification),
         currentProduct,
         inferredProduct
       }
@@ -443,6 +681,8 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
         'For DEXOR, use dexor-upload for candidate/category drafts, dexor-grade for analysis results, dexor-download for CSV/export.',
         'For CUJASA settings, draft keys are target_audience, tone, content_scope.',
         'For DEXOR, draft key is targetCategory.',
+        'Return productId and confidence between 0 and 1.',
+        'If confidence is low, return action empty, intent clarification_required, requiresConfirmation true, and 2-4 buttons.',
         'Answer in friendly Korean 요체.'
       ].join('\n')
     },
@@ -471,7 +711,7 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
         message,
         level: 'warn',
         durationMs: Date.now() - startedAt,
-        payload: { reason, currentProduct, inferredProduct }
+        payload: { reason, currentProduct, inferredProduct, source: 'ai_fallback' }
       });
     }
   });
@@ -479,33 +719,62 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
   const taskProduct = String(response.action || '').split('-')[0];
   if (PRODUCT_IDS.has(taskProduct) && taskProduct !== 'cujasa' && !availableProducts.has(taskProduct)) {
     const product = productById(taskProduct);
-    return {
+    const gated = normalizeAssistantResult({
       answer: `${product?.name || taskProduct}는 먼저 시작하기를 눌러야 작업을 열 수 있어요. 오른쪽 제품 패널에서 바로 시작할 수 있게 열어둘게요.`,
       intent: 'product_start_required',
+      productId: taskProduct,
       action: taskProduct,
       draft: {},
+      confidence: 0.95,
+      source: 'server_access_gate',
       requiresConfirmation: true,
       buttons: safeButtons([button(`${product?.name || taskProduct} 시작`, taskProduct), button('결제 확인', 'billing')])
-    };
+    }, { currentProduct });
+    await logWorkspaceAssistant(userId, {
+      action: 'workspace_assistant_faq_hit',
+      message,
+      durationMs: Date.now() - startedAt,
+      payload: {
+        source: gated.source,
+        intent: gated.intent,
+        action: gated.action,
+        productId: gated.productId,
+        confidence: gated.confidence,
+        hasDraft: false,
+        clarification: false,
+        currentProduct,
+        inferredProduct
+      }
+    });
+    return gated;
   }
 
-  const result = {
-    answer: String(response.answer || '').trim(),
-    intent: String(response.intent || 'assistant'),
-    action: ACTION_KEYS.has(response.action) ? response.action : '',
-    draft: response.draft && typeof response.draft === 'object' ? response.draft : {},
-    requiresConfirmation: Boolean(response.requiresConfirmation),
-    buttons: safeButtons((response.buttons || []).map((item) => button(item.label, item.actionKey || item.action)))
-  };
+  let result = normalizeAssistantResult(response, { currentProduct, source: 'ai_json', confidence: 0.7 });
+  if (result.confidence < LOW_CONFIDENCE_THRESHOLD && !result.clarification) {
+    result = clarificationResult({
+      currentProduct,
+      answer: result.answer || '확실히 맞는 작업을 고르기 어려워요. 아래에서 가까운 항목을 선택해 주세요.',
+      buttons: result.buttons.length ? result.buttons : [button('설정 열기', 'settings'), button('자동화 실행', 'run'), button('상품 추천', 'polibot-recommend')]
+    });
+    result.source = 'ai_low_confidence';
+  }
   await logWorkspaceAssistant(userId, {
-    action: result.intent === 'fallback' ? 'workspace_assistant_fallback' : 'workspace_assistant_ai_answer',
+    action: result.intent === 'fallback'
+      ? 'workspace_assistant_fallback'
+      : result.clarification
+        ? 'workspace_assistant_clarification'
+        : 'workspace_assistant_ai_answer',
     message,
     level: result.intent === 'fallback' ? 'warn' : 'info',
     durationMs: Date.now() - startedAt,
     payload: {
+      source: result.source,
       intent: result.intent,
       action: result.action,
+      productId: result.productId,
+      confidence: result.confidence,
       hasDraft: Object.keys(result.draft || {}).length > 0,
+      clarification: Boolean(result.clarification),
       currentProduct,
       inferredProduct
     }

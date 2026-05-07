@@ -80,112 +80,6 @@ const dexorScoreRows = [
   ['D', '60점 미만', '제외 또는 재검토']
 ];
 const polibotNeedOptions = ['암', '뇌', '심장', '수술', '입원', '실손', '생활비', '운전자'];
-const betaFaqItems = [
-  {
-    id: 'what-cujasa',
-    patterns: ['쿠자사 뭐야', 'cujasa 뭐야', '쿠자사가 뭐야', 'cujasa가 뭐야', '쿠자사란', 'cujasa란', '쿠자사 설명', 'cujasa 설명', '쿠팡 자동화 뭐야', '스레드 자동화 뭐야'],
-    answer: 'CUJASA는 주제 선정, 쿠팡 파트너스 상품 검색, 콘텐츠 생성, Threads 예약 업로드를 한 화면에서 처리하는 자동화 솔루션이에요. 지금은 텍스트 기반 Threads 자동화가 중심이고, 이후 이미지/영상 포맷과 다른 제휴 채널까지 확장할 예정이에요.',
-    actions: [{ label: '자동화 실행', actionKey: 'run' }, { label: '설정 열기', actionKey: 'settings' }]
-  },
-  {
-    id: 'jasain-products',
-    patterns: ['자사인 뭐야', 'jasain 뭐야', '이 회사 뭐야', '솔루션 뭐 있어', '제품 뭐 있어', '상품 뭐 있어', '서비스 상품', '서비스하는 상품', '무슨 서비스', '뭐뭐 있어'],
-    answer: 'JASAIN은 자동화 솔루션 허브예요. CUJASA는 제휴 콘텐츠와 Threads 업로드, DEXOR는 블로그 후보 분석, SPREAD는 캠페인 운영, POLIBOT은 보험 보장분석, INFLUDEX는 인스타그램 인플루언서 분석을 맡아요.',
-    actions: [{ label: 'DEXOR 열기', actionKey: 'dexor-upload' }, { label: 'INFLUDEX 열기', actionKey: 'infludex-upload' }]
-  },
-  {
-    id: 'coupang-api',
-    patterns: ['쿠팡 api', 'api 키', 'access key', 'secret key', '파트너', 'tracking', '트래킹'],
-    answer: '쿠팡 파트너스 API 키는 설정 확인 패널의 쿠팡 API 섹션에 입력해요. Access Key, Secret Key, Partner ID, Tracking Code를 저장하면 CUJASA가 실제 쿠팡 상품을 검색하고 링크 글에 연결해요. 비워두면 기존 저장값은 유지돼요.',
-    actions: [{ label: '설정 열기', actionKey: 'settings' }]
-  },
-  {
-    id: 'trial',
-    patterns: ['무료체험', '무료 체험', '몇 번', '5회', '체험', '무료'],
-    answer: '무료 체험은 실제 Threads 업로드 5회까지 사용할 수 있어요. 체험 횟수를 모두 쓰면 자동화 실행이 막히고, 결제 후 계속 사용할 수 있어요.',
-    actions: [{ label: '자동화 실행', actionKey: 'run' }, { label: '결제 확인', actionKey: 'billing' }]
-  },
-  {
-    id: 'real-products',
-    patterns: ['실상품', '실 상품', '링크 필요', '상품 링크', '검색 링크', '수익화 링크'],
-    answer: '실상품 링크는 쿠팡 API에서 실제 상품으로 확인된 링크예요. 검색 실패 임시상품이나 검색 URL은 수익화 링크로 쓰지 않아요. 링크 글을 예약하려면 먼저 실상품이 검색되고 콘텐츠에 연결되어야 해요.',
-    actions: [{ label: '포스팅 현황', actionKey: 'posts' }, { label: '설정 열기', actionKey: 'settings' }]
-  },
-  {
-    id: 'threads',
-    patterns: ['threads', '스레드', '쓰레드', '연결 안', '연동 안', '토큰', '로그인'],
-    answer: 'Threads 연결은 브라우저의 threads.net 로그인 상태를 기준으로 진행돼요. 앱만 로그인되어 있으면 실패할 수 있으니 Chrome 또는 Safari에서 올바른 Threads 계정으로 로그인한 뒤 다시 연결해 주세요.',
-    actions: [{ label: '설정 열기', actionKey: 'settings' }]
-  },
-  {
-    id: 'schedule',
-    patterns: ['시간', '업로드 시간', '스케줄', '예약 시간', '첫 업로드'],
-    answer: '업로드 시간은 설정 확인 패널의 포스팅 스케줄에서 첫 업로드 시각 하나로 관리해요. 하루 여러 개가 예약되면 이 시각부터 설정된 간격으로 뒤에 배치돼요.',
-    actions: [{ label: '설정 열기', actionKey: 'settings' }, { label: '포스팅 현황', actionKey: 'posts' }]
-  },
-  {
-    id: 'pricing',
-    patterns: ['결제', '가격', '월정액', '영구', '환불', '입금', '구매'],
-    answer: '결제는 JASAIN 계정 단위로 관리해요. 무료 체험 이후에는 결제 상태에 따라 자동화 사용 권한이 유지돼요. 결제 패널에서 현재 상태와 상품을 확인할 수 있어요.',
-    actions: [{ label: '결제 확인', actionKey: 'billing' }]
-  },
-  {
-    id: 'dexor-credit',
-    patterns: ['덱서 크레딧', 'dexor 크레딧', '크레딧 충전', '남은 횟수', '분석 횟수', '5천원', '만원', '가상계좌'],
-    answer: 'DEXOR는 무료 5회 이후 크레딧을 충전해서 써요. 충전은 가상계좌 전용이고 5천원 10회, 1만원 25회, 5만원 150회, 10만원 350회 기준이에요. 입금 확인이 서버에 들어온 뒤 크레딧이 반영돼요.',
-    actions: [{ label: '결제 확인', actionKey: 'billing' }, { label: '등급 분석', actionKey: 'dexor-grade' }]
-  },
-  {
-    id: 'dexor-quality',
-    patterns: ['블로그 품질', '품질 분석', '등급 기준', '씨랭', '씨랭크', '최적화', '준최적화', '좋은 블로그', '광고성'],
-    answer: 'DEXOR는 분석 카테고리를 먼저 정한 뒤 후보 URL, 네이버 블로그 여부, 최근글일, 방문/조회 추정, 댓글/공감, 광고성 메모를 기준으로 S/A/B/C/D 순서로 정리해요. CSV에 후보 카테고리와 품질 컬럼을 넣으면 이유와 점수가 더 구체적으로 나와요.',
-    actions: [{ label: '후보 업로드', actionKey: 'dexor-upload' }, { label: '등급 분석', actionKey: 'dexor-grade' }]
-  },
-  {
-    id: 'affiliate-expansion',
-    patterns: ['어필리에이트', '제휴 채널', '토스 쉐어', '토스쉐어', '쿠팡 말고', '링크 비율', '1:1', '1:2:1'],
-    answer: 'CUJASA 확장은 제휴 채널을 최대 3개까지 붙이는 방향으로 잡고 있어요. 1차는 쿠팡 파트너스, 토스 쉐어링크/수동 링크, 커스텀 제휴 링크로 보고 있고, 링크 노출은 1:1 또는 1:2:1 같은 가중치로 랜덤 배치하는 구조가 적합해요.',
-    actions: [{ label: '설정 열기', actionKey: 'settings' }]
-  },
-  {
-    id: 'spread-automation',
-    patterns: ['스프레드 자동화', 'spread 자동화', '캠페인 등록', '신청자', '신청 마감', '리스트 다운로드', '제출물'],
-    answer: 'SPREAD는 광고주가 캠페인을 등록하고, 신청자가 들어오고, 마감 후 참여자 리스트와 제출물 검수를 정리하는 방향의 자동화로 확장할 수 있어요. 지금은 캠페인 추천, 참여자 선정, 제출물 검수 v1 작업 패널이 준비돼 있어요.',
-    actions: [{ label: '캠페인 추천', actionKey: 'spread-campaign' }, { label: '참여자 선정', actionKey: 'spread-applicants' }]
-  },
-  {
-    id: 'polibot',
-    patterns: ['polibot', '폴리봇', '보험 분석', '보장분석', '보험 추천', '보험 pdf', '암보장', '보장 상품', '상품 추천', '추천 받고', '생활비', '진단비'],
-    answer: 'POLIBOT은 보험 상품 PDF와 고객 조건을 정리해서 보장분석과 상품 추천 초안을 만드는 솔루션이에요. 추천은 가입 권유가 아니라 검토용 초안이며, 고지사항·기존 실손·병력·예산을 확인한 뒤 설계사 검토가 필요해요.',
-    actions: [{ label: 'PDF 업로드', actionKey: 'polibot-upload' }, { label: '상품 추천', actionKey: 'polibot-recommend' }]
-  },
-  {
-    id: 'infludex',
-    patterns: ['infludex', '인플루덱스', '인스타 분석', '인스타그램 분석', '씨랭', 'c-rank', '카테고리 어디'],
-    answer: 'INFLUDEX는 인스타그램 후보 계정을 카테고리, 팔로워, 평균 좋아요/댓글, 최근 활동, 광고성 메모 기준으로 DIAMOND/S/A/B/C/D 등급으로 정리해요. 결과에는 카테고리와 등급 사유가 같이 보여요.',
-    actions: [{ label: '후보 업로드', actionKey: 'infludex-upload' }, { label: '씨랭 분석', actionKey: 'infludex-grade' }]
-  },
-  {
-    id: 'dexor-spread',
-    patterns: ['dexor', '덱서', 'spread', '스프레드', '블로그 선정', '캠페인'],
-    answer: 'DEXOR는 블로그 후보 업로드, 등급 분석, 후보 다운로드 흐름으로 써요. SPREAD는 캠페인 추천, 참여자 선정, 제출물 검수 흐름으로 써요. 보유 제품이면 바로 작업 패널을 열고, 아직 보유 전이면 제품 시작 화면을 먼저 보여줘요.',
-    actions: [
-      { label: 'DEXOR 열기', actionKey: 'dexor-upload' },
-      { label: 'SPREAD 열기', actionKey: 'spread-campaign' }
-    ]
-  },
-  {
-    id: 'setup-error',
-    patterns: ['오류', '에러', '실패', '안돼', '안 되', '세팅', '설정 문제'],
-    answer: '오류나 세팅 문제는 대부분 Threads 연결, 쿠팡 API 키, 실상품 연결, 결제 권한 중 하나에서 생겨요. 먼저 설정 확인에서 저장값을 점검하고, 자동화 실행에서 사전 점검을 돌려보세요.',
-    actions: [{ label: '설정 열기', actionKey: 'settings' }, { label: '자동화 실행', actionKey: 'run' }]
-  }
-];
-
-function findFaqAnswer(value = '') {
-  const text = value.toLowerCase().replace(/\s+/g, ' ');
-  return betaFaqItems.find((item) => item.patterns.some((pattern) => text.includes(pattern.toLowerCase())));
-}
 
 function clampDailyPostCount(value, fallback = 1) {
   const number = Number(value);
@@ -269,58 +163,6 @@ async function requestBillingAuth(toss) {
     successUrl: toss.successUrl,
     failUrl: toss.failUrl
   });
-}
-
-function parseSettingsDraft(value = '') {
-  const text = value.trim();
-  if (!/(타겟|대상|여성|남성|주방|용품|톤|말투|반말|존댓말|포스팅|글)/.test(text)) return null;
-
-  const targetMatch = text.match(/((?:\d{2,4}대|\d{2,4})\s*(?:여성|남성|주부|직장인|자취생|부모|엄마|아빠|대학생|청년|중년)?|(?:여성|남성|주부|직장인|자취생|부모|엄마|아빠|대학생|청년|중년))/);
-  const toneMatch = text.match(/(반말|존댓말|친근(?:한|하게)?|전문적(?:인|으로)?|담백(?:한|하게)?|짧(?:은|게)?|유머(?:러스)?|정보성)/);
-  const scopeMatch = text.match(/([가-힣A-Za-z0-9]{2,20}(?:용품|제품|상품|아이템|가전|식품|생활용품|주방용품|청소용품))/)
-    || text.match(/(?:대해|대한|관련|주제로|카테고리(?:는)?|상품(?:은)?|용품(?:은)?|포스팅(?:해줘|하기)?\s*)([가-힣A-Za-z0-9\s]{2,24}?)(?:에 대해|으로|로|를|을|포스팅|글|$)/);
-
-  const values = {};
-  if (targetMatch?.[1]) values.target_audience = targetMatch[1].replace(/\s+/g, ' ').trim();
-  if (toneMatch?.[1]) values.tone = toneMatch[1].replace(/하게$|한$|인$|으로$/g, '').trim();
-  if (scopeMatch?.[1]) {
-    values.content_scope = scopeMatch[1]
-      .replace(/^(으로|로|를|을|에|대해|대한)\s*/, '')
-      .replace(/\s*(에 대해|에 대한|으로|로|를|을|포스팅|글).*$/, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  const meaningful = ['target_audience', 'tone', 'content_scope'].filter((key) => values[key]);
-  if (meaningful.length < 2) return null;
-  return values;
-}
-
-const POLIBOT_NEED_KEYWORDS = ['암', '암보장', '유사암', '뇌', '심장', '질병', '상해', '입원', '수술', '실손', '실비', '간병', '치매', '운전자', '어린이', '태아', '생활비', '진단비'];
-
-function parsePolibotDraft(value = '') {
-  const text = value.trim();
-  if (!/(폴리봇|polibot|보험|보장|암|실비|실손|진단비|생활비|상품\s*추천|추천)/i.test(text)) return null;
-  const needs = [...new Set(POLIBOT_NEED_KEYWORDS
-    .filter((keyword) => text.includes(keyword))
-    .map((keyword) => (keyword === '암보장' ? '암' : keyword)))];
-  const age = text.match(/(\d{2})\s*세/)?.[1] || text.match(/(\d{2})\s*살/)?.[1] || '';
-  const name = text.match(/\d{2}\s*세\s*([가-힣]{2,4})(?:은|는|이|가|님|씨)?/)?.[1]
-    || text.match(/([가-힣]{2,4})(?:은|는|이|가|님|씨)?\s*\d{2}\s*(?:세|살)/)?.[1]
-    || text.match(/([가-힣]{2,4})\s*(?:고객|님|씨)/)?.[1]
-    || '';
-  const gender = /여성|여자|여\b/.test(text) ? '여성' : /남성|남자|남\b/.test(text) ? '남성' : '';
-  const budget = text.match(/월\s*(\d{1,3})\s*만/)?.[1] || text.match(/(\d{1,3})\s*만원/)?.[1] || '';
-
-  if (!age && needs.length === 0 && !/(보험|보장|상품\s*추천)/.test(text)) return null;
-  return {
-    name,
-    age,
-    gender,
-    needs: needs.join('\n'),
-    budget,
-    company: '전체 보험사'
-  };
 }
 
 function getGrantUsage(grant, productId) {
@@ -584,37 +426,6 @@ export default function CustomerBetaPage({
     return Boolean(fallbackValue);
   };
 
-  const resolvePromptAction = (value = '') => {
-    const text = value.toLowerCase();
-    const byKey = (key) => actions.find((item) => item.key === key);
-    if (/계정|로그아웃|비밀번호|아이디|이메일|연락처|회원/.test(text)) return byKey('account-settings');
-    if (/결제|가격|월정액|영구|환불|입금|구매|카드/.test(text)) return byKey('billing');
-    if (/덱서|dexor|블로그|후보/.test(text)) {
-      if (!grantedProductIds.has('dexor')) return byKey('dexor');
-      if (/분석|등급|점수|씨랭|씨랭크|최적화|준최적화|s\/a|s등급|a등급/.test(text)) return byKey('dexor-grade');
-      if (/다운로드|내보내|csv|엑셀|xlsx/.test(text)) return byKey('dexor-download');
-      return byKey('dexor-upload');
-    }
-    if (/스프레드|spread|캠페인|참여자|신청자|제출|검수/.test(text)) {
-      if (!grantedProductIds.has('spread')) return byKey('spread');
-      if (/참여자|신청자|선정|후보/.test(text)) return byKey('spread-applicants');
-      if (/제출|검수|url|키워드|금지/.test(text)) return byKey('spread-review');
-      return byKey('spread-campaign');
-    }
-    if (/폴리봇|polibot|보험|보장|암|실비|실손|진단비|생활비|상품\s*추천/.test(text)) {
-      if (!grantedProductIds.has('polibot')) return byKey('polibot');
-      if (/자료|pdf|업로드|문서|보험사|데이터/.test(text)) return byKey('polibot-upload');
-      if (/고객|목록|관리|저장/.test(text)) return byKey('polibot-customers');
-      if (/다운로드|내보내|csv|엑셀|결과/.test(text)) return byKey('polibot-download');
-      return byKey('polibot-recommend');
-    }
-    if (/설정|api|threads|쿠팡|세팅/.test(text)) return byKey('settings');
-    if (/실행|자동화|예약|시작/.test(text)) return byKey('run');
-    if (/포스팅|글|현황|결과/.test(text)) return byKey('posts');
-    if (/성과|분석|클릭|대시/.test(text)) return byKey('home');
-    return null;
-  };
-
   const closeDrawer = () => {
     setDrawerClosing(true);
     window.setTimeout(() => {
@@ -680,82 +491,6 @@ export default function CustomerBetaPage({
       });
     };
 
-    const action = resolvePromptAction(value);
-    if (value.length < 2 && !action) return;
-    if (/작업|기능|메뉴|뭐\s*있|뭐있|할\s*수|뭘\s*할/.test(value)) {
-      const taskNames = productActions.map((item) => item.label);
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `assistant-${now + 1}`,
-          role: 'assistant',
-          content: taskNames.length > 0
-            ? `${selectedProduct.name}에서는 ${taskNames.join(', ')} 작업을 바로 열 수 있어요. 아래 버튼을 누르거나 왼쪽 Tasks에서 선택해 주세요.`
-            : `${selectedProduct.name}은 아직 시작 전이에요. 먼저 제품 시작하기를 누르면 작업이 열려요.`,
-          actions: productActions.map((item) => ({ label: item.label, actionKey: item.key }))
-        }
-      ].slice(-6));
-      logAssistantEvent('workspace_assistant_faq_hit', { intent: 'local_tasks' });
-      return;
-    }
-    const draft = parseSettingsDraft(value);
-    if (draft) {
-      setSettingsDraft({ id: Date.now(), values: draft });
-      setDrawerClosing(false);
-      setActiveActionKey('settings');
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `assistant-${Date.now() + 1}`,
-          role: 'assistant',
-          content: '설정 초안을 채웠어요. 오른쪽 설정 패널에서 타깃, 톤, 카테고리를 확인한 뒤 저장하면 반영돼요. 자동화 실행은 저장 후 직접 시작해 주세요.',
-          actions: [{ label: '설정 확인', actionKey: 'settings' }]
-        }
-      ].slice(-6));
-      logAssistantEvent('workspace_assistant_draft_created', { intent: 'local_cujasa_settings', action: 'settings' });
-      return;
-    }
-    const polibotDraft = parsePolibotDraft(value);
-    if (polibotDraft) {
-      setAssistantDraft({ id: Date.now(), actionKey: 'polibot-recommend', values: polibotDraft });
-      setDrawerClosing(false);
-      if (grantedProductIds.has('polibot')) {
-        setSelectedProductId('polibot');
-        setActiveActionKey('polibot-recommend');
-      } else {
-        setSelectedProductId('polibot');
-        setActiveActionKey('polibot');
-      }
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `assistant-${Date.now() + 1}`,
-          role: 'assistant',
-          content: grantedProductIds.has('polibot')
-            ? 'POLIBOT 상품 추천 초안을 채웠어요. 오른쪽 패널에서 고객 조건을 확인한 뒤 추천 초안 만들기를 눌러주세요.'
-            : 'POLIBOT에서 처리할 수 있는 보험 추천 요청이에요. 먼저 POLIBOT 시작하기를 누르면 추천 초안을 이어서 쓸 수 있어요.',
-          actions: grantedProductIds.has('polibot')
-            ? [{ label: '상품 추천 열기', actionKey: 'polibot-recommend' }, { label: '자료 확인', actionKey: 'polibot-upload' }]
-            : [{ label: 'POLIBOT 시작', actionKey: 'polibot' }]
-        }
-      ].slice(-6));
-      logAssistantEvent('workspace_assistant_draft_created', { intent: 'local_polibot_recommendation', action: grantedProductIds.has('polibot') ? 'polibot-recommend' : 'polibot' });
-      return;
-    }
-    const faq = findFaqAnswer(value);
-    if (faq) {
-      setMessages((prev) => [
-        ...prev,
-        { id: `assistant-${Date.now() + 1}`, role: 'assistant', content: faq.answer, actions: faq.actions || [] }
-      ].slice(-6));
-      logAssistantEvent('workspace_assistant_faq_hit', { intent: faq.id || 'local_faq' });
-      return;
-    }
-    if (action) {
-      openWorkspaceAction(action);
-      logAssistantEvent('workspace_assistant_faq_hit', { intent: 'local_action', action: action.key });
-      return;
-    }
     setAssistantLoading(true);
     try {
       const assistantStartedAt = Date.now();
@@ -908,33 +643,14 @@ export default function CustomerBetaPage({
             </div>
 
             <div className="border-t border-white/10 pt-3">
-              <button type="button" onClick={() => openWorkspaceAction('account-settings')} className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-xs font-bold text-zinc-500 hover:bg-white/5 hover:text-zinc-300">
-                <UserCircle size={13} />
-                <span className="min-w-0 flex-1 truncate">{currentUser?.email || currentUser?.username}</span>
-                <ChevronRight size={12} />
-              </button>
-              <div className="mt-1 grid gap-1 text-[11px] leading-relaxed text-zinc-600">
-                <button type="button" onClick={() => openWorkspaceAction('billing')} className="flex items-center justify-between gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
-                  <span className="inline-flex items-center gap-1"><CreditCard size={12} />결제</span>
-                  <ChevronRight size={12} />
-                </button>
-                <button type="button" onClick={() => setSupportInfoOpen((prev) => !prev)} className="flex items-center justify-between gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
-                  <span className="inline-flex items-center gap-1"><Bot size={12} />고객센터</span>
-                  <ChevronRight size={12} />
-                </button>
-                <button type="button" onClick={() => setPrivacyOpen((prev) => !prev)} className="flex items-center gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
-                  <ShieldCheck size={12} />
-                  개인정보처리방침
-                </button>
-                <button type="button" onClick={() => setBusinessInfoOpen((prev) => !prev)} className="flex items-center justify-between gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
-                  <span className="inline-flex items-center gap-1"><Landmark size={12} />사업자정보</span>
-                  <ChevronRight size={12} />
-                </button>
-                <button type="button" onClick={onLogout} className="flex items-center gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
-                  <LogOut size={12} />
-                  로그아웃
-                </button>
-                <div className="pt-1 text-zinc-700">© 2026 JASAIN</div>
+              <div className="grid gap-1 text-xs font-bold leading-none text-zinc-500">
+                <SidebarFooterButton icon={UserCircle} label={currentUser?.email || currentUser?.username || '계정'} onClick={() => openWorkspaceAction('account-settings')} chevron />
+                <SidebarFooterButton icon={CreditCard} label="결제" onClick={() => openWorkspaceAction('billing')} chevron />
+                <SidebarFooterButton icon={Bot} label="고객센터" onClick={() => setSupportInfoOpen((prev) => !prev)} chevron />
+                <SidebarFooterButton icon={ShieldCheck} label="개인정보처리방침" onClick={() => setPrivacyOpen((prev) => !prev)} />
+                <SidebarFooterButton icon={Landmark} label="사업자정보" onClick={() => setBusinessInfoOpen((prev) => !prev)} chevron />
+                <SidebarFooterButton icon={LogOut} label="로그아웃" onClick={onLogout} />
+                <div className="px-2 pt-3 text-[11px] font-bold leading-none text-zinc-700">© 2026 JASAIN</div>
               </div>
             </div>
           </div>
@@ -1148,6 +864,22 @@ function SidebarGroup({ label, children }) {
   );
 }
 
+function SidebarFooterButton({ icon: Icon, label, onClick, chevron = false }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="grid h-9 w-full grid-cols-[24px_minmax(0,1fr)_16px] items-center rounded-xl px-2 text-left text-zinc-500 transition hover:bg-white/5 hover:text-zinc-300"
+    >
+      <span className="grid h-6 w-6 place-items-center">
+        <Icon size={16} strokeWidth={2.2} />
+      </span>
+      <span className="min-w-0 truncate">{label}</span>
+      {chevron && <ChevronRight size={14} className="justify-self-end" />}
+    </button>
+  );
+}
+
 function BetaChatMessage({ message, onOpenAction }) {
   const isUser = message.role === 'user';
   const handleAction = (action) => {
@@ -1181,11 +913,12 @@ function TaskDrawer(props) {
   const { action, loadError, closing, onClose } = props;
   const Icon = action.icon;
   const compactPreview = ['dexor', 'spread', 'polibot', 'infludex'].includes(action.key);
+  const wideWorkspace = action.key === 'polibot-recommend';
 
   return (
     <div className={`fixed inset-0 z-40 transition-opacity duration-300 lg:pointer-events-none ${closing ? 'bg-black/0 opacity-0 lg:bg-transparent' : 'bg-black/45 opacity-100 lg:bg-transparent'}`}>
       <button type="button" aria-label="닫기" className="absolute inset-0 lg:hidden" onClick={onClose} />
-      <aside className={`pointer-events-auto absolute inset-y-0 right-0 w-[min(420px,92vw)] overflow-y-auto rounded-l-[28px] border-l border-white/10 bg-[#191919] p-4 shadow-2xl shadow-black/50 transition-all duration-300 ease-out lg:left-auto lg:right-4 lg:w-[min(640px,calc(100vw-340px))] lg:rounded-[28px] lg:border lg:p-5 ${compactPreview ? 'lg:top-16 lg:bottom-auto lg:max-h-[calc(100vh-8rem)]' : 'lg:inset-y-4 lg:max-h-none'} ${closing ? 'translate-x-full opacity-0 lg:translate-x-8 lg:translate-y-0' : 'translate-x-0 opacity-100'}`}>
+      <aside className={`pointer-events-auto absolute inset-y-0 right-0 w-[min(420px,92vw)] overflow-y-auto rounded-l-[28px] border-l border-white/10 bg-[#191919] p-4 shadow-2xl shadow-black/50 transition-all duration-300 ease-out lg:left-auto lg:right-4 ${wideWorkspace ? 'lg:w-[min(980px,calc(100vw-340px))]' : 'lg:w-[min(640px,calc(100vw-340px))]'} lg:rounded-[28px] lg:border lg:p-5 ${compactPreview ? 'lg:top-16 lg:bottom-auto lg:max-h-[calc(100vh-8rem)]' : 'lg:inset-y-4 lg:max-h-none'} ${closing ? 'translate-x-full opacity-0 lg:translate-x-8 lg:translate-y-0' : 'translate-x-0 opacity-100'}`}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/10 text-zinc-100">
@@ -2750,6 +2483,19 @@ function PolibotQualityReport({ report }) {
   );
 }
 
+function PolibotKnowledgeSummary({ report }) {
+  if (!report) return null;
+  return (
+    <div className="rounded-2xl bg-black/25 px-4 py-3 text-sm leading-relaxed text-zinc-400">
+      추천 가능 <span className="font-black text-zinc-100">{report.recommendableProducts || 0}개</span>
+      <span className="text-zinc-600"> · </span>
+      정보 부족 <span className="font-black text-zinc-100">{report.insufficientProducts || 0}개</span>
+      <span className="text-zinc-600"> · </span>
+      OCR 필요 <span className="font-black text-zinc-100">{report.ocrNeeded || 0}개</span>
+    </div>
+  );
+}
+
 function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction }) {
   const toast = useToast();
   const [form, setForm] = useState({
@@ -2771,10 +2517,14 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const [selectedRecommendation, setSelectedRecommendation] = useState(null);
   const [saveMemo, setSaveMemo] = useState('');
   const [saving, setSaving] = useState(false);
-  const [resultTab, setResultTab] = useState('draft');
   const [detailsOpen, setDetailsOpen] = useState(false);
   const usage = workspaceUsage(workspace);
-  const companies = ['전체 보험사', ...(workspace.catalog?.companies || [])];
+  const catalogCompanies = Array.isArray(workspace.catalog?.companies) ? workspace.catalog.companies : Array.isArray(workspace.qualityReport?.companies) ? workspace.qualityReport.companies : [];
+  const companies = ['전체 보험사', ...catalogCompanies];
+  const recommendations = Array.isArray(workspace.recommendations) ? workspace.recommendations : [];
+  const hasAnalysis = Boolean(workspace.consultationDraft);
+  const hasRecommendations = recommendations.length > 0;
+  const activeStep = hasRecommendations ? 3 : hasAnalysis ? 2 : 1;
   const selectedNeeds = useMemo(() => normalizeLines(form.needs), [form.needs]);
   const setNeeds = (needs) => setForm((prev) => ({ ...prev, needs: needs.join('\n') }));
   const toggleNeed = (need) => {
@@ -2846,51 +2596,63 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-start">
-      <PanelCard title="고객 조건" className="lg:sticky lg:top-4">
-        <ProductUsageStrip usage={usage} />
+    <div className="grid gap-4">
+      <PolibotProgressHeader activeStep={activeStep} usage={usage} />
+      <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(360px,0.85fr)_minmax(0,1.15fr)] xl:items-start">
+      <PanelCard title="1. 고객 조건" className="min-w-0 xl:sticky xl:top-4">
         {assistantDraft?.actionKey === 'polibot-recommend' && (
-          <Notice>채팅에서 만든 초안이에요. 고객 조건을 확인한 뒤 추천 초안 만들기를 눌러주세요.</Notice>
+          <Notice>채팅에서 만든 초안이 들어왔어요. 핵심 조건만 확인하고 바로 추천 초안을 만들면 됩니다.</Notice>
         )}
-        {saving && <Notice>확정 상품 DB와 고객 조건을 대조하고 있어요. 보류 조건이 있으면 사용 횟수는 차감하지 않아요.</Notice>}
-        {workspace.qualityReport && <PolibotQualityReport report={workspace.qualityReport} />}
-        <div className="grid gap-2.5">
-          <div className="grid gap-2.5 sm:grid-cols-3">
+        {saving && <Notice>고객 조건을 분석하고 확정 상품 DB와 대조하고 있어요.</Notice>}
+        <div className="grid gap-3">
+          <div className="grid gap-2.5 md:grid-cols-[minmax(0,1fr)_88px_108px]">
             <label className={labelClass}>고객명<input className={inputClass} value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="이효진" /></label>
             <label className={labelClass}>나이<input className={inputClass} value={form.age} onChange={(event) => setForm((prev) => ({ ...prev, age: event.target.value }))} placeholder="45" /></label>
-            <label className={labelClass}>성별<input className={inputClass} value={form.gender} onChange={(event) => setForm((prev) => ({ ...prev, gender: event.target.value }))} placeholder="남성/여성" /></label>
+            <label className={labelClass}>성별<input className={inputClass} value={form.gender} onChange={(event) => setForm((prev) => ({ ...prev, gender: event.target.value }))} placeholder="남성" /></label>
           </div>
           <div className="grid gap-2">
-            <div className="text-sm font-bold text-zinc-300">필요 보장</div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-sm font-bold text-zinc-300">필요 보장</div>
+              <div className="text-[11px] font-bold text-zinc-600">{selectedNeeds.length || 0}개 선택</div>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
               {polibotNeedOptions.map((need) => (
                 <button
                   key={need}
                   type="button"
                   onClick={() => toggleNeed(need)}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-black transition ${selectedNeeds.includes(need) ? 'border-white bg-white text-zinc-950' : 'border-white/10 bg-black/20 text-zinc-500 hover:border-white/25 hover:text-zinc-200'}`}
+                  className={`min-w-[78px] shrink-0 whitespace-nowrap rounded-2xl border px-3 py-2 text-center text-xs font-black leading-none transition ${selectedNeeds.includes(need) ? 'border-white bg-white text-zinc-950 shadow-sm shadow-white/10' : 'border-white/10 bg-black/20 text-zinc-400 hover:border-white/25 hover:text-zinc-200'}`}
                 >
                   {need}
                 </button>
               ))}
             </div>
-            <textarea className={inputClass} rows="1" value={form.needs} onChange={(event) => setForm((prev) => ({ ...prev, needs: event.target.value }))} placeholder="직접 입력도 가능해요" />
+            <textarea className={`${inputClass} min-h-[42px] text-xs text-zinc-500`} rows="1" value={form.needs} onChange={(event) => setForm((prev) => ({ ...prev, needs: event.target.value }))} placeholder="추가 보장 입력" />
           </div>
-          <div className="grid gap-2.5 sm:grid-cols-2">
-            <label className={labelClass}>예산<input className={inputClass} value={form.budget} onChange={(event) => setForm((prev) => ({ ...prev, budget: event.target.value }))} placeholder="10" /></label>
-            <DarkSelect
-              label="보험사"
-              value={form.company}
-              onChange={(value) => setForm((prev) => ({ ...prev, company: value }))}
-              options={companies.map((company) => ({ value: company, label: company }))}
-            />
+          <div className="grid gap-2.5 md:grid-cols-2">
+            <label className={labelClass}>월 예산<input className={inputClass} value={form.budget} onChange={(event) => setForm((prev) => ({ ...prev, budget: event.target.value }))} placeholder="10만원" /></label>
+            <div className="grid gap-2">
+              <DarkSelect
+                label="보험사 범위"
+                value={form.company}
+                onChange={(value) => setForm((prev) => ({ ...prev, company: value }))}
+                options={companies.map((company) => ({
+                  value: company,
+                  label: company === '전체 보험사' ? `전체 보험사 (${catalogCompanies.length}개)` : company
+                }))}
+              />
+              <PolibotCompanyHint companies={catalogCompanies} selectedCompany={form.company} onOpenKnowledge={() => onOpenAction?.('polibot-upload')} />
+            </div>
           </div>
           <button
             type="button"
             onClick={() => setDetailsOpen((prev) => !prev)}
             className="flex items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-left text-sm font-black text-zinc-300 hover:bg-white/5"
           >
-            상세 조건
+            <span>
+              상세 조건
+              <span className="ml-2 text-xs font-bold text-zinc-600">실손, 병력, 운전 여부</span>
+            </span>
             <ChevronDown size={16} className={`transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
           </button>
           {detailsOpen && (
@@ -2906,55 +2668,40 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
               <DarkSelect label="가입 목적" value={form.purpose} onChange={(value) => setForm((prev) => ({ ...prev, purpose: value }))} options={[{ value: '', label: '미확인' }, { value: '보장 강화', label: '보장 강화' }, { value: '보험료 절감', label: '보험료 절감' }, { value: '리모델링', label: '리모델링' }, { value: '신규 가입', label: '신규 가입' }]} />
             </div>
           )}
-          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '추천 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}</DarkButton>
+          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0} className="w-full">{saving ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}</DarkButton>
+          {usage.remaining <= 0 && <Notice>남은 무료 사용 횟수가 없어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
-      <PanelCard title="추천 결과" className="lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto">
-        <div className="mb-3 grid grid-cols-2 gap-2 rounded-2xl bg-black/20 p-1">
-          {[
-            ['draft', '고객 분석'],
-            ['recommendations', '상품 추천']
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setResultTab(value)}
-              className={`rounded-xl px-3 py-2 text-sm font-black ${resultTab === value ? 'bg-white text-zinc-950' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {resultTab === 'draft' ? (
-          <PolibotConsultationDraft draft={workspace.consultationDraft} profile={workspace.customerProfile || form} />
-        ) : workspace.recommendations?.length ? (
-          <div className="grid gap-2">
-            {workspace.recommendations.map((item) => (
-              <button key={item.id} type="button" onClick={() => setSelectedRecommendation(item)} className="rounded-2xl bg-black/25 px-4 py-3 text-left hover:bg-white/5">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">추천 조합</div>
-                    <div className="text-sm font-black text-zinc-200">{item.name}</div>
-                    <div className="mt-1 text-[11px] font-bold text-zinc-600">{item.type === 'bundle' ? '조합 추천' : '단품 추천'} · 확신도 {item.confidence?.level || '보통'}</div>
-                  </div>
-                  <span className="text-sm font-black text-zinc-100">{item.score}</span>
-                </div>
-                <div className="mt-2 grid gap-1 text-xs leading-relaxed text-zinc-500">
-                  {item.coverageGap && <div>핵심 보완: {item.coverageGap}</div>}
-                  <div>주의: {(item.cautions || [])[0] || '추가 확인 필요'}</div>
-                </div>
-              </button>
-            ))}
-            <label className={`${labelClass} mt-2`}>저장 메모<textarea className={inputClass} rows="2" value={saveMemo} onChange={(event) => setSaveMemo(event.target.value)} placeholder="고객에게 확인할 내용이나 메모를 적어두세요." /></label>
-          </div>
-        ) : (
-          <PolibotRecommendationEmptyState
-            workspace={workspace}
-            onOpenDetails={() => setDetailsOpen(true)}
-            onOpenKnowledge={() => onOpenAction?.('polibot-upload')}
-          />
-        )}
-      </PanelCard>
+      <div className="grid min-w-0 gap-4">
+        <PanelCard title="2. 고객 분석" className="min-w-0">
+          <PolibotConsultationDraft draft={workspace.consultationDraft} profile={workspace.customerProfile || form} saving={saving} />
+        </PanelCard>
+        <PanelCard title="3. 상품 추천" className="min-w-0 xl:max-h-[calc(100vh-23rem)] xl:overflow-y-auto">
+          {hasRecommendations ? (
+            <PolibotRecommendationList
+              recommendations={recommendations}
+              saveMemo={saveMemo}
+              onMemoChange={setSaveMemo}
+              onSelect={setSelectedRecommendation}
+            />
+          ) : (
+            <PolibotRecommendationEmptyState
+              workspace={workspace}
+              hasAnalysis={hasAnalysis}
+              catalogCompanies={catalogCompanies}
+              onOpenDetails={() => setDetailsOpen(true)}
+              onOpenKnowledge={() => onOpenAction?.('polibot-upload')}
+            />
+          )}
+        </PanelCard>
+      </div>
+      </div>
+      {workspace.qualityReport && (
+        <CollapsiblePanel title="자료 상태">
+          <PolibotKnowledgeSummary report={workspace.qualityReport} />
+          <PolibotQualityReport report={workspace.qualityReport} />
+        </CollapsiblePanel>
+      )}
       {selectedRecommendation && (
         <PolibotRecommendationModal
           recommendation={selectedRecommendation}
@@ -2967,9 +2714,66 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   );
 }
 
-function PolibotConsultationDraft({ draft, profile }) {
+function PolibotProgressHeader({ activeStep, usage }) {
+  const steps = [
+    ['고객 조건', '필수 정보 입력'],
+    ['고객 분석', '부족 정보 확인'],
+    ['상품 추천', '후보 검토']
+  ];
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+          {steps.map(([title, caption], index) => {
+            const step = index + 1;
+            const active = activeStep === step;
+            const done = activeStep > step;
+            return (
+              <div key={title} className={`flex min-w-[116px] items-center gap-2 rounded-xl px-2.5 py-1.5 ${active ? 'bg-white text-zinc-950' : done ? 'bg-white/10 text-zinc-100' : 'bg-black/20 text-zinc-500'}`}>
+                <div className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[10px] font-black ${active ? 'bg-zinc-950 text-white' : done ? 'bg-white text-zinc-950' : 'bg-white/5 text-zinc-500'}`}>
+                  {done ? '✓' : step}
+                </div>
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-black">{title}</div>
+                  <div className={`truncate text-[10px] font-bold ${active ? 'text-zinc-600' : 'text-zinc-600'}`}>{caption}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="shrink-0 rounded-xl bg-black/25 px-2.5 py-1.5 text-right">
+          <div className="text-[10px] font-black text-zinc-600">남은 사용</div>
+          <div className="text-sm font-black text-zinc-100">{usage.remaining}회 <span className="text-zinc-600">/ {usage.limit}</span></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PolibotConsultationDraft({ draft, profile, saving = false }) {
+  const profileNeeds = Array.isArray(profile?.needs) ? profile.needs : normalizeLines(profile?.needs);
+  if (saving) {
+    return (
+      <div className="rounded-2xl bg-black/25 px-4 py-3">
+        <div className="text-sm font-black text-zinc-100">고객 조건 분석 중</div>
+        <p className="mt-1.5 text-sm leading-relaxed text-zinc-500">부족 정보와 추천 가능성을 정리하고 있어요.</p>
+      </div>
+    );
+  }
   if (!draft) {
-    return <Notice>고객 조건을 입력하고 추천 초안 만들기를 누르면 고객 분석이 먼저 정리돼요.</Notice>;
+    return (
+      <div className="grid gap-3">
+        <div className="rounded-2xl bg-black/25 px-4 py-3">
+          <div className="text-sm font-black text-zinc-100">아직 분석 전이에요</div>
+          <p className="mt-1.5 text-sm leading-relaxed text-zinc-500">핵심 조건을 넣고 추천 초안 만들기를 누르면 분석이 표시돼요.</p>
+        </div>
+        <SimpleInfoList items={[
+          `현재 입력: ${[profile?.name, profile?.age ? `${profile.age}세` : '', profile?.gender].filter(Boolean).join(' · ') || '없음'}`,
+          `필요 보장: ${profileNeeds.join(', ') || '미입력'}`,
+          `예산/보험사: ${[profile?.budget ? `월 ${profile.budget}` : '', profile?.company].filter(Boolean).join(' · ') || '미입력'}`
+        ]} />
+      </div>
+    );
   }
   return (
     <div className="grid gap-3">
@@ -2979,7 +2783,7 @@ function PolibotConsultationDraft({ draft, profile }) {
         <div className="mt-2 text-sm leading-relaxed text-zinc-500">{draft.summary}</div>
       </div>
       <SimpleInfoList items={[
-        `필요 보장: ${(draft.needs || profile?.needs || []).join(', ') || '미입력'}`,
+        `필요 보장: ${(draft.needs || profileNeeds || []).join(', ') || '미입력'}`,
         `부족 정보: ${(draft.missing || []).join(', ') || '없음'}`,
         `메모: ${draft.memo || '기본 정보 확인 완료'}`
       ]} />
@@ -2995,32 +2799,114 @@ function PolibotConsultationDraft({ draft, profile }) {
   );
 }
 
-function PolibotRecommendationEmptyState({ workspace, onOpenDetails, onOpenKnowledge }) {
+function PolibotCompanyHint({ companies = [], selectedCompany = '전체 보험사', onOpenKnowledge }) {
+  if (!companies.length) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs leading-relaxed text-zinc-500">
+        보험사 자료가 아직 분류되지 않았어요.{' '}
+        <button type="button" onClick={onOpenKnowledge} className="font-black text-zinc-200 underline decoration-white/20 underline-offset-4 hover:text-white">
+          자료 확인
+        </button>
+        에서 상품 자료를 먼저 올려주세요.
+      </div>
+    );
+  }
+  const preview = companies.slice(0, 5);
+  return (
+    <div className="grid gap-2 rounded-2xl bg-black/20 px-3 py-2">
+      <div className="text-[11px] font-bold leading-relaxed text-zinc-500">
+        {selectedCompany === '전체 보험사'
+          ? `자료에서 확인된 보험사 ${companies.length}개 전체를 대상으로 봅니다.`
+          : `${selectedCompany} 자료 안에서만 추천 후보를 찾습니다.`}
+      </div>
+      <div className="flex min-w-0 gap-1.5 overflow-x-auto">
+        {preview.map((company) => (
+          <span key={company} className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-black ${selectedCompany === company ? 'border-white bg-white text-zinc-950' : 'border-white/10 text-zinc-500'}`}>
+            {company}
+          </span>
+        ))}
+        {companies.length > preview.length && (
+          <span className="shrink-0 whitespace-nowrap rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-black text-zinc-600">+{companies.length - preview.length}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PolibotRecommendationList({ recommendations, saveMemo, onMemoChange, onSelect }) {
+  return (
+    <div className="grid gap-3">
+      <div className="rounded-2xl bg-black/25 px-4 py-3">
+        <div className="text-sm font-black text-zinc-100">추천 후보 {recommendations.length}개</div>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-500">카드를 눌러 근거와 주의 조건을 확인한 뒤 고객목록에 저장하세요.</p>
+      </div>
+      <div className="grid gap-2">
+        {recommendations.map((item) => (
+          <button key={item.id} type="button" onClick={() => onSelect(item)} className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">{item.type === 'bundle' ? '조합 추천' : '단품 추천'}</div>
+                <div className="mt-1 break-keep text-sm font-black text-zinc-100">{item.name}</div>
+                <div className="mt-1 text-[11px] font-bold text-zinc-600">확신도 {item.confidence?.level || '보통'} · 점수 {item.score || '-'}</div>
+              </div>
+              <ChevronRight size={18} className="mt-1 shrink-0 text-zinc-600" />
+            </div>
+            <div className="mt-3 grid gap-1 text-xs leading-relaxed text-zinc-500">
+              {item.coverageGap && <div>핵심 보완: {item.coverageGap}</div>}
+              <div>확인 조건: {(item.cautions || [])[0] || '고지사항과 기존 보험 중복 여부 확인'}</div>
+            </div>
+          </button>
+        ))}
+      </div>
+      <label className={`${labelClass} mt-1`}>저장 메모<textarea className={inputClass} rows="2" value={saveMemo} onChange={(event) => onMemoChange(event.target.value)} placeholder="고객에게 확인할 내용이나 메모를 적어두세요." /></label>
+    </div>
+  );
+}
+
+function PolibotRecommendationEmptyState({ workspace, hasAnalysis = false, catalogCompanies = [], onOpenDetails, onOpenKnowledge }) {
   const report = workspace.qualityReport || {};
   const draft = workspace.consultationDraft || {};
   const missing = Array.isArray(draft.missing) ? draft.missing : [];
-  const notice = workspace.recommendationNotice || '고객 조건을 입력하면 추천 초안이 표시돼요.';
-  const rows = [
-    ['부족한 고객 정보', missing.length ? missing.join(', ') : '핵심 조건 입력 대기'],
-    ['상품 DB 상태', `추천 가능 ${report.recommendableProducts || 0}개 · 정보 부족 ${report.insufficientProducts || 0}개`],
-    ['검수 필요 자료', `${report.reviewNeededProducts || 0}개 · OCR 필요 ${report.ocrNeeded || 0}개`]
-  ];
+  const recommendable = Number(report.recommendableProducts || 0);
+  const hasCustomerBlocker = missing.length > 0 || /나이|성별|필요 보장|예산|실손|병력|고지|고객 조건|정보를 먼저/.test(workspace.recommendationNotice || '');
+  const hasDataBlocker = recommendable <= 0 || catalogCompanies.length === 0 || /상품 자료|상품 데이터|확정 상품|자료 부족|검수 필요|OCR/i.test(workspace.recommendationNotice || '');
+  const title = !hasAnalysis
+    ? '고객 분석을 먼저 해주세요'
+    : hasCustomerBlocker
+      ? '고객 조건을 더 입력해야 해요'
+      : hasDataBlocker
+        ? '추천 가능한 상품 자료가 부족해요'
+        : '조건에 맞는 추천 후보가 아직 없어요';
+  const notice = workspace.recommendationNotice || (!hasAnalysis
+    ? '핵심 조건을 넣고 추천 초안 만들기를 누르면 고객 분석이 먼저 정리돼요.'
+    : hasCustomerBlocker
+      ? '상세 조건을 보강하면 추천 가능성이 올라갑니다.'
+      : hasDataBlocker
+        ? '자료 확인에서 상품 비교표나 설계 자료를 추가해 주세요.'
+        : '니즈, 예산, 보험사 범위를 조금 더 구체화해 주세요.');
+  const action = hasDataBlocker && !hasCustomerBlocker
+    ? { label: '자료 확인', onClick: onOpenKnowledge }
+    : { label: '상세 조건 채우기', onClick: onOpenDetails };
   return (
     <div className="grid gap-3">
-      <Notice>{notice} 사용 횟수는 실제 추천이 만들어질 때만 차감돼요.</Notice>
-      <div className="grid gap-2">
-        {rows.map(([label, value]) => (
-          <div key={label} className="rounded-2xl bg-black/25 px-4 py-3">
-            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">{label}</div>
-            <div className="mt-1 text-sm font-black text-zinc-200">{value}</div>
-          </div>
-        ))}
+      <div className="rounded-2xl bg-black/25 px-4 py-3">
+        <div className="text-sm font-black text-zinc-100">{title}</div>
+        <p className="mt-1.5 text-sm leading-relaxed text-zinc-500">{notice}</p>
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <DarkButton variant="ghost" size="sm" onClick={onOpenDetails}>상세 조건 채우기</DarkButton>
-        <DarkButton variant="ghost" size="sm" onClick={onOpenKnowledge}>자료 확인</DarkButton>
-        <DarkButton variant="ghost" size="sm" onClick={onOpenKnowledge}>상품 검수 요청</DarkButton>
+      <div className="grid gap-2 text-sm">
+        <PolibotStatusRow label="고객 정보" value={missing.length ? `부족: ${missing.join(', ')}` : hasAnalysis ? '핵심 조건 확인됨' : '분석 전'} />
+        <PolibotStatusRow label="상품 자료" value={`보험사 ${catalogCompanies.length}개 · 추천 가능 ${recommendable}개`} />
       </div>
+      <DarkButton variant="ghost" size="sm" onClick={action.onClick} className="w-full">{action.label}</DarkButton>
+    </div>
+  );
+}
+
+function PolibotStatusRow({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3">
+      <div className="text-xs font-black text-zinc-600">{label}</div>
+      <div className="max-w-[70%] text-right text-xs font-black leading-relaxed text-zinc-200">{value}</div>
     </div>
   );
 }

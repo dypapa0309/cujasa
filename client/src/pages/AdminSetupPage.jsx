@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Clock3, Pencil, RefreshCw, Wrench } from 'lucide-react';
+import { CheckCircle2, Clock3, Pencil, RefreshCw, Trash2, Wrench } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import { dateTime } from '../lib/format.js';
@@ -89,6 +89,21 @@ export default function AdminSetupPage() {
       await load();
     } catch (err) {
       toast(err.message || '셋업 상태 변경에 실패했습니다.', 'error');
+    } finally {
+      setSavingId('');
+    }
+  };
+
+  const deleteTask = async (task) => {
+    const customerLabel = task.buyer_name || task.email || '이 고객';
+    if (!window.confirm(`${customerLabel} 셋업 요청을 삭제 처리할까요?\n기본 대기 목록에서는 숨겨지고, 삭제됨 필터에서 다시 확인할 수 있습니다.`)) return;
+    setSavingId(task.id);
+    try {
+      await api.patch(`/api/admin/setup-tasks/${task.id}`, { status: 'canceled' });
+      toast('셋업 요청을 삭제 처리했습니다.', 'success');
+      await load();
+    } catch (err) {
+      toast(err.message || '셋업 요청 삭제에 실패했습니다.', 'error');
     } finally {
       setSavingId('');
     }
@@ -271,13 +286,14 @@ export default function AdminSetupPage() {
         <div className="flex flex-col gap-3 border-b border-line px-5 py-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="font-bold">결제 완료 고객</h3>
-            <p className="mt-0.5 text-xs text-slate-400">입금 완료 후 자동 생성된 셋업 작업입니다. 기본값은 완료 고객을 숨깁니다.</p>
+            <p className="mt-0.5 text-xs text-slate-400">입금 완료 후 자동 생성된 셋업 작업입니다. 기본값은 완료/삭제 고객을 숨깁니다.</p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs font-bold">
             <FilterButton active={taskFilter === 'open'} onClick={() => setTaskFilter('open')}>대기+진행</FilterButton>
             <FilterButton active={taskFilter === 'pending'} onClick={() => setTaskFilter('pending')}>대기</FilterButton>
             <FilterButton active={taskFilter === 'in_progress'} onClick={() => setTaskFilter('in_progress')}>셋업 중</FilterButton>
             <FilterButton active={taskFilter === 'completed'} onClick={() => setTaskFilter('completed')}>완료</FilterButton>
+            <FilterButton active={taskFilter === 'canceled'} onClick={() => setTaskFilter('canceled')}>삭제됨</FilterButton>
             <FilterButton active={taskFilter === 'all'} onClick={() => setTaskFilter('all')}>전체</FilterButton>
           </div>
         </div>
@@ -321,6 +337,12 @@ export default function AdminSetupPage() {
                         )}
                         {task.status !== 'completed' && (
                           <button disabled={savingId === task.id} onClick={() => updateStatus(task, 'completed')} className="rounded bg-coupang px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">셋업 완료</button>
+                        )}
+                        {task.status !== 'canceled' && (
+                          <button disabled={savingId === task.id} onClick={() => deleteTask(task)} className="inline-flex items-center gap-1 rounded border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50">
+                            <Trash2 size={13} />
+                            삭제
+                          </button>
                         )}
                       </div>
                     </td>

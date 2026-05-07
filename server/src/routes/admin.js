@@ -192,6 +192,7 @@ router.get('/operations/assistant-metrics', async (req, res, next) => {
         total: workspaceRows.length,
         faqHit: workspaceRows.filter((row) => row.action === 'workspace_assistant_faq_hit').length,
         draftCreated: workspaceRows.filter((row) => row.action === 'workspace_assistant_draft_created').length,
+        clarification: workspaceRows.filter((row) => row.action === 'workspace_assistant_clarification').length,
         fallback: workspaceRows.filter((row) => row.action === 'workspace_assistant_fallback').length,
         aiTimeout: workspaceRows.filter((row) => row.action === 'workspace_assistant_ai_timeout').length,
         slowAi: workspaceRows.filter((row) => row.action === 'workspace_assistant_slow_ai').length,
