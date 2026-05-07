@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ChevronRight, X } from 'lucide-react';
 import { api, setAuthToken } from '../lib/api.js';
 import { CURRENT_PRODUCT, PRODUCTS, productById } from '../config/products.js';
 
@@ -24,6 +24,8 @@ export default function LoginPage({ onLogin }) {
   const [previewProductId, setPreviewProductId] = useState(requestedProduct);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [businessInfoOpen, setBusinessInfoOpen] = useState(false);
   const previewProduct = productById(previewProductId) || CURRENT_PRODUCT;
 
   const submit = async (event) => {
@@ -103,7 +105,15 @@ export default function LoginPage({ onLogin }) {
               </div>
             </div>
             <div className="mt-auto border-t border-white/10 pt-4 text-[11px] leading-relaxed text-zinc-600">
-              <div>개인정보처리방침 · 사업자정보</div>
+              <div className="flex flex-wrap gap-x-2 gap-y-1">
+                <button type="button" onClick={() => setPrivacyOpen((prev) => !prev)} className="font-bold hover:text-zinc-300">
+                  개인정보처리방침
+                </button>
+                <span>·</span>
+                <button type="button" onClick={() => setBusinessInfoOpen((prev) => !prev)} className="font-bold hover:text-zinc-300">
+                  사업자정보
+                </button>
+              </div>
               <div className="mt-1">© 2026 JASAIN</div>
             </div>
           </div>
@@ -160,6 +170,8 @@ export default function LoginPage({ onLogin }) {
           </div>
         </main>
       </div>
+      {privacyOpen && <PrivacyModal onClose={() => setPrivacyOpen(false)} />}
+      {businessInfoOpen && <BusinessInfoModal onClose={() => setBusinessInfoOpen(false)} />}
     </div>
   );
 }
@@ -168,4 +180,86 @@ function ensureBetaHash() {
   const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
   if (params.get('tab') === 'beta') return;
   window.history.replaceState({ tab: 'beta' }, '', `${window.location.pathname}${window.location.search}#tab=beta`);
+}
+
+function PrivacyModal({ onClose }) {
+  useEscapeClose(onClose);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-5 backdrop-blur-sm" onMouseDown={onClose}>
+      <div className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#191919] shadow-2xl shadow-black/50" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
+          <div className="text-lg font-black text-zinc-100">개인정보처리방침</div>
+          <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full text-zinc-500 hover:bg-white/10 hover:text-zinc-100">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="grid gap-5 overflow-y-auto px-6 py-5 text-sm leading-relaxed text-zinc-400">
+          <p>이상한 회사는 JASAIN 서비스 제공과 계정 보호를 위해 필요한 범위에서 개인정보를 처리해요. 서비스 이용을 계속하면 아래 처리 기준에 동의한 것으로 봐요.</p>
+          <PolicySection title="수집 항목">이메일, 이름 또는 사용자명, 연락처, 결제 및 입금 확인 정보, 보유 솔루션, 서비스 이용 기록, 오류 기록, 상담 기록, Threads/Coupang 연결 상태와 자동화 운영에 필요한 설정값을 수집할 수 있어요.</PolicySection>
+          <PolicySection title="이용 목적">회원 식별, 무료체험 및 결제 권한 관리, 자동화 서비스 제공, 장애 대응, 부정 이용 방지, 고객 안내, 서비스 개선, 분쟁 대응과 법적 의무 이행을 위해 사용해요.</PolicySection>
+          <PolicySection title="보유 기간">회원 탈퇴 또는 계약 종료 후에도 정산, 분쟁 대응, 부정 이용 방지, 법령상 보존 의무를 위해 필요한 기간 동안 보관할 수 있어요. 결제·거래 기록은 관련 법령에 따라 보관해요.</PolicySection>
+          <PolicySection title="제3자 제공 및 처리 위탁">법령상 요구, 결제 처리, 인프라 운영, 고객 응대처럼 서비스 제공에 필요한 경우에 한해 외부 사업자에게 제공하거나 처리를 맡길 수 있어요. 그 외에는 이용자 동의 없이 임의로 판매하지 않아요.</PolicySection>
+          <PolicySection title="환불 기준">디지털 자동화 서비스 특성상 무료체험, 크레딧, 이용권, 세팅 지원, API 연결, 자동화 실행이 시작된 뒤에는 단순 변심 환불이 제한돼요. 결제 오류나 중복 결제처럼 회사 귀책이 명확한 경우에만 확인 후 환불을 검토해요.</PolicySection>
+          <PolicySection title="이용자 책임">Threads, Coupang, 카드사, 은행 등 외부 서비스 정책 변경이나 이용자 계정 상태로 생기는 연결 오류는 회사가 임의로 복구할 수 없어요. 필요한 경우 재연결 또는 재설정 안내를 제공해요.</PolicySection>
+          <div className="rounded-2xl bg-black/25 px-4 py-3 text-xs leading-relaxed text-zinc-500">
+            책임자 이상빈 · 이메일 dypapa0309@gmail.com · 사업자등록번호 876-28-01550 · 주소 상동로 87 가나베스트타운 803-102
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BusinessInfoModal({ onClose }) {
+  useEscapeClose(onClose);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-5 backdrop-blur-sm" onMouseDown={onClose}>
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#191919] p-6 shadow-2xl shadow-black/50" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="flex items-center justify-between">
+          <div className="text-lg font-black text-zinc-100">사업자정보</div>
+          <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full text-zinc-500 hover:bg-white/10 hover:text-zinc-100">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="mt-5 grid gap-3 text-sm text-zinc-400">
+          <InfoRow label="사업자명" value="이상한 회사" />
+          <InfoRow label="대표" value="이상빈" />
+          <InfoRow label="사업자등록번호" value="876-28-01550" />
+          <InfoRow label="이메일" value="dypapa0309@gmail.com" />
+          <InfoRow label="개인정보처리책임자" value="이상빈" />
+          <InfoRow label="주소" value="상동로 87 가나베스트타운 803-102" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function useEscapeClose(onClose) {
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+}
+
+function PolicySection({ title, children }) {
+  return (
+    <section>
+      <div className="text-sm font-black text-zinc-200">{title}</div>
+      <p className="mt-1 text-sm leading-relaxed text-zinc-500">{children}</p>
+    </section>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div className="flex items-start justify-between gap-4 rounded-2xl bg-black/25 px-4 py-3">
+      <span className="shrink-0 text-xs font-bold text-zinc-600">{label}</span>
+      <span className="text-right text-sm font-bold text-zinc-200">{value}</span>
+    </div>
+  );
 }

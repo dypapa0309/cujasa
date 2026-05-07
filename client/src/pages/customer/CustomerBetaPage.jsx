@@ -918,15 +918,15 @@ export default function CustomerBetaPage({
                   <span className="inline-flex items-center gap-1"><CreditCard size={12} />결제</span>
                   <ChevronRight size={12} />
                 </button>
-                <button type="button" onClick={() => setSupportInfoOpen(true)} className="flex items-center justify-between gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
+                <button type="button" onClick={() => setSupportInfoOpen((prev) => !prev)} className="flex items-center justify-between gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
                   <span className="inline-flex items-center gap-1"><Bot size={12} />고객센터</span>
                   <ChevronRight size={12} />
                 </button>
-                <button type="button" onClick={() => setPrivacyOpen(true)} className="flex items-center gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
+                <button type="button" onClick={() => setPrivacyOpen((prev) => !prev)} className="flex items-center gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
                   <ShieldCheck size={12} />
                   개인정보처리방침
                 </button>
-                <button type="button" onClick={() => setBusinessInfoOpen(true)} className="flex items-center justify-between gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
+                <button type="button" onClick={() => setBusinessInfoOpen((prev) => !prev)} className="flex items-center justify-between gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
                   <span className="inline-flex items-center gap-1"><Landmark size={12} />사업자정보</span>
                   <ChevronRight size={12} />
                 </button>
@@ -1122,7 +1122,7 @@ export default function CustomerBetaPage({
               onPipelineDone={onPipelineDone}
               onPipelineRunningChange={onPipelineRunningChange}
               onLogout={onLogout}
-              onOpenPrivacy={() => setPrivacyOpen(true)}
+              onOpenPrivacy={() => setPrivacyOpen((prev) => !prev)}
               onStartProduct={startProduct}
               onOpenAction={openWorkspaceAction}
               startingProductId={startingProductId}
@@ -3719,10 +3719,22 @@ function CollapsiblePanel({ title, children, defaultOpen = false }) {
   );
 }
 
+function useModalDismiss(onClose) {
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+}
+
 function PrivacyModal({ onClose }) {
+  useModalDismiss(onClose);
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-5 backdrop-blur-sm">
-      <div className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#191919] shadow-2xl shadow-black/50">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-5 backdrop-blur-sm" onMouseDown={onClose}>
+      <div className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#191919] shadow-2xl shadow-black/50" onMouseDown={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between border-b border-white/10 px-6 py-5">
           <div className="text-lg font-black text-zinc-100">개인정보처리방침</div>
           <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full text-zinc-500 hover:bg-white/10 hover:text-zinc-100">
@@ -3747,9 +3759,11 @@ function PrivacyModal({ onClose }) {
 }
 
 function BusinessInfoModal({ onClose }) {
+  useModalDismiss(onClose);
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-5 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#191919] p-6 shadow-2xl shadow-black/50">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-5 backdrop-blur-sm" onMouseDown={onClose}>
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#191919] p-6 shadow-2xl shadow-black/50" onMouseDown={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div className="text-lg font-black text-zinc-100">사업자정보</div>
           <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full text-zinc-500 hover:bg-white/10 hover:text-zinc-100">
@@ -3769,9 +3783,11 @@ function BusinessInfoModal({ onClose }) {
 }
 
 function SupportInfoModal({ onClose }) {
+  useModalDismiss(onClose);
+
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-5 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#191919] p-6 shadow-2xl shadow-black/50">
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-5 backdrop-blur-sm" onMouseDown={onClose}>
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#191919] p-6 shadow-2xl shadow-black/50" onMouseDown={(event) => event.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div className="text-lg font-black text-zinc-100">고객센터</div>
           <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full text-zinc-500 hover:bg-white/10 hover:text-zinc-100">
