@@ -103,7 +103,7 @@ function deterministicAssistant({ message, currentProduct, workspace, availableP
     if (/자료|데이터|많|보험사|지식|뭐.*있|얼마나/.test(text)) {
       const companyText = summary.companies.length ? summary.companies.slice(0, 8).join(', ') : '아직 보험사 목록이 부족해요';
       return {
-        answer: `PoliBot에는 현재 구조화된 자료 ${summary.knowledgeCount}개가 잡혀 있어요. 최신 자료 월은 ${summary.latestMonth || '미확인'}이고, 보험사는 ${companyText} 기준으로 추천에 활용할 수 있어요.`,
+        answer: `POLIBOT에는 현재 구조화된 자료 ${summary.knowledgeCount}개가 잡혀 있어요. 최신 자료 월은 ${summary.latestMonth || '미확인'}이고, 보험사는 ${companyText} 기준으로 추천에 활용할 수 있어요.`,
         intent: 'polibot_knowledge_status',
         action: 'polibot-upload',
         draft: {},
@@ -122,7 +122,7 @@ function deterministicAssistant({ message, currentProduct, workspace, availableP
         company: '전체 보험사'
       };
       return {
-        answer: 'PoliBot 상품 추천 초안을 채웠어요. 오른쪽 패널에서 고객 조건을 확인한 뒤 추천 초안 만들기를 눌러주세요.',
+        answer: 'POLIBOT 상품 추천 초안을 채웠어요. 오른쪽 패널에서 고객 조건을 확인한 뒤 추천 초안 만들기를 눌러주세요.',
         intent: 'polibot_recommendation_draft',
         action: 'polibot-recommend',
         draft,
@@ -229,7 +229,7 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
         'Never execute risky actions. Only choose a panel action and fill drafts.',
         'Allowed action values: run, settings, posts, home, billing, dexor, spread, polibot, infludex, dexor-upload, dexor-grade, dexor-download, spread-campaign, spread-applicants, spread-review, polibot-upload, polibot-recommend, polibot-customers, polibot-download, infludex-upload, infludex-grade, infludex-download, or empty string.',
         'If the inferred product is not in availableProducts, choose the product id action only, not a task action.',
-        'For PoliBot insurance recommendation, extract name, age, gender, needs, budget, and set company to 전체 보험사 unless user exactly names an available company.',
+        'For POLIBOT insurance recommendation, extract name, age, gender, needs, budget, and set company to 전체 보험사 unless user exactly names an available company.',
         'For CUJASA settings, draft keys are target_audience, tone, content_scope.',
         'For DEXOR, draft key is targetCategory.',
         'Answer in friendly Korean 요체.'

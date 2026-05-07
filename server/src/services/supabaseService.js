@@ -106,7 +106,7 @@ const tables = {
     },
     {
       id: 'polibot',
-      name: 'PoliBot',
+      name: 'POLIBOT',
       description: '보험 보장분석 및 상품 추천 자동화',
       app_url: 'https://app.jasain.kr',
       landing_url: 'https://jasain.kr/polibot',

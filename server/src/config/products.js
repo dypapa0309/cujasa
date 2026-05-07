@@ -36,7 +36,7 @@ export const PRODUCTS = [
   },
   {
     id: 'polibot',
-    name: 'PoliBot',
+    name: 'POLIBOT',
     description: '보험 보장분석 및 상품 추천 자동화',
     supportLabel: '보험 분석 자동화',
     appUrl: 'https://app.jasain.kr',

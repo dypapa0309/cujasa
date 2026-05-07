@@ -24,7 +24,7 @@ const cujasaActions = [
 const productPreviewActions = [
   { key: 'dexor', label: 'DEXOR', icon: Search, hint: '캠페인에 맞는 블로그 후보를 고르는 솔루션이에요.' },
   { key: 'spread', label: 'SPREAD', icon: Sparkles, hint: '캠페인 운영과 제출물 확인을 줄이는 솔루션이에요.' },
-  { key: 'polibot', label: 'PoliBot', icon: ShieldCheck, hint: '보험 보장분석과 상품 추천을 정리하는 솔루션이에요.' },
+  { key: 'polibot', label: 'POLIBOT', icon: ShieldCheck, hint: '보험 보장분석과 상품 추천을 정리하는 솔루션이에요.' },
   { key: 'infludex', label: 'INFLUDEX', icon: BarChart3, hint: '인스타그램 인플루언서를 카테고리와 등급으로 분석해요.' }
 ];
 
@@ -89,7 +89,7 @@ const betaFaqItems = [
   {
     id: 'jasain-products',
     patterns: ['자사인 뭐야', 'jasain 뭐야', '솔루션 뭐 있어', '제품 뭐 있어', '무슨 서비스'],
-    answer: 'JASAIN은 자동화 솔루션 허브예요. CUJASA는 제휴 콘텐츠와 Threads 업로드, DEXOR는 블로그 후보 분석, SPREAD는 캠페인 운영, PoliBot은 보험 보장분석, INFLUDEX는 인스타그램 인플루언서 분석을 맡아요.',
+    answer: 'JASAIN은 자동화 솔루션 허브예요. CUJASA는 제휴 콘텐츠와 Threads 업로드, DEXOR는 블로그 후보 분석, SPREAD는 캠페인 운영, POLIBOT은 보험 보장분석, INFLUDEX는 인스타그램 인플루언서 분석을 맡아요.',
     actions: [{ label: 'DEXOR 열기', actionKey: 'dexor-upload' }, { label: 'INFLUDEX 열기', actionKey: 'infludex-upload' }]
   },
   {
@@ -155,7 +155,7 @@ const betaFaqItems = [
   {
     id: 'polibot',
     patterns: ['polibot', '폴리봇', '보험 분석', '보장분석', '보험 추천', '보험 pdf', '암보장', '보장 상품', '상품 추천', '생활비', '진단비'],
-    answer: 'PoliBot은 보험 상품 PDF와 고객 조건을 정리해서 보장분석과 상품 추천 초안을 만드는 솔루션이에요. PDF 업로드, 고객 프로필, 추천 결과 다운로드 흐름으로 써요.',
+    answer: 'POLIBOT은 보험 상품 PDF와 고객 조건을 정리해서 보장분석과 상품 추천 초안을 만드는 솔루션이에요. PDF 업로드, 고객 프로필, 추천 결과 다운로드 흐름으로 써요.',
     actions: [{ label: 'PDF 업로드', actionKey: 'polibot-upload' }, { label: '상품 추천', actionKey: 'polibot-recommend' }]
   },
   {
@@ -729,11 +729,11 @@ export default function CustomerBetaPage({
           id: `assistant-${Date.now() + 1}`,
           role: 'assistant',
           content: grantedProductIds.has('polibot')
-            ? 'PoliBot 상품 추천 초안을 채웠어요. 오른쪽 패널에서 고객 조건을 확인한 뒤 추천 초안 만들기를 눌러주세요.'
-            : 'PoliBot에서 처리할 수 있는 보험 추천 요청이에요. 먼저 PoliBot 시작하기를 누르면 추천 초안을 이어서 쓸 수 있어요.',
+            ? 'POLIBOT 상품 추천 초안을 채웠어요. 오른쪽 패널에서 고객 조건을 확인한 뒤 추천 초안 만들기를 눌러주세요.'
+            : 'POLIBOT에서 처리할 수 있는 보험 추천 요청이에요. 먼저 POLIBOT 시작하기를 누르면 추천 초안을 이어서 쓸 수 있어요.',
           actions: grantedProductIds.has('polibot')
             ? [{ label: '상품 추천 열기', actionKey: 'polibot-recommend' }, { label: '자료 확인', actionKey: 'polibot-upload' }]
-            : [{ label: 'PoliBot 시작', actionKey: 'polibot' }]
+            : [{ label: 'POLIBOT 시작', actionKey: 'polibot' }]
         }
       ].slice(-6));
       return;
@@ -2560,7 +2560,7 @@ function PolibotUploadPanel() {
   useEffect(() => {
     api.get('/api/product-workspace/polibot')
       .then((data) => setWorkspace(data || {}))
-      .catch((err) => toast(err.message || 'PoliBot 데이터를 불러오지 못했어요.', 'error'));
+      .catch((err) => toast(err.message || 'POLIBOT 데이터를 불러오지 못했어요.', 'error'));
   }, [toast]);
 
   const loadKnowledgeFiles = async (fileList) => {
@@ -3163,11 +3163,11 @@ const productPreviewContent = {
     cta: 'SPREAD 시작하기'
   },
   polibot: {
-    title: 'PoliBot',
+    title: 'POLIBOT',
     subtitle: '보험 보장분석 자동화',
     motto: '보험 상품과 고객 조건을 빠르게 비교해요.',
     description: 'PDF 업로드, 고객 프로필, 보장 니즈를 바탕으로 추천 초안과 비교 결과를 정리해요.',
-    cta: 'PoliBot 시작하기'
+    cta: 'POLIBOT 시작하기'
   },
   infludex: {
     title: 'INFLUDEX',

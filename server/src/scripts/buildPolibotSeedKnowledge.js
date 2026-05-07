@@ -25,7 +25,7 @@ async function main() {
         text = await extractPolibotTextFromBuffer(buffer, name);
       } catch (error) {
         text = '';
-        console.warn(`[PoliBot seed] ${name} parse failed: ${error.message}`);
+        console.warn(`[POLIBOT seed] ${name} parse failed: ${error.message}`);
       }
     }
     items.push(normalizePolibotKnowledgeSource({
@@ -37,7 +37,7 @@ async function main() {
   }
   const sorted = items.sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(a.fileName).localeCompare(String(b.fileName), 'ko'));
   await writeFile(outputFile, `${JSON.stringify(sorted, null, 2)}\n`, 'utf8');
-  console.log(`Wrote ${sorted.length} PoliBot knowledge items to ${outputFile.pathname}`);
+  console.log(`Wrote ${sorted.length} POLIBOT knowledge items to ${outputFile.pathname}`);
 }
 
 main().catch((error) => {
