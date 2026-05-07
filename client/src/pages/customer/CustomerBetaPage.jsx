@@ -1379,11 +1379,12 @@ function BetaRunPanel({
   );
 }
 
-function BetaSettingsPanel({ account, trialStatus, reloadAccounts, reloadSetupStatus, reloadWorkspaceData, settingsDraft }) {
+function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, reloadSetupStatus, reloadWorkspaceData, settingsDraft }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [connectingThreads, setConnectingThreads] = useState(false);
+  const [requestingSetup, setRequestingSetup] = useState(false);
   const [appliedDraftId, setAppliedDraftId] = useState(null);
 
   useEffect(() => {
@@ -1472,6 +1473,26 @@ function BetaSettingsPanel({ account, trialStatus, reloadAccounts, reloadSetupSt
     }
   };
 
+  const requestSetup = async () => {
+    setRequestingSetup(true);
+    try {
+      const missingItems = [...(setupStatus?.blocking || []), ...(setupStatus?.warnings || [])]
+        .filter((entry) => !account?.id || !entry.accountId || entry.accountId === account.id)
+        .map((entry) => entry.title)
+        .filter(Boolean);
+      const result = await api.post('/api/me/setup-request', {
+        accountId: account?.id || null,
+        message: missingItems.length ? `부족 항목: ${missingItems.join(', ')}` : ''
+      });
+      await reloadSetupStatus?.();
+      toast(result.alreadyExists ? '이미 접수된 셋업 요청이 있어요. 관리자가 확인 중입니다.' : '관리자에게 셋업 요청을 보냈어요.', 'success');
+    } catch (err) {
+      toast(err.message || '셋업 요청을 보내지 못했어요.', 'error');
+    } finally {
+      setRequestingSetup(false);
+    }
+  };
+
   if (!form) return <Notice>계정 설정을 불러오는 중이에요.</Notice>;
 
   return (
@@ -1481,6 +1502,21 @@ function BetaSettingsPanel({ account, trialStatus, reloadAccounts, reloadSetupSt
           채팅에서 만든 설정 초안이에요. 타깃, 톤, 카테고리를 확인한 뒤 설정 저장을 눌러야 실제로 반영돼요.
         </Notice>
       )}
+
+      <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-sm font-black text-zinc-100">설정이 어렵다면 맡겨주세요</div>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+              데모/무료 체험 고객도 요청할 수 있어요. 접수되면 관리자 셋업 대기에 등록되고 담당자에게 알림이 갑니다.
+            </p>
+          </div>
+          <DarkButton variant="ghost" size="sm" onClick={requestSetup} disabled={requestingSetup}>
+            <Settings size={15} />
+            {requestingSetup ? '요청 중...' : '관리자에게 셋업 요청'}
+          </DarkButton>
+        </div>
+      </div>
 
       <CollapsiblePanel title="Threads 연결">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3">

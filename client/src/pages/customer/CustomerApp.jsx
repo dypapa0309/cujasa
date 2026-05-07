@@ -80,6 +80,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
   const [announcement, setAnnouncement] = useState(null);
   const [trialStatus, setTrialStatus] = useState(null);
   const [setupStatus, setSetupStatus] = useState(null);
+  const [requestingSetup, setRequestingSetup] = useState(false);
 
   const maxAccounts = currentUser?.maxAccounts ?? 2;
   const account = accounts[selectedIdx] ?? accounts[0];
@@ -257,6 +258,23 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
       setSetupStatus(await api.get('/api/me/setup-status'));
     } catch {
       setSetupStatus(null);
+    }
+  };
+
+  const requestSetup = async () => {
+    setRequestingSetup(true);
+    try {
+      const items = [...(setupStatus?.blocking || []), ...(setupStatus?.warnings || [])].map((entry) => entry.title).filter(Boolean);
+      const result = await api.post('/api/me/setup-request', {
+        accountId: account?.id || null,
+        message: items.length ? `부족 항목: ${items.join(', ')}` : ''
+      });
+      await loadSetupStatus();
+      toast(result.alreadyExists ? '이미 접수된 셋업 요청이 있어요. 관리자가 확인 중입니다.' : '관리자에게 셋업 요청을 보냈어요.', 'success');
+    } catch (err) {
+      toast(err.message || '셋업 요청을 보내지 못했어요.', 'error');
+    } finally {
+      setRequestingSetup(false);
     }
   };
 
@@ -489,6 +507,8 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
               onGoSettings={() => navigateTab('settings')}
               onGoBilling={() => navigateTab('billing')}
               onAddAccount={() => setShowAddForm(true)}
+              onRequestSetup={requestSetup}
+              requestingSetup={requestingSetup}
             />
             {showAddForm && (
               <form onSubmit={addAccount} className="bg-white border border-gray-200 rounded-2xl p-5 mb-5 grid gap-3">
@@ -523,7 +543,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
           </>
         ) : (
           <>
-            <SetupStatusCard setupStatus={setupStatus} setTab={navigateTab} />
+            <SetupStatusCard setupStatus={setupStatus} setTab={navigateTab} onRequestSetup={requestSetup} requestingSetup={requestingSetup} />
 
             {/* 계정 탭 */}
             <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1">
@@ -806,7 +826,7 @@ function PipelineOverlay({ progress, dark = false }) {
   );
 }
 
-function SetupStatusCard({ setupStatus, setTab }) {
+function SetupStatusCard({ setupStatus, setTab, onRequestSetup, requestingSetup }) {
   if (!setupStatus || setupStatus.ready) return null;
   const items = [...(setupStatus.blocking || []), ...(setupStatus.warnings || [])].slice(0, 4);
   if (!items.length) return null;
@@ -828,6 +848,9 @@ function SetupStatusCard({ setupStatus, setTab }) {
             <button type="button" onClick={() => setTab?.('settings')} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-white">
               설정하러 가기
             </button>
+            <button type="button" onClick={onRequestSetup} disabled={requestingSetup} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-amber-700 disabled:opacity-60">
+              {requestingSetup ? '요청 중...' : '관리자 셋업 요청'}
+            </button>
             {items.some((entry) => entry.action === 'billing') && (
               <button type="button" onClick={() => setTab?.('billing')} className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-amber-700">
                 결제 확인
@@ -840,7 +863,7 @@ function SetupStatusCard({ setupStatus, setTab }) {
   );
 }
 
-function WaitingScreen({ setupStatus, onGoSettings, onGoBilling, onAddAccount }) {
+function WaitingScreen({ setupStatus, onGoSettings, onGoBilling, onAddAccount, onRequestSetup, requestingSetup }) {
   const items = [...(setupStatus?.blocking || []), ...(setupStatus?.warnings || [])];
   const needsAccount = items.some((entry) => entry.code === 'account_required');
   return (
@@ -869,6 +892,9 @@ function WaitingScreen({ setupStatus, onGoSettings, onGoBilling, onAddAccount })
         <div className="mt-4 flex gap-2">
           <button type="button" onClick={needsAccount ? onAddAccount : onGoSettings} className="flex-1 rounded-xl bg-coupang py-3 text-sm font-black text-white">
             {needsAccount ? '계정 추가하기' : '설정하러 가기'}
+          </button>
+          <button type="button" onClick={onRequestSetup} disabled={requestingSetup} className="flex-1 rounded-xl border border-amber-200 bg-white py-3 text-sm font-black text-amber-700 disabled:opacity-60">
+            {requestingSetup ? '요청 중...' : '관리자 셋업 요청'}
           </button>
           {items.some((entry) => entry.action === 'billing') && (
             <button type="button" onClick={onGoBilling} className="flex-1 rounded-xl border border-amber-200 bg-white py-3 text-sm font-black text-amber-700">

@@ -51,6 +51,70 @@ export async function updateSetupTask(id, patch = {}) {
   return updated;
 }
 
+export async function requestSetupTaskForUser(userId, { accountId = null, message = '' } = {}) {
+  if (!userId) {
+    const error = new Error('Unauthorized');
+    error.status = 401;
+    throw error;
+  }
+
+  const [user, mappings, accounts, existingTasks] = await Promise.all([
+    dbGet('users', { id: userId }),
+    dbList('user_accounts', { user_id: userId }),
+    dbList('accounts'),
+    dbList('setup_tasks', { user_id: userId })
+  ]);
+  if (!user) {
+    const error = new Error('User not found');
+    error.status = 404;
+    throw error;
+  }
+
+  const activeExisting = existingTasks
+    .filter((task) => ['pending', 'in_progress'].includes(task.status))
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0];
+  if (activeExisting) {
+    return { task: activeExisting, alreadyExists: true, notified: false };
+  }
+
+  const ownedAccountIds = new Set(mappings.map((row) => row.account_id));
+  const ownedAccounts = accounts.filter((account) => ownedAccountIds.has(account.id) && account.status !== 'archived');
+  const selectedAccount = ownedAccounts.find((account) => account.id === accountId) || ownedAccounts[0] || null;
+  const missing = selectedAccount ? [
+    !selectedAccount.threads_access_token ? 'Threads 연결 필요' : '',
+    !(selectedAccount.coupang_access_key && selectedAccount.coupang_secret_key && selectedAccount.coupang_partner_id) ? '쿠팡 API 설정 필요' : '',
+    !(String(selectedAccount.target_audience || '').trim() && String(selectedAccount.content_scope || '').trim()) ? '콘텐츠 설정 필요' : ''
+  ].filter(Boolean) : ['계정 생성 필요'];
+  const cleanMessage = String(message || '').trim();
+  const notes = [
+    '고객이 관리자 셋업 요청 버튼을 눌렀습니다.',
+    selectedAccount ? `계정: ${selectedAccount.name || selectedAccount.id}${selectedAccount.account_handle ? ` (${selectedAccount.account_handle})` : ''}` : '',
+    missing.length ? `부족 항목: ${missing.join(', ')}` : '',
+    cleanMessage ? `고객 메모: ${cleanMessage}` : ''
+  ].filter(Boolean).join('\n');
+
+  const task = await dbInsert('setup_tasks', {
+    user_id: userId,
+    payment_id: null,
+    product_id: 'setup_request',
+    app_product_id: 'cujasa',
+    buyer_name: user.buyer_name || user.username || null,
+    email: user.email || null,
+    phone: user.phone || null,
+    amount: null,
+    paid_at: null,
+    status: 'pending',
+    source: 'customer_request',
+    notes
+  });
+
+  const notification = await notifySetupRequest(task, { user, account: selectedAccount, missing });
+  if (notification.sent) {
+    await dbUpdate('setup_tasks', { id: task.id }, { notified_at: new Date().toISOString() });
+  }
+  return { task, alreadyExists: false, notified: notification.sent, notification };
+}
+
 export async function ensureSetupTaskForPayment(payment, { notify = true, source = 'payment' } = {}) {
   if (!payment?.id || payment.status !== 'paid') return null;
   const existing = await dbGet('setup_tasks', { payment_id: payment.id });
@@ -83,6 +147,37 @@ export async function ensureSetupTaskForPayment(payment, { notify = true, source
     }
   }
   return task;
+}
+
+async function notifySetupRequest(task, { user, account, missing = [] } = {}) {
+  const name = task.buyer_name || user?.buyer_name || user?.username || '고객';
+  const text = [
+    ':wrench: CUJASA 관리자 셋업 요청',
+    `고객: ${name} (${task.email || '-'})`,
+    `전화번호: ${task.phone || '-'}`,
+    `계정: ${account?.name || '-'} ${account?.account_handle || ''}`.trim(),
+    `부족 항목: ${missing.length ? missing.join(', ') : '확인 필요'}`,
+    `작업 ID: ${task.id}`
+  ].join('\n');
+  const smsText = [
+    '[CUJASA 셋업 요청]',
+    `${name} / ${task.phone || '전화번호 없음'}`,
+    `${task.email || '-'}`,
+    account ? `${account.name || '계정'} ${account.account_handle || ''}`.trim() : '계정 없음',
+    missing.length ? missing.join(', ') : '확인 필요'
+  ].join('\n');
+
+  const [sms, slack] = await Promise.allSettled([
+    sendSetupSms(smsText),
+    sendSlackMessage(text)
+  ]);
+  const smsResult = sms.status === 'fulfilled' ? sms.value : { ok: false, error: sms.reason?.message || 'SMS failed' };
+  const slackResult = slack.status === 'fulfilled' ? slack.value : { ok: false, error: slack.reason?.message || 'Slack failed' };
+  return {
+    sms: smsResult,
+    slack: slackResult,
+    sent: Boolean(smsResult?.ok || slackResult?.ok)
+  };
 }
 
 async function notifySetupTask(task, payment, product) {
