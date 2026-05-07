@@ -309,6 +309,7 @@ export async function getProductWorkspace(userId, productId) {
       .slice(0, 500);
     next.latestKnowledgeMonth = next.knowledgeSources[0]?.month || next.latestKnowledgeMonth || '';
     next.catalog = buildPolibotCatalog(next.knowledgeSources);
+    next.qualityReport = buildPolibotQualityReport(next.knowledgeSources);
   }
   return withUsage(next, settings, productId);
 }
@@ -526,7 +527,8 @@ const POLIBOT_GENERIC_PRODUCT_NAMES = new Set([
   '장기종합보험', '치매간병보험', '어린이보험', '태아보험', '간편건강보험'
 ]);
 
-const POLIBOT_BAD_PRODUCT_PATTERN = /가이드북|자료이용|상품비교|자료모음|상품전략|금융환경|관심상품|영업이슈|보험의\s*A|상품의\s*기본|간추린|상품\s*안내|본\s*내용|예시된|따라서|고객\s*조건|보장분석|가입담보|님의\s*상품별|판매되고\s*있는|자료는\s*상품|보험이\s*어려운|알쓸신통|주요국가|기준금리|세계\s*경제뉴스|국내\s*경제뉴스|보험시장|비급여|pdf|pptx|xlsx|csv|https?:/i;
+const POLIBOT_BAD_PRODUCT_PATTERN = /가이드북|자료이용|상품비교|자료모음|상품전략|금융환경|관심상품|영업이슈|보험의\s*A|상품의\s*기본|간추린|상품\s*안내|본\s*내용|예시된|따라서|고객\s*조건|보장분석|가입담보|님의\s*상품별|판매되고\s*있는|자료는\s*상품|보험이\s*어려운|알쓸신통|주요국가|기준금리|세계\s*경제뉴스|국내\s*경제뉴스|보험시장|비급여|데이터로\s*읽는|2030\s*보험|보험영업에서|반드시\s*챙겨야|사내\s*교육용|교육\s*목적|무단배포|경제뉴스|시장\s*선점|pdf|pptx|xlsx|csv|https?:/i;
+const POLIBOT_PURPOSES = ['보장 강화', '보험료 절감', '리모델링', '신규 가입'];
 
 function normalizePolibotProductName(value = '') {
   return String(value || '')
@@ -569,6 +571,144 @@ function cleanPolibotProductNames(names = []) {
   )].slice(0, 5);
 }
 
+function classifyPolibotProducts(source = {}) {
+  const rawCandidates = sourceProductNameCandidates(source).flatMap(splitPolibotProductText);
+  const cleanNames = cleanPolibotProductNames(sourceProductNameCandidates(source));
+  const cleanSet = new Set(cleanNames);
+  const excluded = [...new Set(rawCandidates
+    .map(normalizePolibotProductName)
+    .filter((name) => name && !cleanSet.has(name))
+    .filter((name) => POLIBOT_BAD_PRODUCT_PATTERN.test(name) || POLIBOT_GENERIC_PRODUCT_NAMES.has(name.replace(/\s+/g, ''))))]
+    .slice(0, 8);
+  const status = cleanNames.length > 0
+    ? (cleanNames.some((name) => /\(무\)|무배당|The|THE|Plus|플러스|마이라이프|슬기로운|알뜰한|경영인/i.test(name)) ? 'confirmed' : 'auto')
+    : (rawCandidates.length > 0 ? 'review' : 'none');
+  return {
+    sourceId: source.id || `${source.month}-${source.fileName}`,
+    fileName: source.fileName,
+    month: source.month,
+    company: source.company,
+    companies: source.companies || [],
+    productGroup: source.productGroup,
+    status,
+    statusLabel: {
+      confirmed: '확정 상품',
+      auto: '자동 추출',
+      review: '검수 필요',
+      none: '상품명 부족'
+    }[status],
+    productNames: cleanNames,
+    excludedPhrases: excluded
+  };
+}
+
+function buildPolibotQualityReport(knowledgeSources = []) {
+  const catalog = knowledgeSources.map(classifyPolibotProducts);
+  const recommended = catalog.filter((item) => ['confirmed', 'auto'].includes(item.status) && item.productNames.length > 0);
+  const review = catalog.filter((item) => item.status === 'review');
+  const ocrNeeded = knowledgeSources.filter((item) => item.fileType === 'image').length;
+  const excludedPhrases = catalog.flatMap((item) => item.excludedPhrases || []);
+  const companies = [...new Set(knowledgeSources.flatMap((item) => item.companies?.length ? item.companies : [item.company]).filter((company) => company && company !== '미분류'))]
+    .sort((a, b) => a.localeCompare(b, 'ko'));
+  const productGroups = [...new Set(knowledgeSources.map((item) => item.productGroup).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'ko'));
+  const keywords = [...new Set(knowledgeSources.flatMap((item) => item.keywords || []))]
+    .slice(0, 20);
+  return {
+    totalSources: knowledgeSources.length,
+    recommendableProducts: recommended.reduce((sum, item) => sum + item.productNames.length, 0),
+    reviewNeededProducts: review.length,
+    excludedPhrases: excludedPhrases.length,
+    ocrNeeded,
+    companies,
+    productGroups,
+    keywords,
+    catalog: catalog.slice(0, 80)
+  };
+}
+
+function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
+  const needs = profile.needs || [];
+  const missing = [];
+  if (!profile.age) missing.push('나이');
+  if (!profile.gender) missing.push('성별');
+  if (needs.length === 0) missing.push('필요 보장');
+  if (!profile.budget) missing.push('예산');
+  if (!profile.existingPremium) missing.push('현재 보험료');
+  if (!profile.existingMedicalPlan) missing.push('기존 실손 여부');
+  if (!profile.medicalHistory) missing.push('병력/고지 이슈');
+  const nextQuestions = [
+    !profile.existingMedicalPlan && '기존 실손보험이 있나요?',
+    !profile.medicalHistory && '최근 5년 내 입원, 수술, 투약이나 고지 이슈가 있나요?',
+    !profile.existingPremium && '현재 월 보험료는 얼마인가요?',
+    !profile.renewalPreference && '갱신형 상품도 괜찮나요?',
+    needs.includes('암') && '암 진단비 목표 금액이 있나요?',
+    needs.some((need) => ['뇌', '심장'].includes(need)) && '뇌/심장 진단비를 각각 어느 정도로 보고 있나요?'
+  ].filter(Boolean).slice(0, 6);
+  const cautions = [
+    '고지사항 확인 필요',
+    !profile.existingMedicalPlan && '실손 중복 여부 확인 필요',
+    !profile.medicalHistory && '병력/부담보 가능성 확인 필요',
+    profile.renewalPreference === '비갱신 선호' && '비갱신형 보험료 부담 확인 필요',
+    qualityReport.recommendableProducts === 0 && '추천 가능한 상품명 자료 부족'
+  ].filter(Boolean);
+  const completeness = missing.length <= 1 ? '충분' : missing.length <= 4 ? '보통' : '부족';
+  return {
+    summary: [
+      profile.name || '고객명 미입력',
+      profile.age ? `${profile.age}세` : '',
+      profile.gender || '',
+      profile.purpose || ''
+    ].filter(Boolean).join(' · ') || '고객 조건 미입력',
+    needs,
+    missing,
+    completeness,
+    nextQuestions,
+    cautions,
+    memo: missing.length
+      ? `${missing.slice(0, 3).join(', ')} 정보를 확인하면 상품 추천 정확도가 올라가요.`
+      : '분석에 필요한 기본 정보가 비교적 충분해요.',
+    createdAt: now()
+  };
+}
+
+function polibotConfidence({ profile, sources, keywordHits, productNames, qualityReport }) {
+  let score = 0;
+  if (profile.age) score += 12;
+  if (profile.gender) score += 8;
+  if ((profile.needs || []).length > 0) score += 18;
+  if (profile.budget) score += 8;
+  if (profile.existingMedicalPlan) score += 8;
+  if (profile.medicalHistory) score += 8;
+  if (profile.renewalPreference) score += 5;
+  score += Math.min(16, keywordHits.length * 4);
+  score += Math.min(12, productNames.length * 4);
+  score += Math.min(5, sources.filter((source) => source.month).length);
+  if ((qualityReport?.recommendableProducts || 0) < 3) score -= 12;
+  const level = score >= 72 ? '높음' : score >= 48 ? '보통' : '낮음';
+  const reasons = [
+    level === '낮음' && '고객 정보나 추천 가능 상품명이 부족해요.',
+    !profile.medicalHistory && '고지 이슈 확인 전이라 최종 추천은 보류가 필요해요.',
+    !profile.existingMedicalPlan && '기존 실손 중복 여부를 확인해야 해요.',
+    (qualityReport?.recommendableProducts || 0) < 3 && '추천 가능한 상품 카탈로그가 아직 적어요.'
+  ].filter(Boolean);
+  return { level, score, reasons };
+}
+
+function buildPolibotExcludedCandidates(evidence = [], profile = {}) {
+  return evidence
+    .filter((source) => cleanPolibotProductNames(sourceProductNameCandidates(source)).length === 0)
+    .slice(0, 4)
+    .map((source) => ({
+      name: source.fileName || '자료명 미입력',
+      reason: source.fileType === 'image'
+        ? 'OCR 전 이미지 자료라 상품명을 확인하지 못했어요.'
+        : source.keywordHits?.length ? '니즈 키워드는 있지만 실제 상품명이 부족해요.' : '고객 니즈와 직접 연결되는 근거가 약해요.',
+      fileName: source.fileName,
+      month: source.month
+    }));
+}
+
 function buildPolibotRecommendation({ profile, evidence, label, type, index, seed }) {
   const sources = evidence.slice(index, index + (type === 'bundle' ? 3 : 1));
   const primary = sources[0] || {};
@@ -601,18 +741,42 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     keywords: keywordHits,
     sourceCompanies,
     evidence: sources.map(polibotEvidencePayload),
+    confidence: polibotConfidence({ profile, sources, keywordHits, productNames, qualityReport: profile.qualityReport }),
+    excludedCandidates: buildPolibotExcludedCandidates(evidence, profile),
+    nextQuestions: profile.consultationDraft?.nextQuestions || [],
     createdAt: now()
   };
 }
 
-export async function savePolibotRecommendation(userId, { name = '', age = '', gender = '', needs = '', budget = '', company = '' } = {}) {
+export async function savePolibotRecommendation(userId, {
+  name = '',
+  age = '',
+  gender = '',
+  needs = '',
+  budget = '',
+  company = '',
+  existingMedicalPlan = '',
+  existingPremium = '',
+  medicalHistory = '',
+  familyHistory = '',
+  driving = '',
+  renewalPreference = '',
+  purpose = ''
+} = {}) {
   const profile = {
     name: String(name || '').trim(),
     age: String(age || '').trim(),
     gender: String(gender || '').trim(),
     needs: normalizeList(needs),
     budget: String(budget || '').trim(),
-    company: String(company || '').trim() || '전체 보험사'
+    company: String(company || '').trim() || '전체 보험사',
+    existingMedicalPlan: String(existingMedicalPlan || '').trim(),
+    existingPremium: String(existingPremium || '').trim(),
+    medicalHistory: String(medicalHistory || '').trim(),
+    familyHistory: String(familyHistory || '').trim(),
+    driving: String(driving || '').trim(),
+    renewalPreference: String(renewalPreference || '').trim(),
+    purpose: POLIBOT_PURPOSES.includes(String(purpose || '').trim()) ? String(purpose || '').trim() : String(purpose || '').trim()
   };
   if (!profile.age && profile.needs.length === 0 && !profile.budget) {
     const error = new Error('고객 나이, 니즈, 예산 중 하나 이상을 입력해 주세요.');
@@ -621,7 +785,11 @@ export async function savePolibotRecommendation(userId, { name = '', age = '', g
   }
   const seed = hashText(JSON.stringify(profile));
   const workspace = await getProductWorkspace(userId, 'polibot');
-  const evidence = rankPolibotEvidence(Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [], profile)
+  const knowledgeSources = Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [];
+  const qualityReport = buildPolibotQualityReport(knowledgeSources);
+  const consultationDraft = buildPolibotConsultationDraft(profile, qualityReport);
+  const enrichedProfile = { ...profile, qualityReport, consultationDraft };
+  const evidence = rankPolibotEvidence(knowledgeSources, profile)
     .filter((source) => Number(source.matchScore || 0) >= 9 || (source.keywordHits || []).length > 0)
     .slice(0, 8);
   const productEvidence = evidence
@@ -630,7 +798,7 @@ export async function savePolibotRecommendation(userId, { name = '', age = '', g
   const recommendationEvidence = productEvidence.length ? productEvidence : evidence.slice(0, 3);
   const labels = recommendationEvidence.map((source) => source.productGroup || '보장 검토');
   const singleRecommendations = labels.slice(0, 4).map((label, index) => buildPolibotRecommendation({
-    profile,
+    profile: enrichedProfile,
     evidence: recommendationEvidence,
     label,
     type: 'single',
@@ -638,7 +806,7 @@ export async function savePolibotRecommendation(userId, { name = '', age = '', g
     seed
   }));
   const bundleRecommendations = recommendationEvidence.length >= 2 ? [0, 1].map((offset) => buildPolibotRecommendation({
-    profile,
+    profile: enrichedProfile,
     evidence: recommendationEvidence,
     label: offset === 0 ? '질병/실손' : '생활비/간병',
     type: 'bundle',
@@ -651,7 +819,10 @@ export async function savePolibotRecommendation(userId, { name = '', age = '', g
     .slice(0, 6);
   const patch = {
     customerProfile: profile,
+    consultationDraft,
+    qualityReport,
     recommendations,
+    excludedCandidates: buildPolibotExcludedCandidates(evidence, profile),
     recommendationNotice: recommendations.length
       ? ''
       : '입력한 고객 조건과 직접 맞는 자료를 찾지 못했어요. 암/뇌/심장/실손 같은 보장 키워드가 들어간 최신 상품 비교표나 설계 자료를 먼저 추가해 주세요.'
@@ -682,9 +853,18 @@ export async function savePolibotCustomer(userId, { id = '', name = '', age = ''
     gender: String(currentProfile.gender || '').trim(),
     needs: Array.isArray(currentProfile.needs) ? currentProfile.needs : [],
     budget: String(currentProfile.budget || '').trim(),
+    existingMedicalPlan: String(currentProfile.existingMedicalPlan || '').trim(),
+    existingPremium: String(currentProfile.existingPremium || '').trim(),
+    medicalHistory: String(currentProfile.medicalHistory || '').trim(),
+    familyHistory: String(currentProfile.familyHistory || '').trim(),
+    driving: String(currentProfile.driving || '').trim(),
+    renewalPreference: String(currentProfile.renewalPreference || '').trim(),
+    purpose: String(currentProfile.purpose || '').trim(),
     memo: String(memo || '').trim(),
     selectedRecommendation: recommendation || existing?.selectedRecommendation || null,
     recommendations: Array.isArray(workspace.recommendations) && workspace.recommendations.length ? workspace.recommendations : existing?.recommendations || [],
+    consultationDraft: workspace.consultationDraft || existing?.consultationDraft || null,
+    excludedCandidates: workspace.excludedCandidates || existing?.excludedCandidates || [],
     updatedAt: now(),
     createdAt: existing?.createdAt || now()
   };
