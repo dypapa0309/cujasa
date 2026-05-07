@@ -1014,7 +1014,7 @@ export default function CustomerBetaPage({
           </header>
 
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3 pb-3 lg:px-10 lg:py-4">
-            <div className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col justify-start ${messages.length > 0 ? 'pt-2 sm:pt-5 lg:pt-[6vh]' : 'pt-[13vh] sm:pt-[16vh] lg:pt-[18vh]'}`}>
+            <div className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col justify-start ${messages.length > 0 ? 'pt-2 sm:pt-5 lg:pt-6' : 'pt-[13vh] sm:pt-[16vh] lg:pt-[18vh]'}`}>
               {messages.length === 0 && (
               <div className="text-center">
                 <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-400 lg:mb-5">
@@ -1042,7 +1042,7 @@ export default function CustomerBetaPage({
               )}
 
               {messages.length > 0 && (
-                <section className="mb-4 min-h-0 flex-1 overflow-y-auto px-1 py-2 text-left lg:mb-3 lg:max-h-[min(54vh,560px)] lg:flex-none lg:py-2">
+                <section className="mb-4 min-h-0 flex-1 overflow-y-auto px-1 py-2 text-left lg:mb-3 lg:py-2">
                   <div className="mx-auto grid w-full max-w-3xl gap-3 lg:gap-2.5">
                     {messages.map((message) => (
                       <BetaChatMessage key={message.id} message={message} onOpenAction={openWorkspaceAction} />
@@ -1052,7 +1052,7 @@ export default function CustomerBetaPage({
                 </section>
               )}
 
-              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl min-w-0 ${messages.length > 0 ? 'sticky bottom-3 lg:static' : 'mt-5 lg:mt-5'}`}>
+              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl min-w-0 ${messages.length > 0 ? 'sticky bottom-3 lg:bottom-5' : 'mt-5 lg:mt-5'}`}>
                 <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[#242424] p-2.5 shadow-2xl shadow-black/30 lg:rounded-[24px]">
                   <textarea
                     value={prompt}
