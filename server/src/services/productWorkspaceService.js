@@ -522,16 +522,20 @@ function polibotEvidencePayload(source = {}) {
 
 const POLIBOT_GENERIC_PRODUCT_NAMES = new Set([
   '생명보험', '손해보험', '보험상품', '보장성 보험', '보장성보험', '종신보험', '정기보험',
-  '건강보험', '암보험', '실손보험', '치매보험', '연금보험', '변액보험', '저축성보험'
+  '건강보험', '암보험', '실손보험', '치매보험', '연금보험', '변액보험', '저축성보험',
+  '장기종합보험', '치매간병보험', '어린이보험', '태아보험', '간편건강보험'
 ]);
 
-const POLIBOT_BAD_PRODUCT_PATTERN = /가이드북|자료이용|상품비교|자료모음|상품전략|금융환경|관심상품|영업이슈|보험의\s*A|상품의\s*기본|간추린|상품\s*안내|본\s*내용|예시된|따라서|고객\s*조건|보장분석|가입담보|님의\s*상품별|pdf|pptx|xlsx|csv|https?:/i;
+const POLIBOT_BAD_PRODUCT_PATTERN = /가이드북|자료이용|상품비교|자료모음|상품전략|금융환경|관심상품|영업이슈|보험의\s*A|상품의\s*기본|간추린|상품\s*안내|본\s*내용|예시된|따라서|고객\s*조건|보장분석|가입담보|님의\s*상품별|판매되고\s*있는|자료는\s*상품|보험이\s*어려운|알쓸신통|주요국가|기준금리|세계\s*경제뉴스|국내\s*경제뉴스|보험시장|비급여|pdf|pptx|xlsx|csv|https?:/i;
 
 function normalizePolibotProductName(value = '') {
   return String(value || '')
     .normalize('NFC')
     .replace(/\.(pdf|pptx?|xlsx|csv|txt)$/ig, ' ')
     .replace(/상품명|구\s*분|보험료|변경월|변경일|작성기준일/gi, ' ')
+    .replace(/\r?\n+/g, ' ')
+    .replace(/^\s*\d+(?:[,.\d]*원|\s*세)?\s*/g, ' ')
+    .replace(/^(?:남성|여성|보장|담보|합계|월납|기준|순위)\s*/g, ' ')
     .replace(/[{}[\]←→󰀲︙]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -541,14 +545,15 @@ function splitPolibotProductText(value = '') {
   const normalized = normalizePolibotProductName(value);
   if (!normalized) return [];
   const matches = normalized.match(/(?:[A-Za-z가-힣0-9+·()ⅡⅢⅣⅤ-]+\s*){1,6}(?:보험|플랜|특약|담보|진단비|수술비|입원비|간병비)(?:\s*(?:Plus|PLUS|플러스|더드림|원픽|하이픽|세븐|Q|Ⅱ|Ⅲ|IV|V|260\d(?:\.\d)?))?/g) || [];
-  return [normalized, ...matches].map(normalizePolibotProductName);
+  const direct = normalized.length <= 44 ? [normalized] : [];
+  return [...direct, ...matches].map(normalizePolibotProductName);
 }
 
 function sourceProductNameCandidates(source = {}) {
   return [
     ...(Array.isArray(source.productNames) ? source.productNames : []),
-    source.textSnippet || '',
-    source.summary || ''
+    String(source.textSnippet || '').slice(0, 2500),
+    String(source.summary || '').slice(0, 500)
   ];
 }
 
@@ -560,6 +565,7 @@ function cleanPolibotProductNames(names = []) {
     .filter((name) => /(보험|플랜|특약|담보|진단비|수술비|입원비|간병비)/.test(name))
     .filter((name) => !POLIBOT_GENERIC_PRODUCT_NAMES.has(name.replace(/\s+/g, '')))
     .filter((name) => !POLIBOT_BAD_PRODUCT_PATTERN.test(name))
+    .filter((name) => !/^\d|[,]{2,}|[?]{2,}|[|]/.test(name))
   )].slice(0, 5);
 }
 
@@ -618,18 +624,22 @@ export async function savePolibotRecommendation(userId, { name = '', age = '', g
   const evidence = rankPolibotEvidence(Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [], profile)
     .filter((source) => Number(source.matchScore || 0) >= 9 || (source.keywordHits || []).length > 0)
     .slice(0, 8);
-  const labels = evidence.map((source) => source.productGroup || '보장 검토');
+  const productEvidence = evidence
+    .filter((source) => cleanPolibotProductNames(sourceProductNameCandidates(source)).length > 0)
+    .slice(0, 6);
+  const recommendationEvidence = productEvidence.length ? productEvidence : evidence.slice(0, 3);
+  const labels = recommendationEvidence.map((source) => source.productGroup || '보장 검토');
   const singleRecommendations = labels.slice(0, 4).map((label, index) => buildPolibotRecommendation({
     profile,
-    evidence,
+    evidence: recommendationEvidence,
     label,
     type: 'single',
     index,
     seed
   }));
-  const bundleRecommendations = evidence.length >= 2 ? [0, 1].map((offset) => buildPolibotRecommendation({
+  const bundleRecommendations = recommendationEvidence.length >= 2 ? [0, 1].map((offset) => buildPolibotRecommendation({
     profile,
-    evidence,
+    evidence: recommendationEvidence,
     label: offset === 0 ? '질병/실손' : '생활비/간병',
     type: 'bundle',
     index: offset,
@@ -639,13 +649,16 @@ export async function savePolibotRecommendation(userId, { name = '', age = '', g
     .filter((item) => item && item.evidence.length > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 6);
-  return updateWorkspaceAndConsume(userId, 'polibot', {
+  const patch = {
     customerProfile: profile,
     recommendations,
     recommendationNotice: recommendations.length
       ? ''
       : '입력한 고객 조건과 직접 맞는 자료를 찾지 못했어요. 암/뇌/심장/실손 같은 보장 키워드가 들어간 최신 상품 비교표나 설계 자료를 먼저 추가해 주세요.'
-  });
+  };
+  return recommendations.length
+    ? updateWorkspaceAndConsume(userId, 'polibot', patch)
+    : updateWorkspace(userId, 'polibot', patch);
 }
 
 export async function savePolibotCustomer(userId, { id = '', name = '', age = '', memo = '', recommendationId = '', selectedRecommendation = null, profile = null } = {}) {
