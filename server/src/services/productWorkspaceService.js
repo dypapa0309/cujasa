@@ -604,7 +604,7 @@ function normalizeCatalogReviews(reviews = {}) {
 
 function sourceCatalogItems(source = {}, reviews = {}) {
   return buildPolibotCatalogItems([source], { reviews })
-    .filter((item) => item.status === 'confirmed' && Number(item.confidence || 0) >= 80);
+    .filter((item) => item.status === 'confirmed' && Number(item.confidence || 0) >= 80 && ['충분', '보통'].includes(item.completeness || '부족'));
 }
 
 function cleanPolibotProductNames(names = []) {
@@ -664,7 +664,7 @@ function buildPolibotQualityReport(knowledgeSources = [], reviews = {}) {
   const catalogItems = allCatalogItems.filter((item) => item.status === 'confirmed' && item.productName);
   const reviewItems = allCatalogItems.filter((item) => ['auto', 'review'].includes(item.status));
   const excludedItems = allCatalogItems.filter((item) => item.status === 'excluded');
-  const recommended = catalogItems;
+  const recommended = catalogItems.filter((item) => ['충분', '보통'].includes(item.completeness || '부족'));
   const insufficientItems = catalogItems.filter((item) => item.completeness === '부족');
   const review = catalog.filter((item) => item.status === 'review');
   const ocrNeeded = knowledgeSources.filter((item) => item.fileType === 'image').length;
@@ -897,6 +897,13 @@ export async function savePolibotRecommendation(userId, {
     !profile.existingMedicalPlan && '기존 실손 여부',
     !profile.medicalHistory && '병력/고지 이슈'
   ].filter(Boolean);
+  const riskHoldReasons = [
+    !profile.existingMedicalPlan && '실손 중복 여부',
+    !profile.medicalHistory && '병력/고지 이슈',
+    /있음|예|확인|수술|입원|투약|치료|진단/i.test(profile.medicalHistory) && '고지 상세',
+    profile.renewalPreference === '비갱신 선호' && '갱신형 부담',
+    profile.budget && Number(String(profile.budget).replace(/[^\d.]/g, '')) > 0 && Number(String(profile.budget).replace(/[^\d.]/g, '')) < 5 && '예산 조건'
+  ].filter(Boolean);
   const hardMissing = [
     !profile.age && '나이',
     profile.needs.length === 0 && '필요 보장',
@@ -910,6 +917,17 @@ export async function savePolibotRecommendation(userId, {
       recommendations: [],
       excludedCandidates: [],
       recommendationNotice: `추천 전에 ${(hardMissing.length ? hardMissing : missingForRecommendation).slice(0, 4).join(', ')} 정보를 먼저 확인해 주세요. 고객 조건이 부족해서 사용 횟수는 차감하지 않았어요.`
+    };
+    return updateWorkspace(userId, 'polibot', patch);
+  }
+  if (riskHoldReasons.length > 0) {
+    const patch = {
+      customerProfile: profile,
+      consultationDraft,
+      qualityReport,
+      recommendations: [],
+      excludedCandidates: [],
+      recommendationNotice: `추천 전에 ${riskHoldReasons.slice(0, 3).join(', ')} 확인이 필요해요. 보류 조건이라 사용 횟수는 차감하지 않았어요.`
     };
     return updateWorkspace(userId, 'polibot', patch);
   }

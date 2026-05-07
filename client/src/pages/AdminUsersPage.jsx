@@ -921,6 +921,7 @@ function PolibotCatalogReviewPanel({ userId, onSave }) {
   const [loading, setLoading] = useState(false);
   const [payload, setPayload] = useState(null);
   const [drafts, setDrafts] = useState({});
+  const [reviewTab, setReviewTab] = useState('review');
 
   const loadReview = async () => {
     setLoading(true);
@@ -939,8 +940,22 @@ function PolibotCatalogReviewPanel({ userId, onSave }) {
 
   const report = payload?.qualityReport || {};
   const items = Array.isArray(report.catalogItems) ? report.catalogItems : [];
+  const reviewTabs = [
+    ['confirmed', '확정 상품', report.recommendableProducts || 0],
+    ['review', '검수 필요', report.reviewNeededProducts || 0],
+    ['insufficient', '정보 부족', report.insufficientProducts || 0],
+    ['excluded', '제외 문구', report.excludedPhrases || 0]
+  ];
   const visibleItems = items
-    .filter((item) => ['auto', 'review', 'confirmed', 'excluded'].includes(item.status))
+    .filter((item) => {
+      const draft = drafts[item.id] || {};
+      const status = draft.status || item.status || 'review';
+      const completeness = item.completeness || '부족';
+      if (reviewTab === 'confirmed') return status === 'confirmed' && completeness !== '부족';
+      if (reviewTab === 'insufficient') return status === 'confirmed' && completeness === '부족';
+      if (reviewTab === 'excluded') return status === 'excluded';
+      return ['auto', 'review'].includes(status);
+    })
     .slice(0, 40);
 
   const updateReview = (item, patch) => {
@@ -998,9 +1013,25 @@ function PolibotCatalogReviewPanel({ userId, onSave }) {
             <div className="rounded border border-line bg-white p-2">제외 문구 {report.excludedPhrases || 0}개</div>
             <div className="rounded border border-line bg-white p-2">OCR 필요 {report.ocrNeeded || 0}개</div>
           </div>
+          <div className="flex flex-wrap gap-2">
+            {reviewTabs.map(([key, label, count]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setReviewTab(key)}
+                className={`rounded-full border px-3 py-1.5 text-xs font-black ${
+                  reviewTab === key
+                    ? 'border-slate-900 bg-slate-900 text-white'
+                    : 'border-line bg-white text-slate-500 hover:border-slate-900 hover:text-slate-900'
+                }`}
+              >
+                {label} {count}
+              </button>
+            ))}
+          </div>
           <div className="max-h-80 overflow-auto rounded border border-line bg-white">
             {loading && <div className="p-3 text-xs text-slate-400">검수 목록을 불러오는 중...</div>}
-            {!loading && visibleItems.length === 0 && <div className="p-3 text-xs text-slate-400">검수할 상품 후보가 없습니다.</div>}
+            {!loading && visibleItems.length === 0 && <div className="p-3 text-xs text-slate-400">이 탭에 표시할 항목이 없습니다.</div>}
             {visibleItems.map((item) => {
               const draft = drafts[item.id] || {};
               const status = draft.status || item.status || 'review';

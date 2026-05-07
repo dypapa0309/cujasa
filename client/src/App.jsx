@@ -121,6 +121,7 @@ export default function App() {
   if (!currentUser && !getAuthToken()) {
     return (
       <ToastProvider>
+        <GlobalApiLoadingBar />
         <LoginPage onLogin={(info) => {
           setCurrentUser({ type: info.type, email: info.email, username: info.username, maxAccounts: info.maxAccounts, products: info.products || [], billing: info.billing || null });
           loadAccounts().catch(console.error);
@@ -133,6 +134,7 @@ export default function App() {
   if (currentUser?.type === 'user') {
     return (
       <ToastProvider>
+        <GlobalApiLoadingBar />
         <CustomerApp
           accounts={accounts}
           currentUser={currentUser}
@@ -158,6 +160,7 @@ export default function App() {
 
   return (
     <ToastProvider>
+      <GlobalApiLoadingBar />
       <div className="min-h-screen bg-slate-50 text-slate-900">
         <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-slate-200 bg-white p-4 md:block">
           <div className="px-2">
@@ -224,6 +227,22 @@ export default function App() {
         </main>
       </div>
     </ToastProvider>
+  );
+}
+
+function GlobalApiLoadingBar() {
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const handler = (event) => setLoading(Boolean(event.detail?.loading));
+    window.addEventListener('jasain-api-loading', handler);
+    return () => window.removeEventListener('jasain-api-loading', handler);
+  }, []);
+
+  return (
+    <div className={`fixed inset-x-0 top-0 z-[9999] h-1 overflow-hidden bg-transparent transition-opacity duration-200 ${loading ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
+      <div className="h-full w-full bg-gradient-to-r from-zinc-950 via-zinc-300 to-zinc-950 shadow-[0_0_18px_rgba(255,255,255,0.35)]" />
+    </div>
   );
 }
 

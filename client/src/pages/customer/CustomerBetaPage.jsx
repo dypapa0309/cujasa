@@ -79,6 +79,7 @@ const dexorScoreRows = [
   ['C', '60-69점', '보조 후보'],
   ['D', '60점 미만', '제외 또는 재검토']
 ];
+const polibotNeedOptions = ['암', '뇌', '심장', '수술', '입원', '실손', '생활비', '운전자'];
 const betaFaqItems = [
   {
     id: 'what-cujasa',
@@ -988,7 +989,7 @@ export default function CustomerBetaPage({
           </header>
 
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4 pb-3 lg:px-10 lg:py-6">
-            <div className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col ${messages.length > 0 ? 'justify-end' : 'justify-start pt-10 sm:pt-14 lg:pt-[12vh]'}`}>
+            <div className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col ${messages.length > 0 ? 'justify-end' : 'justify-start pt-5 sm:pt-8 lg:pt-[7vh]'}`}>
               {messages.length === 0 && (
               <div className="text-center">
                 <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-400 lg:mb-5">
@@ -1026,8 +1027,8 @@ export default function CustomerBetaPage({
                 </section>
               )}
 
-              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl min-w-0 ${messages.length > 0 ? 'sticky bottom-3 lg:bottom-5' : 'mt-6 lg:mt-7'}`}>
-                <div className="overflow-hidden rounded-[22px] border border-white/10 bg-[#242424] p-3 shadow-2xl shadow-black/30 lg:rounded-[28px] lg:p-4">
+              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl min-w-0 ${messages.length > 0 ? 'sticky bottom-3 lg:bottom-5' : 'mt-5 lg:mt-6'}`}>
+                <div className="overflow-hidden rounded-[22px] border border-white/10 bg-[#242424] p-3 shadow-2xl shadow-black/30 lg:rounded-[28px] lg:p-3">
                   <textarea
                     value={prompt}
                     disabled={assistantLoading}
@@ -1039,9 +1040,9 @@ export default function CustomerBetaPage({
                         submitPrompt(event);
                       }
                     }}
-                    rows={messages.length > 0 ? 2 : 3}
+                    rows={messages.length > 0 ? 2 : 2}
                     placeholder="예: 오늘 자동화 실행해줘, 설정 확인하고 싶어, 포스팅 현황 보여줘"
-                    className="min-h-[64px] w-full resize-none bg-transparent px-2 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:text-base lg:min-h-[90px]"
+                    className="min-h-[56px] w-full resize-none bg-transparent px-2 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:text-base lg:min-h-[68px]"
                   />
                   {assistantLoading && (
                     <div className="px-2 pb-1 text-xs font-bold text-zinc-600">JASAIN Assistant가 확인 중이에요...</div>
@@ -1196,7 +1197,7 @@ function TaskDrawer(props) {
           {action.key === 'spread-applicants' && <SpreadApplicantsPanel reloadCurrentUser={props.reloadCurrentUser} />}
           {action.key === 'spread-review' && <SpreadReviewPanel reloadCurrentUser={props.reloadCurrentUser} />}
           {action.key === 'polibot-upload' && <PolibotUploadPanel />}
-          {action.key === 'polibot-recommend' && <PolibotRecommendPanel assistantDraft={props.assistantDraft} reloadCurrentUser={props.reloadCurrentUser} />}
+          {action.key === 'polibot-recommend' && <PolibotRecommendPanel assistantDraft={props.assistantDraft} reloadCurrentUser={props.reloadCurrentUser} onOpenAction={props.onOpenAction} />}
           {action.key === 'polibot-customers' && <PolibotCustomersPanel />}
           {action.key === 'polibot-download' && <PolibotDownloadPanel />}
           {action.key === 'infludex-upload' && <InfludexUploadPanel onOpenGrade={() => props.onOpenAction?.('infludex-grade')} />}
@@ -2613,6 +2614,7 @@ function PolibotUploadPanel() {
       <PanelCard title="월별 보험 자료">
         <ProductUsageStrip usage={usage} />
         {workspace.qualityReport && <PolibotQualityReport report={workspace.qualityReport} />}
+        {saving && <Notice>자료를 읽고 상품 후보와 제외 문구를 정리하고 있어요.</Notice>}
         <div className="grid gap-3">
           <label className={labelClass}>자료 월<input className={inputClass} value={form.month} onChange={(event) => setForm((prev) => ({ ...prev, month: event.target.value }))} placeholder="예: 2026-05" /></label>
           <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 bg-black/25 px-4 py-5 text-sm font-bold text-zinc-300 hover:bg-white/5">
@@ -2668,21 +2670,23 @@ function PolibotQualityReport({ report }) {
     ['OCR 필요', `${report.ocrNeeded || 0}개`]
   ];
   return (
-    <div className="mb-4 rounded-2xl border border-white/10 bg-black/20 p-3">
-      <div className="text-xs font-black text-zinc-400">자료 품질 리포트</div>
-      <div className="mt-3 grid grid-cols-2 gap-2">
+    <div className="mb-3 rounded-2xl border border-white/10 bg-black/20 p-2.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs font-black text-zinc-400">자료 품질</div>
+        <div className="truncate text-[11px] font-bold text-zinc-600">
+          {(report.companies || []).slice(0, 3).join(', ') || '보험사 미분류'}
+        </div>
+      </div>
+      <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
         {items.map(([label, value]) => (
-          <div key={label} className="rounded-xl bg-black/25 px-3 py-2">
-            <div className="text-[11px] font-bold text-zinc-600">{label}</div>
-            <div className="mt-1 text-sm font-black text-zinc-100">{value}</div>
+          <div key={label} className="min-w-[112px] rounded-xl bg-black/25 px-3 py-2">
+            <div className="text-[10px] font-bold text-zinc-600">{label}</div>
+            <div className="mt-0.5 text-sm font-black text-zinc-100">{value}</div>
           </div>
         ))}
       </div>
-      <div className="mt-3 text-xs leading-relaxed text-zinc-600">
-        보험사 {(report.companies || []).slice(0, 5).join(', ') || '미분류'} · 키워드 {(report.keywords || []).slice(0, 7).join(', ') || '부족'}
-      </div>
       {(companyCounts.length > 0 || groupCounts.length > 0) && (
-        <div className="mt-3 grid gap-2 text-[11px] font-bold leading-relaxed text-zinc-600">
+        <div className="mt-2 line-clamp-2 text-[11px] font-bold leading-relaxed text-zinc-600">
           {companyCounts.length > 0 && <div>보험사별 {companyCounts.map(([name, count]) => `${name} ${count}`).join(' · ')}</div>}
           {groupCounts.length > 0 && <div>상품군별 {groupCounts.map(([name, count]) => `${name} ${count}`).join(' · ')}</div>}
         </div>
@@ -2691,7 +2695,7 @@ function PolibotQualityReport({ report }) {
   );
 }
 
-function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser }) {
+function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction }) {
   const toast = useToast();
   const [form, setForm] = useState({
     name: '',
@@ -2716,6 +2720,14 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const usage = workspaceUsage(workspace);
   const companies = ['전체 보험사', ...(workspace.catalog?.companies || [])];
+  const selectedNeeds = useMemo(() => normalizeLines(form.needs), [form.needs]);
+  const setNeeds = (needs) => setForm((prev) => ({ ...prev, needs: needs.join('\n') }));
+  const toggleNeed = (need) => {
+    const next = selectedNeeds.includes(need)
+      ? selectedNeeds.filter((item) => item !== need)
+      : [...selectedNeeds, need];
+    setNeeds(next);
+  };
 
   useEffect(() => {
     api.get('/api/product-workspace/polibot')
@@ -2779,21 +2791,37 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser }) {
   };
 
   return (
-    <>
-      <PanelCard title="고객 조건">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] lg:items-start">
+      <PanelCard title="고객 조건" className="lg:sticky lg:top-4">
         <ProductUsageStrip usage={usage} />
         {assistantDraft?.actionKey === 'polibot-recommend' && (
           <Notice>채팅에서 만든 초안이에요. 고객 조건을 확인한 뒤 추천 초안 만들기를 눌러주세요.</Notice>
         )}
+        {saving && <Notice>확정 상품 DB와 고객 조건을 대조하고 있어요. 보류 조건이 있으면 사용 횟수는 차감하지 않아요.</Notice>}
         {workspace.qualityReport && <PolibotQualityReport report={workspace.qualityReport} />}
-        <div className="grid gap-3">
-          <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-2.5">
+          <div className="grid gap-2.5 sm:grid-cols-3">
             <label className={labelClass}>고객명<input className={inputClass} value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="이효진" /></label>
             <label className={labelClass}>나이<input className={inputClass} value={form.age} onChange={(event) => setForm((prev) => ({ ...prev, age: event.target.value }))} placeholder="45" /></label>
             <label className={labelClass}>성별<input className={inputClass} value={form.gender} onChange={(event) => setForm((prev) => ({ ...prev, gender: event.target.value }))} placeholder="남성/여성" /></label>
           </div>
-          <label className={labelClass}>필요 보장<textarea className={inputClass} rows="3" value={form.needs} onChange={(event) => setForm((prev) => ({ ...prev, needs: event.target.value }))} placeholder={'암\n입원\n수술'} /></label>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <div className="text-sm font-bold text-zinc-300">필요 보장</div>
+            <div className="flex flex-wrap gap-2">
+              {polibotNeedOptions.map((need) => (
+                <button
+                  key={need}
+                  type="button"
+                  onClick={() => toggleNeed(need)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-black transition ${selectedNeeds.includes(need) ? 'border-white bg-white text-zinc-950' : 'border-white/10 bg-black/20 text-zinc-500 hover:border-white/25 hover:text-zinc-200'}`}
+                >
+                  {need}
+                </button>
+              ))}
+            </div>
+            <textarea className={inputClass} rows="1" value={form.needs} onChange={(event) => setForm((prev) => ({ ...prev, needs: event.target.value }))} placeholder="직접 입력도 가능해요" />
+          </div>
+          <div className="grid gap-2.5 sm:grid-cols-2">
             <label className={labelClass}>예산<input className={inputClass} value={form.budget} onChange={(event) => setForm((prev) => ({ ...prev, budget: event.target.value }))} placeholder="10" /></label>
             <DarkSelect
               label="보험사"
@@ -2811,8 +2839,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser }) {
             <ChevronDown size={16} className={`transition-transform ${detailsOpen ? 'rotate-180' : ''}`} />
           </button>
           {detailsOpen && (
-            <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2.5 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="grid gap-2.5 sm:grid-cols-2">
                 <DarkSelect label="기존 실손 여부" value={form.existingMedicalPlan} onChange={(value) => setForm((prev) => ({ ...prev, existingMedicalPlan: value }))} options={[{ value: '', label: '미확인' }, { value: '있음', label: '있음' }, { value: '없음', label: '없음' }, { value: '확인 필요', label: '확인 필요' }]} />
                 <label className={labelClass}>현재 보험료<input className={inputClass} value={form.existingPremium} onChange={(event) => setForm((prev) => ({ ...prev, existingPremium: event.target.value }))} placeholder="예: 18" /></label>
                 <DarkSelect label="병력/고지 이슈" value={form.medicalHistory} onChange={(value) => setForm((prev) => ({ ...prev, medicalHistory: value }))} options={[{ value: '', label: '미확인' }, { value: '없음', label: '없음' }, { value: '있음', label: '있음' }, { value: '확인 필요', label: '확인 필요' }]} />
@@ -2826,8 +2854,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser }) {
           <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '추천 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}</DarkButton>
         </div>
       </PanelCard>
-      <PanelCard title="추천 결과">
-        <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-black/20 p-1">
+      <PanelCard title="추천 결과" className="lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto">
+        <div className="mb-3 grid grid-cols-2 gap-2 rounded-2xl bg-black/20 p-1">
           {[
             ['draft', '고객 분석'],
             ['recommendations', '상품 추천']
@@ -2856,12 +2884,21 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser }) {
                   </div>
                   <span className="text-sm font-black text-zinc-100">{item.score}</span>
                 </div>
-                {item.coverageGap && <div className="mt-2 text-xs leading-relaxed text-zinc-500">{item.coverageGap}</div>}
+                <div className="mt-2 grid gap-1 text-xs leading-relaxed text-zinc-500">
+                  {item.coverageGap && <div>핵심 보완: {item.coverageGap}</div>}
+                  <div>주의: {(item.cautions || [])[0] || '추가 확인 필요'}</div>
+                </div>
               </button>
             ))}
-            <label className={`${labelClass} mt-2`}>저장 메모<textarea className={inputClass} rows="3" value={saveMemo} onChange={(event) => setSaveMemo(event.target.value)} placeholder="고객에게 확인할 내용이나 메모를 적어두세요." /></label>
+            <label className={`${labelClass} mt-2`}>저장 메모<textarea className={inputClass} rows="2" value={saveMemo} onChange={(event) => setSaveMemo(event.target.value)} placeholder="고객에게 확인할 내용이나 메모를 적어두세요." /></label>
           </div>
-        ) : <Notice>{workspace.recommendationNotice || '고객 조건을 입력하면 추천 초안이 표시돼요.'}</Notice>}
+        ) : (
+          <PolibotRecommendationEmptyState
+            workspace={workspace}
+            onOpenDetails={() => setDetailsOpen(true)}
+            onOpenKnowledge={() => onOpenAction?.('polibot-upload')}
+          />
+        )}
       </PanelCard>
       {selectedRecommendation && (
         <PolibotRecommendationModal
@@ -2871,7 +2908,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser }) {
           onSave={saveCustomer}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -2903,13 +2940,46 @@ function PolibotConsultationDraft({ draft, profile }) {
   );
 }
 
+function PolibotRecommendationEmptyState({ workspace, onOpenDetails, onOpenKnowledge }) {
+  const report = workspace.qualityReport || {};
+  const draft = workspace.consultationDraft || {};
+  const missing = Array.isArray(draft.missing) ? draft.missing : [];
+  const notice = workspace.recommendationNotice || '고객 조건을 입력하면 추천 초안이 표시돼요.';
+  const rows = [
+    ['부족한 고객 정보', missing.length ? missing.join(', ') : '핵심 조건 입력 대기'],
+    ['상품 DB 상태', `추천 가능 ${report.recommendableProducts || 0}개 · 정보 부족 ${report.insufficientProducts || 0}개`],
+    ['검수 필요 자료', `${report.reviewNeededProducts || 0}개 · OCR 필요 ${report.ocrNeeded || 0}개`]
+  ];
+  return (
+    <div className="grid gap-3">
+      <Notice>{notice} 사용 횟수는 실제 추천이 만들어질 때만 차감돼요.</Notice>
+      <div className="grid gap-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="rounded-2xl bg-black/25 px-4 py-3">
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">{label}</div>
+            <div className="mt-1 text-sm font-black text-zinc-200">{value}</div>
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <DarkButton variant="ghost" size="sm" onClick={onOpenDetails}>상세 조건 채우기</DarkButton>
+        <DarkButton variant="ghost" size="sm" onClick={onOpenKnowledge}>자료 확인</DarkButton>
+        <DarkButton variant="ghost" size="sm" onClick={onOpenKnowledge}>상품 검수 요청</DarkButton>
+      </div>
+    </div>
+  );
+}
+
 function PolibotRecommendationModal({ recommendation, profile, onClose, onSave }) {
   const [feedback, setFeedback] = useState(recommendation.feedback || '');
+  const [feedbackReason, setFeedbackReason] = useState(recommendation.feedbackReason || '');
   const saveWithFeedback = () => onSave({
     ...recommendation,
     feedback,
+    feedbackReason,
     feedbackSavedAt: feedback ? new Date().toISOString() : recommendation.feedbackSavedAt
   });
+  const feedbackReasons = ['상품명 틀림', '보장 매칭 부족', '조건 누락', '설명 부족', '고객 조건 부족'];
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-4 backdrop-blur-sm">
       <div className="max-h-[86vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/10 bg-[#191919] p-5 shadow-2xl shadow-black/60">
@@ -2921,7 +2991,18 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave }
           <button type="button" onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full text-zinc-500 hover:bg-white/10 hover:text-zinc-100"><X size={18} /></button>
         </div>
         <div className="mt-5 grid gap-3">
-          <Notice>{recommendation.headline || recommendation.reason}</Notice>
+          <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/25 p-4">
+            {[
+              ['검토 이유', recommendation.headline || recommendation.reason || '고객 조건과 근거 자료가 맞는 조합이에요.'],
+              ['확인 조건', (recommendation.cautions || [])[0] || '고지사항과 기존 보험 중복 여부를 확인해 주세요.'],
+              ['보류 여부', recommendation.confidence?.level === '낮음' ? '확신도가 낮아 추가 확인 후 검토가 필요해요.' : '즉시 검토 가능한 추천 초안이에요.']
+            ].map(([label, value]) => (
+              <div key={label} className="grid gap-1">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">{label}</div>
+                <div className="text-sm font-black leading-relaxed text-zinc-200">{value}</div>
+              </div>
+            ))}
+          </div>
           <div className="grid gap-2 rounded-2xl bg-black/25 p-4 text-sm text-zinc-400">
             <AccountInfoRow label="추천 조합" value={recommendation.name || '-'} />
             <AccountInfoRow label="추천 확신도" value={`${recommendation.confidence?.level || '보통'}${recommendation.confidence?.reasons?.length ? ` · ${recommendation.confidence.reasons.join(', ')}` : ''}`} />
@@ -2932,8 +3013,7 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave }
             <AccountInfoRow label="주의 조건" value={(recommendation.cautions || []).join(', ') || '추가 확인 필요'} />
           </div>
           {(recommendation.catalogItems || []).length > 0 && (
-            <div className="grid gap-2">
-              <div className="text-xs font-black text-zinc-500">확정 상품 정보</div>
+            <CollapsiblePanel title="확정 상품 정보">
               {(recommendation.catalogItems || []).map((item, index) => (
                 <div key={`${item.productName}-${index}`} className="rounded-2xl bg-black/25 px-4 py-3 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2957,19 +3037,17 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave }
                   </div>
                 </div>
               ))}
-            </div>
+            </CollapsiblePanel>
           )}
           {(recommendation.excludedCandidates || []).length > 0 && (
-            <div className="grid gap-2">
-              <div className="text-xs font-black text-zinc-500">제외/보류 후보</div>
+            <CollapsiblePanel title="제외/보류 후보">
               <SimpleInfoList items={recommendation.excludedCandidates.map((item) => `${item.name} · ${item.reason}`)} />
-            </div>
+            </CollapsiblePanel>
           )}
           {(recommendation.nextQuestions || []).length > 0 && (
-            <div className="grid gap-2">
-              <div className="text-xs font-black text-zinc-500">추가 확인 질문</div>
+            <CollapsiblePanel title="추가 확인 질문">
               <SimpleInfoList items={recommendation.nextQuestions} />
-            </div>
+            </CollapsiblePanel>
           )}
           <div className="grid gap-2">
             <div className="text-xs font-black text-zinc-500">검토 피드백</div>
@@ -2985,9 +3063,24 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave }
                 </button>
               ))}
             </div>
+            <div className="flex flex-wrap gap-2">
+              {feedbackReasons.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setFeedbackReason((current) => current === value ? '' : value)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-black ${
+                    feedbackReason === value
+                      ? 'border-white bg-white text-zinc-950'
+                      : 'border-white/10 text-zinc-500 hover:border-white/30 hover:text-zinc-200'
+                  }`}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="grid gap-2">
-            <div className="text-xs font-black text-zinc-500">근거 자료</div>
+          <CollapsiblePanel title="근거 자료">
             {(recommendation.evidence || []).map((source) => (
               <div key={`${source.month}-${source.fileName}`} className="rounded-2xl bg-black/25 px-4 py-3 text-sm">
                 <div className="font-black text-zinc-200">{source.month} · {source.fileName}</div>
@@ -2997,7 +3090,7 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave }
                 {source.summary && <div className="mt-2 text-xs leading-relaxed text-zinc-600">{source.summary}</div>}
               </div>
             ))}
-          </div>
+          </CollapsiblePanel>
           <DarkButton onClick={saveWithFeedback}>고객목록에 저장</DarkButton>
         </div>
       </div>
@@ -3138,7 +3231,7 @@ function PolibotDownloadPanel() {
         ].map(csvEscape).join(',');
       });
     } else if (filters.type === 'customers') {
-      header = ['customerName', 'age', 'gender', 'needs', 'budget', 'selectedRecommendation', 'confidence', 'feedback', 'excludedCandidates', 'memo', 'savedAt'];
+      header = ['customerName', 'age', 'gender', 'needs', 'budget', 'selectedRecommendation', 'confidence', 'feedback', 'feedbackReason', 'excludedCandidates', 'memo', 'savedAt'];
       rows = rowsSource.map((customer) => [
         customer.name,
         customer.age,
@@ -3148,6 +3241,7 @@ function PolibotDownloadPanel() {
         customer.selectedRecommendation?.name || '',
         customer.selectedRecommendation?.confidence?.level || '',
         customer.selectedRecommendation?.feedback || '',
+        customer.selectedRecommendation?.feedbackReason || '',
         (customer.excludedCandidates || customer.selectedRecommendation?.excludedCandidates || []).map((item) => `${item.name}: ${item.reason}`).join(' | '),
         customer.memo || '',
         customer.updatedAt || customer.createdAt || ''
@@ -3165,7 +3259,7 @@ function PolibotDownloadPanel() {
         source.summary || ''
       ].map(csvEscape).join(','))));
     } else {
-      header = ['customerName', 'recommendationName', 'type', 'score', 'confidence', 'feedback', 'coverageGap', 'premium', 'cautions', 'excludedCandidates', 'nextQuestions', 'evidenceProducts', 'evidenceFiles'];
+      header = ['customerName', 'recommendationName', 'type', 'score', 'confidence', 'feedback', 'feedbackReason', 'coverageGap', 'premium', 'cautions', 'excludedCandidates', 'nextQuestions', 'evidenceProducts', 'evidenceFiles'];
       rows = rowsSource.flatMap((customer) => (customer.recommendations || workspace.recommendations || []).map((rec) => [
         customer.name,
         rec.name,
@@ -3173,6 +3267,7 @@ function PolibotDownloadPanel() {
         rec.score,
         rec.confidence?.level || '',
         rec.feedback || '',
+        rec.feedbackReason || '',
         rec.coverageGap,
         rec.premium,
         (rec.cautions || []).join(' | '),
@@ -3539,6 +3634,13 @@ function downloadTextFile(filename, content, mime = 'text/plain;charset=utf-8') 
 
 function csvEscape(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
+}
+
+function normalizeLines(value = '') {
+  return String(value || '')
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function SimpleInfoList({ items }) {
