@@ -2729,12 +2729,13 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser }) {
               <button key={item.id} type="button" onClick={() => setSelectedRecommendation(item)} className="rounded-2xl bg-black/25 px-4 py-3 text-left hover:bg-white/5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
+                    <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">추천 조합</div>
                     <div className="text-sm font-black text-zinc-200">{item.name}</div>
                     <div className="mt-1 text-[11px] font-bold text-zinc-600">{item.type === 'bundle' ? '조합 추천' : '단품 추천'}</div>
                   </div>
                   <span className="text-sm font-black text-zinc-100">{item.score}</span>
                 </div>
-                <div className="mt-2 text-xs leading-relaxed text-zinc-500">{item.reason}</div>
+                {item.coverageGap && <div className="mt-2 text-xs leading-relaxed text-zinc-500">{item.coverageGap}</div>}
               </button>
             ))}
             <label className={`${labelClass} mt-2`}>저장 메모<textarea className={inputClass} rows="3" value={saveMemo} onChange={(event) => setSaveMemo(event.target.value)} placeholder="상담 중 남길 메모를 적어두세요." /></label>
@@ -2767,9 +2768,9 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave }
         <div className="mt-5 grid gap-3">
           <Notice>{recommendation.headline || recommendation.reason}</Notice>
           <div className="grid gap-2 rounded-2xl bg-black/25 p-4 text-sm text-zinc-400">
+            <AccountInfoRow label="추천 조합" value={recommendation.name || '-'} />
             <AccountInfoRow label="고객 조건" value={[profile?.name, profile?.age ? `${profile.age}세` : '', profile?.gender].filter(Boolean).join(' · ') || '미입력'} />
             <AccountInfoRow label="필요 보장" value={(profile?.needs || []).join(', ') || '미입력'} />
-            <AccountInfoRow label="추천 이유" value={recommendation.reason || '-'} />
             <AccountInfoRow label="보완 포인트" value={recommendation.coverageGap || '-'} />
             <AccountInfoRow label="보험료 메모" value={recommendation.premium || '-'} />
             <AccountInfoRow label="주의 조건" value={(recommendation.cautions || []).join(', ') || '추가 확인 필요'} />
@@ -2933,16 +2934,16 @@ function PolibotDownloadPanel() {
         source.summary || ''
       ].map(csvEscape).join(','))));
     } else {
-      header = ['customerName', 'recommendation', 'type', 'score', 'reason', 'coverageGap', 'premium', 'cautions', 'evidence'];
+      header = ['customerName', 'recommendationName', 'type', 'score', 'coverageGap', 'premium', 'cautions', 'evidenceProducts', 'evidenceFiles'];
       rows = rowsSource.flatMap((customer) => (customer.recommendations || workspace.recommendations || []).map((rec) => [
         customer.name,
         rec.name,
         rec.type === 'bundle' ? '조합' : '단품',
         rec.score,
-        rec.reason,
         rec.coverageGap,
         rec.premium,
         (rec.cautions || []).join(' | '),
+        (rec.evidence || []).flatMap((source) => source.productNames || []).join(' | '),
         (rec.evidence || []).map((source) => `${source.month} ${source.fileName}`).join(' | ')
       ].map(csvEscape).join(',')));
     }
