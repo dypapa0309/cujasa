@@ -170,6 +170,51 @@ router.get('/operations/healthcheck', async (req, res, next) => {
   try { res.json(await buildOpsHealthSummary()); } catch (e) { next(e); }
 });
 
+router.get('/operations/assistant-metrics', async (req, res, next) => {
+  try {
+    const rows = await dbList('activity_logs', {}, { order: 'created_at', ascending: false, limit: Number(req.query?.limit || 500) });
+    const assistantRows = rows.filter((row) => String(row.action || '').startsWith('workspace_assistant_') || row.action === 'public_rate_limit_hit');
+    const workspaceRows = assistantRows.filter((row) => String(row.action || '').startsWith('workspace_assistant_'));
+    const durations = workspaceRows
+      .map((row) => Number(row.payload?.durationMs))
+      .filter((value) => Number.isFinite(value) && value >= 0);
+    const countBy = (items, keyFn) => items.reduce((acc, item) => {
+      const key = keyFn(item) || 'unknown';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const questionCounts = countBy(
+      workspaceRows.filter((row) => ['workspace_assistant_fallback', 'workspace_assistant_ai_timeout'].includes(row.action)),
+      (row) => row.message
+    );
+    res.json({
+      counts: {
+        total: workspaceRows.length,
+        faqHit: workspaceRows.filter((row) => row.action === 'workspace_assistant_faq_hit').length,
+        draftCreated: workspaceRows.filter((row) => row.action === 'workspace_assistant_draft_created').length,
+        fallback: workspaceRows.filter((row) => row.action === 'workspace_assistant_fallback').length,
+        aiTimeout: workspaceRows.filter((row) => row.action === 'workspace_assistant_ai_timeout').length,
+        slowAi: workspaceRows.filter((row) => row.action === 'workspace_assistant_slow_ai').length,
+        rateLimitHit: assistantRows.filter((row) => row.action === 'public_rate_limit_hit').length
+      },
+      averageDurationMs: durations.length ? Math.round(durations.reduce((sum, value) => sum + value, 0) / durations.length) : 0,
+      fallbackQuestions: Object.entries(questionCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 12)
+        .map(([message, count]) => ({ message, count })),
+      recent: assistantRows.slice(0, 30).map((row) => ({
+        id: row.id,
+        action: row.action,
+        level: row.level,
+        message: row.message,
+        durationMs: row.payload?.durationMs || null,
+        product: row.payload?.currentProduct || row.payload?.inferredProduct || null,
+        createdAt: row.created_at
+      }))
+    });
+  } catch (e) { next(e); }
+});
+
 router.post('/operations/healthcheck/run', async (req, res, next) => {
   try { res.json(await runDailyOpsHealthCheck()); } catch (e) { next(e); }
 });

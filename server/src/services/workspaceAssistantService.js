@@ -1,6 +1,9 @@
 import { productById } from '../config/products.js';
 import { getJson } from './openaiService.js';
 import { getProductWorkspace } from './productWorkspaceService.js';
+import { safeLogActivity } from './supabaseService.js';
+
+const WORKSPACE_ASSISTANT_AI_TIMEOUT_MS = Math.max(1000, Number(process.env.WORKSPACE_ASSISTANT_AI_TIMEOUT_MS || 3500));
 
 const ACTION_KEYS = new Set([
   'run', 'settings', 'posts', 'home', 'billing',
@@ -35,6 +38,18 @@ function productFromMessage(message = '', currentProduct = 'cujasa') {
   if (/인플루덱스|infludex|인스타|instagram/.test(text)) return 'infludex';
   if (PRODUCT_IDS.has(currentProduct)) return currentProduct;
   return 'cujasa';
+}
+
+function shouldLoadPolibotContext(message = '', currentProduct = 'cujasa') {
+  return productFromMessage(message, currentProduct) === 'polibot'
+    || /폴리봇|polibot|보험|보장|암|실비|실손|진단비|생활비|추천.*왜|상품.*없|자료|pdf/i.test(message);
+}
+
+function deterministicKind(result = {}) {
+  const intent = String(result.intent || '');
+  if (!intent || intent === 'fallback') return '';
+  if (intent.includes('draft')) return 'draft_created';
+  return 'faq_hit';
 }
 
 function extractAge(text = '') {
@@ -159,6 +174,26 @@ function summarizeWorkspace(workspace = {}, productId = '') {
 
 function deterministicAssistant({ message, currentProduct, workspace, availableProducts = [] }) {
   const text = normalizeText(message);
+  if (/자사인|jasain|회사|서비스|솔루션|상품.*뭐|제품.*뭐|뭐.*있|무슨\s*서비스/.test(text)) {
+    return {
+      answer: 'JASAIN은 자동화 솔루션 허브예요. 현재 CUJASA는 쿠팡 파트너스/Threads 자동화, DEXOR는 블로그 후보 분석, SPREAD는 캠페인 운영, POLIBOT은 보험 보장분석과 추천 초안, INFLUDEX는 인스타그램 후보 분석을 맡아요.',
+      intent: 'jasain_product_overview',
+      action: '',
+      draft: {},
+      requiresConfirmation: false,
+      buttons: safeButtons([button('CUJASA 설정', 'settings'), button('POLIBOT 상품 추천', 'polibot-recommend'), button('DEXOR 후보 분석', 'dexor-upload')])
+    };
+  }
+  if (/쿠자사|cujasa|쿠팡.*자동화|threads.*자동화|스레드.*자동화/.test(text) && /뭐|설명|란|어떤|서비스/.test(text)) {
+    return {
+      answer: 'CUJASA는 주제 선정, 쿠팡 상품 연결, Threads용 글 생성, 예약 업로드를 한 화면에서 처리하는 자동화 솔루션이에요. 설정에서 Threads와 쿠팡 API를 연결한 뒤 자동화 실행으로 예약 글을 만들 수 있어요.',
+      intent: 'cujasa_product_overview',
+      action: 'settings',
+      draft: {},
+      requiresConfirmation: false,
+      buttons: safeButtons([button('설정 열기', 'settings'), button('자동화 실행', 'run'), button('포스팅 현황', 'posts')])
+    };
+  }
   const productId = productFromMessage(text, currentProduct);
   const grantedProducts = new Set(availableProducts);
   if (productId !== 'cujasa' && !grantedProducts.has(productId)) {
@@ -312,7 +347,48 @@ async function loadWorkspaceContext(userId, productIds = []) {
   return workspace;
 }
 
+async function logWorkspaceAssistant(userId, {
+  action,
+  message = '',
+  level = 'info',
+  durationMs = null,
+  payload = {}
+} = {}) {
+  if (!action) return null;
+  return safeLogActivity({
+    user_id: userId,
+    action,
+    level,
+    message: normalizeText(message).slice(0, 500),
+    payload: {
+      durationMs,
+      ...payload
+    }
+  });
+}
+
+export async function logWorkspaceAssistantEvent(userId, payload = {}) {
+  const event = String(payload.event || payload.action || '').trim();
+  const allowed = new Set([
+    'workspace_assistant_faq_hit',
+    'workspace_assistant_fallback',
+    'workspace_assistant_draft_created',
+    'workspace_assistant_wrong_panel',
+    'workspace_assistant_slow_ai'
+  ]);
+  if (!allowed.has(event)) return { ok: false };
+  await logWorkspaceAssistant(userId, {
+    action: event,
+    message: payload.message || '',
+    level: payload.level || 'info',
+    durationMs: Number.isFinite(Number(payload.durationMs)) ? Number(payload.durationMs) : null,
+    payload: payload.payload && typeof payload.payload === 'object' ? payload.payload : {}
+  });
+  return { ok: true };
+}
+
 export async function answerWorkspaceAssistant(userId, payload = {}) {
+  const startedAt = Date.now();
   const message = normalizeText(payload.message);
   if (!message) {
     const error = new Error('메시지를 입력해 주세요.');
@@ -321,13 +397,33 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
   }
   const currentProduct = productById(payload.currentProduct || payload.productId)?.id || 'cujasa';
   const inferredProduct = productFromMessage(message, currentProduct);
-  const workspace = await loadWorkspaceContext(userId, [...new Set([currentProduct, inferredProduct, 'polibot'])]);
+  const contextProducts = shouldLoadPolibotContext(message, currentProduct)
+    ? [...new Set([currentProduct, inferredProduct, 'polibot'])]
+    : [...new Set([currentProduct, inferredProduct])];
+  const workspace = await loadWorkspaceContext(userId, contextProducts);
   const fallback = () => deterministicAssistant({
     message,
     currentProduct,
     workspace,
     availableProducts: payload.availableProducts || []
   });
+  const deterministic = fallback();
+  const deterministicEvent = deterministicKind(deterministic);
+  if (deterministicEvent) {
+    await logWorkspaceAssistant(userId, {
+      action: `workspace_assistant_${deterministicEvent}`,
+      message,
+      durationMs: Date.now() - startedAt,
+      payload: {
+        source: 'server_deterministic',
+        intent: deterministic.intent,
+        action: deterministic.action || '',
+        currentProduct,
+        inferredProduct
+      }
+    });
+    return deterministic;
+  }
   const polibotSummary = summarizePolibot(workspace.polibot || {});
   const workspaceSummary = Object.fromEntries(
     Object.entries(workspace).map(([productId, value]) => [productId, summarizeWorkspace(value || {}, productId)])
@@ -365,7 +461,19 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
     }
   ], fallback, {
     schemaName: 'workspace_assistant',
-    validate: validateAssistantResponse
+    validate: validateAssistantResponse,
+    timeoutMs: WORKSPACE_ASSISTANT_AI_TIMEOUT_MS,
+    onFallback: async ({ reason }) => {
+      await logWorkspaceAssistant(userId, {
+        action: /timeout|timed out|abort/i.test(String(reason || ''))
+          ? 'workspace_assistant_ai_timeout'
+          : 'workspace_assistant_fallback',
+        message,
+        level: 'warn',
+        durationMs: Date.now() - startedAt,
+        payload: { reason, currentProduct, inferredProduct }
+      });
+    }
   });
   const availableProducts = new Set(payload.availableProducts || []);
   const taskProduct = String(response.action || '').split('-')[0];
@@ -381,7 +489,7 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
     };
   }
 
-  return {
+  const result = {
     answer: String(response.answer || '').trim(),
     intent: String(response.intent || 'assistant'),
     action: ACTION_KEYS.has(response.action) ? response.action : '',
@@ -389,4 +497,18 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
     requiresConfirmation: Boolean(response.requiresConfirmation),
     buttons: safeButtons((response.buttons || []).map((item) => button(item.label, item.actionKey || item.action)))
   };
+  await logWorkspaceAssistant(userId, {
+    action: result.intent === 'fallback' ? 'workspace_assistant_fallback' : 'workspace_assistant_ai_answer',
+    message,
+    level: result.intent === 'fallback' ? 'warn' : 'info',
+    durationMs: Date.now() - startedAt,
+    payload: {
+      intent: result.intent,
+      action: result.action,
+      hasDraft: Object.keys(result.draft || {}).length > 0,
+      currentProduct,
+      inferredProduct
+    }
+  });
+  return result;
 }

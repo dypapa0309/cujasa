@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
+import { redactSensitivePayload } from './redactionService.js';
 
 const hasSupabase = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 export const supabase = hasSupabase
@@ -318,11 +319,16 @@ export function normalizeActivityPayload(payload = {}) {
   Object.entries(payload).forEach(([key, value]) => {
     normalized[activityKeyAliases[key] || key] = value;
   });
-  return normalized;
+  return redactSensitivePayload(normalized);
 }
 
 export async function logActivity(payload) {
-  return dbInsert('activity_logs', { level: 'info', ...normalizeActivityPayload(payload) });
+  const normalized = normalizeActivityPayload(payload);
+  return dbInsert('activity_logs', {
+    level: 'info',
+    ...normalized,
+    payload: redactSensitivePayload(normalized.payload || {})
+  });
 }
 
 export async function safeLogActivity(payload) {

@@ -39,6 +39,20 @@ export function setAuthToken(token) {
   else localStorage.removeItem(tokenKey);
 }
 
+export function postEvent(path, body = {}) {
+  const token = getAuthToken();
+  if (!token) return;
+  fetch(`${baseUrl}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    },
+    body: JSON.stringify(body),
+    keepalive: true
+  }).catch(() => {});
+}
+
 async function request(path, options = {}) {
   beginRequest();
   try {

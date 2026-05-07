@@ -10,6 +10,9 @@ function resolveFallback(fallback) {
 }
 
 async function logAiFallback(action, options = {}, reason, extra = {}) {
+  if (typeof options.onFallback === 'function') {
+    await options.onFallback({ action, reason, extra }).catch(() => null);
+  }
   if (!options.logContext) return;
   await safeLogActivity({
     ...options.logContext,
@@ -46,7 +49,7 @@ export async function getJson(messages, fallback, options = {}) {
       messages,
       response_format: { type: 'json_object' },
       temperature: 0.7
-    }, { timeout: OPENAI_TIMEOUT_MS });
+    }, { timeout: Number(options.timeoutMs || OPENAI_TIMEOUT_MS) });
     const parsed = safeJsonParse(response.choices[0]?.message?.content, null);
     if (!parsed) {
       await logAiFallback('ai_json_fallback', options, 'response was not valid JSON');

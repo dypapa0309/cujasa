@@ -1,7 +1,14 @@
 import { isTokenConfigured, listUserProducts, shouldBypassAuth, verifyToken } from '../services/authService.js';
 import { dbList } from '../services/supabaseService.js';
-import { markedOkKeysFromAudits, shouldHideAssignment, suspiciousAssignmentsForUser } from '../services/accountOwnershipService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
+
+const AUTH_CONTEXT_CACHE_TTL_MS = Math.max(0, Number(process.env.AUTH_CONTEXT_CACHE_TTL_MS || 30000));
+const userContextCache = new Map();
+
+export function clearAuthContextCache(userId = '') {
+  if (userId) userContextCache.delete(userId);
+  else userContextCache.clear();
+}
 
 const publicRoutes = [
   { method: 'GET', path: '/api/health' },
@@ -20,6 +27,7 @@ function isPublicRoute(req) {
 }
 
 export async function requireAuth(req, res, next) {
+  const startedAt = Date.now();
   try {
     if (!req.path.startsWith('/api/')) return next();
     if (isPublicRoute(req)) return next();
@@ -44,33 +52,39 @@ export async function requireAuth(req, res, next) {
       req.user = { type: 'admin', email: payload.sub };
       req.admin = { email: payload.sub };
     } else if (payload.role === 'user') {
-      await refreshUserEntitlement(payload.userId);
-      const [userAccounts, users, accounts, allUserAccounts, audits] = await Promise.all([
-        dbList('user_accounts', { user_id: payload.userId }),
-        dbList('users'),
-        dbList('accounts'),
-        dbList('user_accounts'),
-        dbList('account_conflict_audits').catch(() => [])
-      ]);
-      const ignoredKeys = markedOkKeysFromAudits(audits);
-      const hiddenIds = new Set(
-        suspiciousAssignmentsForUser({ userId: payload.userId, users, accounts, userAccounts: allUserAccounts, ignoredKeys })
-          .filter(shouldHideAssignment)
-          .map((row) => row.accountId)
-      );
+      const cacheKey = payload.userId;
+      const cached = userContextCache.get(cacheKey);
+      const context = cached && cached.expiresAt > Date.now()
+        ? cached.value
+        : await (async () => {
+          await refreshUserEntitlement(payload.userId);
+          const [userAccounts, products] = await Promise.all([
+            dbList('user_accounts', { user_id: payload.userId }),
+            listUserProducts(payload.userId)
+          ]);
+          const value = {
+            allowedAccountIds: userAccounts.map((ua) => ua.account_id).filter(Boolean),
+            products
+          };
+          if (AUTH_CONTEXT_CACHE_TTL_MS > 0) {
+            userContextCache.set(cacheKey, { value, expiresAt: Date.now() + AUTH_CONTEXT_CACHE_TTL_MS });
+          }
+          return value;
+        })();
       req.user = {
         type: 'user',
         userId: payload.userId,
         email: payload.sub,
         username: payload.username || null,
         maxAccounts: payload.maxAccounts ?? 2,
-        allowedAccountIds: userAccounts.map((ua) => ua.account_id).filter((accountId) => !hiddenIds.has(accountId)),
-        products: await listUserProducts(payload.userId)
+        allowedAccountIds: context.allowedAccountIds,
+        products: context.products
       };
     } else {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    res.setHeader('X-Auth-Context-Duration-Ms', String(Date.now() - startedAt));
     next();
   } catch (e) {
     next(e);

@@ -1,4 +1,5 @@
 import { dbInsert, dbUpdate } from './supabaseService.js';
+import { redactSensitivePayload } from './redactionService.js';
 
 function unique(values = []) {
   return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
@@ -96,14 +97,15 @@ async function sendEmail(to, subject, text) {
 }
 
 export async function sendNotification(type, message, payload = {}) {
-  const row = await dbInsert('notifications', { type, channel: 'ops', message, payload, status: 'created' });
+  const safePayload = redactSensitivePayload(payload);
+  const row = await dbInsert('notifications', { type, channel: 'ops', message, payload: safePayload, status: 'created' });
   const [slack, telegram] = await Promise.all([
     sendSlack(message),
     sendTelegram(message)
   ]);
   const sent = Boolean(slack.ok || telegram.ok);
   const resultPayload = {
-    ...payload,
+    ...safePayload,
     delivery: { slack, telegram }
   };
   const [updated] = await dbUpdate('notifications', { id: row.id }, {
@@ -114,13 +116,14 @@ export async function sendNotification(type, message, payload = {}) {
 }
 
 export async function sendEmailNotification(type, to, subject, message, payload = {}) {
-  const row = await dbInsert('notifications', { type, channel: 'email', message, payload: { ...payload, to, subject }, status: 'created' });
+  const safePayload = redactSensitivePayload(payload);
+  const row = await dbInsert('notifications', { type, channel: 'email', message, payload: { ...safePayload, to, subject }, status: 'created' });
   const email = await sendEmail(to, subject, message);
   const [updated] = await dbUpdate('notifications', { id: row.id }, {
-    payload: { ...payload, to, subject, delivery: { email } },
+    payload: { ...safePayload, to, subject, delivery: { email } },
     status: email.ok ? 'sent' : 'failed'
   }).catch(() => [null]);
-  return updated || { ...row, payload: { ...payload, to, subject, delivery: { email } }, status: email.ok ? 'sent' : 'failed' };
+  return updated || { ...row, payload: { ...safePayload, to, subject, delivery: { email } }, status: email.ok ? 'sent' : 'failed' };
 }
 
 export async function safeSendNotification(type, message, payload = {}) {
@@ -146,6 +149,6 @@ export async function sendOpsAlert(type, { title, message, account = null, code 
     accountHandle: account?.account_handle,
     code,
     hint,
-    ...payload
+    ...redactSensitivePayload(payload)
   });
 }

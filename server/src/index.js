@@ -37,6 +37,7 @@ import { sendOpsAlert } from './services/notificationService.js';
 import { runDailyOpsHealthCheck } from './services/opsHealthService.js';
 import { cleanupUnusedPipelineArtifacts } from './services/unusedArtifactCleanupService.js';
 import { cleanupOldQueueIssues } from './services/queueVisibilityService.js';
+import { redactSensitivePayload } from './services/redactionService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -202,9 +203,19 @@ app.get('/mock/threads/:postId', (req, res) => {
 });
 
 app.use((error, req, res, next) => {
-  console.error(error);
-  res.status(error.status || 500).json({
-    error: error.message || 'Internal server error',
+  const status = error.status || 500;
+  const hideInternalErrors = process.env.ERROR_DETAIL_MODE === 'internal' || process.env.NODE_ENV === 'production';
+  const exposeDetail = status < 500 || !hideInternalErrors;
+  console.error('[request_error]', redactSensitivePayload({
+    path: req.path,
+    method: req.method,
+    status,
+    message: error.message,
+    code: error.code,
+    stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
+  }));
+  res.status(status).json({
+    error: exposeDetail ? (error.message || 'Internal server error') : 'Internal server error',
     ...(error.code ? { code: error.code } : {}),
     ...(error.preflight ? { preflight: error.preflight } : {}),
     ...(error.limit != null ? { limit: error.limit } : {}),

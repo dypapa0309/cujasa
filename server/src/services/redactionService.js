@@ -1,17 +1,34 @@
 const SECRET_KEYS = new Set([
   'threads_access_token',
+  'threadsAccessToken',
+  'access_token',
+  'accessToken',
   'coupang_access_key',
+  'coupangAccessKey',
   'coupang_secret_key',
+  'coupangSecretKey',
   'coupang_partner_id',
+  'coupangPartnerId',
   'coupang_tracking_code',
+  'defaultTrackingCode',
   'payment_key',
   'paymentKey',
   'secret',
+  'client_secret',
+  'clientSecret',
   'billing_key',
   'billingKey',
   'customer_key',
-  'customerKey'
+  'customerKey',
+  'authorization',
+  'Authorization',
+  'api_key',
+  'apiKey',
+  'raw_data',
+  'rawData'
 ]);
+
+const SECRET_KEY_PATTERN = /(token|secret|password|authorization|api[_-]?key|access[_-]?key|billing[_-]?key|payment[_-]?key|customer[_-]?key|coupang|threads|toss)/i;
 
 function maskValue(value, visible = 4) {
   const text = String(value || '');
@@ -52,6 +69,26 @@ export function redactPayment(payment) {
   if (next.rawData) next.rawData = '[redacted]';
   if (next.virtualAccount) next.virtualAccount = { ...next.virtualAccount };
   return next;
+}
+
+export function redactSensitiveValue(value) {
+  return maskValue(value);
+}
+
+export function redactSensitivePayload(value, depth = 0) {
+  if (value == null) return value;
+  if (depth > 8) return '[redacted-depth]';
+  if (Array.isArray(value)) return value.map((item) => redactSensitivePayload(item, depth + 1));
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value !== 'object') return value;
+
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => {
+    if (SECRET_KEYS.has(key) || SECRET_KEY_PATTERN.test(key)) {
+      if (item == null || item === '') return [key, item];
+      return [key, typeof item === 'boolean' ? item : maskValue(item)];
+    }
+    return [key, redactSensitivePayload(item, depth + 1)];
+  }));
 }
 
 export function redactBillingSettings(settings = {}) {

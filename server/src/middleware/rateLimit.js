@@ -1,3 +1,5 @@
+import { safeLogActivity } from '../services/supabaseService.js';
+
 const buckets = new Map();
 
 function clientKey(req, scope) {
@@ -31,6 +33,17 @@ export function createRateLimit({ scope, windowMs, maxRequests }) {
     res.setHeader('Retry-After', String(Math.ceil((current.resetAt - now) / 1000)));
 
     if (current.count > maxRequests) {
+      safeLogActivity({
+        action: 'public_rate_limit_hit',
+        level: 'warn',
+        message: `${scope}: ${key}`,
+        payload: {
+          scope,
+          count: current.count,
+          maxRequests,
+          retryAfterSeconds: Math.ceil((current.resetAt - now) / 1000)
+        }
+      });
       return res.status(429).json({ error: 'Too many requests' });
     }
 

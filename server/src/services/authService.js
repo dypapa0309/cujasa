@@ -118,7 +118,12 @@ export function verifyToken(token = '') {
   const expected = sign(unsigned);
   if (Buffer.byteLength(signature) !== Buffer.byteLength(expected)) return null;
   if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) return null;
-  const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+  let payload;
+  try {
+    payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
   if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
   return payload;
 }

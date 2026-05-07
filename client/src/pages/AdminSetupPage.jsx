@@ -32,16 +32,19 @@ export default function AdminSetupPage() {
   const [editingTask, setEditingTask] = useState(null);
   const [editForm, setEditForm] = useState(null);
   const [normalizing, setNormalizing] = useState(false);
+  const [assistantMetrics, setAssistantMetrics] = useState(null);
 
   const load = async () => {
-    const [rows, nextUsers, nextProducts] = await Promise.all([
+    const [rows, nextUsers, nextProducts, metrics] = await Promise.all([
       api.get('/api/admin/setup-tasks'),
       api.get('/api/admin/users'),
-      api.get('/api/admin/billing/products')
+      api.get('/api/admin/billing/products'),
+      api.get('/api/admin/operations/assistant-metrics').catch(() => null)
     ]);
     setTasks(rows);
     setUsers(nextUsers);
     setProducts(nextProducts);
+    setAssistantMetrics(metrics);
   };
 
   useEffect(() => {
@@ -186,6 +189,36 @@ export default function AdminSetupPage() {
         <SummaryCard icon={<Wrench size={18} />} label="셋업 중" value={counts.inProgress} />
         <SummaryCard icon={<CheckCircle2 size={18} />} label="완료" value={counts.completed} />
       </div>
+
+      {assistantMetrics && (
+        <section className="rounded border border-line bg-white p-5">
+          <div className="mb-4">
+            <h3 className="font-bold">상담 품질 모니터</h3>
+            <p className="mt-0.5 text-xs text-slate-400">채팅 응답 속도, fallback 질문, public rate limit 이벤트를 최근 로그 기준으로 봅니다.</p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-6">
+            <SummaryCard label="채팅 로그" value={assistantMetrics.counts?.total || 0} />
+            <SummaryCard label="즉답" value={assistantMetrics.counts?.faqHit || 0} />
+            <SummaryCard label="초안" value={assistantMetrics.counts?.draftCreated || 0} />
+            <SummaryCard label="Fallback" value={assistantMetrics.counts?.fallback || 0} />
+            <SummaryCard label="AI Timeout" value={assistantMetrics.counts?.aiTimeout || 0} />
+            <SummaryCard label="평균 ms" value={assistantMetrics.averageDurationMs || 0} />
+          </div>
+          {assistantMetrics.fallbackQuestions?.length > 0 && (
+            <div className="mt-4 rounded border border-amber-100 bg-amber-50 p-3">
+              <div className="mb-2 text-xs font-black text-amber-700">답변 보강 필요 질문</div>
+              <div className="grid gap-1 text-xs text-amber-900">
+                {assistantMetrics.fallbackQuestions.slice(0, 6).map((item) => (
+                  <div key={item.message} className="flex items-center justify-between gap-3">
+                    <span className="truncate">{item.message || '-'}</span>
+                    <span className="shrink-0 font-bold">{item.count}회</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="rounded border border-line bg-white p-5">
         <div className="mb-4">

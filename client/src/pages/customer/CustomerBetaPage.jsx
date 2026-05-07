@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, CreditCard, Download, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, RefreshCw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, X } from 'lucide-react';
-import { api } from '../../lib/api.js';
+import { api, postEvent } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 import { useToast } from '../../lib/toast.jsx';
 import { PRODUCTS, CURRENT_PRODUCT, productById } from '../../config/products.js';
@@ -83,13 +83,13 @@ const polibotNeedOptions = ['암', '뇌', '심장', '수술', '입원', '실손'
 const betaFaqItems = [
   {
     id: 'what-cujasa',
-    patterns: ['쿠자사 뭐야', 'cujasa 뭐야', '쿠자사란', 'cujasa란', '쿠자사 설명', 'cujasa 설명'],
+    patterns: ['쿠자사 뭐야', 'cujasa 뭐야', '쿠자사가 뭐야', 'cujasa가 뭐야', '쿠자사란', 'cujasa란', '쿠자사 설명', 'cujasa 설명', '쿠팡 자동화 뭐야', '스레드 자동화 뭐야'],
     answer: 'CUJASA는 주제 선정, 쿠팡 파트너스 상품 검색, 콘텐츠 생성, Threads 예약 업로드를 한 화면에서 처리하는 자동화 솔루션이에요. 지금은 텍스트 기반 Threads 자동화가 중심이고, 이후 이미지/영상 포맷과 다른 제휴 채널까지 확장할 예정이에요.',
     actions: [{ label: '자동화 실행', actionKey: 'run' }, { label: '설정 열기', actionKey: 'settings' }]
   },
   {
     id: 'jasain-products',
-    patterns: ['자사인 뭐야', 'jasain 뭐야', '솔루션 뭐 있어', '제품 뭐 있어', '무슨 서비스'],
+    patterns: ['자사인 뭐야', 'jasain 뭐야', '이 회사 뭐야', '솔루션 뭐 있어', '제품 뭐 있어', '상품 뭐 있어', '서비스 상품', '서비스하는 상품', '무슨 서비스', '뭐뭐 있어'],
     answer: 'JASAIN은 자동화 솔루션 허브예요. CUJASA는 제휴 콘텐츠와 Threads 업로드, DEXOR는 블로그 후보 분석, SPREAD는 캠페인 운영, POLIBOT은 보험 보장분석, INFLUDEX는 인스타그램 인플루언서 분석을 맡아요.',
     actions: [{ label: 'DEXOR 열기', actionKey: 'dexor-upload' }, { label: 'INFLUDEX 열기', actionKey: 'infludex-upload' }]
   },
@@ -155,8 +155,8 @@ const betaFaqItems = [
   },
   {
     id: 'polibot',
-    patterns: ['polibot', '폴리봇', '보험 분석', '보장분석', '보험 추천', '보험 pdf', '암보장', '보장 상품', '상품 추천', '생활비', '진단비'],
-    answer: 'POLIBOT은 보험 상품 PDF와 고객 조건을 정리해서 보장분석과 상품 추천 초안을 만드는 솔루션이에요. PDF 업로드, 고객 프로필, 추천 결과 다운로드 흐름으로 써요.',
+    patterns: ['polibot', '폴리봇', '보험 분석', '보장분석', '보험 추천', '보험 pdf', '암보장', '보장 상품', '상품 추천', '추천 받고', '생활비', '진단비'],
+    answer: 'POLIBOT은 보험 상품 PDF와 고객 조건을 정리해서 보장분석과 상품 추천 초안을 만드는 솔루션이에요. 추천은 가입 권유가 아니라 검토용 초안이며, 고지사항·기존 실손·병력·예산을 확인한 뒤 설계사 검토가 필요해요.',
     actions: [{ label: 'PDF 업로드', actionKey: 'polibot-upload' }, { label: '상품 추천', actionKey: 'polibot-recommend' }]
   },
   {
@@ -666,21 +666,20 @@ export default function CustomerBetaPage({
     lastPromptRef.current = { value, at: now };
     setPrompt('');
     setMessages((prev) => [...prev, { id: `user-${now}`, role: 'user', content: value }].slice(-8));
-    setAssistantLoading(true);
-    try {
-      const assistant = await api.post('/api/workspace-assistant/message', {
+
+    const logAssistantEvent = (eventName, payload = {}) => {
+      postEvent('/api/workspace-assistant/event', {
+        event: eventName,
         message: value,
-        currentProduct: selectedProduct.id,
-        currentAction: activeActionKey,
-        availableProducts: activeProducts.map((product) => product.id),
-        currentTasks: productActions.map((item) => ({ key: item.key, label: item.label }))
+        durationMs: Date.now() - now,
+        payload: {
+          currentProduct: selectedProduct.id,
+          currentAction: activeActionKey,
+          ...payload
+        }
       });
-      if (applyAssistantResult(assistant, value)) return;
-    } catch (err) {
-      console.warn('[workspace-assistant-fallback]', err.message);
-    } finally {
-      setAssistantLoading(false);
-    }
+    };
+
     const action = resolvePromptAction(value);
     if (value.length < 2 && !action) return;
     if (/작업|기능|메뉴|뭐\s*있|뭐있|할\s*수|뭘\s*할/.test(value)) {
@@ -696,6 +695,7 @@ export default function CustomerBetaPage({
           actions: productActions.map((item) => ({ label: item.label, actionKey: item.key }))
         }
       ].slice(-6));
+      logAssistantEvent('workspace_assistant_faq_hit', { intent: 'local_tasks' });
       return;
     }
     const draft = parseSettingsDraft(value);
@@ -712,6 +712,7 @@ export default function CustomerBetaPage({
           actions: [{ label: '설정 확인', actionKey: 'settings' }]
         }
       ].slice(-6));
+      logAssistantEvent('workspace_assistant_draft_created', { intent: 'local_cujasa_settings', action: 'settings' });
       return;
     }
     const polibotDraft = parsePolibotDraft(value);
@@ -738,6 +739,7 @@ export default function CustomerBetaPage({
             : [{ label: 'POLIBOT 시작', actionKey: 'polibot' }]
         }
       ].slice(-6));
+      logAssistantEvent('workspace_assistant_draft_created', { intent: 'local_polibot_recommendation', action: grantedProductIds.has('polibot') ? 'polibot-recommend' : 'polibot' });
       return;
     }
     const faq = findFaqAnswer(value);
@@ -746,11 +748,33 @@ export default function CustomerBetaPage({
         ...prev,
         { id: `assistant-${Date.now() + 1}`, role: 'assistant', content: faq.answer, actions: faq.actions || [] }
       ].slice(-6));
+      logAssistantEvent('workspace_assistant_faq_hit', { intent: faq.id || 'local_faq' });
       return;
     }
     if (action) {
       openWorkspaceAction(action);
+      logAssistantEvent('workspace_assistant_faq_hit', { intent: 'local_action', action: action.key });
       return;
+    }
+    setAssistantLoading(true);
+    try {
+      const assistantStartedAt = Date.now();
+      const assistant = await api.post('/api/workspace-assistant/message', {
+        message: value,
+        currentProduct: selectedProduct.id,
+        currentAction: activeActionKey,
+        availableProducts: activeProducts.map((product) => product.id),
+        currentTasks: productActions.map((item) => ({ key: item.key, label: item.label }))
+      });
+      if (Date.now() - assistantStartedAt > 3000) {
+        logAssistantEvent('workspace_assistant_slow_ai', { durationMs: Date.now() - assistantStartedAt });
+      }
+      if (applyAssistantResult(assistant, value)) return;
+    } catch (err) {
+      console.warn('[workspace-assistant-fallback]', err.message);
+      logAssistantEvent('workspace_assistant_fallback', { reason: err.message || 'client_ai_error' });
+    } finally {
+      setAssistantLoading(false);
     }
     const examples = selectedProduct.id === 'polibot'
       ? '“37세 남성 암보험 추천”, “폴리봇 자료 뭐 있어?”, “추천 왜 안 돼?”처럼 입력해보세요.'
@@ -771,6 +795,7 @@ export default function CustomerBetaPage({
         ]
       }
     ].slice(-6));
+    logAssistantEvent('workspace_assistant_fallback', { intent: 'local_examples' });
   };
 
   return (

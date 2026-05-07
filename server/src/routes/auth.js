@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { DEFAULT_PRODUCT_ID, productById } from '../config/products.js';
 import { grantUserProduct, isAuthConfigured, listAvailableProducts, listUserProducts, loginAdmin, loginUser, registerFreeUser, shouldBypassAuth } from '../services/authService.js';
 import { createRateLimit } from '../middleware/rateLimit.js';
+import { clearAuthContextCache } from '../middleware/auth.js';
 import { completeThreadsOAuth, createThreadsAuthUrl } from '../services/threadsOAuthService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
 
@@ -86,6 +87,7 @@ router.post('/products/:productId/start', async (req, res, next) => {
     }
 
     await grantUserProduct(req.user.userId, product.id, { status: 'active', role: 'customer' });
+    clearAuthContextCache(req.user.userId);
     const entitlement = await refreshUserEntitlement(req.user.userId);
     res.status(201).json({
       productId: product.id,

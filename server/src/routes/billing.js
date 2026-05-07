@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
 import { applyPaidEntitlement, refreshUserEntitlement } from '../services/billingEntitlementService.js';
+import { redactSensitivePayload } from '../services/redactionService.js';
 
 const router = Router();
 const BASIC_MAX_ACCOUNTS = 2;
@@ -169,7 +170,7 @@ export async function markPaymentPaid(payment, approved, paidAt = new Date().toI
     payment_key: approved.paymentKey || payment.payment_key,
     secret: approved.secret || payment.secret || null,
     virtual_account_json: approved.virtualAccount || payment.virtual_account_json || null,
-    raw_data: approved,
+    raw_data: redactSensitivePayload(approved),
     paid_at: paidAt
   });
   return updated;
@@ -264,7 +265,7 @@ router.post('/toss/success', async (req, res, next) => {
       payment_key: approved.paymentKey || paymentKey,
       secret: approved.secret || null,
       virtual_account_json: approved.virtualAccount || null,
-      raw_data: approved,
+      raw_data: redactSensitivePayload(approved),
       paid_at: nextStatus === 'paid' ? new Date().toISOString() : null
     });
 
@@ -336,7 +337,7 @@ router.post('/billing-auth', async (req, res, next) => {
       amount: product.amount,
       status: charged.status === 'DONE' ? 'paid' : 'failed',
       payment_key: charged.paymentKey || null,
-      raw_data: charged,
+      raw_data: redactSensitivePayload(charged),
       failed_reason: charged.status === 'DONE' ? null : '자동결제 승인 실패',
       paid_at: charged.status === 'DONE' ? now.toISOString() : null
     });
@@ -390,7 +391,7 @@ router.post('/subscriptions/:id/charge', async (req, res, next) => {
       amount: product.amount,
       status: charged.status === 'DONE' ? 'paid' : 'failed',
       payment_key: charged.paymentKey || null,
-      raw_data: charged,
+      raw_data: redactSensitivePayload(charged),
       failed_reason: charged.status === 'DONE' ? null : '자동결제 승인 실패',
       paid_at: charged.status === 'DONE' ? now.toISOString() : null
     });
@@ -430,7 +431,7 @@ export async function tossWebhook(req, res, next) {
     }
 
     if (status === 'WAITING_FOR_DEPOSIT' && payment.status !== 'paid') {
-      await dbUpdate('billing_payments', { id: payment.id }, { status: 'waiting_for_deposit', raw_data: data });
+      await dbUpdate('billing_payments', { id: payment.id }, { status: 'waiting_for_deposit', raw_data: redactSensitivePayload(data) });
     }
     res.json({ ok: true });
   } catch (e) { next(e); }

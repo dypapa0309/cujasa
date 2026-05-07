@@ -8,6 +8,7 @@ const THREADS_AUTH_URL = 'https://threads.net/oauth/authorize';
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
 const STATE_TTL_MS = 10 * 60 * 1000;
 const REFRESH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const usedStateSignatures = new Map();
 
 function normalizeThreadsHandle(value) {
   return String(value || '').trim().replace(/^@/, '').toLowerCase();
@@ -29,15 +30,28 @@ function stateSecret() {
   return process.env.THREADS_APP_SECRET || process.env.JWT_SECRET || 'cujasa-threads-state';
 }
 
-function signState({ accountId, userId, exp }) {
+function signState({ accountId, userId, exp, actorType = 'user' }) {
   return crypto
     .createHmac('sha256', stateSecret())
-    .update(`${accountId}.${userId}.${exp}`)
+    .update(`${accountId}.${userId}.${exp}.${actorType}`)
     .digest('base64url');
 }
 
-export function createThreadsState({ accountId, userId }) {
-  const payload = { accountId, userId, exp: Date.now() + STATE_TTL_MS };
+function rememberStateSignature(sig) {
+  const now = Date.now();
+  for (const [key, expiresAt] of usedStateSignatures.entries()) {
+    if (expiresAt <= now) usedStateSignatures.delete(key);
+  }
+  if (usedStateSignatures.has(sig)) {
+    const error = new Error('Threads OAuth state was already used');
+    error.status = 400;
+    throw error;
+  }
+  usedStateSignatures.set(sig, now + STATE_TTL_MS);
+}
+
+export function createThreadsState({ accountId, userId, actorType = 'user' }) {
+  const payload = { accountId, userId, actorType, exp: Date.now() + STATE_TTL_MS };
   return Buffer.from(JSON.stringify({ ...payload, sig: signState(payload) })).toString('base64url');
 }
 
@@ -50,19 +64,20 @@ export function verifyThreadsState(state) {
     error.status = 400;
     throw error;
   }
-  const { accountId, userId, exp, sig } = payload;
+  const { accountId, userId, actorType = 'user', exp, sig } = payload;
   if (!accountId || !userId || !exp || !sig || exp < Date.now()) {
     const error = new Error('Expired or invalid Threads OAuth state');
     error.status = 400;
     throw error;
   }
-  const expected = signState({ accountId, userId, exp });
+  const expected = signState({ accountId, userId, actorType, exp });
   if (Buffer.byteLength(sig) !== Buffer.byteLength(expected) || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) {
     const error = new Error('Invalid Threads OAuth state signature');
     error.status = 400;
     throw error;
   }
-  return { accountId, userId };
+  rememberStateSignature(sig);
+  return { accountId, userId, actorType };
 }
 
 export async function createThreadsAuthUrl({ accountId, user }) {
@@ -83,7 +98,11 @@ export async function createThreadsAuthUrl({ accountId, user }) {
     redirect_uri: redirectUri,
     scope: 'threads_basic,threads_content_publish',
     response_type: 'code',
-    state: createThreadsState({ accountId, userId: user?.userId || user?.email || 'admin' })
+    state: createThreadsState({
+      accountId,
+      userId: user?.userId || user?.email || 'admin',
+      actorType: user?.type || 'admin'
+    })
   });
   return `${THREADS_AUTH_URL}?${params.toString()}`;
 }
@@ -126,12 +145,20 @@ export async function completeThreadsOAuth({ code, state }) {
     error.status = 400;
     throw error;
   }
-  const { accountId } = verifyThreadsState(state);
+  const { accountId, userId, actorType } = verifyThreadsState(state);
   const accountBeforeConnect = await dbGet('accounts', { id: accountId });
   if (!accountBeforeConnect) {
     const error = new Error('Account not found');
     error.status = 404;
     throw error;
+  }
+  if (actorType !== 'admin') {
+    const allowed = (await dbList('user_accounts', { user_id: userId })).some((row) => row.account_id === accountId);
+    if (!allowed) {
+      const error = new Error('Access denied');
+      error.status = 403;
+      throw error;
+    }
   }
   const { appId, appSecret, redirectUri } = getConfig();
 
