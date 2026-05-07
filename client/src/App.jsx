@@ -71,9 +71,7 @@ export default function App() {
     if (!rows.some((row) => row.id === selectedAccountId)) setSelectedAccountId(rows[0]?.id || '');
   };
 
-  useEffect(() => {
-    api.get('/api/auth/me')
-      .then((result) => {
+  const applyAuthResult = (result) => {
         if (result.type === 'admin') {
           setCurrentUser({ type: 'admin', email: result.admin?.email });
           return loadAccounts();
@@ -98,7 +96,15 @@ export default function App() {
         setAccounts([]);
         setSelectedAccountId('');
         return null;
-      })
+  };
+
+  const reloadCurrentUser = async () => {
+    const result = await api.get('/api/auth/me');
+    return applyAuthResult(result);
+  };
+
+  useEffect(() => {
+    reloadCurrentUser()
       .catch(() => {
         setAuthToken('');
         setCurrentUser(null);
@@ -131,6 +137,7 @@ export default function App() {
           accounts={accounts}
           currentUser={currentUser}
           reloadAccounts={loadAccounts}
+          reloadCurrentUser={reloadCurrentUser}
           onLogout={() => { setAuthToken(''); setCurrentUser(null); }}
         />
       </ToastProvider>
@@ -151,19 +158,26 @@ export default function App() {
 
   return (
     <ToastProvider>
-      <div className="min-h-screen">
-        <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-line bg-white p-4 md:block">
+      <div className="min-h-screen bg-[#111111] text-zinc-100">
+        <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-white/10 bg-[#191919] p-4 md:block">
           <div className="px-2">
-            <div className="text-lg font-bold">{JASAIN_BRAND.name}</div>
-            <div className="mt-1 text-sm text-slate-500">{CURRENT_PRODUCT.name} · {CURRENT_PRODUCT.supportLabel}</div>
+            <div className="flex items-center gap-3">
+              <div className="grid h-9 w-9 place-items-center overflow-hidden rounded-xl bg-white">
+                <img src="/jasain_logo.png" alt="JASAIN" className="h-full w-full object-cover" />
+              </div>
+              <div>
+                <div className="text-lg font-black">{JASAIN_BRAND.name}</div>
+                <div className="mt-0.5 text-xs text-zinc-500">{isAdmin ? 'Admin workspace' : CURRENT_PRODUCT.supportLabel}</div>
+              </div>
+            </div>
             {!isAdmin && currentUser?.maxAccounts && (
-              <div className="mt-1 text-xs text-slate-400">계정 {accounts.length}/{currentUser.maxAccounts}</div>
+              <div className="mt-3 text-xs text-zinc-500">계정 {accounts.length}/{currentUser.maxAccounts}</div>
             )}
           </div>
           <nav className="mt-6 grid gap-1">
             {tabs.map(([key, label, Icon]) => (
               <button key={key} onClick={() => setPage(key)}
-                className={`flex items-center gap-3 rounded px-3 py-2 text-left text-sm ${page === key ? 'bg-coupang text-white' : 'hover:bg-panel'} ${key === 'admin-users' ? 'mt-2 border-t border-line pt-3' : ''}`}>
+                className={`flex items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-semibold ${page === key ? 'bg-white/10 text-white' : 'text-zinc-400 hover:bg-white/5 hover:text-white'} ${key === 'admin-users' ? 'mt-2 border-t border-white/10 pt-3' : ''}`}>
                 <Icon size={18} />
                 <span>{label}</span>
               </button>
@@ -172,11 +186,11 @@ export default function App() {
         </aside>
 
         <main className="md:pl-64">
-          <header className="sticky top-0 z-10 border-b border-line bg-white/95 px-5 py-4 backdrop-blur">
+          <header className="sticky top-0 z-10 border-b border-white/10 bg-[#111111]/90 px-5 py-4 backdrop-blur">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <h1 className="text-xl font-semibold">{tabs.find(([key]) => key === page)?.[1]}</h1>
-                <p className="text-sm text-slate-500">
+                <h1 className="text-xl font-black text-zinc-100">{tabs.find(([key]) => key === page)?.[1]}</h1>
+                <p className="text-sm text-zinc-500">
                   {currentUser?.email} · {CURRENT_PRODUCT.name} · {isAdmin ? '관리자' : `계정 ${accounts.length}/${currentUser?.maxAccounts ?? 2}`}
                 </p>
               </div>
@@ -187,13 +201,13 @@ export default function App() {
                   onChange={setSelectedAccountId}
                 />
               )}
-              <button onClick={() => { setAuthToken(''); setCurrentUser(null); }} className="rounded border border-line px-3 py-2 text-sm">로그아웃</button>
+              <button onClick={() => { setAuthToken(''); setCurrentUser(null); }} className="rounded-xl border border-white/10 px-3 py-2 text-sm font-bold text-zinc-400 hover:bg-white/10 hover:text-white">로그아웃</button>
             </div>
             <div className="mt-3 flex gap-2 overflow-x-auto md:hidden">
-              {tabs.map(([key, label]) => <button key={key} onClick={() => setPage(key)} className={`shrink-0 rounded px-3 py-2 text-sm ${page === key ? 'bg-coupang text-white' : 'bg-panel'}`}>{label}</button>)}
+              {tabs.map(([key, label]) => <button key={key} onClick={() => setPage(key)} className={`shrink-0 rounded-full border px-3 py-2 text-sm font-bold ${page === key ? 'border-white bg-white text-zinc-950' : 'border-white/10 text-zinc-500'}`}>{label}</button>)}
             </div>
           </header>
-          <section className="p-5">
+          <section className="p-5 [&_.bg-white]:bg-[#191919] [&_.bg-panel]:bg-white/[0.04] [&_.border-line]:border-white/10 [&_.text-slate-900]:text-zinc-100 [&_.text-slate-800]:text-zinc-100 [&_.text-slate-700]:text-zinc-200 [&_.text-slate-600]:text-zinc-400 [&_.text-slate-500]:text-zinc-500 [&_.text-gray-900]:text-zinc-100 [&_.text-gray-800]:text-zinc-100 [&_.text-gray-700]:text-zinc-300 [&_.text-gray-600]:text-zinc-400 [&_.text-gray-500]:text-zinc-500">
             <Page
               accounts={accounts}
               selectedAccount={selectedAccount}
@@ -235,31 +249,31 @@ function AccountSearchSelect({ accounts, value, onChange }) {
   return (
     <div className="relative min-w-[240px]">
       <input
-        className="w-full rounded border border-line px-3 py-2 text-sm"
+        className="w-full rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-white/25"
         value={open ? query : (selected ? `${selected.name}${selected.owner_label ? ` · ${selected.owner_label}` : ''}` : '')}
         onFocus={() => { setOpen(true); setQuery(''); }}
         onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
         placeholder="계정/고객/아이디 검색"
       />
       {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 max-h-72 w-full overflow-y-auto rounded border border-line bg-white shadow-lg">
+        <div className="absolute right-0 top-full z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-2xl border border-white/10 bg-[#191919] shadow-2xl shadow-black/50">
           {filtered.length === 0 ? (
-            <div className="px-3 py-3 text-sm text-slate-400">검색 결과 없음</div>
+            <div className="px-3 py-3 text-sm text-zinc-500">검색 결과 없음</div>
           ) : filtered.map((account) => (
             <button
               key={account.id}
               type="button"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => { onChange(account.id); setOpen(false); setQuery(''); }}
-              className={`block w-full px-3 py-2 text-left text-sm hover:bg-panel ${account.id === value ? 'bg-blue-50 text-coupang' : ''}`}
+              className={`block w-full px-3 py-2 text-left text-sm hover:bg-white/5 ${account.id === value ? 'bg-white/10 text-white' : 'text-zinc-300'}`}
             >
               <div className="font-semibold">{account.name}</div>
-              <div className="text-xs text-slate-400">
+              <div className="text-xs text-zinc-600">
                 {[account.account_handle, account.owner_label || '고객 미할당'].filter(Boolean).join(' · ')}
               </div>
             </button>
           ))}
-          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setOpen(false)} className="block w-full border-t border-line px-3 py-2 text-left text-xs text-slate-400">
+          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => setOpen(false)} className="block w-full border-t border-white/10 px-3 py-2 text-left text-xs text-zinc-500">
             닫기
           </button>
         </div>

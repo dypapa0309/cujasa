@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { isAuthConfigured, listUserProducts, loginAdmin, loginUser, registerFreeUser, shouldBypassAuth } from '../services/authService.js';
+import { DEFAULT_PRODUCT_ID, productById } from '../config/products.js';
+import { grantUserProduct, isAuthConfigured, listUserProducts, loginAdmin, loginUser, registerFreeUser, shouldBypassAuth } from '../services/authService.js';
 import { createRateLimit } from '../middleware/rateLimit.js';
 import { completeThreadsOAuth, createThreadsAuthUrl } from '../services/threadsOAuthService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
@@ -61,6 +62,25 @@ router.get('/me', async (req, res, next) => {
         billing: entitlement.billing
       },
       authConfigured: true
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/products/:productId/start', async (req, res, next) => {
+  try {
+    if (!req.user || req.user.type !== 'user') return res.status(401).json({ error: 'Unauthorized' });
+    const product = productById(req.params.productId);
+    if (!product || product.status === 'inactive') return res.status(404).json({ error: 'Product not found' });
+
+    await grantUserProduct(req.user.userId, product.id, { status: 'active', role: 'customer' });
+    const entitlement = await refreshUserEntitlement(req.user.userId);
+    res.status(201).json({
+      productId: product.id,
+      products: await listUserProducts(req.user.userId),
+      billing: entitlement.billing,
+      accountRequired: product.id === DEFAULT_PRODUCT_ID
     });
   } catch (error) {
     next(error);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Beaker, CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2, PlayCircle, MessageCircle, Phone, Search, Sparkles } from 'lucide-react';
+import { Beaker, CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2, PlayCircle, Search, Sparkles } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
 import CustomerHomePage from './CustomerHomePage.jsx';
@@ -40,10 +40,16 @@ function todayKstKey() {
   }).format(new Date());
 }
 
-export default function CustomerApp({ accounts, currentUser, reloadAccounts, onLogout }) {
+export default function CustomerApp({ accounts, currentUser, reloadAccounts, reloadCurrentUser, onLogout }) {
   const toast = useToast();
   const routingReadyRef = useRef(false);
-  const productParam = productById(new URLSearchParams(window.location.search).get('product'))?.id;
+  const useWorkspaceShell = true;
+  const searchParams = new URLSearchParams(window.location.search);
+  const productParam = productById(searchParams.get('product'))?.id;
+  const isProductStartRequest = searchParams.get('mode') === 'register' && productParam && productParam !== CURRENT_PRODUCT.id;
+  const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  const requestedTab = hashParams.get('tab');
+  const shouldUseBetaWorkspace = true;
   const activeProducts = (currentUser.products || [])
     .filter((product) => product.status !== 'suspended')
     .map((grant) => productById(grant.productId) || {
@@ -53,13 +59,17 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
       supportLabel: grant.description || ''
     })
     .filter((product) => product?.id);
-  const defaultProductId = activeProducts.some((product) => product.id === productParam)
+  const defaultProductId = isProductStartRequest
+    ? productParam
+    : useWorkspaceShell && activeProducts.some((product) => product.id === CURRENT_PRODUCT.id)
+    ? CURRENT_PRODUCT.id
+    : activeProducts.some((product) => product.id === productParam)
     ? productParam
     : activeProducts.some((product) => product.id === CURRENT_PRODUCT.id)
       ? CURRENT_PRODUCT.id
       : activeProducts[0]?.id || CURRENT_PRODUCT.id;
   const [selectedProductId, setSelectedProductId] = useState(defaultProductId);
-  const [tab, setTab] = useState('home');
+  const [tab, setTab] = useState('beta');
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [pipelineResult, setPipelineResult] = useState(null);
   const [pipelineRunning, setPipelineRunning] = useState(false);
@@ -77,30 +87,69 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
   const displayLogin = currentUser.username || currentUser.email;
   const selectedProduct = productById(selectedProductId) || activeProducts.find((product) => product.id === selectedProductId) || CURRENT_PRODUCT;
   const hasCujasa = activeProducts.some((product) => product.id === CURRENT_PRODUCT.id);
-  const isBetaTester = [currentUser?.email, currentUser?.username]
-    .map((value) => String(value || '').toLowerCase())
-    .includes('test1@test.com');
-  const tabs = isBetaTester ? [...baseTabs, ['beta', '베타', Beaker]] : baseTabs;
-  const pages = isBetaTester ? { ...basePages, beta: CustomerBetaPage } : basePages;
+  const tabs = useWorkspaceShell ? [...baseTabs, ['beta', '워크스페이스', Beaker]] : baseTabs;
+  const pages = useWorkspaceShell ? { ...basePages, beta: CustomerBetaPage } : basePages;
   const Page = pages[tab] || pages.home;
+  const isBetaTab = tab === 'beta';
+
+  const productSearch = (productId = selectedProductId) => {
+    const params = new URLSearchParams(window.location.search);
+    if (productId === CURRENT_PRODUCT.id) {
+      params.delete('product');
+      params.delete('mode');
+    } else {
+      params.set('product', productId);
+    }
+    const nextSearch = params.toString();
+    return nextSearch ? `?${nextSearch}` : '';
+  };
 
   useEffect(() => {
     if (activeProducts.length === 0) return;
+    if (shouldUseBetaWorkspace) return;
+    if (useWorkspaceShell && hasCujasa && selectedProductId !== CURRENT_PRODUCT.id) {
+      setSelectedProductId(CURRENT_PRODUCT.id);
+      return;
+    }
     if (!activeProducts.some((product) => product.id === selectedProductId)) {
       setSelectedProductId(activeProducts[0].id);
     }
-  }, [currentUser?.products, selectedProductId]);
+  }, [currentUser?.products, useWorkspaceShell, hasCujasa, selectedProductId, shouldUseBetaWorkspace]);
+
+  useEffect(() => {
+    if (!shouldUseBetaWorkspace) return;
+    if (tab !== 'beta') setTab('beta');
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    if (params.get('tab') === 'beta') return;
+    const accountId = params.get('account') || account?.id || accounts[0]?.id || '';
+    const nextHash = `#tab=beta${accountId ? `&account=${encodeURIComponent(accountId)}` : ''}`;
+    window.history.replaceState(
+      { jasainProduct: productParam || selectedProductId, tab: 'beta', accountId },
+      '',
+      `${window.location.pathname}${window.location.search}${nextHash}`
+    );
+  }, [shouldUseBetaWorkspace, tab, account?.id, accounts, productParam, selectedProductId]);
+
+  useEffect(() => {
+    if (selectedProductId !== CURRENT_PRODUCT.id) return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('product') && !params.has('mode')) return;
+    window.history.replaceState(
+      { jasainProduct: CURRENT_PRODUCT.id },
+      '',
+      `${window.location.pathname}${productSearch(CURRENT_PRODUCT.id)}${window.location.hash}`
+    );
+  }, [selectedProductId]);
 
   const changeProduct = (nextProductId) => {
     if (guardDuringPipeline()) return;
+    const nextTab = useWorkspaceShell ? 'beta' : 'home';
     setSelectedProductId(nextProductId);
-    setTab('home');
-    const params = new URLSearchParams(window.location.search);
-    params.set('product', nextProductId);
+    setTab(nextTab);
     window.history.replaceState(
-      { jasainProduct: nextProductId },
+      { jasainProduct: nextProductId, tab: nextTab },
       '',
-      `${window.location.pathname}?${params.toString()}${nextProductId === CURRENT_PRODUCT.id && accounts[0]?.id ? `#tab=home&account=${encodeURIComponent(accounts[0].id)}` : ''}`
+      `${window.location.pathname}${productSearch(nextProductId)}${nextTab === 'beta' ? '#tab=beta' : nextProductId === CURRENT_PRODUCT.id && accounts[0]?.id ? `#tab=home&account=${encodeURIComponent(accounts[0].id)}` : ''}`
     );
   };
 
@@ -144,11 +193,11 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     const params = new URLSearchParams();
     params.set('tab', nextTab);
     if (accountId) params.set('account', accountId);
-    return `${window.location.pathname}${window.location.search}#${params.toString()}`;
+    return `${window.location.pathname}${productSearch()}#${params.toString()}`;
   };
 
   const applyRoute = () => {
-    const next = parseRoute();
+    const next = shouldUseBetaWorkspace ? { ...parseRoute(), tab: 'beta' } : parseRoute();
     setTab(next.tab);
     if (next.accountId) {
       const nextIndex = accounts.findIndex((item) => item.id === next.accountId);
@@ -377,48 +426,63 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
     }
   };
 
-  if (activeProducts.length === 0) {
+  if (activeProducts.length === 0 && !shouldUseBetaWorkspace) {
     return (
       <div className="min-h-screen bg-gray-50">
         {header}
         <main className="mx-auto grid max-w-2xl gap-4 px-5 py-10">
           <ProductEmptyState onLogout={onLogout} />
         </main>
-        <SupportContactButton />
       </div>
     );
   }
 
-  if (selectedProductId !== CURRENT_PRODUCT.id) {
+  if (selectedProductId !== CURRENT_PRODUCT.id && !shouldUseBetaWorkspace) {
     return (
       <div className="min-h-screen bg-gray-50">
         {header}
         <main className="mx-auto max-w-2xl px-5 py-6 pb-28">
           <SolutionHome product={selectedProduct} />
         </main>
-        <SupportContactButton />
       </div>
     );
   }
 
-  if (!hasCujasa) {
+  if (!hasCujasa && !shouldUseBetaWorkspace) {
     return (
       <div className="min-h-screen bg-gray-50">
         {header}
         <main className="mx-auto grid max-w-2xl gap-4 px-5 py-10">
           <ProductEmptyState onLogout={onLogout} />
         </main>
-        <SupportContactButton />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {header}
+    <div className={isBetaTab ? 'min-h-screen bg-[#111111]' : 'min-h-screen bg-gray-50'}>
+      {!isBetaTab && header}
 
-      <main className="max-w-2xl mx-auto px-5 py-6 pb-28">
-        {accounts.length === 0 ? (
+      <main className={isBetaTab ? 'mx-auto min-h-screen max-w-none p-0' : 'max-w-2xl mx-auto px-5 py-6 pb-28'}>
+        {isBetaTab ? (
+          <Page
+            account={account}
+            accounts={accounts}
+            currentUser={currentUser}
+            onLogout={onLogout}
+            trialStatus={trialStatus}
+            reloadTrialStatus={loadTrialStatus}
+            setupStatus={setupStatus}
+            reloadSetupStatus={loadSetupStatus}
+            setTab={navigateTab}
+            reloadAccounts={reloadAccounts}
+            reloadCurrentUser={reloadCurrentUser}
+            onSelectAccount={navigateAccount}
+            pipelineResult={pipelineResult}
+            onPipelineDone={(result) => { setPipelineResult(result); }}
+            onPipelineRunningChange={handlePipelineRunningChange}
+          />
+        ) : accounts.length === 0 ? (
           <>
             <WaitingScreen
               setupStatus={setupStatus}
@@ -538,65 +602,24 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, onL
         )}
       </main>
 
-      {/* 하단 탭 */}
-      <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-100 safe-area-bottom">
-        <div className="max-w-2xl mx-auto grid" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
-          {tabs.map(([key, label, Icon]) => (
-            <button key={key} onClick={() => { if (!guardDuringPipeline()) navigateTab(key); }}
-              className={`flex flex-col items-center gap-1 py-3 text-[11px] font-medium transition-colors sm:text-xs
-                ${tab === key ? 'text-coupang' : 'text-gray-400 hover:text-gray-600'}`}>
-              <Icon size={20} strokeWidth={tab === key ? 2.5 : 1.8} />
-              {label}
-            </button>
-          ))}
-        </div>
-      </nav>
+      {!isBetaTab && (
+        <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-gray-100 safe-area-bottom">
+          <div className="max-w-2xl mx-auto grid" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
+            {tabs.map(([key, label, Icon]) => (
+              <button key={key} onClick={() => { if (!guardDuringPipeline()) navigateTab(key); }}
+                className={`flex flex-col items-center gap-1 py-3 text-[11px] font-medium transition-colors sm:text-xs
+                  ${tab === key ? 'text-coupang' : 'text-gray-400 hover:text-gray-600'}`}>
+                <Icon size={20} strokeWidth={tab === key ? 2.5 : 1.8} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
       {announcement && (
-        <AnnouncementModal announcement={announcement} onClose={closeAnnouncement} onHideToday={hideAnnouncementToday} />
+        <AnnouncementModal announcement={announcement} onClose={closeAnnouncement} onHideToday={hideAnnouncementToday} dark={isBetaTab} />
       )}
-      <SupportContactButton />
-      {pipelineRunning && <PipelineOverlay progress={pipelineProgress} />}
-    </div>
-  );
-}
-
-function SupportContactButton() {
-  const [open, setOpen] = useState(false);
-  const smsHref = 'sms:01075416143';
-  const kakaoHref = 'https://open.kakao.com/o/sOtaVlsi';
-
-  return (
-    <div className="fixed bottom-20 right-4 z-30 sm:right-[max(1rem,calc((100vw-42rem)/2+1rem))]">
-      {open && (
-        <div className="mb-2 grid w-44 gap-2 rounded-lg border border-gray-100 bg-white p-2 shadow-xl">
-          <a
-            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50"
-            href={smsHref}
-          >
-            <Phone size={16} className="text-coupang" />
-            문자상담
-          </a>
-          <a
-            className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-50"
-            href={kakaoHref}
-            target="_blank"
-            rel="noreferrer"
-          >
-            <MessageCircle size={16} className="text-yellow-500" />
-            카카오톡 상담
-          </a>
-        </div>
-      )}
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        className="flex h-12 items-center gap-2 rounded-full bg-coupang px-4 text-sm font-black text-white shadow-lg shadow-blue-500/25"
-        aria-expanded={open}
-        aria-label="상담하기"
-      >
-        <MessageCircle size={18} />
-        상담하기
-      </button>
+      {pipelineRunning && <PipelineOverlay progress={pipelineProgress} dark={isBetaTab} />}
     </div>
   );
 }
@@ -680,7 +703,31 @@ function SolutionHome({ product }) {
   );
 }
 
-function AnnouncementModal({ announcement, onClose, onHideToday }) {
+function AnnouncementModal({ announcement, onClose, onHideToday, dark = false }) {
+  if (dark) {
+    return (
+      <div className="fixed inset-0 z-50 grid place-items-center bg-black/55 px-5 backdrop-blur-md">
+        <div className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-[28px] border border-white/10 bg-[#191919] shadow-2xl shadow-black/60">
+          <div className="shrink-0 border-b border-white/10 px-6 py-5">
+            <div className="text-xs font-black uppercase tracking-wide text-zinc-500">공지사항</div>
+            <h2 className="mt-2 text-xl font-black text-zinc-100">{announcement.title}</h2>
+          </div>
+          <div className="min-h-0 overflow-y-auto px-6 py-5">
+            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-400">{announcement.message}</p>
+          </div>
+          <div className="grid shrink-0 grid-cols-2 gap-2 border-t border-white/10 bg-black/20 px-5 py-4">
+            <button type="button" onClick={onClose} className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-black text-zinc-300 hover:bg-white/10 hover:text-white">
+              닫기
+            </button>
+            <button type="button" onClick={onHideToday} className="rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-950 hover:bg-zinc-100">
+              오늘 하루 보지 않기
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5 backdrop-blur-sm">
       <div className="flex max-h-[85vh] w-full max-w-sm flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
@@ -704,9 +751,35 @@ function AnnouncementModal({ announcement, onClose, onHideToday }) {
   );
 }
 
-function PipelineOverlay({ progress }) {
+function PipelineOverlay({ progress, dark = false }) {
   const percent = Math.max(0, Math.min(100, Number(progress?.percent ?? 0)));
   const label = progress?.label || '예약 작업을 준비하고 있습니다';
+
+  if (dark) {
+    return (
+      <div className="fixed inset-0 z-40 grid place-items-center bg-black/55 px-5 backdrop-blur-md">
+        <div className="w-full max-w-sm rounded-[28px] border border-white/10 bg-[#191919] p-6 text-center shadow-2xl shadow-black/60">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-white/10 border-t-white" />
+          <div className="text-lg font-black text-zinc-100">예약 작업 실행 중입니다</div>
+          <div className="mt-4">
+            <div className="mb-2 flex items-center justify-between text-xs font-black text-zinc-400">
+              <span>{label}</span>
+              <span>{Math.round(percent)}%</span>
+            </div>
+            <div className="h-3 overflow-hidden rounded-full bg-black/30">
+              <div
+                className="h-full rounded-full bg-white transition-all duration-500"
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+          </div>
+          <p className="mt-3 text-sm leading-relaxed text-zinc-500">
+            중복 생성을 막기 위해 완료 전까지 화면 이동이 잠시 제한됩니다.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-40 grid place-items-center bg-white/80 px-5 backdrop-blur-sm">

@@ -43,26 +43,10 @@ left join users u on u.id = ua.user_id
 group by ua.account_id
 having count(distinct ua.user_id) > 1;
 
-update accounts
-set
-  threads_access_token = null,
-  threads_user_id = null,
-  threads_token_expires_at = null,
-  threads_token_status = 'not_connected',
-  threads_connected_at = null,
-  last_threads_refresh_at = null,
-  updated_at = now()
-where id in (
-  select unnest(account_ids)
-  from account_conflict_audits
-  where conflict_type = 'duplicate_threads_user_id'
-    and resolved_at is null
-);
-
-update account_conflict_audits
-set resolved_at = now()
-where conflict_type = 'duplicate_threads_user_id'
-  and resolved_at is null;
+-- Duplicate Threads user IDs are audit-only here.
+-- Do not clear OAuth tokens automatically: disconnecting a customer's Threads
+-- account must be an explicit admin action after ownership is confirmed.
+-- The audit rows stay unresolved until an operator reviews and resolves them.
 
 delete from user_accounts ua
 using (
@@ -79,9 +63,21 @@ where ua.id = ranked.id
 create unique index if not exists idx_user_accounts_one_owner_per_account
   on user_accounts(account_id);
 
-create unique index if not exists idx_accounts_active_threads_user_id_unique
-  on accounts(threads_user_id)
-  where status = 'active' and nullif(threads_user_id, '') is not null;
+do $$
+begin
+  if not exists (
+    select 1
+    from accounts
+    where status = 'active'
+      and nullif(threads_user_id, '') is not null
+    group by threads_user_id
+    having count(*) > 1
+  ) then
+    create unique index if not exists idx_accounts_active_threads_user_id_unique
+      on accounts(threads_user_id)
+      where status = 'active' and nullif(threads_user_id, '') is not null;
+  end if;
+end $$;
 
 do $$
 begin

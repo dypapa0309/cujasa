@@ -1,4 +1,4 @@
-const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
+const baseUrl = import.meta.env.VITE_API_BASE_URL || 'https://api.jasain.kr';
 const tokenKey = 'cujasa_admin_token';
 
 export function getAuthToken() {
@@ -39,7 +39,14 @@ async function request(path, options = {}) {
       data = JSON.parse(text);
       message = data.error || data.message || message;
     } catch {
-      // keep plain text response
+      if (/<!doctype html|<html/i.test(text)) {
+        const pre = text.match(/<pre>(.*?)<\/pre>/is)?.[1]
+          ?.replace(/<[^>]+>/g, '')
+          ?.trim();
+        message = pre
+          ? `API 경로를 찾지 못했습니다: ${pre}`
+          : `API 요청에 실패했습니다. (${res.status})`;
+      }
     }
     const error = new Error(message);
     error.status = res.status;

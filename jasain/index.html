@@ -1,874 +1,95 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JASAIN — 자동화 솔루션</title>
-  <meta name="description" content="반복 업무는 자동으로, 수익은 꾸준히. JASAIN의 자동화 솔루션으로 비즈니스를 자동화하세요.">
-  <meta name="naver-site-verification" content="d8b972bdc82cf129569a39fd26c6ea90b56b51c1" />
-  <meta name="google-site-verification" content="m86b1pmlHCpiA_K9v0qSjs54ip7RyvZQ7IpVBEAjtXI" />
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%236366f1'/><path d='M19 4L8 18h8l-3 10 15-14h-9z' fill='white'/></svg>" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JASAIN — 자동화 워크스페이스</title>
+  <meta name="description" content="JASAIN은 CUJASA, DEXOR, SPREAD를 한 계정 안에서 제공하는 자동화 워크스페이스입니다." />
+  <meta property="og:title" content="JASAIN — 자동화 워크스페이스" />
+  <meta property="og:description" content="하나의 계정에서 제품을 선택하고 필요한 자동화 작업을 시작하세요." />
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="JASAIN — 자동화 솔루션" />
-  <meta property="og:description" content="반복 업무는 자동으로, 수익은 꾸준히." />
-  <meta property="og:locale" content="ko_KR" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-  <script src="https://js.tosspayments.com/v2/standard"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            jasain: '#6366f1', 'jasain-dark': '#4f46e5', 'jasain-light': '#818cf8',
-            coupang: '#C00000', 'coupang-dark': '#9a0000',
-            dexor: '#2f6fed', 'dexor-dark': '#1d4ed8',
-            spread: '#0f766e', 'spread-dark': '#115e59',
-          }
-        }
-      }
-    }
-  </script>
   <style>
-    * { font-family: 'Noto Sans KR', sans-serif; }
-    html { scroll-behavior: smooth; }
-    .fade-up { opacity: 0; transform: translateY(24px); transition: opacity 0.65s ease, transform 0.65s ease; }
-    .fade-up.visible { opacity: 1; transform: translateY(0); }
-    .screenshot-shadow { box-shadow: 0 20px 60px rgba(0,0,0,0.13), 0 4px 16px rgba(0,0,0,0.08); }
-    .faq-answer { max-height: 0; overflow: hidden; transition: max-height 0.32s ease; }
-    .faq-answer.open { max-height: 300px; }
-    .bg-grid { background-image: radial-gradient(circle, rgba(99,102,241,0.12) 1px, transparent 1px); background-size: 32px 32px; }
-    .badge-live { animation: pulse-dot 2s infinite; }
-    @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-    #tab-jasain .gradient-text { background: linear-gradient(135deg, #818cf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    #tab-cujasa .gradient-text { background: linear-gradient(135deg, #C00000, #ff4444); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    #tab-dexor .gradient-text { background: linear-gradient(135deg, #60a5fa, #2f6fed); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    #tab-spread .gradient-text { background: linear-gradient(135deg, #5eead4, #14b8a6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-    .card-hover { transition: transform 0.25s ease, box-shadow 0.25s ease; }
-    .card-hover:hover { transform: translateY(-4px); box-shadow: 0 20px 48px rgba(0,0,0,0.13); }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #111; color: #f4f4f5; font-family: Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0; }
+    a { color: inherit; text-decoration: none; }
+    .shell { display: grid; min-height: 100vh; grid-template-columns: 292px minmax(0, 1fr); }
+    .sidebar { border-right: 1px solid rgba(255,255,255,.08); background: #191919; padding: 22px 16px; }
+    .brand { display: flex; align-items: center; gap: 12px; padding: 0 8px; font-weight: 900; }
+    .mark { display: grid; width: 36px; height: 36px; place-items: center; overflow: hidden; border-radius: 12px; background: #fff; }
+    .mark img { width: 100%; height: 100%; object-fit: cover; }
+    .muted { color: #71717a; }
+    .group { margin-top: 30px; }
+    .label { padding: 0 8px; font-size: 11px; font-weight: 900; text-transform: uppercase; color: #71717a; }
+    .nav { display: grid; gap: 6px; margin-top: 10px; }
+    .nav a { border-radius: 14px; color: #a1a1aa; padding: 11px 12px; font-size: 14px; font-weight: 850; }
+    .nav a:hover, .nav .active { background: rgba(255,255,255,.09); color: #fff; }
+    .main { display: flex; min-height: 100vh; flex-direction: column; padding: 32px; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .top nav { display: flex; gap: 12px; color: #a1a1aa; font-size: 14px; font-weight: 850; }
+    .cta { border-radius: 999px; background: #f4f4f5; color: #111; padding: 10px 16px; font-size: 14px; font-weight: 900; }
+    .hero { display: grid; flex: 1; place-items: center; padding: 56px 0; text-align: center; }
+    .hero-inner { width: min(860px, 100%); }
+    .pill { display: inline-flex; border: 1px solid rgba(255,255,255,.1); border-radius: 999px; background: rgba(255,255,255,.05); color: #a1a1aa; padding: 8px 12px; font-size: 12px; font-weight: 900; }
+    h1 { margin: 24px 0 0; font-size: clamp(40px, 7vw, 76px); font-weight: 760; line-height: 1.03; }
+    .lead { width: min(640px, 100%); margin: 22px auto 0; color: #8b8b94; font-size: 16px; line-height: 1.75; }
+    .composer { width: min(760px, 100%); margin: 42px auto 0; border: 1px solid rgba(255,255,255,.1); border-radius: 28px; background: #242424; padding: 16px; box-shadow: 0 28px 70px rgba(0,0,0,.28); text-align: left; }
+    .composer textarea { width: 100%; min-height: 92px; resize: none; border: 0; outline: 0; background: transparent; color: #f4f4f5; font: inherit; font-size: 16px; }
+    .composer textarea::placeholder { color: #666; }
+    .composer-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid rgba(255,255,255,.05); padding-top: 14px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { border-radius: 999px; background: rgba(255,255,255,.05); color: #71717a; padding: 7px 11px; font-size: 12px; font-weight: 900; }
+    .send { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 999px; background: #f4f4f5; color: #111; font-weight: 900; }
+    .products { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 42px; text-align: left; }
+    .card { border: 1px solid rgba(255,255,255,.1); border-radius: 20px; background: rgba(255,255,255,.035); padding: 20px; }
+    .card b { display: block; font-size: 15px; }
+    .card p { margin: 10px 0 0; color: #71717a; font-size: 13px; line-height: 1.65; }
+    .qa { width: min(920px, 100%); margin: 0 auto 48px; border-top: 1px solid rgba(255,255,255,.08); padding-top: 34px; }
+    .qa h2 { margin: 0 0 16px; font-size: 24px; }
+    .qa-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .qa-item { border: 1px solid rgba(255,255,255,.1); border-radius: 20px; background: rgba(255,255,255,.035); padding: 18px; }
+    .qa-item b { display: block; font-size: 14px; }
+    .qa-item p { margin: 9px 0 0; color: #71717a; font-size: 13px; line-height: 1.65; }
+    .qa-action { display: inline-flex; margin-top: 14px; border-radius: 999px; background: #f4f4f5; color: #111; padding: 8px 12px; font-size: 12px; font-weight: 900; }
+    footer { border-top: 1px solid rgba(255,255,255,.08); color: #71717a; padding: 22px 0 0; font-size: 12px; line-height: 1.7; }
+    @media (max-width: 860px) { .shell { grid-template-columns: 1fr; } .sidebar { display: none; } .main { padding: 22px; } .top nav { display: none; } .products, .qa-grid { grid-template-columns: 1fr; } }
   </style>
 </head>
-<body class="bg-white text-gray-900 antialiased">
-
-  <!-- NAV (공통) -->
-  <nav class="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
-    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
-      <button onclick="showTab('jasain')" class="flex items-center gap-2 flex-shrink-0">
-        <span class="text-xl font-black tracking-tight" style="background:linear-gradient(135deg,#6366f1,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">JASAIN</span>
-      </button>
-      <div class="flex items-center bg-gray-100 rounded-xl p-1 gap-1 overflow-x-auto">
-        <button id="tab-btn-jasain" onclick="showTab('jasain')" class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all bg-white text-gray-800 shadow-sm">전체 솔루션</button>
-        <button id="tab-btn-cujasa" onclick="showTab('cujasa')" class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-gray-600">CUJASA</button>
-        <button id="tab-btn-dexor" onclick="showTab('dexor')" class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-gray-600">DEXOR</button>
-        <button id="tab-btn-spread" onclick="showTab('spread')" class="px-4 py-1.5 rounded-lg text-sm font-bold transition-all text-gray-400 hover:text-gray-600">SPREAD</button>
-      </div>
-      <a id="nav-cta" href="#contact" class="bg-jasain hover:bg-jasain-dark text-white px-5 py-2.5 rounded-lg text-sm font-bold transition-colors shadow-sm flex-shrink-0">문의하기</a>
-    </div>
-  </nav>
-
-  <!-- ══════════════ TAB 1: JASAIN ══════════════ -->
-  <div id="tab-jasain">
-    <section class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white py-28 px-6 relative overflow-hidden">
-      <div class="absolute inset-0 bg-grid"></div>
-      <div class="absolute inset-0" style="background:radial-gradient(ellipse at 30% 50%,rgba(99,102,241,0.18) 0%,transparent 60%),radial-gradient(ellipse at 75% 20%,rgba(192,132,252,0.12) 0%,transparent 50%);"></div>
-      <div class="max-w-3xl mx-auto text-center relative fade-up">
-        <div class="inline-flex items-center gap-2 bg-white/10 border border-white/10 rounded-full px-4 py-1.5 text-xs font-semibold text-jasain-light mb-8"><span class="w-1.5 h-1.5 bg-jasain-light rounded-full badge-live"></span>자동화 솔루션 브랜드</div>
-        <h1 class="text-5xl sm:text-6xl font-black mb-6 leading-tight tracking-tight">반복 업무는 <span class="gradient-text">자동으로</span>,<br>수익은 꾸준히</h1>
-        <p class="text-lg text-slate-400 mb-10 leading-relaxed max-w-xl mx-auto">JASAIN은 비즈니스의 반복적인 작업을 자동화합니다.<br>시간을 아끼고, 수익에 집중하세요.</p>
-        <a href="#products" class="inline-block bg-jasain hover:bg-jasain-dark text-white font-bold px-8 py-4 rounded-xl text-base transition-colors shadow-lg hover:scale-105 active:scale-100 transform duration-150">솔루션 보기 →</a>
-      </div>
-    </section>
-
-    <section class="bg-slate-950 border-b border-slate-800">
-      <div class="max-w-5xl mx-auto px-6 py-10 grid grid-cols-3 gap-6 text-center">
-        <div class="fade-up"><div class="text-3xl font-black text-white mb-1">34<span class="text-jasain-light">+</span></div><div class="text-xs text-slate-500 font-medium">누적 구매자</div></div>
-        <div class="fade-up"><div class="text-3xl font-black text-white mb-1">2<span class="text-jasain-light">+</span></div><div class="text-xs text-slate-500 font-medium">출시 솔루션</div></div>
-        <div class="fade-up"><div class="text-3xl font-black text-white mb-1">24<span class="text-jasain-light">h</span></div><div class="text-xs text-slate-500 font-medium">자동 운영</div></div>
-      </div>
-    </section>
-
-    <section id="products" class="py-24 px-6 bg-gray-50">
-      <div class="max-w-5xl mx-auto">
-        <div class="text-center mb-14 fade-up">
-          <div class="text-xs font-bold text-jasain uppercase tracking-widest mb-3">SOLUTIONS</div>
-          <h2 class="text-3xl font-black mb-3">자동화 솔루션</h2>
-          <p class="text-gray-500 text-sm">클릭해서 자세한 내용을 확인하세요.</p>
-        </div>
-        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          <button onclick="showTab('cujasa')" class="bg-white rounded-2xl p-6 border border-gray-100 card-hover fade-up text-left group w-full">
-            <div class="flex items-start justify-between mb-5">
-              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-sm" style="background:linear-gradient(135deg,#C00000,#ff4444);">CJ</div>
-              <span class="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full"><span class="w-1.5 h-1.5 bg-emerald-500 rounded-full badge-live"></span>출시</span>
-            </div>
-            <h3 class="text-lg font-black mb-1 group-hover:text-jasain transition-colors">CUJASA</h3>
-            <p class="text-xs font-semibold text-gray-400 mb-3">쿠팡 파트너스 자동화</p>
-            <p class="text-sm text-gray-600 leading-relaxed mb-5">AI가 주제 선정부터 쿠팡 상품 검색, 글 작성, Threads 자동 업로드까지 전부 대신합니다.</p>
-            <div class="flex flex-wrap gap-2 mb-5">
-              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">Threads 자동 포스팅</span>
-              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">AI 콘텐츠 생성</span>
-              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">쿠팡 파트너스</span>
-            </div>
-            <div class="flex items-center justify-between pt-4 border-t border-gray-100">
-              <span class="text-sm font-black text-gray-900">₩590,000 ~</span>
-              <span class="text-xs font-bold text-jasain group-hover:translate-x-1 transition-transform inline-block">자세히 보기 →</span>
-            </div>
-          </button>
-          <button onclick="showTab('dexor')" class="bg-white rounded-2xl p-6 border border-gray-100 card-hover fade-up text-left group w-full">
-            <div class="flex items-start justify-between mb-5">
-              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-sm" style="background:linear-gradient(135deg,#2f6fed,#60a5fa);">DX</div>
-              <span class="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-full">준비 중</span>
-            </div>
-            <h3 class="text-lg font-black mb-1 group-hover:text-jasain transition-colors">DEXOR</h3>
-            <p class="text-xs font-semibold text-gray-400 mb-3">네이버 블로그 선정 자동화</p>
-            <p class="text-sm text-gray-600 leading-relaxed mb-5">체험단·마케팅 담당자가 블로그 URL을 업로드하면 광고 위험도, 활동성, 등급 판단을 자동으로 정리합니다.</p>
-            <div class="flex flex-wrap gap-2 mb-5">
-              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">S/A 후보 필터</span>
-              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">엑셀 업로드</span>
-              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">CSV 다운로드</span>
-            </div>
-            <div class="flex items-center justify-between pt-4 border-t border-gray-100">
-              <span class="text-sm font-black text-gray-900">크레딧 충전형</span>
-              <span class="text-xs font-bold text-jasain group-hover:translate-x-1 transition-transform inline-block">자세히 보기 →</span>
-            </div>
-          </button>
-          <button onclick="showTab('spread')" class="bg-white rounded-2xl p-6 border border-gray-100 card-hover fade-up text-left group w-full">
-            <div class="flex items-start justify-between mb-5">
-              <div class="w-12 h-12 rounded-xl flex items-center justify-center text-white font-black text-sm" style="background:linear-gradient(135deg,#0f766e,#14b8a6);">SP</div>
-              <span class="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full"><span class="w-1.5 h-1.5 bg-emerald-500 rounded-full badge-live"></span>출시</span>
-            </div>
-            <h3 class="text-lg font-black mb-1 group-hover:text-jasain transition-colors">SPREAD</h3>
-            <p class="text-xs font-semibold text-gray-400 mb-3">미션 캠페인 운영 자동화</p>
-            <p class="text-sm text-gray-600 leading-relaxed mb-5">Threads, X, WordPress, KakaoTalk 기반 미션을 만들고 신청·선정·제출·검수까지 관리합니다.</p>
-            <div class="flex flex-wrap gap-2 mb-5">
-              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">체험단 미션</span>
-              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">자동 검수</span>
-              <span class="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full">캠페인 관리</span>
-            </div>
-            <div class="flex items-center justify-between pt-4 border-t border-gray-100">
-              <span class="text-sm font-black text-gray-900">미리보기 가능</span>
-              <span class="text-xs font-bold text-jasain group-hover:translate-x-1 transition-transform inline-block">자세히 보기 →</span>
-            </div>
-          </button>
-          <div class="bg-white rounded-2xl p-6 border border-dashed border-gray-200 fade-up opacity-70">
-            <div class="flex items-start justify-between mb-5">
-              <div class="w-12 h-12 rounded-xl bg-gray-100 flex items-center justify-center">
-                <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 0 1 .865-.501 48.172 48.172 0 0 0 3.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0 0 12 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018Z"/></svg>
-              </div>
-              <span class="text-xs font-bold text-gray-400 bg-gray-100 px-2.5 py-1 rounded-full">Coming Soon</span>
-            </div>
-            <h3 class="text-lg font-black mb-1 text-gray-500">인스타 포스팅 분석기</h3>
-            <p class="text-xs font-semibold text-gray-400 mb-3">Instagram 성과 분석</p>
-            <p class="text-sm text-gray-400 leading-relaxed">인스타그램 게시물의 도달률·저장수·참여율을 분석해 어떤 콘텐츠가 효과적인지 데이터로 보여줍니다.</p>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="mark"><img src="/images/jasain_logo.png" alt="JASAIN" /></div><div><div>JASAIN</div><div class="muted" style="font-size:12px;">automation workspace</div></div></div>
+      <div class="group"><div class="label">Solutions</div><div class="nav"><a class="active" href="/cujasa/">CUJASA</a><a href="/dexor/">DEXOR</a><a href="/spread/">SPREAD</a></div></div>
+      <div class="group"><div class="label">Account</div><div class="nav"><a href="https://app.jasain.kr/#tab=beta">로그인</a><a href="https://app.jasain.kr/?mode=register&product=cujasa#tab=beta">회원가입</a></div></div>
+    </aside>
+    <main class="main">
+      <header class="top"><strong>JASAIN</strong><nav><a href="/cujasa/">CUJASA</a><a href="/dexor/">DEXOR</a><a href="/spread/">SPREAD</a><a href="https://app.jasain.kr/#tab=beta">로그인</a></nav><a class="cta" href="https://app.jasain.kr/?mode=register&product=cujasa#tab=beta">시작하기</a></header>
+      <section class="hero">
+        <div class="hero-inner">
+          <div class="pill">JASAIN 통합 자동화 계정</div>
+          <h1>무엇을 자동화할까요?</h1>
+          <p class="lead">CUJASA, DEXOR, SPREAD를 하나의 계정 안에서 선택하고, 필요한 작업을 워크스페이스 안에서 바로 시작합니다.</p>
+          <div class="composer">
+            <textarea placeholder="예: 3040 여성을 타겟으로 반말로 주방용품 포스팅을 시작해줘"></textarea>
+            <div class="composer-foot"><div class="chips"><span class="chip">CUJASA</span><span class="chip">DEXOR</span><span class="chip">SPREAD</span></div><a class="send" href="https://app.jasain.kr/?mode=register&product=cujasa#tab=beta">→</a></div>
+          </div>
+          <div class="products">
+            <a class="card" href="/cujasa/"><b>CUJASA</b><p>쿠팡 실상품 검색부터 Threads 예약 업로드까지 자동화합니다.</p></a>
+            <a class="card" href="/dexor/"><b>DEXOR</b><p>캠페인 글이 노출될 블로그 후보를 먼저 고릅니다.</p></a>
+            <a class="card" href="/spread/"><b>SPREAD</b><p>캠페인 추천, 참여자 선정, 제출물 검수를 한 흐름으로 묶습니다.</p></a>
           </div>
         </div>
-      </div>
-    </section>
-
-    <section class="py-24 px-6 bg-white">
-      <div class="max-w-5xl mx-auto">
-        <div class="text-center mb-14 fade-up"><div class="text-xs font-bold text-jasain uppercase tracking-widest mb-3">WHY JASAIN</div><h2 class="text-3xl font-black">자동화가 필요한 이유</h2></div>
-        <div class="grid sm:grid-cols-3 gap-8">
-          <div class="text-center fade-up"><div class="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><svg class="w-7 h-7 text-jasain" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4l3 3m6-3a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg></div><h3 class="font-black mb-2">시간 절약</h3><p class="text-sm text-gray-500 leading-relaxed">매일 반복되는 업무를 자동화해 하루 수 시간을 되찾습니다.</p></div>
-          <div class="text-center fade-up"><div class="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><svg class="w-7 h-7 text-jasain" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/></svg></div><h3 class="font-black mb-2">꾸준한 수익</h3><p class="text-sm text-gray-500 leading-relaxed">자는 동안에도 자동으로 운영되어 수익이 지속됩니다.</p></div>
-          <div class="text-center fade-up"><div class="w-14 h-14 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-4"><svg class="w-7 h-7 text-jasain" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0 1 12 2.944a11.955 11.955 0 0 1-8.618 3.04A12.02 12.02 0 0 0 3 9c0 5.591 3.824 10.29 9 11.622C17.176 19.29 21 14.591 21 9c0-1.042-.133-2.052-.382-3.016z"/></svg></div><h3 class="font-black mb-2">검증된 솔루션</h3><p class="text-sm text-gray-500 leading-relaxed">실제 운영 중인 사용자들의 피드백으로 계속 개선됩니다.</p></div>
+      </section>
+      <section class="qa">
+        <h2>상담 전에 먼저 답하는 JASAIN</h2>
+        <div class="qa-grid">
+          <article class="qa-item"><b>쿠팡 API는 어디에 넣나요?</b><p>CUJASA 설정 안에서 Access Key, Secret Key, Partner ID, Tracking Code를 저장해요.</p><a class="qa-action" href="https://app.jasain.kr/?mode=register&product=cujasa#tab=beta">CUJASA 시작</a></article>
+          <article class="qa-item"><b>무료체험은 몇 번까지 가능한가요?</b><p>무료 체험은 Threads 실제 업로드 기준 5회까지 제공하고 이후에는 결제 상태에 따라 권한을 유지해요.</p><a class="qa-action" href="https://app.jasain.kr/?mode=register&product=cujasa#tab=beta">계정 만들기</a></article>
+          <article class="qa-item"><b>Threads 연결이 풀렸어요.</b><p>기존 설정, 예약 기록, 결제 정보는 유지돼요. 워크스페이스 설정에서 Threads 연결만 다시 진행하면 돼요.</p><a class="qa-action" href="https://app.jasain.kr/#tab=beta">설정 열기</a></article>
+          <article class="qa-item"><b>DEXOR와 SPREAD도 같은 계정으로 쓰나요?</b><p>네. JASAIN 계정 안에서 제품별 권한을 부여하고, 보유한 솔루션만 워크스페이스에 표시해요.</p><a class="qa-action" href="https://app.jasain.kr/?mode=register&product=dexor#tab=beta">DEXOR 보기</a></article>
         </div>
-      </div>
-    </section>
-
-    <section id="contact" class="py-24 px-6 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white relative overflow-hidden">
-      <div class="absolute inset-0 bg-grid"></div>
-      <div class="absolute inset-0" style="background:radial-gradient(ellipse at 50% 50%,rgba(99,102,241,0.15) 0%,transparent 65%);"></div>
-      <div class="max-w-xl mx-auto text-center relative fade-up">
-        <div class="text-xs font-bold text-jasain-light uppercase tracking-widest mb-4">CONTACT</div>
-        <h2 class="text-3xl font-black mb-4">어떤 자동화가 필요하세요?</h2>
-        <p class="text-slate-400 text-sm mb-10 leading-relaxed">원하는 솔루션이 없거나 출시 알림을 받고 싶다면<br>아래 버튼으로 문의해주세요.</p>
-        <div class="flex flex-col sm:flex-row gap-3 justify-center">
-          <a href="sms:01040941666?body=%5BJASAIN%20%EB%AC%B8%EC%9D%98%5D%20" class="bg-jasain hover:bg-jasain-dark text-white font-bold px-8 py-4 rounded-xl transition-colors shadow-lg hover:scale-105 active:scale-100 transform duration-150 text-sm">문자로 문의하기</a>
-          <a href="tel:01040941666" class="bg-white/10 hover:bg-white/20 border border-white/10 text-white font-bold px-8 py-4 rounded-xl transition-colors text-sm">전화 문의하기</a>
-        </div>
-      </div>
-    </section>
-
-    <footer class="bg-slate-950 border-t border-slate-800 py-12 px-6">
-      <div class="max-w-5xl mx-auto grid gap-6">
-        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <span class="font-black text-white tracking-tight text-lg" style="background:linear-gradient(135deg,#6366f1,#c084fc);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">JASAIN</span>
-          <div class="flex items-center gap-6 text-xs text-slate-500">
-            <button onclick="showTab('cujasa')" class="hover:text-white transition-colors">CUJASA</button>
-            <button onclick="showTab('dexor')" class="hover:text-white transition-colors">DEXOR</button>
-            <button onclick="openPrivacy()" class="hover:text-white transition-colors">개인정보처리방침</button>
-          </div>
-        </div>
-        <div class="border-t border-slate-800 pt-6 text-xs text-slate-600 leading-relaxed grid gap-1">
-          <div><span class="text-slate-500">사업자명</span> 이상한 회사 &nbsp;|&nbsp; <span class="text-slate-500">대표</span> 이상빈 &nbsp;|&nbsp; <span class="text-slate-500">사업자등록번호</span> 876-28-01550</div>
-          <div><span class="text-slate-500">주소</span> 상동로 87 가나베스트타운 803-102</div>
-          <div><span class="text-slate-500">이메일</span> dypapa0309@gmail.com &nbsp;|&nbsp; <span class="text-slate-500">개인정보처리책임자</span> 이상빈</div>
-          <div class="mt-1 text-slate-700">© 2026 JASAIN. All rights reserved.</div>
-        </div>
-      </div>
-    </footer>
+      </section>
+      <footer>이상한 회사 · 대표 이상빈 · 사업자등록번호 876-28-01550 · 이메일 dypapa0309@gmail.com · 개인정보처리책임자 이상빈<br />© 2026 JASAIN. All rights reserved.</footer>
+    </main>
   </div>
-
-  <!-- ══════════════ TAB 2: CUJASA ══════════════ -->
-  <div id="tab-cujasa" style="display:none;">
-    <section class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white pt-20 pb-24 px-6 overflow-hidden relative">
-      <div class="absolute inset-0 opacity-20" style="background-image:radial-gradient(circle at 20% 50%,#C00000 0%,transparent 50%),radial-gradient(circle at 80% 20%,#C00000 0%,transparent 40%);"></div>
-      <div class="max-w-4xl mx-auto relative">
-        <div class="inline-flex items-center gap-2 bg-red-950/60 border border-red-800/50 px-4 py-1.5 rounded-full text-xs text-red-300 font-semibold mb-6"><span class="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse block"></span>Threads 자동 포스팅 솔루션</div>
-        <h1 class="text-4xl lg:text-[52px] font-black leading-[1.15] mb-6 tracking-tight">쿠팡 파트너스,<br><span class="gradient-text">이제 자동으로</span></h1>
-        <p class="text-lg text-slate-300 leading-relaxed mb-10 max-w-md">AI가 주제 선정부터 상품 추천, 글 작성, Threads 업로드까지 전부 대신합니다.<br><span class="text-white font-semibold">당신은 수익만 확인하면 됩니다.</span></p>
-        <div class="flex flex-col sm:flex-row gap-3">
-          <a href="#cj-pricing" class="bg-coupang hover:bg-coupang-dark text-white px-8 py-4 rounded-xl font-black text-base transition-all shadow-lg text-center hover:scale-105 active:scale-100">지금 신청하기 →</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="bg-coupang text-white py-10 px-6">
-      <div class="max-w-4xl mx-auto grid grid-cols-3 gap-4 text-center divide-x divide-red-700">
-        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">24시간</div><div class="text-red-200 text-sm mt-1 font-medium">자동 운영</div></div>
-        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">∞</div><div class="text-red-200 text-sm mt-1 font-medium">자동 포스팅</div></div>
-        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">0분</div><div class="text-red-200 text-sm mt-1 font-medium">수동 작업</div></div>
-      </div>
-    </section>
-
-    <section class="py-24 px-6 bg-gray-50">
-      <div class="max-w-4xl mx-auto">
-        <div class="text-center mb-14 fade-up"><h2 class="text-3xl lg:text-4xl font-black mb-3">혹시 이런 경험 있으신가요?</h2><p class="text-gray-400 text-lg">쿠팡 파트너스로 수익 내고 싶은데...</p></div>
-        <div class="grid sm:grid-cols-2 gap-4">
-          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6 hover:border-red-200 hover:shadow-md transition-all"><div class="mb-4"><i data-lucide="battery-low" class="w-9 h-9 text-coupang"></i></div><h3 class="font-black text-lg mb-2">매일 직접 쓰고 올리다 지쳤다</h3><p class="text-gray-500 text-sm leading-relaxed">상품 찾고, 글 쓰고, 업로드하는 과정이 너무 반복적으로 피곤합니다.</p></div>
-          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6 hover:border-red-200 hover:shadow-md transition-all"><div class="mb-4"><i data-lucide="help-circle" class="w-9 h-9 text-coupang"></i></div><h3 class="font-black text-lg mb-2">뭘 올려야 할지 모르겠다</h3><p class="text-gray-500 text-sm leading-relaxed">어떤 주제, 어떤 상품이 반응이 오는지 감을 잡기가 어렵습니다.</p></div>
-          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6 hover:border-red-200 hover:shadow-md transition-all"><div class="mb-4"><i data-lucide="clock" class="w-9 h-9 text-coupang"></i></div><h3 class="font-black text-lg mb-2">꾸준히 올리고 싶은데 시간이 없다</h3><p class="text-gray-500 text-sm leading-relaxed">직장, 학업, 육아에 치이다 보면 포스팅은 항상 뒷순위입니다.</p></div>
-          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6 hover:border-red-200 hover:shadow-md transition-all"><div class="mb-4"><i data-lucide="trending-down" class="w-9 h-9 text-coupang"></i></div><h3 class="font-black text-lg mb-2">꾸준히 못 해서 중간에 포기했다</h3><p class="text-gray-500 text-sm leading-relaxed">처음엔 열심히 하다가 며칠 지나면 흐지부지되는 패턴이 반복됩니다.</p></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="py-20 px-6 bg-white">
-      <div class="max-w-4xl mx-auto text-center">
-        <div class="fade-up inline-block bg-red-50 text-coupang font-bold px-4 py-1.5 rounded-full text-sm mb-4">해결책</div>
-        <h2 class="fade-up text-3xl lg:text-4xl font-black mb-4">CUJASA가 전부 합니다</h2>
-        <p class="fade-up text-gray-500 text-lg mb-14 max-w-lg mx-auto">주제 선정 → 상품 검색 → 글 작성 → Threads 업로드<br>모든 과정이 자동으로 돌아갑니다.</p>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-6">
-          <div class="fade-up"><div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm"><i data-lucide="sparkles" class="w-7 h-7 text-coupang"></i></div><div class="font-bold text-sm leading-snug">AI 주제<br>자동 생성</div></div>
-          <div class="fade-up"><div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm"><i data-lucide="package" class="w-7 h-7 text-coupang"></i></div><div class="font-bold text-sm leading-snug">쿠팡 상품<br>자동 검색</div></div>
-          <div class="fade-up"><div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm"><i data-lucide="pen-line" class="w-7 h-7 text-coupang"></i></div><div class="font-bold text-sm leading-snug">콘텐츠<br>자동 작성</div></div>
-          <div class="fade-up"><div class="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-sm"><i data-lucide="send" class="w-7 h-7 text-coupang"></i></div><div class="font-bold text-sm leading-snug">Threads<br>자동 업로드</div></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="cj-how" class="py-24 px-6 bg-gray-50">
-      <div class="max-w-5xl mx-auto">
-        <div class="text-center mb-20 fade-up"><h2 class="text-3xl lg:text-4xl font-black mb-3">3단계로 끝납니다</h2><p class="text-gray-400 text-lg">설정 한 번으로 무한 자동화</p></div>
-        <div class="grid lg:grid-cols-2 gap-12 items-center mb-24">
-          <div class="fade-up"><div class="text-7xl font-black text-gray-100 leading-none mb-3 select-none">01</div><h3 class="text-2xl font-black mb-4">계정 등록</h3><p class="text-gray-500 leading-relaxed mb-5">운영할 Threads 계정을 등록하고 타겟층을 설정합니다.<br>AI가 그에 맞는 주제와 콘텐츠를 자동으로 생성합니다.</p><div class="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-500"><span class="text-green-500 font-bold">✓</span>예시: 육아 꿀템 / 직장인 꿀템 / 자취 꿀템</div></div>
-          <div class="fade-up"><img src="images/accounts.png" alt="계정 관리 화면" class="rounded-2xl screenshot-shadow w-full border border-gray-100"></div>
-        </div>
-        <div class="grid lg:grid-cols-2 gap-12 items-center mb-24">
-          <div class="fade-up order-2 lg:order-1"><img src="images/generate.png" alt="콘텐츠 생성 화면" class="rounded-2xl screenshot-shadow w-full border border-gray-100"></div>
-          <div class="fade-up order-1 lg:order-2"><div class="text-7xl font-black text-gray-100 leading-none mb-3 select-none">02</div><h3 class="text-2xl font-black mb-4">주제 생성 → 콘텐츠 생성</h3><p class="text-gray-500 leading-relaxed mb-5">AI가 타겟에 맞는 주제를 자동으로 생성하고,<br>질문형·체크리스트형·문제 해결형 등 다양한 형태의<br>Threads 콘텐츠를 즉시 만들어냅니다.</p><div class="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-500"><span class="text-green-500 font-bold">✓</span>마음에 드는 글만 큐에 넣으면 끝</div></div>
-        </div>
-        <div class="grid lg:grid-cols-2 gap-12 items-center">
-          <div class="fade-up"><div class="text-7xl font-black text-gray-100 leading-none mb-3 select-none">03</div><h3 class="text-2xl font-black mb-4">자동 예약 발행</h3><p class="text-gray-500 leading-relaxed mb-5">큐에 넣어두면 스케줄러가 알아서 최적 시간에 발행합니다.<br>새벽에 자고 있어도 포스팅은 계속 올라갑니다.</p><div class="inline-flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-500"><span class="text-green-500 font-bold">✓</span>posted → scheduled → 반복. 완전 자동화</div></div>
-          <div class="fade-up"><img src="images/queue.png" alt="업로드 큐 화면" class="rounded-2xl screenshot-shadow w-full border border-gray-100"></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="py-24 px-6 bg-white">
-      <div class="max-w-5xl mx-auto">
-        <div class="text-center mb-20 fade-up"><h2 class="text-3xl lg:text-4xl font-black mb-3">주요 기능</h2><p class="text-gray-400 text-lg">하나하나 직접 할 필요 없습니다</p></div>
-        <div class="grid lg:grid-cols-2 gap-14 items-center mb-28">
-          <div class="fade-up"><img src="images/products.png" alt="쿠팡 상품 추천 화면" class="rounded-2xl screenshot-shadow w-full border border-gray-100"></div>
-          <div class="fade-up">
-            <div class="inline-block bg-red-50 text-coupang font-bold px-3 py-1 rounded-full text-xs mb-5">쿠팡 파트너스 연동</div>
-            <h3 class="text-2xl font-black mb-4">주제에 맞는 쿠팡 상품 자동 매칭</h3>
-            <p class="text-gray-500 leading-relaxed mb-6">생성된 주제와 관련된 쿠팡 상품을 API로 자동 검색합니다. 내 파트너스 추적 링크가 글 안에 자동으로 삽입됩니다.</p>
-            <ul class="space-y-3">
-              <li class="flex items-start gap-3 text-sm text-gray-600"><span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>쿠팡 파트너스 HMAC API 연동</li>
-              <li class="flex items-start gap-3 text-sm text-gray-600"><span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>내 추적 코드 자동 삽입 (subId)</li>
-              <li class="flex items-start gap-3 text-sm text-gray-600"><span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>계정별 채널 성과 개별 추적</li>
-            </ul>
-          </div>
-        </div>
-        <div class="grid lg:grid-cols-2 gap-14 items-center">
-          <div class="fade-up order-2 lg:order-1">
-            <div class="inline-block bg-red-50 text-coupang font-bold px-3 py-1 rounded-full text-xs mb-5">성과 추적</div>
-            <h3 class="text-2xl font-black mb-4">클릭 & 성과 애널리틱스</h3>
-            <p class="text-gray-500 leading-relaxed mb-6">포스팅별 클릭수, 유입 경로를 추적합니다. 24시간·72시간·7일 성과를 자동으로 측정해 어떤 글이 효과적인지 파악합니다.</p>
-            <ul class="space-y-3">
-              <li class="flex items-start gap-3 text-sm text-gray-600"><span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>링크별 클릭 실시간 추적</li>
-              <li class="flex items-start gap-3 text-sm text-gray-600"><span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>24h / 72h / 7일 자동 구간 측정</li>
-              <li class="flex items-start gap-3 text-sm text-gray-600"><span class="w-5 h-5 bg-red-50 rounded-full flex items-center justify-center text-coupang font-bold flex-shrink-0 mt-0.5">✓</span>IP·기기·유입 경로 분석</li>
-            </ul>
-          </div>
-          <div class="fade-up order-1 lg:order-2">
-            <div class="bg-gray-50 rounded-2xl p-6 border border-gray-200 screenshot-shadow">
-              <div class="flex items-center justify-between mb-5"><div class="text-sm font-bold text-gray-800">애널리틱스</div><div class="text-xs text-gray-400 bg-white border border-gray-200 px-3 py-1 rounded-full">최근 7일</div></div>
-              <div class="grid grid-cols-3 gap-3 mb-6">
-                <div class="bg-white rounded-xl p-3.5 text-center border border-gray-100"><div class="text-2xl font-black text-coupang">247</div><div class="text-xs text-gray-400 mt-1">총 클릭</div></div>
-                <div class="bg-white rounded-xl p-3.5 text-center border border-gray-100"><div class="text-2xl font-black text-emerald-500">32</div><div class="text-xs text-gray-400 mt-1">오늘 클릭</div></div>
-                <div class="bg-white rounded-xl p-3.5 text-center border border-gray-100"><div class="text-2xl font-black text-blue-500">18</div><div class="text-xs text-gray-400 mt-1">포스팅 수</div></div>
-              </div>
-              <div class="space-y-3">
-                <div class="flex items-center gap-3"><div class="text-xs text-gray-500 w-24 truncate flex-shrink-0">공기정화제 추천</div><div class="flex-1 bg-gray-200 rounded-full h-2"><div class="bg-coupang h-2 rounded-full" style="width:75%"></div></div><div class="text-xs text-gray-700 font-bold w-7 text-right">75</div></div>
-                <div class="flex items-center gap-3"><div class="text-xs text-gray-500 w-24 truncate flex-shrink-0">자취 요리 레시피</div><div class="flex-1 bg-gray-200 rounded-full h-2"><div class="bg-coupang h-2 rounded-full" style="width:52%"></div></div><div class="text-xs text-gray-700 font-bold w-7 text-right">52</div></div>
-                <div class="flex items-center gap-3"><div class="text-xs text-gray-500 w-24 truncate flex-shrink-0">주방 가전 체크리스트</div><div class="flex-1 bg-gray-200 rounded-full h-2"><div class="bg-coupang h-2 rounded-full" style="width:40%"></div></div><div class="text-xs text-gray-700 font-bold w-7 text-right">40</div></div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="py-24 px-6 bg-slate-950">
-      <div class="max-w-4xl mx-auto">
-        <div class="text-center mb-14 fade-up"><h2 class="text-3xl lg:text-4xl font-black text-white mb-3">실제로 이런 반응이 옵니다</h2><p class="text-slate-400 text-lg">광고처럼 보이지 않아서 자연스러운 댓글이 달립니다</p></div>
-        <div class="grid sm:grid-cols-2 gap-4 fade-up">
-          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><div class="flex items-center gap-3 mb-3"><div class="w-9 h-9 rounded-full bg-gradient-to-br from-orange-400 to-amber-600 flex-shrink-0 flex items-center justify-center text-white text-xs font-bold">거</div><div><div class="text-white text-sm font-semibold">geoje_aju_cheol_duk_house</div><div class="text-slate-500 text-xs">1분 전</div></div></div><p class="text-slate-300 text-sm leading-relaxed">오늘은 자취방에서 요리했는데, 냄새가 너무 심했어요...</p><div class="flex items-center gap-4 mt-4 text-slate-600 text-xs"><span>♡ 1</span><span>○ 1</span></div></div>
-          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5"><div class="flex items-center gap-3 mb-3"><div class="w-9 h-9 rounded-full bg-gradient-to-br from-sky-400 to-blue-600 flex-shrink-0 flex items-center justify-center text-white text-xs font-bold">유</div><div><div class="text-white text-sm font-semibold">yuriheo9</div><div class="text-slate-500 text-xs">2분 전</div></div></div><p class="text-slate-300 text-sm leading-relaxed">리노베라요~</p><div class="flex items-center gap-4 mt-4 text-slate-600 text-xs"><span>♡</span><span>○</span></div></div>
-          <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:col-span-2"><div class="flex items-center gap-3 mb-3"><div class="w-9 h-9 rounded-full bg-gradient-to-br from-violet-400 to-purple-700 flex-shrink-0 flex items-center justify-center text-white text-xs font-bold">마</div><div><div class="flex items-center gap-1.5"><div class="text-white text-sm font-semibold">majesticjung</div><span class="text-blue-400 text-xs">✓</span></div><div class="text-slate-500 text-xs">3분 전</div></div></div><p class="text-slate-300 text-sm leading-relaxed">아이고, 냄새 때문에 힘들었겠어요. 공기청정제 뿌리니까 조금 나아지니 다행이다 싶네요. 저도 좋은 제품 있으면 추천해주세요!</p><div class="flex items-center gap-4 mt-4 text-slate-600 text-xs"><span>♡</span><span>○</span></div></div>
-        </div>
-        <p class="text-center text-slate-500 text-sm mt-8 fade-up">실제 Threads 게시글에 달린 댓글입니다</p>
-      </div>
-    </section>
-
-    <section class="py-24 px-6 bg-gray-50">
-      <div class="max-w-5xl mx-auto">
-        <div class="text-center mb-16 fade-up">
-          <div class="inline-block bg-red-50 text-coupang font-bold px-4 py-1.5 rounded-full text-sm mb-4">수익 시뮬레이션</div>
-          <h2 class="text-3xl lg:text-4xl font-black mb-4">언제 수익이 나고, 언제 본전 뽑을까?</h2>
-          <p class="text-gray-500 text-lg max-w-xl mx-auto">쿠팡 파트너스 실제 데이터 기반으로 계산했습니다</p>
-        </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-14 fade-up">
-          <div class="bg-white rounded-2xl p-5 text-center border border-gray-200"><div class="text-2xl font-black text-coupang mb-1">3~5%</div><div class="text-xs text-gray-500 font-medium">평균 수수료율<br><span class="text-gray-400">(생활/식품 카테고리)</span></div></div>
-          <div class="bg-white rounded-2xl p-5 text-center border border-gray-200"><div class="text-2xl font-black text-coupang mb-1">24시간</div><div class="text-xs text-gray-500 font-medium">쿠키 유지<br><span class="text-gray-400">(클릭 후 모든 구매 인정)</span></div></div>
-          <div class="bg-white rounded-2xl p-5 text-center border border-gray-200"><div class="text-2xl font-black text-coupang mb-1">월 150개</div><div class="text-xs text-gray-500 font-medium">CUJASA 자동 포스팅<br><span class="text-gray-400">(하루 5개 기준)</span></div></div>
-          <div class="bg-white rounded-2xl p-5 text-center border border-gray-200"><div class="text-2xl font-black text-coupang mb-1">익익월 15일</div><div class="text-xs text-gray-500 font-medium">정산 입금일<br><span class="text-gray-400">(쿠팡 공식 정책)</span></div></div>
-        </div>
-        <div class="bg-white rounded-3xl p-6 lg:p-10 border border-gray-200 shadow-sm fade-up mb-8">
-          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
-            <div><h3 class="text-xl font-black">월별 예상 수익 (계정 1개 기준)</h3><p class="text-sm text-gray-400 mt-1">팔로워 0에서 시작, CUJASA로 하루 5포스팅 자동화</p></div>
-            <div class="flex items-center gap-4 text-xs">
-              <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-coupang inline-block"></span><span class="text-gray-600">월 수익</span></div>
-              <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded bg-blue-400 inline-block"></span><span class="text-gray-600">누적 수익</span></div>
-            </div>
-          </div>
-          <div class="relative" style="height:280px"><canvas id="roiChart"></canvas></div>
-          <div class="mt-6 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-center gap-3">
-            <i data-lucide="target" class="w-6 h-6 text-amber-600 flex-shrink-0"></i>
-            <div><div class="font-black text-amber-800">평균 7~8개월 차에 투자금 회수</div><div class="text-sm text-amber-700 mt-0.5">이후부터는 매달 순수익 — 계정 늘릴수록 수익도 배로 증가</div></div>
-          </div>
-        </div>
-        <div class="grid sm:grid-cols-2 gap-4 fade-up">
-          <div class="bg-white rounded-2xl p-6 border-2 border-gray-200">
-            <div class="flex items-center gap-2 mb-4"><i data-lucide="user" class="w-5 h-5 text-gray-500"></i><h4 class="font-black text-gray-700">직접 할 때</h4></div>
-            <ul class="space-y-3 text-sm text-gray-500">
-              <li class="flex items-start gap-2"><span class="text-red-400 font-bold mt-0.5">✗</span>글 1개 작성에 평균 20~30분 소요</li>
-              <li class="flex items-start gap-2"><span class="text-red-400 font-bold mt-0.5">✗</span>월 30개 포스팅 → 약 15시간 투자</li>
-              <li class="flex items-start gap-2"><span class="text-red-400 font-bold mt-0.5">✗</span>꾸준히 못 해서 중간에 포기하는 경우 多</li>
-            </ul>
-            <div class="mt-5 bg-gray-50 rounded-xl p-3 text-center"><div class="text-xs text-gray-400">12개월 예상 누적 수익</div><div class="text-2xl font-black text-gray-500 mt-1">~ ₩800,000</div></div>
-          </div>
-          <div class="bg-white rounded-2xl p-6 border-2 border-coupang shadow-md shadow-red-100">
-            <div class="flex items-center gap-2 mb-4"><i data-lucide="zap" class="w-5 h-5 text-coupang"></i><h4 class="font-black text-coupang">CUJASA 쓸 때</h4></div>
-            <ul class="space-y-3 text-sm text-gray-600">
-              <li class="flex items-start gap-2"><span class="text-green-500 font-bold mt-0.5">✓</span>하루 5개, 월 150개 포스팅 자동화</li>
-              <li class="flex items-start gap-2"><span class="text-green-500 font-bold mt-0.5">✓</span>내가 투자하는 시간 <strong>0분</strong></li>
-              <li class="flex items-start gap-2"><span class="text-green-500 font-bold mt-0.5">✓</span>잠자는 새벽에도 포스팅 자동 발행</li>
-            </ul>
-            <div class="mt-5 bg-red-50 rounded-xl p-3 text-center"><div class="text-xs text-gray-500">12개월 예상 누적 수익</div><div class="text-2xl font-black text-coupang mt-1">~ ₩4,000,000+</div></div>
-          </div>
-        </div>
-        <p class="text-center text-xs text-gray-400 mt-6">* 계정 1개, 팔로워 0 시작 기준 보수적 추정치</p>
-      </div>
-    </section>
-
-    <section id="cj-pricing" class="py-24 px-6 bg-white">
-      <div class="max-w-4xl mx-auto">
-        <div class="text-center mb-14 fade-up"><h2 class="text-3xl lg:text-4xl font-black mb-3">가격</h2><p class="text-gray-400 text-lg">두 가지 방법으로 시작할 수 있습니다</p></div>
-        <div class="grid sm:grid-cols-2 gap-6">
-          <div class="fade-up border-2 border-gray-200 rounded-3xl p-8 flex flex-col bg-white">
-            <div class="text-sm font-bold text-gray-400 uppercase tracking-wide mb-4">월정액</div>
-            <div class="mb-2"><span class="text-5xl font-black text-gray-900">₩59,000</span><span class="text-gray-400 text-base font-medium"> / 월</span></div>
-            <p class="text-gray-500 text-sm mb-6">언제든 해지 가능. 부담 없이 시작.</p>
-            <ul class="space-y-3 text-sm text-gray-600 mb-8 flex-1">
-              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>Threads 계정 4개</li>
-              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>AI 주제 / 콘텐츠 자동 생성</li>
-              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>쿠팡 파트너스 상품 자동 매칭</li>
-              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>24시간 자동 예약 발행</li>
-              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>1:1 셋업 지원</li>
-            </ul>
-            <a href="#cj-form" onclick="cjSelectPlan('monthly')" class="block text-center border-2 border-gray-900 text-gray-900 font-black py-4 rounded-xl transition-all hover:bg-gray-900 hover:text-white">월정액으로 시작하기 →</a>
-          </div>
-          <div class="fade-up border-2 border-coupang rounded-3xl p-8 flex flex-col relative shadow-xl shadow-red-100 bg-white">
-            <div class="absolute -top-4 left-1/2 -translate-x-1/2 bg-coupang text-white text-xs font-black px-5 py-1.5 rounded-full shadow whitespace-nowrap">얼리버드 한정가</div>
-            <div class="text-sm font-bold text-coupang uppercase tracking-wide mb-4">일시불</div>
-            <div class="mb-1"><span class="text-5xl font-black text-gray-900">₩590,000</span></div>
-            <div class="flex items-center gap-2 mb-3">
-              <span class="text-gray-400 text-sm line-through">₩1,990,000</span>
-              <span class="text-gray-600 text-sm">→ 이후 ₩990,000</span>
-            </div>
-            <div class="inline-flex items-center gap-1.5 bg-red-50 text-coupang font-bold px-3 py-1 rounded-full text-xs mb-4 self-start"><span class="w-1.5 h-1.5 rounded-full bg-coupang animate-pulse block"></span>20명 초과 시 인상</div>
-            <div class="bg-gray-50 rounded-xl p-4 mb-6">
-              <div class="flex items-center justify-between mb-2"><span class="text-xs font-bold text-gray-600">현재 구매 현황</span><span class="text-xs font-black text-coupang">11명 구매 완료</span></div>
-              <div class="w-full bg-gray-200 rounded-full h-2"><div class="bg-coupang h-2 rounded-full" style="width:55%"></div></div>
-              <div class="flex justify-between text-xs text-gray-400 mt-1"><span>0명</span><span>20명</span></div>
-            </div>
-            <ul class="space-y-3 text-sm text-gray-600 mb-8 flex-1">
-              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>Threads 계정 4개</li>
-              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>AI 주제 / 콘텐츠 자동 생성</li>
-              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>쿠팡 파트너스 상품 자동 매칭</li>
-              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>24시간 자동 예약 발행</li>
-              <li class="flex items-center gap-3"><span class="w-5 h-5 bg-green-100 rounded-full flex items-center justify-center text-green-600 text-xs font-bold flex-shrink-0">✓</span>1:1 셋업 지원</li>
-            </ul>
-            <a href="#cj-form" onclick="cjSelectPlan('onetime')" class="block text-center bg-coupang hover:bg-coupang-dark text-white font-black py-4 rounded-xl transition-all shadow-lg hover:scale-105 active:scale-100">일시불로 시작하기 →</a>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="py-24 px-6 bg-white">
-      <div class="max-w-2xl mx-auto">
-        <div class="text-center mb-12 fade-up"><h2 class="text-3xl font-black">자주 묻는 질문</h2></div>
-        <div class="space-y-3 fade-up">
-          <div class="cj-faq-item bg-white rounded-2xl overflow-hidden border border-gray-200">
-            <button class="cj-faq-trigger w-full text-left px-6 py-5 font-bold text-sm flex items-center justify-between gap-4"><span>쿠팡 파트너스 가입이 필요한가요?</span><span class="cj-faq-icon text-gray-400 text-xl leading-none flex-shrink-0">+</span></button>
-            <div class="cj-faq-answer"><p class="px-6 pb-5 text-gray-500 text-sm leading-relaxed">네, 쿠팡 파트너스 계정이 필요합니다. API 키를 CUJASA에 등록하면 포스팅마다 내 추적 링크가 자동으로 삽입됩니다.</p></div>
-          </div>
-          <div class="cj-faq-item bg-white rounded-2xl overflow-hidden border border-gray-200">
-            <button class="cj-faq-trigger w-full text-left px-6 py-5 font-bold text-sm flex items-center justify-between gap-4"><span>Threads 계정이 반드시 있어야 하나요?</span><span class="cj-faq-icon text-gray-400 text-xl leading-none flex-shrink-0">+</span></button>
-            <div class="cj-faq-answer"><p class="px-6 pb-5 text-gray-500 text-sm leading-relaxed">네, Threads 계정이 필요합니다. 연동 후 업로드는 모두 자동으로 처리됩니다.</p></div>
-          </div>
-          <div class="cj-faq-item bg-white rounded-2xl overflow-hidden border border-gray-200">
-            <button class="cj-faq-trigger w-full text-left px-6 py-5 font-bold text-sm flex items-center justify-between gap-4"><span>환불 정책은 어떻게 되나요?</span><span class="cj-faq-icon text-gray-400 text-xl leading-none flex-shrink-0">+</span></button>
-            <div class="cj-faq-answer"><p class="px-6 pb-5 text-gray-500 text-sm leading-relaxed">결제 후 7일 이내 환불 신청 시 구매 가격의 20%가 환불됩니다. 7일 이후에는 환불이 불가합니다.</p></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="cj-form" class="py-24 px-6 bg-gray-50">
-      <div class="max-w-lg mx-auto">
-        <div class="text-center mb-10 fade-up">
-          <div class="inline-block bg-red-50 text-coupang font-bold px-4 py-1.5 rounded-full text-sm mb-4">구매 신청</div>
-          <h2 class="text-3xl font-black mb-3">구매 신청서</h2>
-          <p class="text-gray-400">아래 정보를 입력하시면 담당자가 빠르게 연락드립니다</p>
-        </div>
-        <div class="fade-up bg-white border border-gray-200 rounded-3xl p-8">
-          <div class="grid grid-cols-2 gap-3 mb-6">
-            <button type="button" onclick="cjSelectPlan('onetime')" id="cj-btn-onetime" class="rounded-xl border-2 p-4 text-left transition-all border-coupang bg-red-50">
-              <div class="text-xs font-black text-coupang mb-1">일시불</div>
-              <div class="text-xl font-black text-gray-900">₩590,000</div>
-            </button>
-            <button type="button" onclick="cjSelectPlan('monthly')" id="cj-btn-monthly" class="rounded-xl border-2 p-4 text-left transition-all border-gray-200 bg-white">
-              <div class="text-xs font-black text-gray-400 mb-1">월정액</div>
-              <div class="text-xl font-black text-gray-700">₩59,000</div>
-              <div class="text-xs text-gray-500 mt-0.5">/ 월</div>
-            </button>
-          </div>
-          <form id="cj-buyForm" class="space-y-5">
-            <div><label class="block text-sm font-bold text-gray-700 mb-2">구매자명 <span class="text-coupang">*</span></label><input type="text" id="cj-buyerName" placeholder="홍길동" class="w-full border-2 border-gray-200 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-coupang transition-colors" required></div>
-            <div><label class="block text-sm font-bold text-gray-700 mb-2">전화번호 <span class="text-coupang">*</span></label><input type="tel" id="cj-buyerPhone" placeholder="010-0000-0000" class="w-full border-2 border-gray-200 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-coupang transition-colors" required></div>
-            <div><label class="block text-sm font-bold text-gray-700 mb-2">로그인 이메일 <span class="text-gray-400 text-xs font-medium">결제 시 필요</span></label><input type="email" id="cj-buyerEmail" placeholder="example@email.com" class="w-full border-2 border-gray-200 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-coupang transition-colors"></div>
-            <div><label class="block text-sm font-bold text-gray-700 mb-2">쿠자사 비밀번호 <span class="text-gray-400 text-xs font-medium">6자 이상</span></label><input type="password" id="cj-buyerPassword" placeholder="쿠자사 로그인에 사용할 비밀번호" class="w-full border-2 border-gray-200 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:border-coupang transition-colors"></div>
-            <button type="button" id="cj-paymentBtn" class="w-full bg-gray-950 hover:bg-gray-800 text-white font-black py-4 rounded-xl transition-all text-base shadow-lg hover:scale-105 active:scale-100">가상계좌/이체 결제하기 (₩590,000) →</button>
-            <button type="submit" id="cj-submitBtn" class="w-full bg-coupang hover:bg-coupang-dark text-white font-black py-4 rounded-xl transition-all text-base shadow-lg hover:scale-105 active:scale-100">문자로 신청하기 (₩590,000 일시불) →</button>
-          </form>
-          <p class="text-center text-gray-400 text-xs mt-5 leading-relaxed">가상계좌는 계좌 발급 후 입금이 완료되면 셋업 대기로 자동 접수됩니다.<br>전화 문의는 <a href="tel:01040941666" class="text-coupang font-semibold underline">여기</a>를 눌러주세요.</p>
-        </div>
-      </div>
-    </section>
-
-    <footer class="bg-gray-950 text-gray-500 py-12 px-6">
-      <div class="max-w-6xl mx-auto grid gap-6">
-        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div class="flex items-center gap-4">
-            <button onclick="showTab('jasain')" class="text-sm text-gray-500 hover:text-white transition-colors">← 전체 솔루션</button>
-            <span class="font-black text-white text-xl tracking-tight">CUJASA</span>
-          </div>
-          <button onclick="openPrivacy()" class="text-xs text-gray-600 hover:text-gray-300 transition-colors">개인정보처리방침</button>
-        </div>
-        <div class="border-t border-gray-800 pt-6 text-xs text-gray-700 leading-relaxed grid gap-1">
-          <div><span class="text-gray-600">사업자명</span> 이상한 회사 &nbsp;|&nbsp; <span class="text-gray-600">대표</span> 이상빈 &nbsp;|&nbsp; <span class="text-gray-600">사업자등록번호</span> 876-28-01550</div>
-          <div><span class="text-gray-600">주소</span> 상동로 87 가나베스트타운 803-102</div>
-          <div><span class="text-gray-600">이메일</span> dypapa0309@gmail.com &nbsp;|&nbsp; <span class="text-gray-600">개인정보처리책임자</span> 이상빈</div>
-          <div class="mt-1 text-gray-800">© 2026 JASAIN. All rights reserved.</div>
-        </div>
-      </div>
-    </footer>
-  </div>
-
-  <!-- PC 신청 안내 모달 -->
-  <div id="cj-pc-modal" style="display:none;" class="fixed inset-0 z-50 flex items-center justify-center p-4" onclick="if(event.target===this)document.getElementById('cj-pc-modal').style.display='none'">
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
-    <div class="relative bg-white rounded-3xl w-full max-w-sm p-8 text-center">
-      <div class="w-14 h-14 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
-        <svg class="w-7 h-7 text-coupang" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 8.25h3m-3 3h3m-3 3h.008v.008H10.5v-.008Z"/></svg>
-      </div>
-      <h3 class="font-black text-lg mb-2">모바일에서 신청해주세요</h3>
-      <p class="text-gray-500 text-sm mb-5 leading-relaxed">PC에서는 문자 전송이 되지 않습니다.<br>아래 내용을 <strong>010-4094-1666</strong>으로<br>직접 문자 보내주시면 안내드릴게요.</p>
-      <div class="bg-gray-50 rounded-2xl px-4 py-4 text-left text-xs text-gray-600 mb-5 whitespace-pre-line" id="cj-pc-msg"></div>
-      <div class="flex gap-3">
-        <a href="tel:01040941666" class="flex-1 bg-coupang hover:bg-coupang-dark text-white font-bold py-3 rounded-xl text-sm transition-colors">전화 문의하기</a>
-        <button onclick="document.getElementById('cj-pc-modal').style.display='none'" class="flex-1 border border-gray-200 text-gray-600 font-bold py-3 rounded-xl text-sm hover:bg-gray-50">닫기</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ══════════════ TAB 3: SPREAD ══════════════ -->
-  <div id="tab-spread" style="display:none;">
-    <section class="bg-gradient-to-br from-slate-950 via-teal-950 to-slate-950 text-white pt-20 pb-24 px-6 overflow-hidden relative">
-      <div class="absolute inset-0 opacity-20" style="background-image:radial-gradient(circle at 20% 50%,#14b8a6 0%,transparent 50%),radial-gradient(circle at 80% 20%,#5eead4 0%,transparent 40%);"></div>
-      <div class="max-w-4xl mx-auto relative">
-        <div class="inline-flex items-center gap-2 bg-teal-950/70 border border-teal-800/60 px-4 py-1.5 rounded-full text-xs text-teal-100 font-semibold mb-6"><span class="w-1.5 h-1.5 rounded-full bg-teal-300 animate-pulse block"></span>Threads / X / WordPress / KakaoTalk</div>
-        <h1 class="text-4xl lg:text-[52px] font-black leading-[1.15] mb-6 tracking-tight">리뷰를 모으는 곳이 아니라,<br><span class="gradient-text">반응을 퍼뜨리는 미션 플랫폼</span></h1>
-        <p class="text-lg text-slate-300 leading-relaxed mb-10 max-w-2xl">SPREAD는 브랜드 캠페인을 만들고 참여자 신청, 선정, 제출, 자동 검수, 체험 완료까지 한 화면에서 관리하는 캠페인 운영 자동화 솔루션입니다.</p>
-        <div class="flex flex-col sm:flex-row gap-3">
-          <a href="https://app.jasain.kr/?mode=register&product=spread" class="bg-spread hover:bg-spread-dark text-white px-8 py-4 rounded-xl font-black text-base transition-all shadow-lg text-center hover:scale-105 active:scale-100">SPREAD 시작하기 →</a>
-          <a href="#sp-how" class="bg-white/10 hover:bg-white/20 border border-white/10 text-white px-8 py-4 rounded-xl font-semibold text-base transition-all text-center">작동 방식 보기</a>
-          <a href="#sp-how" class="border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white px-8 py-4 rounded-xl font-semibold text-base transition-all text-center">작동 방식 보기</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="bg-spread text-white py-10 px-6">
-      <div class="max-w-4xl mx-auto grid grid-cols-3 gap-4 text-center divide-x divide-teal-500/40">
-        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">Mission</div><div class="text-teal-100 text-sm mt-1 font-medium">채널별 미션 캠페인</div></div>
-        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">Review</div><div class="text-teal-100 text-sm mt-1 font-medium">URL·키워드 자동 검수</div></div>
-        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">CSV</div><div class="text-teal-100 text-sm mt-1 font-medium">선정자·제출물 다운로드</div></div>
-      </div>
-    </section>
-
-    <section id="sp-how" class="py-24 px-6 bg-gray-50">
-      <div class="max-w-5xl mx-auto">
-        <div class="text-center mb-14 fade-up"><h2 class="text-3xl lg:text-4xl font-black mb-3">캠페인 운영 흐름을 자동화합니다</h2><p class="text-gray-400 text-lg">모집 → 선정 → 미션 제출 → 검수 → 완료 처리</p></div>
-        <div class="grid sm:grid-cols-3 gap-4">
-          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6"><div class="text-4xl font-black text-gray-100 mb-3">01</div><h3 class="font-black text-lg mb-2">캠페인 생성·모집</h3><p class="text-gray-500 text-sm leading-relaxed">제품 배송형과 지역 방문형 캠페인을 만들고, 모집 기간과 채널 조건을 설정합니다.</p></div>
-          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6"><div class="text-4xl font-black text-gray-100 mb-3">02</div><h3 class="font-black text-lg mb-2">신청·선정 관리</h3><p class="text-gray-500 text-sm leading-relaxed">참여자 채널, 팔로워, 신청 메모를 보고 선정자를 고른 뒤 개인정보 동의와 수령 정보를 관리합니다.</p></div>
-          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6"><div class="text-4xl font-black text-gray-100 mb-3">03</div><h3 class="font-black text-lg mb-2">제출물 자동 검수</h3><p class="text-gray-500 text-sm leading-relaxed">URL, 필수 키워드, 금지 표현, 중복 제출을 먼저 걸러 애매한 제출만 수동 검토합니다.</p></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="py-24 px-6 bg-white">
-      <div class="max-w-5xl mx-auto">
-        <div class="grid md:grid-cols-2 gap-5">
-          <div class="fade-up border border-gray-200 rounded-2xl p-6"><h3 class="font-black text-lg mb-3">지원 채널</h3><p class="text-gray-500 text-sm leading-relaxed">Threads, X, WordPress, KakaoTalk 기반 미션을 지원하고 채널별 제출 조건을 나눠 운영할 수 있습니다.</p></div>
-          <div class="fade-up border border-gray-200 rounded-2xl p-6"><h3 class="font-black text-lg mb-3">운영 데이터</h3><p class="text-gray-500 text-sm leading-relaxed">선정자 CSV, 처리정보 CSV, 제출 상태, 체험 완료 상태를 운영자가 바로 확인할 수 있게 정리합니다.</p></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="sp-form" class="py-24 px-6 bg-gray-50">
-      <div class="max-w-xl mx-auto text-center fade-up">
-        <div class="text-xs font-bold text-spread uppercase tracking-widest mb-4">SPREAD</div>
-        <h2 class="text-3xl font-black mb-4">체험단·미션 캠페인 운영을 자동화하고 싶으신가요?</h2>
-        <p class="text-gray-500 text-sm mb-8 leading-relaxed">브랜드 캠페인 운영, 제출 검수, 선정자 관리까지 한 번에 묶어 운영할 수 있습니다.</p>
-        <div class="flex flex-col sm:flex-row gap-3 justify-center">
-          <a href="https://app.jasain.kr/?mode=register&product=spread" class="bg-spread hover:bg-spread-dark text-white font-bold px-8 py-4 rounded-xl transition-colors shadow-lg text-sm">SPREAD 시작하기</a>
-        </div>
-      </div>
-    </section>
-
-    <footer class="bg-slate-950 border-t border-slate-800 py-12 px-6">
-      <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-slate-500 text-sm">
-        <button onclick="showTab('jasain')" class="text-sm text-gray-500 hover:text-white transition-colors">← 전체 솔루션</button>
-        <span class="font-black text-white text-xl tracking-tight">SPREAD</span>
-        <div>© 2026 JASAIN. All rights reserved.</div>
-      </div>
-    </footer>
-  </div>
-
-  <!-- ══════════════ TAB 4: DEXOR ══════════════ -->
-  <div id="tab-dexor" style="display:none;">
-    <section class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white pt-20 pb-24 px-6 overflow-hidden relative">
-      <div class="absolute inset-0 opacity-20" style="background-image:radial-gradient(circle at 20% 50%,#2f6fed 0%,transparent 50%),radial-gradient(circle at 80% 20%,#60a5fa 0%,transparent 40%);"></div>
-      <div class="max-w-4xl mx-auto relative">
-        <div class="inline-flex items-center gap-2 bg-blue-950/60 border border-blue-800/50 px-4 py-1.5 rounded-full text-xs text-blue-200 font-semibold mb-6"><span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse block"></span>네이버 블로그 선정 자동화</div>
-        <h1 class="text-4xl lg:text-[52px] font-black leading-[1.15] mb-6 tracking-tight">체험단 블로그 선정,<br><span class="gradient-text">분석부터 다운로드까지</span></h1>
-        <p class="text-lg text-slate-300 leading-relaxed mb-10 max-w-lg">URL과 엑셀을 업로드하면 광고 위험도, 활동성, 등급 판단을 자동으로 정리합니다.<br><span class="text-white font-semibold">S/A 후보만 빠르게 남겨 선정 시간을 줄입니다.</span></p>
-        <div class="flex flex-col sm:flex-row gap-3">
-          <a href="https://app.jasain.kr/?mode=register&product=dexor" class="bg-dexor hover:bg-dexor-dark text-white px-8 py-4 rounded-xl font-black text-base transition-all shadow-lg text-center hover:scale-105 active:scale-100">DEXOR 사용하기 →</a>
-          <a href="#dx-how" class="border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white px-8 py-4 rounded-xl font-semibold text-base transition-all text-center">작동 방식 보기</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="bg-dexor text-white py-10 px-6">
-      <div class="max-w-4xl mx-auto grid grid-cols-3 gap-4 text-center divide-x divide-blue-500/40">
-        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">Quick</div><div class="text-blue-100 text-sm mt-1 font-medium">최근 글 10개 1차 필터</div></div>
-        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">Deep</div><div class="text-blue-100 text-sm mt-1 font-medium">선택 블로그 정밀 분석</div></div>
-        <div class="px-4"><div class="text-3xl lg:text-4xl font-black">S/A</div><div class="text-blue-100 text-sm mt-1 font-medium">선정 후보 자동 분류</div></div>
-      </div>
-    </section>
-
-    <section id="dx-how" class="py-24 px-6 bg-gray-50">
-      <div class="max-w-5xl mx-auto">
-        <div class="text-center mb-14 fade-up"><h2 class="text-3xl lg:text-4xl font-black mb-3">선정 작업을 한 화면에서 끝냅니다</h2><p class="text-gray-400 text-lg">엑셀 업로드 → 분석 → S/A 필터 → 다운로드</p></div>
-        <div class="grid sm:grid-cols-3 gap-4">
-          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6"><div class="text-4xl font-black text-gray-100 mb-3">01</div><h3 class="font-black text-lg mb-2">URL 업로드</h3><p class="text-gray-500 text-sm leading-relaxed">붙여넣기와 엑셀 업로드를 모두 지원하고, 게시글 URL은 블로그 URL로 자동 정리합니다.</p></div>
-          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6"><div class="text-4xl font-black text-gray-100 mb-3">02</div><h3 class="font-black text-lg mb-2">등급 분석</h3><p class="text-gray-500 text-sm leading-relaxed">활동성, 광고성, 반응성, 콘텐츠 품질을 종합해 S/A/B/C/D로 분류합니다.</p></div>
-          <div class="fade-up bg-white border border-gray-200 rounded-2xl p-6"><div class="text-4xl font-black text-gray-100 mb-3">03</div><h3 class="font-black text-lg mb-2">후보 다운로드</h3><p class="text-gray-500 text-sm leading-relaxed">S/A만 남기고 CSV로 내려받아 체험단 선정 리스트로 바로 활용합니다.</p></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="dx-form" class="py-24 px-6 bg-white">
-      <div class="max-w-xl mx-auto text-center fade-up">
-        <div class="text-xs font-bold text-dexor uppercase tracking-widest mb-4">DEXOR</div>
-        <h2 class="text-3xl font-black mb-4">네이버 블로그 선정 자동화가 필요하신가요?</h2>
-        <p class="text-gray-500 text-sm mb-8 leading-relaxed">JASAIN 계정 안에서 DEXOR를 제공하고 있습니다. 회원가입하고 바로 사용해보세요.</p>
-        <div class="flex flex-col sm:flex-row gap-3 justify-center">
-          <a href="https://app.jasain.kr/?mode=register&product=dexor" class="bg-dexor hover:bg-dexor-dark text-white font-bold px-8 py-4 rounded-xl transition-colors shadow-lg text-sm">DEXOR 사용하기</a>
-        </div>
-      </div>
-    </section>
-
-    <footer class="bg-slate-950 border-t border-slate-800 py-12 px-6">
-      <div class="max-w-5xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-slate-500 text-sm">
-        <button onclick="showTab('jasain')" class="text-sm text-gray-500 hover:text-white transition-colors">← 전체 솔루션</button>
-        <span class="font-black text-white text-xl tracking-tight">DEXOR</span>
-        <div>© 2026 JASAIN. All rights reserved.</div>
-      </div>
-    </footer>
-  </div>
-
-  <!-- 개인정보처리방침 모달 -->
-  <div id="privacy-modal" style="display:none;" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4" onclick="if(event.target===this)closePrivacy()">
-    <div class="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
-    <div class="relative bg-white rounded-3xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
-      <div class="sticky top-0 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-3xl">
-        <h2 class="font-black text-gray-900">개인정보처리방침</h2>
-        <button onclick="closePrivacy()" class="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
-      </div>
-      <div class="px-6 py-6 text-sm text-gray-600 leading-relaxed grid gap-6">
-        <p>이상한 회사(이하 "회사")는 이용자의 개인정보를 중요하게 생각하며, 「개인정보 보호법」을 준수합니다.</p>
-
-        <div>
-          <h3 class="font-bold text-gray-900 mb-2">1. 수집하는 개인정보 항목</h3>
-          <p>구매 신청 시: 이름, 전화번호</p>
-        </div>
-
-        <div>
-          <h3 class="font-bold text-gray-900 mb-2">2. 개인정보 수집 및 이용 목적</h3>
-          <p>구매 상담 및 결제 안내, 서비스 제공 및 고객 응대</p>
-        </div>
-
-        <div>
-          <h3 class="font-bold text-gray-900 mb-2">3. 개인정보 보유 및 이용 기간</h3>
-          <p>상담 완료 및 서비스 계약 종료 후 즉시 파기. 단, 관련 법령에 따라 보존이 필요한 경우 해당 기간 동안 보관합니다.</p>
-          <ul class="mt-2 grid gap-1 list-disc list-inside text-gray-500">
-            <li>전자상거래 등에서의 소비자보호에 관한 법률: 계약·청약철회 기록 5년, 대금결제 기록 5년</li>
-            <li>통신비밀보호법: 서비스 이용 관련 로그 기록 3개월</li>
-          </ul>
-        </div>
-
-        <div>
-          <h3 class="font-bold text-gray-900 mb-2">4. 개인정보의 제3자 제공</h3>
-          <p>회사는 이용자의 동의 없이 개인정보를 제3자에게 제공하지 않습니다. 단, 법령에 의한 경우는 예외로 합니다.</p>
-        </div>
-
-        <div>
-          <h3 class="font-bold text-gray-900 mb-2">5. 이용자의 권리</h3>
-          <p>이용자는 언제든지 개인정보 열람, 정정, 삭제, 처리 정지를 요청할 수 있습니다. 아래 연락처로 문의해주세요.</p>
-        </div>
-
-        <div>
-          <h3 class="font-bold text-gray-900 mb-2">6. 개인정보처리책임자</h3>
-          <div class="bg-gray-50 rounded-xl px-4 py-3 grid gap-1">
-            <div><span class="text-gray-500">책임자</span> 이상빈</div>
-            <div><span class="text-gray-500">이메일</span> dypapa0309@gmail.com</div>
-            <div><span class="text-gray-500">사업자등록번호</span> 876-28-01550</div>
-            <div><span class="text-gray-500">주소</span> 상동로 87 가나베스트타운 803-102</div>
-          </div>
-        </div>
-
-        <div>
-          <h3 class="font-bold text-gray-900 mb-2">7. 개인정보처리방침 변경</h3>
-          <p>본 방침은 2026년 4월 28일부터 적용됩니다. 변경 시 웹사이트를 통해 공지합니다.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    function openPrivacy() { document.getElementById('privacy-modal').style.display = 'flex'; document.body.style.overflow = 'hidden'; }
-    function closePrivacy() { document.getElementById('privacy-modal').style.display = 'none'; document.body.style.overflow = ''; }
-
-    function showTab(tab) {
-      const isJasain = tab === 'jasain';
-      const isCujasa = tab === 'cujasa';
-      const isDexor = tab === 'dexor';
-      const isSpread = tab === 'spread';
-      document.getElementById('tab-jasain').style.display = isJasain ? 'block' : 'none';
-      document.getElementById('tab-cujasa').style.display = isCujasa ? 'block' : 'none';
-      document.getElementById('tab-dexor').style.display = isDexor ? 'block' : 'none';
-      document.getElementById('tab-spread').style.display = isSpread ? 'block' : 'none';
-      document.getElementById('tab-btn-jasain').className = 'px-4 py-1.5 rounded-lg text-sm font-bold transition-all ' + (isJasain ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600');
-      document.getElementById('tab-btn-cujasa').className = 'px-4 py-1.5 rounded-lg text-sm font-bold transition-all ' + (isCujasa ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600');
-      document.getElementById('tab-btn-dexor').className = 'px-4 py-1.5 rounded-lg text-sm font-bold transition-all ' + (isDexor ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600');
-      document.getElementById('tab-btn-spread').className = 'px-4 py-1.5 rounded-lg text-sm font-bold transition-all ' + (isSpread ? 'bg-white text-gray-800 shadow-sm' : 'text-gray-400 hover:text-gray-600');
-      document.getElementById('nav-cta').href = isJasain ? '#contact' : (isCujasa ? '#cj-form' : (isSpread ? '#sp-form' : '#dx-form'));
-      document.getElementById('nav-cta').textContent = isJasain ? '문의하기' : (isCujasa ? '신청하기' : '문의하기');
-      window.scrollTo(0, 0);
-      document.querySelectorAll('.fade-up').forEach(el => { if (!el.classList.contains('visible')) observer.observe(el); });
-      lucide.createIcons();
-    }
-
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
-    }, { threshold: 0.1 });
-    document.querySelectorAll('.fade-up').forEach(el => observer.observe(el));
-    lucide.createIcons();
-
-    let cjPlan = 'onetime';
-    function cjSelectPlan(plan) {
-      cjPlan = plan;
-      const isOnetime = plan === 'onetime';
-      document.getElementById('cj-btn-onetime').className = 'rounded-xl border-2 p-4 text-left transition-all ' + (isOnetime ? 'border-coupang bg-red-50' : 'border-gray-200 bg-white');
-      document.getElementById('cj-btn-monthly').className = 'rounded-xl border-2 p-4 text-left transition-all ' + (!isOnetime ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white');
-      const btn = document.getElementById('cj-submitBtn');
-      btn.className = 'w-full text-white font-black py-4 rounded-xl transition-all text-base shadow-lg hover:scale-105 active:scale-100 ' + (isOnetime ? 'bg-coupang hover:bg-coupang-dark' : 'bg-gray-900 hover:bg-gray-700');
-      btn.textContent = isOnetime ? '문자로 신청하기 (₩590,000 일시불) →' : '문자로 신청하기 (₩59,000/월) →';
-    }
-
-    document.getElementById('cj-buyForm').addEventListener('submit', function(e) {
-      e.preventDefault();
-      const name = document.getElementById('cj-buyerName').value.trim();
-      const phone = document.getElementById('cj-buyerPhone').value.trim();
-      if (!name || !phone) return;
-      const planText = cjPlan === 'onetime' ? '일시불 ₩590,000' : '월정액 ₩59,000/월';
-      const msgText = '[CUJASA 구매 신청]\n구매자명: ' + name + '\n전화번호: ' + phone + '\n플랜: ' + planText;
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-      // 사용자 액션(SMS/모달)을 먼저 실행, DB 저장은 이후 백그라운드
-      if (isMobile) {
-        window.location.href = 'sms:01040941666?body=' + encodeURIComponent(msgText);
-      } else {
-        document.getElementById('cj-pc-msg').textContent = msgText;
-        document.getElementById('cj-pc-modal').style.display = 'flex';
-      }
-
-      fetch('https://api.jasain.kr/api/inquiries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, phone, plan: cjPlan, source: 'cujasa' })
-      }).catch(() => {});
-    });
-
-    async function cjStartVirtualAccountPayment() {
-      const btn = document.getElementById('cj-paymentBtn');
-      const name = document.getElementById('cj-buyerName').value.trim();
-      const phone = document.getElementById('cj-buyerPhone').value.trim();
-      const email = document.getElementById('cj-buyerEmail').value.trim();
-      const password = document.getElementById('cj-buyerPassword').value;
-      if (!name || !phone || !email || password.length < 6) {
-        alert('가상계좌 결제를 위해 이름, 전화번호, 이메일, 6자 이상 비밀번호를 입력해주세요.');
-        return;
-      }
-      if (cjPlan !== 'onetime') {
-        alert('현재 자동 결제는 일시불 가상계좌/이체만 지원합니다.');
-        cjSelectPlan('onetime');
-        return;
-      }
-      btn.disabled = true;
-      btn.textContent = '결제 준비 중...';
-      try {
-        const response = await fetch('https://api.jasain.kr/api/public/checkout/virtual-account', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ buyerName: name, phone, email, password, productId: 'onetime_590000' })
-        });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || '결제 요청에 실패했습니다.');
-        if (!window.TossPayments) throw new Error('TossPayments SDK를 불러오지 못했습니다.');
-        if (payload.toss.clientKey === 'test_ck_dev_placeholder') throw new Error('TOSS_CLIENT_KEY 설정 후 결제를 진행할 수 있습니다.');
-        const tossPayments = TossPayments(payload.toss.clientKey);
-        const payment = tossPayments.payment({ customerKey: payload.toss.customerKey });
-        await payment.requestPayment({
-          method: payload.toss.method,
-          amount: { currency: 'KRW', value: Number(payload.toss.amount) },
-          orderId: payload.toss.orderId,
-          orderName: payload.toss.orderName,
-          customerName: name,
-          customerEmail: email,
-          successUrl: payload.toss.successUrl,
-          failUrl: payload.toss.failUrl,
-          validHours: 24,
-          cashReceipt: { type: '소득공제' }
-        });
-      } catch (error) {
-        alert(error.message || '결제를 시작하지 못했습니다.');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = '가상계좌/이체 결제하기 (₩590,000) →';
-      }
-    }
-
-    async function cjConfirmPublicPaymentFromUrl() {
-      const params = new URLSearchParams(window.location.search);
-      const paymentKey = params.get('paymentKey');
-      const orderId = params.get('orderId');
-      const amount = params.get('amount');
-      if (!paymentKey || !orderId || !amount) return;
-      try {
-        const response = await fetch('https://api.jasain.kr/api/public/checkout/toss/success', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paymentKey, orderId, amount })
-        });
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || '결제 확인에 실패했습니다.');
-        alert(payload.payment?.status === 'paid'
-          ? '결제가 완료되었습니다. 셋업 안내를 드릴게요.'
-          : '가상계좌가 발급되었습니다. 입금 완료 후 셋업 안내를 드릴게요.');
-        history.replaceState(null, '', window.location.pathname + '#cj-form');
-      } catch (error) {
-        alert(error.message || '결제 확인에 실패했습니다. 문의해주세요.');
-      }
-    }
-
-    document.getElementById('cj-paymentBtn')?.addEventListener('click', cjStartVirtualAccountPayment);
-    cjConfirmPublicPaymentFromUrl();
-
-    const roiCtx = document.getElementById('roiChart');
-    if (roiCtx) {
-      const monthLabels = ['1개월','2개월','3개월','4개월','5개월','6개월','7개월','8개월','9개월','10개월','11개월','12개월'];
-      const monthlyRevenue = [30000,60000,100000,150000,200000,280000,350000,430000,500000,580000,650000,720000];
-      const cumulative = monthlyRevenue.reduce((acc,v,i)=>{acc.push((acc[i-1]||0)+v);return acc;},[]);
-      new Chart(roiCtx, {
-        data: { labels: monthLabels, datasets: [
-          { type:'bar', label:'월 수익', data:monthlyRevenue, backgroundColor:'rgba(192,0,0,0.15)', borderColor:'#C00000', borderWidth:2, borderRadius:6, yAxisID:'y' },
-          { type:'line', label:'누적 수익', data:cumulative, borderColor:'#60a5fa', backgroundColor:'rgba(96,165,250,0.1)', borderWidth:3, pointBackgroundColor:'#60a5fa', pointRadius:4, tension:0.4, fill:true, yAxisID:'y1' }
-        ]},
-        options: { responsive:true, maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
-          plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(ctx)=>ctx.dataset.label+': ₩'+ctx.raw.toLocaleString('ko-KR') }}},
-          scales: {
-            x:{ grid:{display:false}, ticks:{font:{size:11},color:'#9ca3af'} },
-            y:{ position:'left', grid:{color:'#f3f4f6'}, ticks:{font:{size:11},color:'#9ca3af',callback:v=>'₩'+(v/10000).toFixed(0)+'만'} },
-            y1:{ position:'right', grid:{drawOnChartArea:false}, ticks:{font:{size:11},color:'#60a5fa',callback:v=>'₩'+(v/10000).toFixed(0)+'만'} }
-          }
-        }
-      });
-    }
-
-    document.querySelectorAll('.cj-faq-trigger').forEach(trigger => {
-      trigger.addEventListener('click', () => {
-        const item = trigger.closest('.cj-faq-item');
-        const answer = item.querySelector('.cj-faq-answer');
-        const icon = trigger.querySelector('.cj-faq-icon');
-        const isOpen = answer.classList.contains('open');
-        document.querySelectorAll('.cj-faq-answer').forEach(a => a.classList.remove('open'));
-        document.querySelectorAll('.cj-faq-icon').forEach(i => i.textContent = '+');
-        if (!isOpen) { answer.classList.add('open'); icon.textContent = '−'; }
-      });
-    });
-  </script>
-  <script src="https://api.jasain.kr/support/widget.js" data-product="jasain"></script>
 </body>
 </html>

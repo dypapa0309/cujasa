@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JASAIN Test Workspace</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #111;
+      color: #f4f4f5;
+      font-family: Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    a { color: inherit; text-decoration: none; }
+    .shell {
+      display: grid;
+      min-height: 100vh;
+      grid-template-columns: 292px minmax(0, 1fr);
+    }
+    .sidebar {
+      border-right: 1px solid rgba(255,255,255,.08);
+      background: #191919;
+      padding: 22px 16px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 8px;
+      font-weight: 900;
+    }
+    .mark {
+      display: grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      overflow: hidden;
+      border-radius: 12px;
+      background: #fff;
+    }
+    .mark img { width: 100%; height: 100%; object-fit: cover; }
+    .muted { color: #71717a; }
+    .group { margin-top: 30px; }
+    .label {
+      padding: 0 8px;
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #71717a;
+    }
+    .nav {
+      display: grid;
+      gap: 6px;
+      margin-top: 10px;
+    }
+    .nav a, .nav button {
+      width: 100%;
+      border: 0;
+      border-radius: 14px;
+      background: transparent;
+      color: #a1a1aa;
+      cursor: pointer;
+      padding: 11px 12px;
+      text-align: left;
+      font: inherit;
+      font-size: 14px;
+      font-weight: 800;
+    }
+    .nav .active {
+      background: rgba(255,255,255,.09);
+      color: #fff;
+    }
+    .main {
+      display: flex;
+      min-height: 100vh;
+      flex-direction: column;
+      padding: 32px;
+    }
+    .top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .top nav {
+      display: flex;
+      gap: 10px;
+      color: #a1a1aa;
+      font-size: 14px;
+      font-weight: 800;
+    }
+    .cta {
+      border-radius: 999px;
+      background: #f4f4f5;
+      color: #111;
+      padding: 10px 16px;
+      font-size: 14px;
+      font-weight: 900;
+    }
+    .hero {
+      display: grid;
+      flex: 1;
+      place-items: center;
+      padding: 56px 0;
+      text-align: center;
+    }
+    .hero-inner {
+      width: min(840px, 100%);
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 999px;
+      background: rgba(255,255,255,.05);
+      color: #a1a1aa;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    h1 {
+      margin: 24px 0 0;
+      font-size: clamp(40px, 7vw, 76px);
+      font-weight: 750;
+      line-height: 1.03;
+    }
+    .lead {
+      width: min(620px, 100%);
+      margin: 22px auto 0;
+      color: #8b8b94;
+      font-size: 16px;
+      line-height: 1.7;
+    }
+    .composer {
+      width: min(760px, 100%);
+      margin: 42px auto 0;
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 28px;
+      background: #242424;
+      padding: 16px;
+      box-shadow: 0 28px 70px rgba(0,0,0,.28);
+      text-align: left;
+    }
+    .composer textarea {
+      width: 100%;
+      min-height: 92px;
+      resize: none;
+      border: 0;
+      background: transparent;
+      color: #f4f4f5;
+      font: inherit;
+      font-size: 16px;
+      outline: 0;
+    }
+    .composer textarea::placeholder { color: #666; }
+    .composer-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-top: 1px solid rgba(255,255,255,.05);
+      padding-top: 14px;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip {
+      border-radius: 999px;
+      background: rgba(255,255,255,.05);
+      color: #71717a;
+      padding: 7px 11px;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .send {
+      display: grid;
+      width: 42px;
+      height: 42px;
+      place-items: center;
+      border-radius: 999px;
+      background: #f4f4f5;
+      color: #111;
+      font-weight: 900;
+    }
+    .products {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 42px;
+      text-align: left;
+    }
+    .qa {
+      width: min(920px, 100%);
+      margin: 0 auto 48px;
+      border-top: 1px solid rgba(255,255,255,.08);
+      padding-top: 34px;
+    }
+    .qa-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+    .qa h2 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.25;
+    }
+    .qa-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .qa-item {
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 18px;
+      background: rgba(255,255,255,.03);
+      padding: 18px;
+    }
+    .qa-item b {
+      display: block;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .qa-item p {
+      margin: 10px 0 0;
+      color: #8b8b94;
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    .qa-action {
+      display: inline-flex;
+      margin-top: 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.12);
+      padding: 8px 11px;
+      color: #d4d4d8;
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .card {
+      border: 1px solid rgba(255,255,255,.1);
+      border-radius: 20px;
+      background: rgba(255,255,255,.035);
+      padding: 20px;
+    }
+    .card b { display: block; font-size: 15px; }
+    .card p {
+      margin: 10px 0 0;
+      color: #71717a;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    @media (max-width: 860px) {
+      .shell { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .main { padding: 22px; }
+      .top nav { display: none; }
+      .products { grid-template-columns: 1fr; }
+      .qa-head { align-items: start; flex-direction: column; }
+      .qa-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="mark"><img src="/images/jasain_logo.png" alt="JASAIN" /></div>
+        <div>
+          <div>JASAIN</div>
+          <div class="muted" style="font-size:12px;font-weight:700;">Automation workspace</div>
+        </div>
+      </div>
+      <div class="group">
+        <div class="label">Solutions</div>
+        <div class="nav">
+          <a class="active" href="#cujasa">CUJASA</a>
+          <a href="#dexor">DEXOR</a>
+          <a href="#spread">SPREAD</a>
+        </div>
+      </div>
+      <div class="group">
+        <div class="label">Start</div>
+        <div class="nav">
+          <a href="http://127.0.0.1:5173/?mode=register&product=cujasa#tab=beta">회원가입</a>
+          <a href="http://127.0.0.1:5173/#tab=beta">로그인</a>
+        </div>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="top">
+        <strong>JASAIN</strong>
+        <nav>
+          <a href="#solutions">솔루션</a>
+          <a href="#workflow">워크스페이스</a>
+          <a href="http://127.0.0.1:5173/#tab=beta">로그인</a>
+        </nav>
+        <a class="cta" href="http://127.0.0.1:5173/?mode=register&product=cujasa#tab=beta">시작하기</a>
+      </header>
+      <section class="hero">
+        <div class="hero-inner">
+          <div class="pill">통합 자동화 워크스페이스</div>
+          <h1>무엇을 자동화할까요?</h1>
+          <p class="lead">
+            JASAIN은 여러 자동화 솔루션을 하나의 계정과 하나의 작업 공간에서 다루는 방향으로 전환하고 있습니다.
+            필요한 제품을 선택하고, 해야 할 일을 바로 실행하는 단순한 화면을 먼저 검증합니다.
+          </p>
+          <div class="composer">
+            <textarea placeholder="예: 쿠팡 파트너스 포스팅 자동화 시작하고 싶어요"></textarea>
+            <div class="composer-foot">
+              <div class="chips">
+                <span class="chip">CUJASA</span>
+                <span class="chip">DEXOR</span>
+                <span class="chip">SPREAD</span>
+              </div>
+              <a class="send" href="http://127.0.0.1:5173/?mode=register&product=cujasa#tab=beta">→</a>
+            </div>
+          </div>
+          <div class="products" id="solutions">
+            <article class="card">
+              <b>CUJASA</b>
+              <p>쿠팡 파트너스 콘텐츠 생성부터 Threads 예약 업로드까지 운영합니다.</p>
+            </article>
+            <article class="card">
+              <b>DEXOR</b>
+              <p>캠페인 글이 노출될 블로그를 선정하고 분석하는 흐름을 준비 중입니다.</p>
+            </article>
+            <article class="card">
+              <b>SPREAD</b>
+              <p>추천 캠페인 운영과 확산 자동화를 JASAIN 안으로 통합합니다.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+      <section class="qa" id="workflow">
+        <div class="qa-head">
+          <div>
+            <div class="label" style="padding:0;">Workspace assistant</div>
+            <h2>상담 전에 먼저 답하는 JASAIN</h2>
+          </div>
+          <span class="muted" style="font-size:13px;font-weight:800;">제품 사용법, 설정, 결제 질문을 앱 안에서 처리합니다.</span>
+        </div>
+        <div class="qa-grid">
+          <article class="qa-item">
+            <b>쿠팡 API는 어디에 넣나요?</b>
+            <p>CUJASA 설정 안에서 Access Key, Secret Key, Partner ID, Tracking Code를 저장합니다. 저장된 키는 비워두면 유지됩니다.</p>
+            <a class="qa-action" href="http://127.0.0.1:5173/?mode=register&product=cujasa#tab=beta">CUJASA 시작</a>
+          </article>
+          <article class="qa-item">
+            <b>무료체험은 몇 번까지 가능한가요?</b>
+            <p>무료 체험은 Threads 실제 업로드 기준 5회까지 제공하고, 이후에는 결제 상태에 따라 자동화 권한을 유지합니다.</p>
+            <a class="qa-action" href="http://127.0.0.1:5173/?mode=register&product=cujasa#tab=beta">계정 만들기</a>
+          </article>
+          <article class="qa-item">
+            <b>Threads 연결이 안 되면 어떻게 하나요?</b>
+            <p>앱 로그인만으로는 부족할 수 있습니다. 브라우저에서 threads.net에 올바른 계정으로 로그인한 뒤 다시 연결합니다.</p>
+            <a class="qa-action" href="http://127.0.0.1:5173/#tab=beta">로그인</a>
+          </article>
+          <article class="qa-item">
+            <b>DEXOR와 SPREAD도 같은 계정으로 쓰나요?</b>
+            <p>JASAIN 계정 안에서 제품별 권한을 부여하고, 보유한 솔루션만 워크스페이스에서 선택하는 구조로 준비합니다.</p>
+            <a class="qa-action" href="http://127.0.0.1:5173/?mode=register&product=dexor#tab=beta">DEXOR 보기</a>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
