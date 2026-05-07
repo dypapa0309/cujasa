@@ -765,8 +765,8 @@ export default function CustomerBetaPage({
   };
 
   return (
-    <div className="min-h-screen overflow-hidden bg-[#111111] text-zinc-100">
-      <div className="grid min-h-screen lg:grid-cols-[292px_minmax(0,1fr)]">
+    <div className="min-h-screen overflow-hidden bg-[#111111] text-zinc-100 supports-[height:100dvh]:min-h-dvh">
+      <div className="grid min-h-screen min-w-0 supports-[height:100dvh]:min-h-dvh lg:grid-cols-[292px_minmax(0,1fr)]">
         <aside className="hidden border-r border-white/10 bg-[#191919] px-4 py-5 lg:block">
           <div className="flex h-full min-h-0 flex-col">
             <div className="flex items-center gap-3 px-2">
@@ -912,8 +912,8 @@ export default function CustomerBetaPage({
           </div>
         </aside>
 
-        <main className="relative flex min-h-screen flex-col">
-          <header className="border-b border-white/10 px-4 py-3 lg:hidden">
+        <main className="relative flex min-h-screen min-w-0 flex-col overflow-hidden supports-[height:100dvh]:min-h-dvh">
+          <header className="shrink-0 border-b border-white/10 px-4 py-3 lg:hidden">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 <div className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-xl bg-white">
@@ -979,16 +979,16 @@ export default function CustomerBetaPage({
             )}
           </header>
 
-          <section className="flex min-h-0 flex-1 flex-col px-4 py-5 pb-4 lg:px-10 lg:py-6">
-            <div className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col ${messages.length > 0 ? 'justify-end' : 'justify-center'}`}>
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4 pb-3 lg:px-10 lg:py-6">
+            <div className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col ${messages.length > 0 ? 'justify-end' : 'justify-start pt-10 sm:pt-14 lg:pt-[12vh]'}`}>
               {messages.length === 0 && (
               <div className="text-center">
-                <div className="mx-auto mb-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-400">
+                <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-400 lg:mb-5">
                   <Bot size={14} />
                   {selectedProduct.name}
                 </div>
-                <h1 className="text-3xl font-semibold tracking-normal text-zinc-100 sm:text-5xl">무엇을 자동화할까요?</h1>
-                <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-zinc-500">
+                <h1 className="text-[32px] font-semibold leading-tight tracking-normal text-zinc-100 sm:text-5xl">무엇을 자동화할까요?</h1>
+                <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-zinc-500 lg:mt-4">
                   필요한 작업을 입력하거나 왼쪽에서 선택해 주세요. 실행과 설정도 오른쪽 작업 패널 안에서 처리해요.
                 </p>
                 {needsThreadsReconnect && (
@@ -1018,8 +1018,8 @@ export default function CustomerBetaPage({
                 </section>
               )}
 
-              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl ${messages.length > 0 ? 'sticky bottom-3 lg:bottom-5' : 'mt-8 lg:mt-10'}`}>
-                <div className="rounded-[24px] border border-white/10 bg-[#242424] p-3 shadow-2xl shadow-black/30 lg:rounded-[28px] lg:p-4">
+              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl min-w-0 ${messages.length > 0 ? 'sticky bottom-3 lg:bottom-5' : 'mt-6 lg:mt-7'}`}>
+                <div className="overflow-hidden rounded-[22px] border border-white/10 bg-[#242424] p-3 shadow-2xl shadow-black/30 lg:rounded-[28px] lg:p-4">
                   <textarea
                     value={prompt}
                     disabled={assistantLoading}
@@ -1033,24 +1033,24 @@ export default function CustomerBetaPage({
                     }}
                     rows={messages.length > 0 ? 2 : 3}
                     placeholder="예: 오늘 자동화 실행해줘, 설정 확인하고 싶어, 포스팅 현황 보여줘"
-                    className="min-h-[72px] w-full resize-none bg-transparent px-2 text-base text-zinc-100 placeholder:text-zinc-600 focus:outline-none disabled:cursor-wait disabled:opacity-60 lg:min-h-[96px]"
+                    className="min-h-[64px] w-full resize-none bg-transparent px-2 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:text-base lg:min-h-[90px]"
                   />
                   {assistantLoading && (
                     <div className="px-2 pb-1 text-xs font-bold text-zinc-600">JASAIN Assistant가 확인 중이에요...</div>
                   )}
-                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-white/5 pt-3">
-                    <div className="flex flex-wrap gap-2">
+                  <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/5 pt-3 lg:mt-3">
+                    <div className="flex min-w-0 flex-wrap gap-2">
                       <span className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-500">CUJASA</span>
                       <span className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-500">{selectedProduct.name}</span>
                     </div>
-                    <button type="submit" disabled={assistantLoading} className="grid h-10 w-10 place-items-center rounded-full bg-zinc-100 text-zinc-950 hover:bg-white disabled:cursor-wait disabled:opacity-60">
+                    <button type="submit" disabled={assistantLoading} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 hover:bg-white disabled:cursor-wait disabled:opacity-60">
                       <ChevronRight size={20} />
                     </button>
                   </div>
                 </div>
               </form>
 
-              <div className="mx-auto mt-4 flex w-full max-w-4xl gap-2 overflow-x-auto pb-2 lg:hidden">
+              <div className="mx-auto mt-3 flex w-full max-w-4xl gap-2 overflow-x-auto pb-2 lg:hidden">
                 {productActions.map((action) => {
                   const Icon = action.icon;
                   return (
@@ -1058,7 +1058,7 @@ export default function CustomerBetaPage({
                       key={action.key}
                       type="button"
                       onClick={() => openWorkspaceAction(action)}
-                      className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm font-bold text-zinc-300 hover:border-white/20 hover:bg-white/10 hover:text-white"
+                      className="inline-flex shrink-0 items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-2 text-sm font-bold text-zinc-300 hover:border-white/20 hover:bg-white/10 hover:text-white"
                     >
                       <Icon size={16} />
                       {action.label}
