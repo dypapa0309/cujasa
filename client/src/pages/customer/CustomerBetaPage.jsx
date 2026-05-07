@@ -799,9 +799,9 @@ export default function CustomerBetaPage({
   };
 
   return (
-    <div className="min-h-screen overflow-hidden bg-[#111111] text-zinc-100 supports-[height:100dvh]:min-h-dvh">
-      <div className="grid min-h-screen min-w-0 supports-[height:100dvh]:min-h-dvh lg:grid-cols-[292px_minmax(0,1fr)]">
-        <aside className="hidden border-r border-white/10 bg-[#191919] px-4 py-5 lg:block">
+    <div className="h-screen overflow-hidden bg-[#111111] text-zinc-100 supports-[height:100dvh]:h-dvh">
+      <div className="grid h-screen min-w-0 supports-[height:100dvh]:h-dvh lg:grid-cols-[292px_minmax(0,1fr)]">
+        <aside className="hidden min-h-0 overflow-hidden border-r border-white/10 bg-[#191919] px-4 py-5 lg:block">
           <div className="flex h-full min-h-0 flex-col">
             <div className="flex items-center gap-3 px-2">
               <div className="grid h-9 w-9 place-items-center overflow-hidden rounded-xl bg-white">
@@ -940,7 +940,7 @@ export default function CustomerBetaPage({
           </div>
         </aside>
 
-        <main className="relative flex min-h-screen min-w-0 flex-col overflow-hidden supports-[height:100dvh]:min-h-dvh">
+        <main className="relative flex h-screen min-h-0 min-w-0 flex-col overflow-hidden supports-[height:100dvh]:h-dvh">
           <header className="shrink-0 border-b border-white/10 px-4 py-2.5 lg:hidden">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
