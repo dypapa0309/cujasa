@@ -154,7 +154,7 @@ const betaFaqItems = [
   },
   {
     id: 'polibot',
-    patterns: ['polibot', '폴리봇', '보험 분석', '보장분석', '보험 추천', '보험 pdf'],
+    patterns: ['polibot', '폴리봇', '보험 분석', '보장분석', '보험 추천', '보험 pdf', '암보장', '보장 상품', '상품 추천', '생활비', '진단비'],
     answer: 'PoliBot은 보험 상품 PDF와 고객 조건을 정리해서 보장분석과 상품 추천 초안을 만드는 솔루션이에요. PDF 업로드, 고객 프로필, 추천 결과 다운로드 흐름으로 써요.',
     actions: [{ label: 'PDF 업로드', actionKey: 'polibot-upload' }, { label: '상품 추천', actionKey: 'polibot-recommend' }]
   },
@@ -293,6 +293,33 @@ function parseSettingsDraft(value = '') {
   const meaningful = ['target_audience', 'tone', 'content_scope'].filter((key) => values[key]);
   if (meaningful.length < 2) return null;
   return values;
+}
+
+const POLIBOT_NEED_KEYWORDS = ['암', '암보장', '유사암', '뇌', '심장', '질병', '상해', '입원', '수술', '실손', '실비', '간병', '치매', '운전자', '어린이', '태아', '생활비', '진단비'];
+
+function parsePolibotDraft(value = '') {
+  const text = value.trim();
+  if (!/(폴리봇|polibot|보험|보장|암|실비|실손|진단비|생활비|상품\s*추천|추천)/i.test(text)) return null;
+  const needs = [...new Set(POLIBOT_NEED_KEYWORDS
+    .filter((keyword) => text.includes(keyword))
+    .map((keyword) => (keyword === '암보장' ? '암' : keyword)))];
+  const age = text.match(/(\d{2})\s*세/)?.[1] || text.match(/(\d{2})\s*살/)?.[1] || '';
+  const name = text.match(/\d{2}\s*세\s*([가-힣]{2,4})(?:은|는|이|가|님|씨)?/)?.[1]
+    || text.match(/([가-힣]{2,4})(?:은|는|이|가|님|씨)?\s*\d{2}\s*(?:세|살)/)?.[1]
+    || text.match(/([가-힣]{2,4})\s*(?:고객|님|씨)/)?.[1]
+    || '';
+  const gender = /여성|여자|여\b/.test(text) ? '여성' : /남성|남자|남\b/.test(text) ? '남성' : '';
+  const budget = text.match(/월\s*(\d{1,3})\s*만/)?.[1] || text.match(/(\d{1,3})\s*만원/)?.[1] || '';
+
+  if (!age && needs.length === 0 && !/(보험|보장|상품\s*추천)/.test(text)) return null;
+  return {
+    name,
+    age,
+    gender,
+    needs: needs.join('\n'),
+    budget,
+    company: '전체 보험사'
+  };
 }
 
 function getGrantUsage(grant, productId) {
@@ -573,6 +600,13 @@ export default function CustomerBetaPage({
       if (/제출|검수|url|키워드|금지/.test(text)) return byKey('spread-review');
       return byKey('spread-campaign');
     }
+    if (/폴리봇|polibot|보험|보장|암|실비|실손|진단비|생활비|상품\s*추천/.test(text)) {
+      if (!grantedProductIds.has('polibot')) return byKey('polibot');
+      if (/자료|pdf|업로드|문서|보험사|데이터/.test(text)) return byKey('polibot-upload');
+      if (/고객|목록|관리|저장/.test(text)) return byKey('polibot-customers');
+      if (/다운로드|내보내|csv|엑셀|결과/.test(text)) return byKey('polibot-download');
+      return byKey('polibot-recommend');
+    }
     if (/설정|api|threads|쿠팡|세팅/.test(text)) return byKey('settings');
     if (/실행|자동화|예약|시작/.test(text)) return byKey('run');
     if (/포스팅|글|현황|결과/.test(text)) return byKey('posts');
@@ -674,6 +708,32 @@ export default function CustomerBetaPage({
           role: 'assistant',
           content: '설정 초안을 채웠어요. 오른쪽 설정 패널에서 타깃, 톤, 카테고리를 확인한 뒤 저장하면 반영돼요. 자동화 실행은 저장 후 직접 시작해 주세요.',
           actions: [{ label: '설정 확인', actionKey: 'settings' }]
+        }
+      ].slice(-6));
+      return;
+    }
+    const polibotDraft = parsePolibotDraft(value);
+    if (polibotDraft) {
+      setAssistantDraft({ id: Date.now(), actionKey: 'polibot-recommend', values: polibotDraft });
+      setDrawerClosing(false);
+      if (grantedProductIds.has('polibot')) {
+        setSelectedProductId('polibot');
+        setActiveActionKey('polibot-recommend');
+      } else {
+        setSelectedProductId('polibot');
+        setActiveActionKey('polibot');
+      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now() + 1}`,
+          role: 'assistant',
+          content: grantedProductIds.has('polibot')
+            ? 'PoliBot 상품 추천 초안을 채웠어요. 오른쪽 패널에서 고객 조건을 확인한 뒤 추천 초안 만들기를 눌러주세요.'
+            : 'PoliBot에서 처리할 수 있는 보험 추천 요청이에요. 먼저 PoliBot 시작하기를 누르면 추천 초안을 이어서 쓸 수 있어요.',
+          actions: grantedProductIds.has('polibot')
+            ? [{ label: '상품 추천 열기', actionKey: 'polibot-recommend' }, { label: '자료 확인', actionKey: 'polibot-upload' }]
+            : [{ label: 'PoliBot 시작', actionKey: 'polibot' }]
         }
       ].slice(-6));
       return;

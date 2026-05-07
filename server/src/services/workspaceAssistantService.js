@@ -13,7 +13,7 @@ const ACTION_KEYS = new Set([
 
 const PRODUCT_IDS = new Set(['cujasa', 'dexor', 'spread', 'polibot', 'infludex']);
 const DEXOR_CATEGORIES = ['맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
-const INSURANCE_NEEDS = ['암', '유사암', '뇌', '심장', '질병', '상해', '입원', '수술', '실손', '실비', '간병', '치매', '운전자', '어린이', '태아'];
+const INSURANCE_NEEDS = ['암', '암보장', '유사암', '뇌', '심장', '질병', '상해', '입원', '수술', '실손', '실비', '간병', '치매', '운전자', '어린이', '태아', '생활비', '진단비'];
 
 function normalizeText(value = '') {
   return String(value || '').trim().replace(/\s+/g, ' ');
@@ -42,7 +42,8 @@ function extractAge(text = '') {
 }
 
 function extractName(text = '') {
-  return text.match(/\d{2}\s*세\s*([가-힣]{2,4})/)?.[1]
+  return text.match(/\d{2}\s*세\s*([가-힣]{2,4})(?:은|는|이|가|님|씨)?/)?.[1]
+    || text.match(/([가-힣]{2,4})(?:은|는|이|가|님|씨)?\s*\d{2}\s*(?:세|살)/)?.[1]
     || text.match(/([가-힣]{2,4})\s*(?:고객|님)/)?.[1]
     || '';
 }
@@ -53,7 +54,10 @@ function extractBudget(text = '') {
 }
 
 function extractInsuranceNeeds(text = '') {
-  return INSURANCE_NEEDS.filter((need) => text.includes(need)).slice(0, 6);
+  const needs = INSURANCE_NEEDS
+    .filter((need) => text.includes(need))
+    .map((need) => (need === '암보장' ? '암' : need));
+  return [...new Set(needs)].slice(0, 6);
 }
 
 function extractDexorCategory(text = '') {
