@@ -907,27 +907,17 @@ export default function CustomerBetaPage({
               )}
             </div>
 
-            <div className="border-t border-white/10 pt-4">
-              <div className="rounded-2xl bg-black/20 p-3">
-                <div className="flex items-center gap-2 text-xs font-black text-zinc-200">
-                  <UserCircle size={15} />
-                  계정
-                </div>
-                <div className="mt-1 truncate text-xs text-zinc-500">{currentUser?.email || currentUser?.username}</div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => openWorkspaceAction('account-settings')} className="rounded-xl border border-white/10 px-3 py-2 text-xs font-black text-zinc-300 hover:bg-white/10">계정 설정</button>
-                  <button type="button" onClick={() => openWorkspaceAction('billing')} className="rounded-xl border border-white/10 px-3 py-2 text-xs font-black text-zinc-300 hover:bg-white/10">결제</button>
-                </div>
-                <button
-                  type="button"
-                  onClick={onLogout}
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-white px-3 py-2 text-xs font-black text-zinc-950"
-                >
-                  <LogOut size={14} />
-                  로그아웃
+            <div className="border-t border-white/10 pt-3">
+              <button type="button" onClick={() => openWorkspaceAction('account-settings')} className="flex w-full items-center gap-2 rounded-xl px-2 py-1.5 text-left text-xs font-bold text-zinc-500 hover:bg-white/5 hover:text-zinc-300">
+                <UserCircle size={13} />
+                <span className="min-w-0 flex-1 truncate">{currentUser?.email || currentUser?.username}</span>
+                <ChevronRight size={12} />
+              </button>
+              <div className="mt-1 grid gap-1 text-[11px] leading-relaxed text-zinc-600">
+                <button type="button" onClick={() => openWorkspaceAction('billing')} className="flex items-center justify-between gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
+                  <span className="inline-flex items-center gap-1"><CreditCard size={12} />결제</span>
+                  <ChevronRight size={12} />
                 </button>
-              </div>
-              <div className="mt-4 grid gap-1 text-[11px] leading-relaxed text-zinc-600">
                 <button type="button" onClick={() => setSupportInfoOpen(true)} className="flex items-center justify-between gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
                   <span className="inline-flex items-center gap-1"><Bot size={12} />고객센터</span>
                   <ChevronRight size={12} />
@@ -939,6 +929,10 @@ export default function CustomerBetaPage({
                 <button type="button" onClick={() => setBusinessInfoOpen(true)} className="flex items-center justify-between gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
                   <span className="inline-flex items-center gap-1"><Landmark size={12} />사업자정보</span>
                   <ChevronRight size={12} />
+                </button>
+                <button type="button" onClick={onLogout} className="flex items-center gap-1 text-left font-bold text-zinc-500 hover:text-zinc-300">
+                  <LogOut size={12} />
+                  로그아웃
                 </button>
                 <div className="pt-1 text-zinc-700">© 2026 JASAIN</div>
               </div>
@@ -1014,7 +1008,7 @@ export default function CustomerBetaPage({
           </header>
 
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3 pb-3 lg:px-10 lg:py-4">
-            <div className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col justify-start ${messages.length > 0 ? 'pt-2 sm:pt-5 lg:pt-6' : 'pt-[13vh] sm:pt-[16vh] lg:pt-[18vh]'}`}>
+            <div className={`mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-hidden ${messages.length > 0 ? 'grid grid-rows-[minmax(0,1fr)_auto]' : 'flex flex-col justify-start pt-[13vh] sm:pt-[16vh] lg:pt-[18vh]'}`}>
               {messages.length === 0 && (
               <div className="text-center">
                 <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-400 lg:mb-5">
@@ -1042,7 +1036,7 @@ export default function CustomerBetaPage({
               )}
 
               {messages.length > 0 && (
-                <section className="mb-4 min-h-0 flex-1 overflow-y-auto px-1 py-2 text-left lg:mb-3 lg:py-2">
+                <section className="min-h-0 overflow-y-auto px-1 py-2 text-left lg:py-3">
                   <div className="mx-auto grid w-full max-w-3xl gap-3 lg:gap-2.5">
                     {messages.map((message) => (
                       <BetaChatMessage key={message.id} message={message} onOpenAction={openWorkspaceAction} />
@@ -1052,7 +1046,7 @@ export default function CustomerBetaPage({
                 </section>
               )}
 
-              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl min-w-0 ${messages.length > 0 ? 'sticky bottom-3 lg:bottom-5' : 'mt-5 lg:mt-5'}`}>
+              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl min-w-0 ${messages.length > 0 ? 'pt-2 lg:pb-1' : 'mt-5 lg:mt-5'}`}>
                 <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[#242424] p-2.5 shadow-2xl shadow-black/30 lg:rounded-[24px]">
                   <textarea
                     value={prompt}
