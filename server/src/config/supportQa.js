@@ -144,8 +144,8 @@ export function publicSupportConfig() {
     version: SUPPORT_QA_VERSION,
     ...supportQaTree,
     phone: {
-      display: process.env.SUPPORT_PHONE_DISPLAY || '문자 상담 010-7541-6143',
-      tel: process.env.SUPPORT_PHONE_TEL || '01075416143'
+      display: process.env.SUPPORT_PHONE_DISPLAY || '문자 상담 010-4094-1666',
+      tel: process.env.SUPPORT_PHONE_TEL || '01040941666'
     },
     products: {
       jasain: 'JASAIN',

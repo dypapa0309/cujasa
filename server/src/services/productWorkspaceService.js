@@ -1,30 +1,18 @@
 import { productById } from '../config/products.js';
 import { dbGet, dbUpdate } from './supabaseService.js';
+import {
+  buildPolibotCatalog,
+  inferPolibotFileType,
+  normalizePolibotKnowledgeItems,
+  polibotSeedKnowledgeSources,
+  rankPolibotEvidence
+} from './polibotKnowledgeService.js';
 
 const ALLOWED_PRODUCTS = new Set(['dexor', 'spread', 'polibot', 'infludex']);
 const DEFAULT_USAGE_LIMIT = 5;
 const DEXOR_SCORE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
 const INFLUDEX_GRADE_ORDER = { DIAMOND: 0, S: 1, A: 2, B: 3, C: 4, D: 5 };
 const DEXOR_CATEGORIES = ['맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
-const POLIBOT_SEED_FILES = [
-  '[글로벌금융판매] 26.05_경영인정기보험 현황 비교.pdf',
-  '김정숙 보장분석 (1).pdf',
-  '상품비교 가이드북 (생손보 05.04).pptx',
-  '3대질병진단비 보험료(26.05.06).pptx',
-  '김영환님 현재 2604.pdf',
-  '이명석 보장분석.pdf',
-  'KakaoTalk_Chat_이기성_2026-05-06-21-05-29.csv',
-  '[인카] 이달의영업이슈_2605.pdf',
-  '장진호님 보장분석.pdf',
-  '신용기.pdf',
-  'KakaoTalk_Chat_이기성_2026-05-07-13-23-34.csv',
-  '단기납 종신보험환급률 26.05.06.pptx',
-  '금융환경과 관심상품 2026년 05월(05.04).pptx',
-  '실손정액조회(26.04.28).pdf',
-  '상품비교 가이드북 (생명보험 05.04).pptx',
-  '[김표섭 현재 kb버전 2604.pdf',
-  '박인희님 현재 2604.pdf'
-];
 
 function now() {
   return new Date().toISOString();
@@ -239,105 +227,6 @@ function normalizeList(input = '') {
     .slice(0, 200);
 }
 
-function inferPolibotFileType(fileName = '') {
-  const ext = String(fileName || '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] || '';
-  if (['pdf', 'pptx', 'ppt', 'csv', 'txt'].includes(ext)) return ext;
-  if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return 'image';
-  return ext || 'unknown';
-}
-
-function inferKnowledgeMonth(value = '', fallbackDate = new Date()) {
-  const text = String(value || '');
-  const yearMonth = text.match(/(20\d{2})[-_.년\s]*(0?[1-9]|1[0-2])/);
-  if (yearMonth) return `${yearMonth[1]}-${String(yearMonth[2]).padStart(2, '0')}`;
-  const compact = text.match(/(^|[^0-9])(\d{2})(0[1-9]|1[0-2])([^0-9]|$)/);
-  if (compact) return `20${compact[2]}-${compact[3]}`;
-  return `${fallbackDate.getFullYear()}-${String(fallbackDate.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function extractPolibotKeywords(text = '') {
-  const source = String(text || '');
-  const keywords = [
-    '암', '유사암', '뇌', '심장', '질병', '상해', '수술', '입원', '통원', '실손',
-    '간병', '치매', '운전자', '어린이', '태아', '갱신', '비갱신', '납입면제', '고지', '유병자'
-  ];
-  return keywords.filter((keyword) => source.includes(keyword)).slice(0, 12);
-}
-
-function inferPolibotCompany(text = '') {
-  const source = String(text || '');
-  const companies = ['삼성화재', '현대해상', 'KB손해보험', 'DB손해보험', '메리츠', '한화손해보험', '롯데손해보험', '흥국화재', 'NH농협손해보험', 'AIA', '메트라이프', '라이나', '인카금융서비스', '글로벌금융판매'];
-  return companies.find((company) => source.includes(company)) || '';
-}
-
-function inferPolibotProductGroup(text = '') {
-  const source = String(text || '');
-  if (/운전자/.test(source)) return '운전자';
-  if (/암|유사암/.test(source)) return '암/질병';
-  if (/뇌|심장|질병/.test(source)) return '3대 질병';
-  if (/간병|치매/.test(source)) return '간병/치매';
-  if (/실손|실비/.test(source)) return '실손';
-  if (/어린이|태아/.test(source)) return '어린이/태아';
-  return '종합 보장';
-}
-
-function normalizePolibotKnowledgeItems({ files = [], month = '', note = '' } = {}) {
-  const nowDate = new Date();
-  return (Array.isArray(files) ? files : [])
-    .map((file, index) => {
-      const fileName = String(file?.name || file?.fileName || '').trim();
-      const rawText = String(file?.text || file?.memo || note || '').trim();
-      if (!fileName && !rawText) return null;
-      const sourceText = [fileName, rawText, note].filter(Boolean).join(' ');
-      const inferredMonth = inferKnowledgeMonth(month || sourceText, nowDate);
-      const keywords = extractPolibotKeywords(sourceText);
-      return {
-        id: `polibot-knowledge-${hashText(`${fileName}-${inferredMonth}-${Date.now()}-${index}`)}`,
-        fileName: fileName || `자료 ${index + 1}`,
-        month: inferredMonth,
-        fileType: inferPolibotFileType(fileName),
-        company: inferPolibotCompany(sourceText) || '미분류',
-        productGroup: inferPolibotProductGroup(sourceText),
-        keywords,
-        textSnippet: rawText.slice(0, 900),
-        note: String(note || '').trim(),
-        uploadedAt: now()
-      };
-    })
-    .filter(Boolean)
-    .slice(0, 80);
-}
-
-function polibotSeedKnowledgeSources() {
-  return POLIBOT_SEED_FILES.map((fileName, index) => {
-    const sourceText = fileName;
-    return {
-      id: `polibot-seed-${index}`,
-      fileName,
-      month: inferKnowledgeMonth(sourceText),
-      fileType: inferPolibotFileType(fileName),
-      company: inferPolibotCompany(sourceText) || '미분류',
-      productGroup: inferPolibotProductGroup(sourceText),
-      keywords: extractPolibotKeywords(sourceText),
-      textSnippet: '',
-      note: '초기 PoliBot 자료 묶음',
-      uploadedAt: '2026-05-07T00:00:00.000Z',
-      seeded: true
-    };
-  });
-}
-
-function pickPolibotEvidence(knowledgeSources = [], profile = {}) {
-  const needsText = [profile.company, ...(profile.needs || [])].join(' ');
-  const sorted = [...knowledgeSources].sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')));
-  const matched = sorted.filter((item) => {
-    const companyMatch = profile.company && item.company && item.company !== '미분류' && item.company.includes(profile.company);
-    const keywordMatch = item.keywords?.some((keyword) => needsText.includes(keyword));
-    return companyMatch || keywordMatch;
-  });
-  return (matched.length ? matched : sorted).slice(0, 3);
-}
-
 async function getGrant(userId, productId) {
   const product = productById(productId);
   if (!product || !ALLOWED_PRODUCTS.has(product.id)) {
@@ -412,8 +301,14 @@ export async function getProductWorkspace(userId, productId) {
   if (Array.isArray(next.infludexResults)) next.infludexResults = sortInfludexResults(next.infludexResults);
   if (productId === 'polibot') {
     const currentKnowledge = Array.isArray(next.knowledgeSources) ? next.knowledgeSources : [];
-    next.knowledgeSources = currentKnowledge.length > 0 ? currentKnowledge : polibotSeedKnowledgeSources();
+    const seedKnowledge = polibotSeedKnowledgeSources();
+    const merged = [...currentKnowledge, ...seedKnowledge];
+    next.knowledgeSources = merged
+      .filter((item, index, all) => all.findIndex((row) => row.id === item.id || `${row.month}-${row.fileName}` === `${item.month}-${item.fileName}`) === index)
+      .sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')))
+      .slice(0, 500);
     next.latestKnowledgeMonth = next.knowledgeSources[0]?.month || next.latestKnowledgeMonth || '';
+    next.catalog = buildPolibotCatalog(next.knowledgeSources);
   }
   return withUsage(next, settings, productId);
 }
@@ -592,7 +487,7 @@ export async function savePolibotUpload(userId, { fileName = '', note = '' } = {
 }
 
 export async function savePolibotKnowledge(userId, { files = [], month = '', note = '' } = {}) {
-  const items = normalizePolibotKnowledgeItems({ files, month, note });
+  const items = await normalizePolibotKnowledgeItems({ files, month, note });
   if (items.length === 0) {
     const error = new Error('월별 자료 파일명 또는 메모를 입력해 주세요.');
     error.status = 400;
@@ -609,13 +504,73 @@ export async function savePolibotKnowledge(userId, { files = [], month = '', not
   });
 }
 
-export async function savePolibotRecommendation(userId, { age = '', gender = '', needs = '', budget = '', company = '' } = {}) {
+function polibotEvidencePayload(source = {}) {
+  return {
+    fileName: source.fileName,
+    month: source.month,
+    company: source.company,
+    companies: source.companies || [],
+    productGroup: source.productGroup,
+    productNames: source.productNames || [],
+    keywords: source.keywordHits?.length ? source.keywordHits : source.keywords || [],
+    matchScore: source.matchScore || 0,
+    targetAudience: source.targetAudience || [],
+    cautions: source.cautions || [],
+    summary: source.summary || ''
+  };
+}
+
+function cleanPolibotProductNames(names = []) {
+  return [...new Set((Array.isArray(names) ? names : [])
+    .map((name) => String(name || '').replace(/\s+/g, ' ').trim())
+    .filter((name) => name.length >= 4 && name.length <= 42)
+    .filter((name) => !/가이드북|pptx|pdf|xlsx|csv|상품비교|자료이용|생명보험$|손해보험$|보험\s*$/.test(name))
+  )].slice(0, 5);
+}
+
+function buildPolibotRecommendation({ profile, evidence, label, type, index, seed }) {
+  const sources = evidence.slice(index, index + (type === 'bundle' ? 3 : 1));
+  const primary = sources[0] || {};
+  const keywordHits = [...new Set(sources.flatMap((source) => source.keywordHits || []).filter(Boolean))].slice(0, 6);
+  const productGroup = primary.productGroup || label;
+  const productNames = cleanPolibotProductNames(sources.flatMap((source) => source.productNames || []))
+    .filter((name) => keywordHits.length === 0 || keywordHits.some((keyword) => name.includes(keyword)) || name.includes(productGroup.replace('/', '')));
+  const sourceCompanies = [...new Set(sources.flatMap((source) => source.companies?.length ? source.companies : [source.company]).filter((company) => company && company !== '미분류'))];
+  const mainName = productNames[0] || `${productGroup} 검토안`;
+  const prefix = sourceCompanies[0] && !mainName.includes(sourceCompanies[0]) ? `${sourceCompanies[0]} ` : '';
+  const name = type === 'bundle'
+    ? `${productGroup} 보완 조합`
+    : `${prefix}${mainName}`;
+  const baseScore = Math.max(...sources.map((source) => Number(source.matchScore || 0)), 0);
+  const score = Math.min(96, 70 + Math.min(18, baseScore) + Math.min(6, sources.length * 2));
+  const coveredNeeds = (profile.needs || []).filter((need) => keywordHits.some((keyword) => need.includes(keyword) || keyword.includes(need))).slice(0, 5);
+  const gapText = coveredNeeds.length ? coveredNeeds.join(', ') : (profile.needs || []).slice(0, 3).join(', ') || productGroup;
+  const keywordText = keywordHits.length ? keywordHits.join(', ') : productGroup;
+  return {
+    id: `polibot-rec-${hashText(`${type}-${name}-${index}-${Date.now()}`)}`,
+    type,
+    name,
+    score,
+    headline: type === 'bundle' ? '근거 자료 여러 개를 묶어 만든 보완 조합이에요.' : '근거 자료와 고객 니즈가 직접 맞은 단품 검토안이에요.',
+    reason: `${keywordText} 자료가 고객 니즈와 맞아요.`,
+    coverageGap: gapText ? `${gapText} 보장 공백 우선 점검` : '보장 공백 확인 필요',
+    premium: profile.budget ? `월 ${profile.budget}만원 안에서 조정 검토` : '예산 입력 시 보험료 메모를 더 구체화할 수 있어요.',
+    cautions: [...new Set(sources.flatMap((source) => source.cautions || []))].slice(0, 5),
+    keywords: keywordHits,
+    sourceCompanies,
+    evidence: sources.map(polibotEvidencePayload),
+    createdAt: now()
+  };
+}
+
+export async function savePolibotRecommendation(userId, { name = '', age = '', gender = '', needs = '', budget = '', company = '' } = {}) {
   const profile = {
+    name: String(name || '').trim(),
     age: String(age || '').trim(),
     gender: String(gender || '').trim(),
     needs: normalizeList(needs),
     budget: String(budget || '').trim(),
-    company: String(company || '').trim()
+    company: String(company || '').trim() || '전체 보험사'
   };
   if (!profile.age && profile.needs.length === 0 && !profile.budget) {
     const error = new Error('고객 나이, 니즈, 예산 중 하나 이상을 입력해 주세요.');
@@ -624,42 +579,69 @@ export async function savePolibotRecommendation(userId, { age = '', gender = '',
   }
   const seed = hashText(JSON.stringify(profile));
   const workspace = await getProductWorkspace(userId, 'polibot');
-  const evidence = pickPolibotEvidence(Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [], profile);
-  const recommendations = ['보장 공백 보완형', '보험료 절감형', '암/질병 집중형'].map((label, index) => ({
-    id: `polibot-rec-${index}`,
-    name: `${evidence[index]?.company && evidence[index].company !== '미분류' ? evidence[index].company : profile.company || '추천'} ${label}`,
-    score: Math.min(98, 70 + ((seed + index * 9) % 25) + (evidence[index] ? 3 : 0)),
-    reason: [
-      profile.needs[index] ? `${profile.needs[index]} 니즈와 맞는 보장` : `${label} 기준으로 우선 검토`,
-      evidence[index] ? `${evidence[index].month} ${evidence[index].fileName} 기준` : '월별 자료 추가 시 근거가 더 정교해짐'
-    ].join(' · '),
-    premium: profile.budget ? `월 ${profile.budget}만원 이내 검토` : '보험료 비교 필요',
-    evidence: evidence[index] ? [{
-      fileName: evidence[index].fileName,
-      month: evidence[index].month,
-      company: evidence[index].company,
-      productGroup: evidence[index].productGroup,
-      keywords: evidence[index].keywords || []
-    }] : []
-  })).sort((a, b) => b.score - a.score);
+  const evidence = rankPolibotEvidence(Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [], profile)
+    .filter((source) => Number(source.matchScore || 0) >= 9 || (source.keywordHits || []).length > 0)
+    .slice(0, 8);
+  const labels = evidence.map((source) => source.productGroup || '보장 검토');
+  const singleRecommendations = labels.slice(0, 4).map((label, index) => buildPolibotRecommendation({
+    profile,
+    evidence,
+    label,
+    type: 'single',
+    index,
+    seed
+  }));
+  const bundleRecommendations = evidence.length >= 2 ? [0, 1].map((offset) => buildPolibotRecommendation({
+    profile,
+    evidence,
+    label: offset === 0 ? '질병/실손' : '생활비/간병',
+    type: 'bundle',
+    index: offset,
+    seed: seed + 17
+  })) : [];
+  const recommendations = [...singleRecommendations, ...bundleRecommendations]
+    .filter((item) => item.evidence.length > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
   return updateWorkspaceAndConsume(userId, 'polibot', {
     customerProfile: profile,
-    recommendations
+    recommendations,
+    recommendationNotice: recommendations.length
+      ? ''
+      : '입력한 고객 조건과 직접 맞는 자료를 찾지 못했어요. 암/뇌/심장/실손 같은 보장 키워드가 들어간 최신 상품 비교표나 설계 자료를 먼저 추가해 주세요.'
   });
 }
 
-export async function savePolibotCustomer(userId, { name = '', age = '', memo = '' } = {}) {
-  const customer = {
-    id: `polibot-customer-${hashText(`${name}-${age}-${Date.now()}`)}`,
-    name: String(name || '').trim() || '이름 미입력',
-    age: String(age || '').trim(),
-    memo: String(memo || '').trim(),
-    createdAt: now()
-  };
+export async function savePolibotCustomer(userId, { id = '', name = '', age = '', memo = '', recommendationId = '', selectedRecommendation = null, profile = null } = {}) {
   const workspace = await getProductWorkspace(userId, 'polibot');
+  const currentProfile = profile && typeof profile === 'object'
+    ? profile
+    : {
+      ...(workspace.customerProfile || {}),
+      name,
+      age
+    };
+  const recommendation = selectedRecommendation && typeof selectedRecommendation === 'object'
+    ? selectedRecommendation
+    : (workspace.recommendations || []).find((item) => item.id === recommendationId);
   const customers = Array.isArray(workspace.customers) ? workspace.customers : [];
+  const existing = customers.find((item) => item.id === id);
+  const customer = {
+    id: String(id || '').trim() || `polibot-customer-${hashText(`${currentProfile.name || name}-${currentProfile.age || age}-${Date.now()}`)}`,
+    name: String(name || currentProfile.name || '').trim() || '이름 미입력',
+    age: String(age || currentProfile.age || '').trim(),
+    gender: String(currentProfile.gender || '').trim(),
+    needs: Array.isArray(currentProfile.needs) ? currentProfile.needs : [],
+    budget: String(currentProfile.budget || '').trim(),
+    memo: String(memo || '').trim(),
+    selectedRecommendation: recommendation || existing?.selectedRecommendation || null,
+    recommendations: Array.isArray(workspace.recommendations) && workspace.recommendations.length ? workspace.recommendations : existing?.recommendations || [],
+    updatedAt: now(),
+    createdAt: existing?.createdAt || now()
+  };
+  const withoutCurrent = customers.filter((item) => item.id !== customer.id);
   return updateWorkspace(userId, 'polibot', {
-    customers: [customer, ...customers].slice(0, 100)
+    customers: [customer, ...withoutCurrent].slice(0, 100)
   });
 }
 

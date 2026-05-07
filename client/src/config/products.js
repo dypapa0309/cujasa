@@ -44,7 +44,8 @@ export const PRODUCTS = [
     description: '인스타그램 인플루언서 등급 분석',
     supportLabel: '인스타그램 분석 자동화',
     appUrl: 'https://app.jasain.kr',
-    landingUrl: 'https://jasain.kr/infludex'
+    landingUrl: 'https://jasain.kr/infludex',
+    status: 'preparing'
   }
 ];
 

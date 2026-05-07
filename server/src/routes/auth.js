@@ -81,6 +81,9 @@ router.post('/products/:productId/start', async (req, res, next) => {
       status: dbProduct.status
     } : configuredProduct;
     if (!product || product.status === 'inactive') return res.status(404).json({ error: 'Product not found' });
+    if (product.id === 'infludex' || product.status === 'preparing') {
+      return res.status(409).json({ error: '아직 준비 중인 제품입니다.' });
+    }
 
     await grantUserProduct(req.user.userId, product.id, { status: 'active', role: 'customer' });
     const entitlement = await refreshUserEntitlement(req.user.userId);
