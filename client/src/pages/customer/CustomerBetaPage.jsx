@@ -947,22 +947,22 @@ export default function CustomerBetaPage({
         </aside>
 
         <main className="relative flex min-h-screen min-w-0 flex-col overflow-hidden supports-[height:100dvh]:min-h-dvh">
-          <header className="shrink-0 border-b border-white/10 px-4 py-3 lg:hidden">
+          <header className="shrink-0 border-b border-white/10 px-4 py-2.5 lg:hidden">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
-                <div className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-xl bg-white">
+                <div className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded-full bg-white">
                   <img src="/jasain_logo.png" alt="JASAIN" className="h-full w-full object-cover" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-black">JASAIN</div>
-                  <div className="truncate text-xs text-zinc-500">워크스페이스</div>
+                  <div className="truncate text-sm font-black">{selectedProduct.name}</div>
+                  <div className="truncate text-xs text-zinc-500">{account?.name || 'JASAIN 워크스페이스'}</div>
                 </div>
               </div>
               <button type="button" onClick={() => openWorkspaceAction('account-settings')} className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-zinc-400">
                 계정
               </button>
             </div>
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
               {visibleProducts.map((product) => (
                 <button
                   key={product.id}
@@ -997,7 +997,7 @@ export default function CustomerBetaPage({
                 ))}
               </div>
             )}
-            {selectedProduct.id === CURRENT_PRODUCT.id && accounts.length > 0 && (
+            {selectedProduct.id === CURRENT_PRODUCT.id && accounts.length > 0 && messages.length === 0 && (
               <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
                 {accounts.slice(0, 6).map((item, index) => (
                   <button
@@ -1013,15 +1013,15 @@ export default function CustomerBetaPage({
             )}
           </header>
 
-          <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-4 pb-3 lg:px-10 lg:py-4">
-            <div className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col justify-start ${messages.length > 0 ? 'pt-5 sm:pt-8 lg:pt-[6vh]' : 'pt-5 sm:pt-8 lg:pt-[18vh]'}`}>
+          <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3 pb-3 lg:px-10 lg:py-4">
+            <div className={`mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col justify-start ${messages.length > 0 ? 'pt-2 sm:pt-5 lg:pt-[6vh]' : 'pt-[13vh] sm:pt-[16vh] lg:pt-[18vh]'}`}>
               {messages.length === 0 && (
               <div className="text-center">
                 <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-400 lg:mb-5">
                   <Bot size={14} />
                   {selectedProduct.name}
                 </div>
-                <h1 className="text-[32px] font-semibold leading-tight tracking-normal text-zinc-100 sm:text-5xl">무엇을 자동화할까요?</h1>
+                <h1 className="text-[28px] font-semibold leading-tight tracking-normal text-zinc-100 sm:text-5xl">무엇을 자동화할까요?</h1>
                 <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-zinc-500 lg:mt-4">
                   필요한 작업을 입력하거나 왼쪽에서 선택해 주세요. 실행과 설정도 오른쪽 작업 패널 안에서 처리해요.
                 </p>
@@ -1042,7 +1042,7 @@ export default function CustomerBetaPage({
               )}
 
               {messages.length > 0 && (
-                <section className="mb-4 min-h-0 flex-1 overflow-y-auto px-1 py-4 text-left lg:mb-3 lg:max-h-[min(54vh,560px)] lg:flex-none lg:py-2">
+                <section className="mb-4 min-h-0 flex-1 overflow-y-auto px-1 py-2 text-left lg:mb-3 lg:max-h-[min(54vh,560px)] lg:flex-none lg:py-2">
                   <div className="mx-auto grid w-full max-w-3xl gap-3 lg:gap-2.5">
                     {messages.map((message) => (
                       <BetaChatMessage key={message.id} message={message} onOpenAction={openWorkspaceAction} />
@@ -1053,7 +1053,7 @@ export default function CustomerBetaPage({
               )}
 
               <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl min-w-0 ${messages.length > 0 ? 'sticky bottom-3 lg:static' : 'mt-5 lg:mt-5'}`}>
-                <div className="overflow-hidden rounded-[22px] border border-white/10 bg-[#242424] p-3 shadow-2xl shadow-black/30 lg:rounded-[24px] lg:p-2.5">
+                <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[#242424] p-2.5 shadow-2xl shadow-black/30 lg:rounded-[24px]">
                   <textarea
                     value={prompt}
                     disabled={assistantLoading}
@@ -1067,12 +1067,12 @@ export default function CustomerBetaPage({
                     }}
                     rows={messages.length > 0 ? 2 : 2}
                     placeholder="예: 오늘 자동화 실행해줘, 설정 확인하고 싶어, 포스팅 현황 보여줘"
-                    className="min-h-[56px] w-full resize-none bg-transparent px-2 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:text-base lg:min-h-[52px]"
+                    className="min-h-[48px] w-full resize-none bg-transparent px-2 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:text-base lg:min-h-[52px]"
                   />
                   {assistantLoading && (
                     <div className="px-2 pb-1 text-xs font-bold text-zinc-600">JASAIN Assistant가 확인 중이에요...</div>
                   )}
-                  <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/5 pt-3 lg:mt-1.5 lg:pt-2">
+                  <div className="mt-1.5 flex items-center justify-between gap-3 border-t border-white/5 pt-2 lg:mt-1.5 lg:pt-2">
                     <div className="flex min-w-0 flex-wrap gap-2">
                       <span className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-500">CUJASA</span>
                       <span className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-500">{selectedProduct.name}</span>
@@ -1084,7 +1084,7 @@ export default function CustomerBetaPage({
                 </div>
               </form>
 
-              <div className="mx-auto mt-3 flex w-full max-w-4xl gap-2 overflow-x-auto pb-2 lg:hidden">
+              <div className={`mx-auto mt-3 flex w-full max-w-4xl gap-2 overflow-x-auto pb-2 lg:hidden ${messages.length > 0 ? 'hidden' : ''}`}>
                 {productActions.map((action) => {
                   const Icon = action.icon;
                   return (
@@ -1189,9 +1189,9 @@ function TaskDrawer(props) {
   const compactPreview = ['dexor', 'spread', 'polibot', 'infludex'].includes(action.key);
 
   return (
-    <div className={`fixed inset-0 z-40 transition-opacity duration-300 lg:pointer-events-none ${closing ? 'bg-black/0 opacity-0 lg:bg-transparent' : 'bg-black/30 opacity-100 lg:bg-transparent'}`}>
+    <div className={`fixed inset-0 z-40 transition-opacity duration-300 lg:pointer-events-none ${closing ? 'bg-black/0 opacity-0 lg:bg-transparent' : 'bg-black/45 opacity-100 lg:bg-transparent'}`}>
       <button type="button" aria-label="닫기" className="absolute inset-0 lg:hidden" onClick={onClose} />
-      <aside className={`pointer-events-auto absolute inset-x-0 bottom-0 overflow-y-auto rounded-t-[28px] border border-white/10 bg-[#191919] p-4 shadow-2xl shadow-black/50 transition-all duration-300 ease-out lg:left-auto lg:right-4 lg:w-[min(640px,calc(100vw-340px))] lg:rounded-[28px] lg:p-5 ${compactPreview ? 'max-h-[72vh] lg:top-16 lg:bottom-auto lg:max-h-[calc(100vh-8rem)]' : 'max-h-[82vh] lg:inset-y-4 lg:max-h-none'} ${closing ? 'translate-y-full opacity-0 lg:translate-x-8 lg:translate-y-0' : 'translate-y-0 opacity-100 lg:translate-x-0'}`}>
+      <aside className={`pointer-events-auto absolute inset-y-0 right-0 w-[min(420px,92vw)] overflow-y-auto rounded-l-[28px] border-l border-white/10 bg-[#191919] p-4 shadow-2xl shadow-black/50 transition-all duration-300 ease-out lg:left-auto lg:right-4 lg:w-[min(640px,calc(100vw-340px))] lg:rounded-[28px] lg:border lg:p-5 ${compactPreview ? 'lg:top-16 lg:bottom-auto lg:max-h-[calc(100vh-8rem)]' : 'lg:inset-y-4 lg:max-h-none'} ${closing ? 'translate-x-full opacity-0 lg:translate-x-8 lg:translate-y-0' : 'translate-x-0 opacity-100'}`}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/10 text-zinc-100">
