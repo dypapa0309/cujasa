@@ -3,11 +3,6 @@
   "trailingSlash": false,
   "redirects": [
     {
-      "source": "/",
-      "destination": "https://app.jasain.kr/#tab=beta",
-      "permanent": false
-    },
-    {
       "source": "/cujasa",
       "destination": "https://app.jasain.kr/?mode=register&product=cujasa#tab=beta",
       "permanent": false
