@@ -1,8 +1,26 @@
 {
   "cleanUrls": true,
   "trailingSlash": false,
-  "rewrites": [
-    { "source": "/cujasa", "destination": "/cujasa/index.html" },
-    { "source": "/dexor", "destination": "/dexor/index.html" }
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "https://app.jasain.kr/#tab=beta",
+      "permanent": false
+    },
+    {
+      "source": "/cujasa",
+      "destination": "https://app.jasain.kr/?mode=register&product=cujasa#tab=beta",
+      "permanent": false
+    },
+    {
+      "source": "/dexor",
+      "destination": "https://app.jasain.kr/?mode=register&product=dexor#tab=beta",
+      "permanent": false
+    },
+    {
+      "source": "/spread",
+      "destination": "https://app.jasain.kr/?mode=register&product=spread#tab=beta",
+      "permanent": false
+    }
   ]
 }
