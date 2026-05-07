@@ -303,6 +303,7 @@ export async function getProductWorkspace(userId, productId) {
   if (productId === 'polibot') {
     const currentKnowledge = Array.isArray(next.knowledgeSources) ? next.knowledgeSources : [];
     const seedKnowledge = polibotSeedKnowledgeSources();
+    const catalogReviews = normalizeCatalogReviews(next.catalogReviews);
     const merged = [...currentKnowledge, ...seedKnowledge];
     next.knowledgeSources = merged
       .filter((item, index, all) => all.findIndex((row) => row.id === item.id || `${row.month}-${row.fileName}` === `${item.month}-${item.fileName}`) === index)
@@ -310,11 +311,12 @@ export async function getProductWorkspace(userId, productId) {
       .slice(0, 500)
       .map((source) => ({
         ...source,
-        catalogItems: sourceCatalogItems(source)
+        catalogItems: sourceCatalogItems(source, catalogReviews)
       }));
+    next.catalogReviews = catalogReviews;
     next.latestKnowledgeMonth = next.knowledgeSources[0]?.month || next.latestKnowledgeMonth || '';
     next.catalog = buildPolibotCatalog(next.knowledgeSources);
-    next.qualityReport = buildPolibotQualityReport(next.knowledgeSources);
+    next.qualityReport = buildPolibotQualityReport(next.knowledgeSources, catalogReviews);
   }
   return withUsage(next, settings, productId);
 }
@@ -510,8 +512,8 @@ export async function savePolibotKnowledge(userId, { files = [], month = '', not
   });
 }
 
-function polibotEvidencePayload(source = {}) {
-  const catalogItems = sourceCatalogItems(source);
+function polibotEvidencePayload(source = {}, reviews = {}) {
+  const catalogItems = sourceCatalogItems(source, reviews);
   return {
     fileName: source.fileName,
     month: source.month,
@@ -566,9 +568,43 @@ function sourceProductNameCandidates(source = {}) {
   ];
 }
 
-function sourceCatalogItems(source = {}) {
-  const items = buildPolibotCatalogItems([source]);
-  return items.filter((item) => ['confirmed', 'auto'].includes(item.status) && Number(item.confidence || 0) >= 65);
+function normalizeCatalogReviews(reviews = {}) {
+  if (!reviews || typeof reviews !== 'object') return {};
+  const toList = (value) => {
+    if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean).slice(0, 20);
+    return String(value || '')
+      .split(/[\n,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 20);
+  };
+  return Object.fromEntries(Object.entries(reviews)
+    .filter(([key, value]) => key && value && typeof value === 'object')
+    .slice(0, 1000)
+    .map(([key, value]) => [key, {
+      status: ['confirmed', 'auto', 'review', 'excluded'].includes(value.status) ? value.status : 'review',
+      productName: String(value.productName || '').trim(),
+      company: String(value.company || '').trim(),
+      productGroup: String(value.productGroup || '').trim(),
+      coverageKeywords: toList(value.coverageKeywords),
+      ageRange: String(value.ageRange || '').trim(),
+      paymentTerm: String(value.paymentTerm || '').trim(),
+      renewalType: String(value.renewalType || '').trim(),
+      disclosureMemo: String(value.disclosureMemo || '').trim(),
+      reductionMemo: String(value.reductionMemo || '').trim(),
+      premiumExample: String(value.premiumExample || '').trim(),
+      refundRate: String(value.refundRate || '').trim(),
+      targetAudience: toList(value.targetAudience),
+      excludedAudience: toList(value.excludedAudience),
+      cautionMemo: String(value.cautionMemo || '').trim(),
+      reason: String(value.reason || '').trim(),
+      reviewedAt: value.reviewedAt || now()
+    }]));
+}
+
+function sourceCatalogItems(source = {}, reviews = {}) {
+  return buildPolibotCatalogItems([source], { reviews })
+    .filter((item) => item.status === 'confirmed' && Number(item.confidence || 0) >= 80);
 }
 
 function cleanPolibotProductNames(names = []) {
@@ -583,9 +619,10 @@ function cleanPolibotProductNames(names = []) {
   )].slice(0, 5);
 }
 
-function classifyPolibotProducts(source = {}) {
+function classifyPolibotProducts(source = {}, reviews = {}) {
   const rawCandidates = sourceProductNameCandidates(source).flatMap(splitPolibotProductText);
-  const catalogItems = sourceCatalogItems(source);
+  const allItems = buildPolibotCatalogItems([source], { includeReview: true, reviews });
+  const catalogItems = allItems.filter((item) => item.status === 'confirmed');
   const cleanNames = catalogItems.map((item) => item.productName);
   const cleanSet = new Set(cleanNames);
   const productCandidates = Array.isArray(source.productCandidates) ? source.productCandidates : [];
@@ -597,7 +634,7 @@ function classifyPolibotProducts(source = {}) {
     .slice(0, 8);
   const status = catalogItems.some((item) => item.status === 'confirmed')
     ? 'confirmed'
-    : catalogItems.length > 0
+    : allItems.some((item) => item.status === 'auto')
       ? 'auto'
       : (rawCandidates.length > 0 || productCandidates.some((item) => item.status === 'review') ? 'review' : 'none');
   return {
@@ -616,17 +653,25 @@ function classifyPolibotProducts(source = {}) {
     }[status],
     productNames: cleanNames,
     excludedPhrases: excluded,
-    catalogItems
+    catalogItems,
+    candidates: allItems
   };
 }
 
-function buildPolibotQualityReport(knowledgeSources = []) {
-  const catalog = knowledgeSources.map(classifyPolibotProducts);
-  const catalogItems = buildPolibotCatalogItems(knowledgeSources);
-  const recommended = catalogItems.filter((item) => ['confirmed', 'auto'].includes(item.status) && item.productName);
+function buildPolibotQualityReport(knowledgeSources = [], reviews = {}) {
+  const catalog = knowledgeSources.map((source) => classifyPolibotProducts(source, reviews));
+  const allCatalogItems = buildPolibotCatalogItems(knowledgeSources, { includeReview: true, reviews });
+  const catalogItems = allCatalogItems.filter((item) => item.status === 'confirmed' && item.productName);
+  const reviewItems = allCatalogItems.filter((item) => ['auto', 'review'].includes(item.status));
+  const excludedItems = allCatalogItems.filter((item) => item.status === 'excluded');
+  const recommended = catalogItems;
+  const insufficientItems = catalogItems.filter((item) => item.completeness === '부족');
   const review = catalog.filter((item) => item.status === 'review');
   const ocrNeeded = knowledgeSources.filter((item) => item.fileType === 'image').length;
-  const excludedPhrases = catalog.flatMap((item) => item.excludedPhrases || []);
+  const excludedPhrases = [
+    ...catalog.flatMap((item) => item.excludedPhrases || []),
+    ...excludedItems.map((item) => item.productName)
+  ];
   const companies = [...new Set(knowledgeSources.flatMap((item) => item.companies?.length ? item.companies : [item.company]).filter((company) => company && company !== '미분류'))]
     .sort((a, b) => a.localeCompare(b, 'ko'));
   const productGroups = [...new Set(knowledgeSources.map((item) => item.productGroup).filter(Boolean))]
@@ -636,13 +681,15 @@ function buildPolibotQualityReport(knowledgeSources = []) {
   return {
     totalSources: knowledgeSources.length,
     recommendableProducts: new Set(recommended.map((item) => `${item.company}-${item.productName}`)).size,
-    reviewNeededProducts: review.length,
+    insufficientProducts: insufficientItems.length,
+    reviewNeededProducts: review.length + reviewItems.length,
     excludedPhrases: excludedPhrases.length,
     ocrNeeded,
     companies,
     productGroups,
     keywords,
-    catalogItems: catalogItems.slice(0, 120),
+    catalogItems: allCatalogItems.slice(0, 160),
+    recommendableCatalogItems: catalogItems.slice(0, 120),
     catalog: catalog.slice(0, 80)
   };
 }
@@ -704,12 +751,16 @@ function polibotConfidence({ profile, sources, keywordHits, productNames, qualit
   score += Math.min(16, keywordHits.length * 4);
   score += Math.min(12, productNames.length * 4);
   score += Math.min(5, sources.filter((source) => source.month).length);
+  const catalogItems = sources.flatMap((source) => sourceCatalogItems(source, profile.catalogReviews));
+  if (catalogItems.some((item) => item.completeness === '충분')) score += 8;
+  if (catalogItems.some((item) => item.completeness === '부족')) score -= 8;
   if ((qualityReport?.recommendableProducts || 0) < 3) score -= 12;
   const level = score >= 72 ? '높음' : score >= 48 ? '보통' : '낮음';
   const reasons = [
     level === '낮음' && '고객 정보나 추천 가능 상품명이 부족해요.',
     !profile.medicalHistory && '고지 이슈 확인 전이라 최종 추천은 보류가 필요해요.',
     !profile.existingMedicalPlan && '기존 실손 중복 여부를 확인해야 해요.',
+    catalogItems.some((item) => item.completeness === '부족') && '확정 상품의 가입조건/주의사항 정보가 부족해요.',
     (qualityReport?.recommendableProducts || 0) < 3 && '추천 가능한 상품 카탈로그가 아직 적어요.'
   ].filter(Boolean);
   return { level, score, reasons };
@@ -717,7 +768,7 @@ function polibotConfidence({ profile, sources, keywordHits, productNames, qualit
 
 function buildPolibotExcludedCandidates(evidence = [], profile = {}) {
   return evidence
-    .filter((source) => sourceCatalogItems(source).length === 0)
+    .filter((source) => sourceCatalogItems(source, profile.catalogReviews).length === 0)
     .slice(0, 4)
     .map((source) => ({
       name: source.fileName || '자료명 미입력',
@@ -734,7 +785,7 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
   const primary = sources[0] || {};
   const keywordHits = [...new Set(sources.flatMap((source) => source.keywordHits || []).filter(Boolean))].slice(0, 6);
   const productGroup = primary.productGroup || label;
-  const catalogItems = sources.flatMap(sourceCatalogItems);
+  const catalogItems = sources.flatMap((source) => sourceCatalogItems(source, profile.catalogReviews));
   const productNames = [...new Set(catalogItems.map((item) => item.productName).filter(Boolean))];
   if (productNames.length === 0) return null;
   if (type === 'bundle' && productNames.length < 2) return null;
@@ -748,7 +799,17 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
   const score = Math.min(96, 70 + Math.min(18, baseScore) + Math.min(6, sources.length * 2));
   const coveredNeeds = (profile.needs || []).filter((need) => keywordHits.some((keyword) => need.includes(keyword) || keyword.includes(need))).slice(0, 5);
   const gapText = coveredNeeds.length ? coveredNeeds.join(', ') : (profile.needs || []).slice(0, 3).join(', ') || productGroup;
-  const keywordText = keywordHits.length ? keywordHits.join(', ') : productGroup;
+  const itemKeywords = [...new Set(catalogItems.flatMap((item) => item.coverageKeywords || []).filter(Boolean))].slice(0, 8);
+  const keywordText = keywordHits.length ? keywordHits.join(', ') : itemKeywords.length ? itemKeywords.join(', ') : productGroup;
+  const catalogCautions = [...new Set(catalogItems.flatMap((item) => [
+    ...(item.cautions || []),
+    item.cautionMemo,
+    item.disclosureMemo,
+    item.reductionMemo,
+    ...(item.excludedAudience || []).map((value) => `제외/제한: ${value}`)
+  ]).filter(Boolean))].slice(0, 8);
+  const premiumMemo = catalogItems.find((item) => item.premiumExample)?.premiumExample
+    || (profile.budget ? `월 ${profile.budget}만원 안에서 조정 검토` : '예산 입력 시 보험료 메모를 더 구체화할 수 있어요.');
   return {
     id: `polibot-rec-${hashText(`${type}-${name}-${index}-${Date.now()}`)}`,
     type,
@@ -757,11 +818,29 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     headline: type === 'bundle' ? '근거 자료를 묶어 만든 추천 조합이에요.' : '근거 자료에서 찾은 단품 추천이에요.',
     reason: `${keywordText} 자료가 고객 니즈와 맞아요.`,
     coverageGap: gapText ? `${gapText} 공백 점검` : '보장 공백 확인',
-    premium: profile.budget ? `월 ${profile.budget}만원 안에서 조정 검토` : '예산 입력 시 보험료 메모를 더 구체화할 수 있어요.',
-    cautions: [...new Set(sources.flatMap((source) => source.cautions || []))].slice(0, 5),
-    keywords: keywordHits,
+    premium: premiumMemo,
+    cautions: catalogCautions.length ? catalogCautions : [...new Set(sources.flatMap((source) => source.cautions || []))].slice(0, 5),
+    keywords: keywordHits.length ? keywordHits : itemKeywords,
+    catalogItems: catalogItems.map((item) => ({
+      productName: item.productName,
+      company: item.company,
+      productGroup: item.productGroup,
+      coverageKeywords: item.coverageKeywords || [],
+      ageRange: item.ageRange || '',
+      paymentTerm: item.paymentTerm || '',
+      renewalType: item.renewalType || '',
+      disclosureMemo: item.disclosureMemo || '',
+      reductionMemo: item.reductionMemo || '',
+      premiumExample: item.premiumExample || '',
+      refundRate: item.refundRate || '',
+      targetAudience: item.targetAudience || [],
+      excludedAudience: item.excludedAudience || [],
+      cautionMemo: item.cautionMemo || '',
+      completeness: item.completeness || '부족',
+      evidenceFile: item.evidenceFile || ''
+    })),
     sourceCompanies,
-    evidence: sources.map(polibotEvidencePayload),
+    evidence: sources.map((source) => polibotEvidencePayload(source, profile.catalogReviews)),
     confidence: polibotConfidence({ profile, sources, keywordHits, productNames, qualityReport: profile.qualityReport }),
     excludedCandidates: buildPolibotExcludedCandidates(evidence, profile),
     nextQuestions: profile.consultationDraft?.nextQuestions || [],
@@ -807,14 +886,39 @@ export async function savePolibotRecommendation(userId, {
   const seed = hashText(JSON.stringify(profile));
   const workspace = await getProductWorkspace(userId, 'polibot');
   const knowledgeSources = Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [];
-  const qualityReport = buildPolibotQualityReport(knowledgeSources);
+  const catalogReviews = normalizeCatalogReviews(workspace.catalogReviews);
+  const qualityReport = buildPolibotQualityReport(knowledgeSources, catalogReviews);
   const consultationDraft = buildPolibotConsultationDraft(profile, qualityReport);
-  const enrichedProfile = { ...profile, qualityReport, consultationDraft };
+  const missingForRecommendation = [
+    !profile.age && '나이',
+    !profile.gender && '성별',
+    profile.needs.length === 0 && '필요 보장',
+    !profile.budget && '예산',
+    !profile.existingMedicalPlan && '기존 실손 여부',
+    !profile.medicalHistory && '병력/고지 이슈'
+  ].filter(Boolean);
+  const hardMissing = [
+    !profile.age && '나이',
+    profile.needs.length === 0 && '필요 보장',
+    !profile.budget && '예산'
+  ].filter(Boolean);
+  if (hardMissing.length > 0 || missingForRecommendation.length >= 4) {
+    const patch = {
+      customerProfile: profile,
+      consultationDraft,
+      qualityReport,
+      recommendations: [],
+      excludedCandidates: [],
+      recommendationNotice: `추천 전에 ${(hardMissing.length ? hardMissing : missingForRecommendation).slice(0, 4).join(', ')} 정보를 먼저 확인해 주세요. 고객 조건이 부족해서 사용 횟수는 차감하지 않았어요.`
+    };
+    return updateWorkspace(userId, 'polibot', patch);
+  }
+  const enrichedProfile = { ...profile, qualityReport, consultationDraft, catalogReviews };
   const evidence = rankPolibotEvidence(knowledgeSources, profile)
     .filter((source) => Number(source.matchScore || 0) >= 9 || (source.keywordHits || []).length > 0)
     .slice(0, 8);
   const productEvidence = evidence
-    .filter((source) => sourceCatalogItems(source).length > 0)
+    .filter((source) => sourceCatalogItems(source, catalogReviews).length > 0)
     .slice(0, 6);
   const recommendationEvidence = productEvidence;
   const labels = recommendationEvidence.map((source) => source.productGroup || '보장 검토');
@@ -853,6 +957,26 @@ export async function savePolibotRecommendation(userId, {
   return recommendations.length
     ? updateWorkspaceAndConsume(userId, 'polibot', patch)
     : updateWorkspace(userId, 'polibot', patch);
+}
+
+export async function listPolibotCatalogReview(userId) {
+  const workspace = await getProductWorkspace(userId, 'polibot');
+  return {
+    qualityReport: workspace.qualityReport || {},
+    catalogReviews: normalizeCatalogReviews(workspace.catalogReviews)
+  };
+}
+
+export async function savePolibotCatalogReviews(userId, reviews = {}) {
+  const workspace = await getProductWorkspace(userId, 'polibot');
+  const currentReviews = normalizeCatalogReviews(workspace.catalogReviews);
+  const nextReviews = normalizeCatalogReviews({
+    ...currentReviews,
+    ...reviews
+  });
+  return updateWorkspace(userId, 'polibot', {
+    catalogReviews: nextReviews
+  });
 }
 
 export async function savePolibotCustomer(userId, { id = '', name = '', age = '', memo = '', recommendationId = '', selectedRecommendation = null, profile = null } = {}) {

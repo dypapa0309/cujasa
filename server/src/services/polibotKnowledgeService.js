@@ -30,9 +30,11 @@ const GENERIC_PRODUCT_NAMES = new Set([
   '저축성보험', '장기종합보험', '어린이보험', '태아보험', '간편건강보험'
 ]);
 
-const BAD_PRODUCT_PHRASE = /가이드북|자료이용|상품비교|자료모음|상품전략|금융환경|관심상품|영업이슈|보험의\s*A|상품의\s*기본|간추린|상품\s*안내|본\s*내용|예시된|따라서|고객\s*조건|보장분석|가입담보|님의\s*상품별|판매되고\s*있는|자료는\s*상품|보험이\s*어려운|알쓸신통|주요국가|기준금리|세계\s*경제뉴스|국내\s*경제뉴스|보험시장|비급여|데이터로\s*읽는|2030\s*보험|보험영업에서|반드시\s*챙겨야|사내\s*교육용|교육\s*목적|무단배포|경제뉴스|시장\s*선점|고객명|피보험자|현재\s*가입|증권|pdf|pptx|xlsx|csv|https?:/i;
+const BAD_PRODUCT_PHRASE = /가이드북|자료이용|상품비교|자료모음|상품전략|금융환경|관심상품|영업이슈|보험의\s*A|상품의\s*기본|간추린|상품\s*안내|본\s*내용|예시된|따라서|고객\s*조건|보장분석|가입담보|님의\s*상품별|판매되고\s*있는|자료는\s*상품|보험이\s*어려운|알쓸신통|주요국가|기준금리|세계\s*경제뉴스|국내\s*경제뉴스|보험시장|비급여|데이터로\s*읽는|2030\s*보험|보험영업에서|반드시\s*챙겨야|사내\s*교육용|교육\s*목적|무단배포|경제뉴스|시장\s*선점|고객명|피보험자|현재\s*가입|증권|저는\s*보험|아참|받아봤고\s*보험|어떤\s*것들을\s*담보|생명\s*[·ㆍ]\s*손해보험|영업에서\s*반드시|카톡|대화|pdf|pptx|xlsx|csv|https?:/i;
 
 const CONFIRMED_PRODUCT_HINT = /\(무\)|무배당|The|THE|Plus|PLUS|플러스|마이라이프|슬기로운|알뜰한|경영인|프리미엄|위너스|원픽|하이픽|더드림|세븐|Q|Ⅱ|Ⅲ|IV|V/i;
+
+const GENERIC_CATEGORY_PAIR = /^(?:생명|손해|장기|보장성|저축성|일반|건강|질병|상해)\s*[·ㆍ/]\s*(?:생명|손해|장기|보장성|저축성|일반|건강|질병|상해)\s*보험$/;
 
 function cleanText(value = '') {
   return String(value || '')
@@ -141,6 +143,95 @@ function extractAudience(text = '') {
   return audience.slice(0, 5);
 }
 
+function firstMatch(text = '', patterns = []) {
+  const source = String(text || '').normalize('NFC');
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    if (match?.[0]) return cleanText(match[0]).slice(0, 90);
+  }
+  return '';
+}
+
+function snippetByKeywords(text = '', patterns = []) {
+  const source = cleanText(text);
+  if (!source) return '';
+  const sentences = source
+    .split(/(?<=[.!?。]|다\.|요\.)\s+|\n+| {2,}/)
+    .map((item) => cleanText(item))
+    .filter((item) => item.length >= 6 && item.length <= 140);
+  const found = sentences.find((sentence) => patterns.some((pattern) => pattern.test(sentence)));
+  return found || '';
+}
+
+function extractAgeRange(text = '') {
+  return firstMatch(text, [
+    /(?:만\s*)?\d{1,2}\s*세\s*(?:부터|이상)\s*(?:만\s*)?\d{1,2}\s*세\s*(?:까지|이하)?/,
+    /(?:만\s*)?\d{1,2}\s*세\s*[~-]\s*(?:만\s*)?\d{1,2}\s*세/,
+    /(?:만\s*)?\d{1,2}\s*세\s*(?:부터|이상|까지|이하)/
+  ]);
+}
+
+function extractPaymentTerm(text = '') {
+  return firstMatch(text, [
+    /\d{1,2}\s*년\s*납(?:입)?(?:\s*[~/]\s*\d{1,2}\s*년\s*만기)?/,
+    /\d{1,2}\s*년\s*만기/,
+    /전기납|일시납|월납|연납|납입\s*기간\s*[:：]?\s*[가-힣0-9\s~/.-]{2,30}/
+  ]);
+}
+
+function extractPremiumExample(text = '') {
+  return firstMatch(text, [
+    /월\s*\d{1,3}(?:,\d{3})*\s*원/,
+    /월\s*\d{1,3}\s*만\s*원/,
+    /보험료\s*[:：]?\s*[가-힣0-9,\s.만월원]{2,35}/
+  ]);
+}
+
+function extractRefundRate(text = '') {
+  return firstMatch(text, [
+    /환급률\s*[:：]?\s*\d{1,3}(?:\.\d+)?\s*%/,
+    /\d{1,3}(?:\.\d+)?\s*%\s*(?:환급|해지환급)/
+  ]);
+}
+
+function extractRenewalType(text = '') {
+  const source = String(text || '');
+  if (/비갱신/.test(source)) return '비갱신';
+  if (/갱신형|갱신/.test(source)) return '갱신';
+  return '';
+}
+
+function extractDisclosureMemo(text = '') {
+  return snippetByKeywords(text, [/고지|유병자|간편|병력|투약|수술|입원|부담보/]).slice(0, 120);
+}
+
+function extractReductionMemo(text = '') {
+  return snippetByKeywords(text, [/감액|면책|부담보|보장\s*개시|대기\s*기간|인수\s*제한/]).slice(0, 120);
+}
+
+function extractExcludedAudience(text = '') {
+  const sentence = snippetByKeywords(text, [/가입\s*불가|제외|인수\s*거절|제한|부담보|고지\s*필요/]);
+  return sentence ? [sentence.slice(0, 90)] : [];
+}
+
+function catalogCompleteness(item = {}) {
+  const checks = [
+    item.productName,
+    item.company && item.company !== '미분류',
+    item.productGroup,
+    Array.isArray(item.coverageKeywords) && item.coverageKeywords.length > 0,
+    item.ageRange,
+    item.paymentTerm,
+    item.renewalType,
+    item.disclosureMemo,
+    item.cautionMemo || (Array.isArray(item.cautions) && item.cautions.length > 0)
+  ];
+  const score = checks.filter(Boolean).length;
+  if (score >= 7) return '충분';
+  if (score >= 4) return '보통';
+  return '부족';
+}
+
 function extractCautions(text = '') {
   const source = String(text || '');
   const cautions = [];
@@ -234,8 +325,10 @@ function productCandidateReason(name = '', sourceText = '') {
   if (suffixCount >= 2) return 'multiple_products_in_candidate';
   if (tokenCount >= 5) return 'table_row_fragment';
   if (!/(보험|플랜|특약|담보|진단비|수술비|입원비|간병비)/.test(name)) return 'no_product_suffix';
+  if (GENERIC_CATEGORY_PAIR.test(name)) return 'generic_category';
   if (GENERIC_PRODUCT_NAMES.has(normalized)) return 'generic';
   if (BAD_PRODUCT_PHRASE.test(name)) return 'document_or_training_phrase';
+  if (/에서|으로|라고|같은|있는|읽는|챙겨야|자료|데이터/.test(name)) return 'sentence_fragment';
   if (/^\d|[,]{2,}|[?]{2,}/.test(name)) return 'broken_text';
   if (/님|고객|보장분석|현재\s*가입/.test(sourceText.slice(0, 160)) && !CONFIRMED_PRODUCT_HINT.test(name)) return 'customer_analysis_document';
   return '';
@@ -277,14 +370,16 @@ export function buildPolibotProductCandidates({ text = '', fileName = '', compan
       const rejectReason = productCandidateReason(name, sourceText);
       const hasCompany = sourceCompanies.some((company) => sourceText.includes(company));
       const hasStrongHint = CONFIRMED_PRODUCT_HINT.test(name);
+      const hasCompanyInName = sourceCompanies.some((company) => name.includes(company));
+      const hasCleanProductShape = hasStrongHint || (hasCompanyInName && /(보험|플랜)$/.test(name));
       const status = rejectReason
         ? 'excluded'
-        : hasStrongHint || hasCompany ? 'confirmed' : 'auto';
-      const confidence = status === 'confirmed' ? 88 : status === 'auto' ? 68 : 20;
+        : hasCleanProductShape ? 'auto' : hasCompany ? 'review' : 'review';
+      const confidence = status === 'auto' ? 72 : status === 'review' ? 48 : 20;
       return {
         name,
         status,
-        reason: rejectReason || (status === 'confirmed' ? '상품명 신뢰도 높음' : '자동 추출 상품명'),
+        reason: rejectReason || (status === 'auto' ? '자동 추출 상품명 - 관리자 확정 필요' : '검수 필요 상품명'),
         company: sourceCompanies[0] || '미분류',
         companies: sourceCompanies,
         productGroup: group,
@@ -294,7 +389,40 @@ export function buildPolibotProductCandidates({ text = '', fileName = '', compan
     });
 }
 
-export function buildPolibotCatalogItems(knowledgeSources = []) {
+function reviewKey(item = {}) {
+  return `${item.sourceId || ''}:${item.productName || item.name || ''}`;
+}
+
+function applyCatalogReview(item = {}, reviews = {}) {
+  const review = reviews[item.id] || reviews[reviewKey(item)];
+  if (!review || typeof review !== 'object') return item;
+  const status = ['confirmed', 'auto', 'review', 'excluded'].includes(review.status) ? review.status : item.status;
+  return {
+    ...item,
+    productName: cleanText(review.productName || item.productName),
+    company: cleanText(review.company || item.company) || item.company,
+    productGroup: cleanText(review.productGroup || item.productGroup) || item.productGroup,
+    coverageKeywords: Array.isArray(review.coverageKeywords) ? review.coverageKeywords.filter(Boolean) : item.coverageKeywords,
+    ageRange: cleanText(review.ageRange || item.ageRange),
+    paymentTerm: cleanText(review.paymentTerm || item.paymentTerm),
+    renewalType: cleanText(review.renewalType || item.renewalType),
+    disclosureMemo: cleanText(review.disclosureMemo || item.disclosureMemo),
+    reductionMemo: cleanText(review.reductionMemo || item.reductionMemo),
+    premiumExample: cleanText(review.premiumExample || item.premiumExample),
+    refundRate: cleanText(review.refundRate || item.refundRate),
+    targetAudience: Array.isArray(review.targetAudience) ? review.targetAudience.filter(Boolean) : item.targetAudience,
+    excludedAudience: Array.isArray(review.excludedAudience) ? review.excludedAudience.filter(Boolean) : item.excludedAudience,
+    cautionMemo: cleanText(review.cautionMemo || item.cautionMemo),
+    status,
+    confidence: status === 'confirmed' ? 95 : status === 'auto' ? Math.max(Number(item.confidence || 0), 72) : status === 'review' ? 48 : 10,
+    reviewReason: cleanText(review.reason || ''),
+    reviewedAt: review.reviewedAt || item.reviewedAt || ''
+  };
+}
+
+export function buildPolibotCatalogItems(knowledgeSources = [], options = {}) {
+  const includeReview = Boolean(options.includeReview);
+  const reviews = options.reviews && typeof options.reviews === 'object' ? options.reviews : {};
   return knowledgeSources.flatMap((source) => {
     const candidates = Array.isArray(source.productCandidates) && source.productCandidates.length
       ? source.productCandidates
@@ -306,9 +434,16 @@ export function buildPolibotCatalogItems(knowledgeSources = []) {
         keywords: source.keywords || []
       });
     return candidates
-      .filter((candidate) => ['confirmed', 'auto'].includes(candidate.status))
-      .filter((candidate) => candidate.confidence >= 65)
-      .map((candidate) => ({
+      .filter((candidate) => ['confirmed', 'auto', 'review', 'excluded'].includes(candidate.status))
+      .map((candidate) => {
+        const context = [
+          candidate.name,
+          source.textSnippet,
+          source.summary,
+          source.note,
+          source.fileName
+        ].filter(Boolean).join('\n');
+        const baseItem = {
         id: `polibot-catalog-${hashText(`${source.id || source.fileName}-${candidate.name}`)}`,
         sourceId: source.id || '',
         fileName: source.fileName || '',
@@ -324,12 +459,31 @@ export function buildPolibotCatalogItems(knowledgeSources = []) {
           /어린이|태아/.test(`${candidate.name} ${source.textSnippet || ''}`) && '자녀/태아 가입 조건 확인',
           /경영인|정기/.test(`${candidate.name} ${source.textSnippet || ''}`) && '법인/경영인 목적 확인'
         ].filter(Boolean).join(' · ') || '약관/가입설계서 확인',
-        cautions: source.cautions || [],
+        ageRange: extractAgeRange(context),
+        paymentTerm: extractPaymentTerm(context),
+        renewalType: extractRenewalType(context),
+        disclosureMemo: extractDisclosureMemo(context),
+        reductionMemo: extractReductionMemo(context),
+        premiumExample: extractPremiumExample(context),
+        refundRate: extractRefundRate(context),
+        targetAudience: source.targetAudience || extractAudience(context),
+        excludedAudience: extractExcludedAudience(context),
+        cautionMemo: extractCautions(context).join(' · '),
+        cautions: source.cautions || extractCautions(context),
         evidenceFile: source.fileName || '',
         evidenceMonth: source.month || '',
         confidence: candidate.confidence,
         status: candidate.status
-      }));
+        };
+        const reviewed = applyCatalogReview(baseItem, reviews);
+        return {
+          ...reviewed,
+          completeness: catalogCompleteness(reviewed)
+        };
+      })
+      .filter((item) => includeReview
+        ? ['confirmed', 'auto', 'review', 'excluded'].includes(item.status)
+        : item.status === 'confirmed' && Number(item.confidence || 0) >= 80);
   });
 }
 

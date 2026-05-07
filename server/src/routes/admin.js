@@ -18,6 +18,7 @@ import { cleanupOldQueueIssues, dismissPastQueueIssuesForAccount } from '../serv
 import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js';
 import { buildMisassignmentReport } from '../services/accountOwnershipService.js';
 import { createManualPayment, expireDueEntitlements } from '../services/billingEntitlementService.js';
+import { listPolibotCatalogReview, savePolibotCatalogReviews } from '../services/productWorkspaceService.js';
 import { redactAccount, redactAccounts, redactBillingSettings, redactPayment } from '../services/redactionService.js';
 
 const router = Router();
@@ -538,6 +539,19 @@ router.patch('/users/:id/products/:productId/settings', async (req, res, next) =
       settingsSummary: redactBillingSettings(settings),
       settings: redactBillingSettings(settings)
     });
+  } catch (e) { next(e); }
+});
+
+router.get('/users/:id/products/polibot/catalog-reviews', async (req, res, next) => {
+  try {
+    res.json(await listPolibotCatalogReview(req.params.id));
+  } catch (e) { next(e); }
+});
+
+router.patch('/users/:id/products/polibot/catalog-reviews', async (req, res, next) => {
+  try {
+    await savePolibotCatalogReviews(req.params.id, req.body?.reviews || {});
+    res.json(await listPolibotCatalogReview(req.params.id));
   } catch (e) { next(e); }
 });
 

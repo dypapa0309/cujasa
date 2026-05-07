@@ -60,6 +60,25 @@ function extractInsuranceNeeds(text = '') {
   return [...new Set(needs)].slice(0, 6);
 }
 
+function extractInsuranceDetails(text = '') {
+  const draft = {};
+  if (/실손|실비/.test(text)) {
+    draft.existingMedicalPlan = /없|미가입|안\s*들/.test(text) ? '없음' : /있|가입|들었/.test(text) ? '있음' : '확인 필요';
+  }
+  if (/고지|병력|수술|입원|투약|진단|치료/.test(text)) {
+    draft.medicalHistory = /없|이상\s*없/.test(text) ? '없음' : '확인 필요';
+  }
+  if (/가족력/.test(text)) draft.familyHistory = '확인 필요';
+  if (/운전/.test(text)) draft.driving = /안\s*함|안해|없/.test(text) ? '운전 안함' : '운전함';
+  if (/비갱신/.test(text)) draft.renewalPreference = '비갱신 선호';
+  else if (/갱신형|갱신/.test(text)) draft.renewalPreference = '허용';
+  if (/절감|줄이|낮추/.test(text)) draft.purpose = '보험료 절감';
+  else if (/리모델|정리|갈아/.test(text)) draft.purpose = '리모델링';
+  else if (/신규|처음/.test(text)) draft.purpose = '신규 가입';
+  else if (/보강|강화|추가/.test(text)) draft.purpose = '보장 강화';
+  return draft;
+}
+
 function extractDexorCategory(text = '') {
   return DEXOR_CATEGORIES.find((category) => text.includes(category)) || '';
 }
@@ -77,10 +96,65 @@ function parseCujasaDraft(text = '') {
 
 function summarizePolibot(workspace = {}) {
   const catalog = workspace.catalog || {};
+  const qualityReport = workspace.qualityReport || {};
+  const usage = workspace.usage || {};
   const knowledgeCount = Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources.length : 0;
   const latestMonth = workspace.latestKnowledgeMonth || catalog.months?.[0] || '';
   const companies = Array.isArray(catalog.companies) ? catalog.companies : [];
-  return { knowledgeCount, latestMonth, companies: companies.slice(0, 12), productGroups: (catalog.productGroups || []).slice(0, 8) };
+  const catalogItems = Array.isArray(qualityReport.catalogItems) ? qualityReport.catalogItems : [];
+  const countBy = (items, key) => items.reduce((acc, item) => {
+    const value = item?.[key] || '미분류';
+    acc[value] = (acc[value] || 0) + 1;
+    return acc;
+  }, {});
+  return {
+    knowledgeCount,
+    latestMonth,
+    companies: companies.slice(0, 12),
+    productGroups: (catalog.productGroups || []).slice(0, 8),
+    recommendableProducts: qualityReport.recommendableProducts || 0,
+    insufficientProducts: qualityReport.insufficientProducts || 0,
+    reviewNeededProducts: qualityReport.reviewNeededProducts || 0,
+    excludedPhrases: qualityReport.excludedPhrases || 0,
+    ocrNeeded: qualityReport.ocrNeeded || 0,
+    companyCounts: Object.entries(countBy(catalogItems, 'company')).slice(0, 12),
+    productGroupCounts: Object.entries(countBy(catalogItems, 'productGroup')).slice(0, 12),
+    recommendationCount: Array.isArray(workspace.recommendations) ? workspace.recommendations.length : 0,
+    recommendationNotice: workspace.recommendationNotice || '',
+    usage: {
+      remaining: usage.remaining,
+      used: usage.used,
+      limit: usage.limit
+    }
+  };
+}
+
+function summarizeDexor(workspace = {}) {
+  const usage = workspace.usage || {};
+  return {
+    candidateCount: Array.isArray(workspace.candidates) ? workspace.candidates.length : 0,
+    resultCount: Array.isArray(workspace.results) ? workspace.results.length : Array.isArray(workspace.analysisResults) ? workspace.analysisResults.length : 0,
+    targetCategory: workspace.targetCategory || '',
+    lastFileName: workspace.lastFileName || '',
+    usage: {
+      remaining: usage.remaining,
+      used: usage.used,
+      limit: usage.limit
+    }
+  };
+}
+
+function summarizeWorkspace(workspace = {}, productId = '') {
+  if (productId === 'polibot') return summarizePolibot(workspace);
+  if (productId === 'dexor') return summarizeDexor(workspace);
+  const usage = workspace?.usage || {};
+  return {
+    usage: {
+      remaining: usage.remaining,
+      used: usage.used,
+      limit: usage.limit
+    }
+  };
 }
 
 function deterministicAssistant({ message, currentProduct, workspace, availableProducts = [] }) {
@@ -100,10 +174,24 @@ function deterministicAssistant({ message, currentProduct, workspace, availableP
   }
   if (productId === 'polibot') {
     const summary = summarizePolibot(workspace.polibot || {});
+    if (/왜\s*안|안\s*돼|실패|추천.*없|상품.*없|안\s*나/.test(text)) {
+      const reason = summary.recommendationNotice
+        || (summary.recommendableProducts <= 0
+          ? '추천에 쓸 확정 상품 데이터가 아직 부족해요.'
+          : '고객 조건과 추천 가능 상품의 매칭이 약해서 보수적으로 추천을 막았어요.');
+      return {
+        answer: `${reason} 현재 추천 가능 상품은 ${summary.recommendableProducts || 0}개, 정보 부족 상품은 ${summary.insufficientProducts || 0}개, 검수 필요는 ${summary.reviewNeededProducts || 0}개예요. 자료 화면에서 확정 상품의 가입조건, 담보, 주의 문구를 먼저 확인해 주세요.`,
+        intent: 'polibot_recommendation_blocked_reason',
+        action: 'polibot-upload',
+        draft: {},
+        requiresConfirmation: false,
+        buttons: safeButtons([button('자료 확인', 'polibot-upload'), button('상품 추천', 'polibot-recommend')])
+      };
+    }
     if (/자료|데이터|많|보험사|지식|뭐.*있|얼마나/.test(text)) {
       const companyText = summary.companies.length ? summary.companies.slice(0, 8).join(', ') : '아직 보험사 목록이 부족해요';
       return {
-        answer: `POLIBOT에는 현재 구조화된 자료 ${summary.knowledgeCount}개가 잡혀 있어요. 최신 자료 월은 ${summary.latestMonth || '미확인'}이고, 보험사는 ${companyText} 기준으로 추천에 활용할 수 있어요.`,
+        answer: `POLIBOT에는 자료 ${summary.knowledgeCount}개가 잡혀 있어요. 추천 가능 상품은 ${summary.recommendableProducts || 0}개, 정보 부족 상품은 ${summary.insufficientProducts || 0}개, 검수 필요는 ${summary.reviewNeededProducts || 0}개, OCR 필요 자료는 ${summary.ocrNeeded || 0}개예요. 최신 자료 월은 ${summary.latestMonth || '미확인'}이고, 보험사는 ${companyText} 기준으로 확인돼요.`,
         intent: 'polibot_knowledge_status',
         action: 'polibot-upload',
         draft: {},
@@ -119,7 +207,8 @@ function deterministicAssistant({ message, currentProduct, workspace, availableP
         gender: /여성|여자|여/.test(text) ? '여성' : /남성|남자|남/.test(text) ? '남성' : '',
         needs: needs.join('\n'),
         budget: extractBudget(text),
-        company: '전체 보험사'
+        company: '전체 보험사',
+        ...extractInsuranceDetails(text)
       };
       return {
         answer: 'POLIBOT 상품 추천 초안을 채웠어요. 오른쪽 패널에서 고객 조건을 확인한 뒤 추천 초안 만들기를 눌러주세요.',
@@ -134,6 +223,26 @@ function deterministicAssistant({ message, currentProduct, workspace, availableP
 
   if (productId === 'dexor') {
     const category = extractDexorCategory(text);
+    if (/다운로드|내보내|csv|엑셀/.test(text)) {
+      return {
+        answer: 'DEXOR 결과 다운로드 패널을 열게요. 화면에 보이는 정렬 그대로 CSV를 받을 수 있어요.',
+        intent: 'dexor_download',
+        action: 'dexor-download',
+        draft: {},
+        requiresConfirmation: false,
+        buttons: safeButtons([button('결과 다운로드', 'dexor-download'), button('등급 분석', 'dexor-grade')])
+      };
+    }
+    if (/결과|등급|점수|랭크|분석.*봤/.test(text)) {
+      return {
+        answer: 'DEXOR 등급 분석 패널을 열게요. 후보를 먼저 저장했다면 S/A/B/C/D 순서로 결과를 확인할 수 있어요.',
+        intent: 'dexor_grade',
+        action: 'dexor-grade',
+        draft: category ? { targetCategory: category } : {},
+        requiresConfirmation: false,
+        buttons: safeButtons([button('등급 분석', 'dexor-grade'), button('후보 업로드', 'dexor-upload')])
+      };
+    }
     if (/분석|후보|블로그|씨랭|등급|맛집|뷰티|육아|가전|여행/.test(text)) {
       return {
         answer: `${category || '선택한'} 카테고리 기준으로 DEXOR 후보 업로드 화면을 열게요. URL이나 CSV를 넣은 뒤 저장하면 등급 분석으로 넘어갈 수 있어요.`,
@@ -174,7 +283,7 @@ function deterministicAssistant({ message, currentProduct, workspace, availableP
   }
 
   return {
-    answer: '질문을 조금 더 구체적으로 입력해 주세요. 예를 들면 “37세 이상빈 암보험 추천”, “맛집 블로그 후보 분석”, “3040 여성 반말로 주방용품 포스팅”처럼 말하면 작업 초안을 만들 수 있어요.',
+    answer: '질문을 조금 더 구체적으로 입력해 주세요. 예를 들면 “37세 남성 암보험 추천”, “폴리봇 자료 뭐 있어?”, “맛집 블로그 후보 분석”, “3040 여성 반말로 주방용품 포스팅”처럼 말하면 작업 초안을 만들 수 있어요.',
     intent: 'fallback',
     action: '',
     draft: {},
@@ -220,6 +329,9 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
     availableProducts: payload.availableProducts || []
   });
   const polibotSummary = summarizePolibot(workspace.polibot || {});
+  const workspaceSummary = Object.fromEntries(
+    Object.entries(workspace).map(([productId, value]) => [productId, summarizeWorkspace(value || {}, productId)])
+  );
 
   const response = await getJson([
     {
@@ -230,6 +342,9 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
         'Allowed action values: run, settings, posts, home, billing, dexor, spread, polibot, infludex, dexor-upload, dexor-grade, dexor-download, spread-campaign, spread-applicants, spread-review, polibot-upload, polibot-recommend, polibot-customers, polibot-download, infludex-upload, infludex-grade, infludex-download, or empty string.',
         'If the inferred product is not in availableProducts, choose the product id action only, not a task action.',
         'For POLIBOT insurance recommendation, extract name, age, gender, needs, budget, and set company to 전체 보험사 unless user exactly names an available company.',
+        'For POLIBOT details, draft may also include existingMedicalPlan, existingPremium, medicalHistory, familyHistory, driving, renewalPreference, purpose.',
+        'If POLIBOT recommendation is blocked or user asks why it failed, answer using recommendationNotice, recommendableProducts, reviewNeededProducts, and ocrNeeded. Prefer action polibot-upload.',
+        'For DEXOR, use dexor-upload for candidate/category drafts, dexor-grade for analysis results, dexor-download for CSV/export.',
         'For CUJASA settings, draft keys are target_audience, tone, content_scope.',
         'For DEXOR, draft key is targetCategory.',
         'Answer in friendly Korean 요체.'
@@ -240,9 +355,12 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
       content: JSON.stringify({
         message,
         currentProduct,
+        currentAction: payload.currentAction || '',
+        currentTasks: Array.isArray(payload.currentTasks) ? payload.currentTasks.slice(0, 8) : [],
         inferredProduct,
         availableProducts: payload.availableProducts || [],
-        polibot: polibotSummary
+        polibot: polibotSummary,
+        workspace: workspaceSummary
       })
     }
   ], fallback, {
@@ -269,6 +387,6 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
     action: ACTION_KEYS.has(response.action) ? response.action : '',
     draft: response.draft && typeof response.draft === 'object' ? response.draft : {},
     requiresConfirmation: Boolean(response.requiresConfirmation),
-    buttons: safeButtons((response.buttons || []).map((item) => button(item.label, item.actionKey)))
+    buttons: safeButtons((response.buttons || []).map((item) => button(item.label, item.actionKey || item.action)))
   };
 }

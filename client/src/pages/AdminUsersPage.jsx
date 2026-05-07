@@ -123,6 +123,16 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     }
   };
 
+  const savePolibotCatalogReviews = async (userId, reviews) => {
+    try {
+      await api.patch(`/api/admin/users/${userId}/products/polibot/catalog-reviews`, { reviews });
+      await load();
+      toast('POLIBOT 상품 검수를 저장했습니다.', 'success');
+    } catch (err) {
+      toast(err.message || 'POLIBOT 상품 검수 저장에 실패했습니다.', 'error');
+    }
+  };
+
   const updateBuyerName = async (user, buyerName) => {
     const next = String(buyerName || '').trim();
     if (next === (user.buyer_name || user.buyerName || '')) {
@@ -434,6 +444,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                         product={product}
                         onRevoke={() => unassignProduct(user.id, product.productId)}
                         onSaveSettings={saveProductSettings}
+                        onSavePolibotCatalogReviews={savePolibotCatalogReviews}
                       />
                     ))}
                   </div>
@@ -711,7 +722,7 @@ function MisassignmentGroup({ title, rows, tone, onUnassign, onReassign, onMarkO
   );
 }
 
-function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
+function ProductGrantCard({ userId, product, onRevoke, onSaveSettings, onSavePolibotCatalogReviews }) {
   const settings = product.settings || {};
   const usage = getProductUsage(settings, product.productId);
   const workspaceSummary = settings.workspaceSummary || {};
@@ -892,6 +903,238 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings }) {
                 <div>후보 {workspaceSummary.candidateCount || 0}개</div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {product.productId === 'polibot' && (
+        <PolibotCatalogReviewPanel
+          userId={userId}
+          onSave={onSavePolibotCatalogReviews}
+        />
+      )}
+    </div>
+  );
+}
+
+function PolibotCatalogReviewPanel({ userId, onSave }) {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [payload, setPayload] = useState(null);
+  const [drafts, setDrafts] = useState({});
+
+  const loadReview = async () => {
+    setLoading(true);
+    try {
+      const next = await api.get(`/api/admin/users/${userId}/products/polibot/catalog-reviews`);
+      setPayload(next);
+      setDrafts(next.catalogReviews || {});
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open && !payload && !loading) loadReview().catch(() => {});
+  }, [open]);
+
+  const report = payload?.qualityReport || {};
+  const items = Array.isArray(report.catalogItems) ? report.catalogItems : [];
+  const visibleItems = items
+    .filter((item) => ['auto', 'review', 'confirmed', 'excluded'].includes(item.status))
+    .slice(0, 40);
+
+  const updateReview = (item, patch) => {
+    const key = item.id;
+    setDrafts((prev) => ({
+      ...prev,
+      [key]: {
+        status: item.status || 'review',
+        productName: item.productName || '',
+        company: item.company || '',
+        productGroup: item.productGroup || '',
+        coverageKeywords: item.coverageKeywords || [],
+        ageRange: item.ageRange || '',
+        paymentTerm: item.paymentTerm || '',
+        renewalType: item.renewalType || '',
+        disclosureMemo: item.disclosureMemo || '',
+        reductionMemo: item.reductionMemo || '',
+        premiumExample: item.premiumExample || '',
+        refundRate: item.refundRate || '',
+        targetAudience: item.targetAudience || [],
+        excludedAudience: item.excludedAudience || [],
+        cautionMemo: item.cautionMemo || '',
+        ...prev[key],
+        ...patch,
+        reviewedAt: new Date().toISOString()
+      }
+    }));
+  };
+
+  const statusLabel = {
+    confirmed: '확정',
+    auto: '자동 후보',
+    review: '검수 필요',
+    excluded: '제외'
+  };
+  const listValue = (value) => Array.isArray(value) ? value.join(', ') : value || '';
+  const listPatch = (key, value) => ({ [key]: value.split(',').map((item) => item.trim()).filter(Boolean) });
+
+  return (
+    <div className="mt-3 rounded border border-slate-200 bg-slate-50 p-3">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="flex w-full items-center justify-between text-left text-xs font-bold text-slate-700"
+      >
+        <span>POLIBOT 상품 후보 검수</span>
+        <span className={`transition ${open ? 'rotate-180' : ''}`}>⌄</span>
+      </button>
+      {open && (
+        <div className="mt-3 grid gap-3">
+          <div className="grid gap-2 text-xs text-slate-600 md:grid-cols-5">
+            <div className="rounded border border-line bg-white p-2">추천 가능 {report.recommendableProducts || 0}개</div>
+            <div className="rounded border border-line bg-white p-2">정보 부족 {report.insufficientProducts || 0}개</div>
+            <div className="rounded border border-line bg-white p-2">검수 필요 {report.reviewNeededProducts || 0}개</div>
+            <div className="rounded border border-line bg-white p-2">제외 문구 {report.excludedPhrases || 0}개</div>
+            <div className="rounded border border-line bg-white p-2">OCR 필요 {report.ocrNeeded || 0}개</div>
+          </div>
+          <div className="max-h-80 overflow-auto rounded border border-line bg-white">
+            {loading && <div className="p-3 text-xs text-slate-400">검수 목록을 불러오는 중...</div>}
+            {!loading && visibleItems.length === 0 && <div className="p-3 text-xs text-slate-400">검수할 상품 후보가 없습니다.</div>}
+            {visibleItems.map((item) => {
+              const draft = drafts[item.id] || {};
+              const status = draft.status || item.status || 'review';
+              return (
+                <div key={item.id} className="grid gap-2 border-b border-line p-3 last:border-b-0">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="text-sm font-bold text-slate-900">{draft.productName || item.productName || '상품명 미입력'}</div>
+                      <div className="mt-1 text-xs text-slate-500">
+                        {item.company || '미분류'} · {item.productGroup || '상품군 미분류'} · 정보 {item.completeness || '부족'} · {item.fileName || '근거 파일 없음'}
+                      </div>
+                    </div>
+                    <span className="rounded border border-line px-2 py-1 text-xs font-bold text-slate-500">{statusLabel[status] || status}</span>
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-3">
+                    <input
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      value={draft.productName ?? item.productName ?? ''}
+                      onChange={(event) => updateReview(item, { productName: event.target.value })}
+                      placeholder="실제 상품명"
+                    />
+                    <input
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      value={draft.company ?? item.company ?? ''}
+                      onChange={(event) => updateReview(item, { company: event.target.value })}
+                      placeholder="보험사"
+                    />
+                    <input
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      value={draft.productGroup ?? item.productGroup ?? ''}
+                      onChange={(event) => updateReview(item, { productGroup: event.target.value })}
+                      placeholder="상품군"
+                    />
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <input
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      value={listValue(draft.coverageKeywords ?? item.coverageKeywords)}
+                      onChange={(event) => updateReview(item, listPatch('coverageKeywords', event.target.value))}
+                      placeholder="핵심 담보/키워드, 쉼표로 구분"
+                    />
+                    <input
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      value={draft.ageRange ?? item.ageRange ?? ''}
+                      onChange={(event) => updateReview(item, { ageRange: event.target.value })}
+                      placeholder="가입 가능 연령"
+                    />
+                    <input
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      value={draft.paymentTerm ?? item.paymentTerm ?? ''}
+                      onChange={(event) => updateReview(item, { paymentTerm: event.target.value })}
+                      placeholder="납입/만기"
+                    />
+                    <input
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      value={draft.renewalType ?? item.renewalType ?? ''}
+                      onChange={(event) => updateReview(item, { renewalType: event.target.value })}
+                      placeholder="갱신/비갱신"
+                    />
+                    <input
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      value={draft.premiumExample ?? item.premiumExample ?? ''}
+                      onChange={(event) => updateReview(item, { premiumExample: event.target.value })}
+                      placeholder="보험료 예시"
+                    />
+                    <input
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      value={draft.refundRate ?? item.refundRate ?? ''}
+                      onChange={(event) => updateReview(item, { refundRate: event.target.value })}
+                      placeholder="환급률"
+                    />
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <textarea
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      rows="2"
+                      value={draft.disclosureMemo ?? item.disclosureMemo ?? ''}
+                      onChange={(event) => updateReview(item, { disclosureMemo: event.target.value })}
+                      placeholder="고지 조건"
+                    />
+                    <textarea
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      rows="2"
+                      value={draft.reductionMemo ?? item.reductionMemo ?? ''}
+                      onChange={(event) => updateReview(item, { reductionMemo: event.target.value })}
+                      placeholder="감액/면책"
+                    />
+                    <textarea
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      rows="2"
+                      value={listValue(draft.targetAudience ?? item.targetAudience)}
+                      onChange={(event) => updateReview(item, listPatch('targetAudience', event.target.value))}
+                      placeholder="추천 대상, 쉼표로 구분"
+                    />
+                    <textarea
+                      className="rounded border border-line px-2 py-1.5 text-xs"
+                      rows="2"
+                      value={listValue(draft.excludedAudience ?? item.excludedAudience)}
+                      onChange={(event) => updateReview(item, listPatch('excludedAudience', event.target.value))}
+                      placeholder="제외 대상, 쉼표로 구분"
+                    />
+                    <textarea
+                      className="rounded border border-line px-2 py-1.5 text-xs md:col-span-2"
+                      rows="2"
+                      value={draft.cautionMemo ?? item.cautionMemo ?? ''}
+                      onChange={(event) => updateReview(item, { cautionMemo: event.target.value })}
+                      placeholder="주의 문구"
+                    />
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      ['confirmed', '확정'],
+                      ['review', '검수 필요'],
+                      ['excluded', '제외']
+                    ].map(([nextStatus, label]) => (
+                      <button
+                        key={nextStatus}
+                        type="button"
+                        onClick={() => updateReview(item, { status: nextStatus })}
+                        className={`rounded border px-2 py-1 text-xs font-bold ${
+                          status === nextStatus ? 'border-slate-900 bg-slate-900 text-white' : 'border-line bg-white text-slate-600 hover:border-slate-900'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={loadReview} className="rounded border border-line bg-white px-3 py-2 text-xs font-bold text-slate-600">새로고침</button>
+            <button type="button" onClick={() => onSave(userId, drafts)} className="rounded bg-slate-900 px-3 py-2 text-xs font-bold text-white">검수 저장</button>
           </div>
         </div>
       )}
