@@ -8,6 +8,14 @@ export function classifyQueueError(message = '') {
       message: '링크 포함 글로 예약됐지만 연결된 쿠팡 상품 또는 트래킹 링크가 없습니다. 상품 추천을 다시 실행한 뒤 재시도해주세요.'
     };
   }
+  if (/is_transient"?\s*:\s*true|code"?\s*:\s*2|unexpected error has occurred|retry your request later/i.test(value)) {
+    return {
+      category: 'retry_available',
+      severity: 'warn',
+      title: 'Threads 일시 오류',
+      message: 'Threads 쪽 일시 오류로 업로드가 끝나지 않았어요. 현재 연결 상태를 확인한 뒤 다시 시도할 수 있어요.'
+    };
+  }
   if (/THREADS_TOKEN_MISSING|Threads access token is required|계정 관리에서 Threads 연결|OAuth|access token|Cannot parse access token|token|토큰 갱신|다시 연결|재연결|code"?\s*:\s*190|code 190/i.test(value)) {
     return {
       category: 'threads_reconnect_required',
@@ -55,16 +63,16 @@ export function classificationForCategory(category, fallbackMessage = '') {
     return {
       category,
       severity: 'warn',
-      title: '재연결 후 재시도 가능',
-      message: 'Threads 재연결이 완료되었습니다. 이 항목은 본문 게시 여부를 확인한 뒤 다시 업로드할 수 있습니다.'
+      title: '다시 시도 가능',
+      message: '이전 업로드가 끝나지 않은 기록이에요. 현재 연결 상태를 확인한 뒤 본문 게시 여부를 보고 다시 시도할 수 있어요.'
     };
   }
   if (category === 'recheck_required') {
     return {
       category,
       severity: 'warn',
-      title: '재연결 후 확인 필요',
-      message: '재연결 전에 실패한 기록입니다. 본문 게시 여부를 확인하거나 재시도해주세요.'
+      title: '게시 여부 확인 필요',
+      message: '이전 실패 기록이에요. 본문이 이미 올라갔는지 확인하거나 필요하면 다시 시도해 주세요.'
     };
   }
   if (category === 'threads_reconnect_required') {
