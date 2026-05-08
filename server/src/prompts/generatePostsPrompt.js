@@ -33,6 +33,10 @@ export function generatePostsPrompt(topic, products, account) {
           'When returning multiple posts, distribute contentType across the allowed contentTypes instead of using one type repeatedly.',
           'Use varied angles: one can be empathy, one checklist, one problem-solution, one question, or one mistake-prevention when allowed.',
           'Optimize the body for saves, replies, and shares: concrete inconvenience, quick recognition, or a useful tiny insight should lead.',
+          'Use stronger hook frames while staying safe: 나만 불편한 줄 알았던 상황, 은근 갈리는 선택, 사고 나서 후회하는 기준, or a house/life question people can answer immediately.',
+          'The first sentence must contain at least one of: a concrete inconvenience, a safe choice tension, a regret-prevention cue, or an easy experience question.',
+          'Safe tension is allowed only around taste, habit, space, budget, frequency, and use-case differences.',
+          'Never create hostile polarization: no insults, contempt, gender/age/job/region conflict, politics, or identity attacks.',
           'Do not make every post a product recommendation. The body should feel like useful Threads content first.',
           accountProfile.strategy.seasonalityEnabled
             ? 'Use currentDateKST and seasonKST as the seasonal context.'

@@ -102,6 +102,7 @@ function normalizeAccount(payload) {
   next.seasonality_enabled = next.seasonality_enabled !== false;
   next.safe_debate_enabled = Boolean(next.safe_debate_enabled);
   if (next.content_mode === 'safe_debate' && !next.safe_debate_enabled) next.content_mode = 'question';
+  next.threads_link_delivery_mode = 'reply';
   next.content_style_note = next.content_style_note == null ? '' : String(next.content_style_note).slice(0, 1000);
   return next;
 }
@@ -139,6 +140,7 @@ export const createAccount = (payload) => dbInsert('accounts', normalizeAccount(
   daily_post_max: 5,
   active_time_windows: [{ start: '09:00', end: '09:00' }],
   min_interval_minutes: 50,
+  threads_link_delivery_mode: 'reply',
   link_post_ratio: 1,
   no_link_post_ratio: 0,
   rest_days_per_week: 1,

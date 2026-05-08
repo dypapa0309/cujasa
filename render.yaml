@@ -25,6 +25,8 @@ services:
         sync: false
       - key: JWT_SECRET
         sync: false
+      - key: SCHEDULER_SECRET
+        sync: false
       - key: IP_HASH_SALT
         sync: false
       - key: APP_BASE_URL
@@ -80,7 +82,7 @@ services:
       - key: COUPANG_REPAIR_KEYWORDS_PER_ATTEMPT
         value: "1"
       - key: THREADS_REPLY_LINK_MODE_ENABLED
-        value: "false"
+        value: "true"
       - key: THREADS_COUPANG_LINK_MODE
         value: direct
       - key: TELEGRAM_BOT_TOKEN
@@ -94,4 +96,20 @@ services:
       - key: SUPPORT_PHONE_TEL
         sync: false
       - key: SLACK_WEBHOOK_URL
+        sync: false
+
+  - type: cron
+    name: cujasa-daily-pipeline
+    env: node
+    plan: starter
+    rootDir: .
+    buildCommand: npm install --prefix server
+    startCommand: npm run scheduler:daily --prefix server
+    schedule: "0 17 * * *"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SCHEDULER_API_BASE_URL
+        sync: false
+      - key: SCHEDULER_SECRET
         sync: false

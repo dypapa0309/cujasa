@@ -12,7 +12,9 @@
     "hash:password": "node src/scripts/hashPassword.js",
     "test": "node --test \"src/**/*.test.js\"",
     "test:coupang": "node src/scripts/testCoupang.js",
-    "assistant:fixture-candidates": "node src/scripts/exportWorkspaceAssistantFixtureCandidates.js"
+    "scheduler:daily": "node src/scripts/runDailyPipelineCron.js",
+    "assistant:fixture-candidates": "node src/scripts/exportWorkspaceAssistantFixtureCandidates.js",
+    "polibot:ingest": "node src/scripts/ingestPolibotKnowledge.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

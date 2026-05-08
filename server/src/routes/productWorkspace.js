@@ -10,6 +10,7 @@ import {
   saveDexorCandidates,
   savePolibotCustomer,
   savePolibotKnowledge,
+  savePolibotRecommendationFeedback,
   savePolibotRecommendation,
   savePolibotUpload,
   saveSpreadApplicants,
@@ -121,6 +122,19 @@ router.post('/polibot/recommend', async (req, res, next) => {
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await savePolibotRecommendation(user.userId, req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/polibot/recommendations/:id/feedback', async (req, res, next) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await savePolibotRecommendationFeedback(user.userId, {
+      ...(req.body || {}),
+      recommendationId: req.params.id
+    }));
   } catch (error) {
     next(error);
   }

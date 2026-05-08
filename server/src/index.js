@@ -29,15 +29,13 @@ import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { processDueQueue } from './services/schedulerService.js';
 import { runDueMetricJobs } from './services/metricsJobService.js';
-import { runFullPipeline } from './services/pipelineService.js';
 import { listBlogPosts } from './services/blogService.js';
 import { refreshExpiringThreadsTokens } from './services/threadsOAuthService.js';
 import { expireDueEntitlements } from './services/billingEntitlementService.js';
 import { sendOpsAlert } from './services/notificationService.js';
 import { runDailyOpsHealthCheck } from './services/opsHealthService.js';
-import { cleanupUnusedPipelineArtifacts } from './services/unusedArtifactCleanupService.js';
-import { cleanupOldQueueIssues } from './services/queueVisibilityService.js';
 import { redactSensitivePayload } from './services/redactionService.js';
+import { dailyPipelineStatus, runDailyPipelineOnce } from './services/schedulerRunService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -237,10 +235,7 @@ cron.schedule('* * * * *', async () => {
 // 매일 새벽 2시: 전체 파이프라인 자동 실행 (주제→상품→콘텐츠→큐 등록)
 cron.schedule('0 2 * * *', async () => {
   await runCronJob('daily-pipeline', async () => {
-    const pipeline = await runFullPipeline();
-    const cleanup = await cleanupUnusedPipelineArtifacts({ mode: 'apply' });
-    const oldIssues = await cleanupOldQueueIssues({ mode: 'apply' });
-    return { pipeline, cleanup, oldIssues };
+    return runDailyPipelineOnce({ triggeredBy: 'node_cron' });
   });
 }, { timezone: 'Asia/Seoul' });
 
@@ -262,6 +257,20 @@ cron.schedule('0 8 * * *', async () => {
   await runCronJob('daily-ops-healthcheck', async () => runDailyOpsHealthCheck());
 }, { timezone: 'Asia/Seoul' });
 
+async function runStartupDailyPipelineCatchUp() {
+  const status = await dailyPipelineStatus();
+  if (!status.missing) return null;
+  return runCronJob('daily-pipeline-startup-catch-up', async () => runDailyPipelineOnce({
+    triggeredBy: 'startup_catch_up',
+    runDateKst: status.runDateKst
+  }));
+}
+
 app.listen(port, () => {
   console.log(`JASAIN API running on http://localhost:${port}`);
+  setTimeout(() => {
+    runStartupDailyPipelineCatchUp().catch((error) => {
+      console.error('[startup daily-pipeline catch-up] failed', error);
+    });
+  }, 3000);
 });

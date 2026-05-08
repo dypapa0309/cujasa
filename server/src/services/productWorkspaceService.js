@@ -1,5 +1,5 @@
 import { productById } from '../config/products.js';
-import { dbGet, dbUpdate } from './supabaseService.js';
+import { dbGet, dbInsert, dbUpdate } from './supabaseService.js';
 import {
   buildPolibotCatalog,
   buildPolibotCatalogItems,
@@ -8,9 +8,16 @@ import {
   polibotSeedKnowledgeSources,
   rankPolibotEvidence
 } from './polibotKnowledgeService.js';
+import {
+  getPolibotDbKnowledgeSummary,
+  ingestPolibotKnowledge,
+  listPolibotDbKnowledgeSources
+} from './polibotKnowledgeDbService.js';
 
 const ALLOWED_PRODUCTS = new Set(['dexor', 'spread', 'polibot', 'infludex']);
 const DEFAULT_USAGE_LIMIT = 5;
+const UNLIMITED_TEST_EMAILS = new Set(['test1@test.com']);
+const UNLIMITED_USAGE_LIMIT = 999999;
 const DEXOR_SCORE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
 const INFLUDEX_GRADE_ORDER = { DIAMOND: 0, S: 1, A: 2, B: 3, C: 4, D: 5 };
 const DEXOR_CATEGORIES = ['맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
@@ -143,6 +150,14 @@ function parseCandidateRows(input = '', fileName = '') {
 }
 
 function normalizeUsage(settings = {}, productId) {
+  if (settings.unlimitedUsage === true) {
+    return {
+      limit: UNLIMITED_USAGE_LIMIT,
+      used: 0,
+      remaining: UNLIMITED_USAGE_LIMIT,
+      unlimited: true
+    };
+  }
   const usageRoot = settings.usage && typeof settings.usage === 'object' ? settings.usage : {};
   const raw = usageRoot[productId] && typeof usageRoot[productId] === 'object' ? usageRoot[productId] : {};
   const limit = Number.isFinite(Number(raw.limit)) ? Math.max(0, Number(raw.limit)) : DEFAULT_USAGE_LIMIT;
@@ -228,6 +243,51 @@ function normalizeList(input = '') {
     .slice(0, 200);
 }
 
+function formatPolibotMoneyAmount(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/원|만원|억|이하|이상|~/.test(text)) return text;
+  return /^\d+(?:\.\d+)?$/.test(text) ? `${text}만원` : text;
+}
+
+function parsePolibotPremiumAmount(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return null;
+  const range = text.match(/(\d+(?:\.\d+)?)\s*[~\-]\s*(\d+(?:\.\d+)?)/);
+  if (range) return Number(range[2]);
+  const match = text.match(/\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const amount = Number(match[0]);
+  if (!Number.isFinite(amount)) return null;
+  return /원/.test(text) && !/만원/.test(text) ? amount / 10000 : amount;
+}
+
+function formatPolibotPremiumAmount(value) {
+  if (!Number.isFinite(Number(value))) return '';
+  return `${Number(value).toLocaleString('ko-KR')}만원`;
+}
+
+function buildPolibotPremiumPlan(profile = {}) {
+  const target = parsePolibotPremiumAmount(profile.budget);
+  const current = parsePolibotPremiumAmount(profile.existingPremium);
+  const remodel = /리모델링|보험료 절감/.test(profile.purpose || '');
+  const targetPremium = Number.isFinite(target) ? formatPolibotPremiumAmount(target) : formatPolibotMoneyAmount(profile.budget);
+  const currentPremium = Number.isFinite(current) ? formatPolibotPremiumAmount(current) : formatPolibotMoneyAmount(profile.existingPremium);
+  let additionalBudgetMemo = '';
+  if (Number.isFinite(target) && Number.isFinite(current)) {
+    const diff = Math.round((target - current) * 10) / 10;
+    if (remodel) additionalBudgetMemo = `기존 보험 조정 포함 · 목표 ${formatPolibotPremiumAmount(target)} / 현재 ${formatPolibotPremiumAmount(current)}`;
+    else if (diff > 0) additionalBudgetMemo = `추가 가능 예산 약 ${formatPolibotPremiumAmount(diff)}`;
+    else if (diff === 0) additionalBudgetMemo = '추가 여력 없음 · 기존 보험 조정 또는 보장 재배치 중심';
+    else additionalBudgetMemo = `목표가 현재보다 약 ${formatPolibotPremiumAmount(Math.abs(diff))} 낮음 · 절감/리모델링 확인 필요`;
+  } else if (remodel) {
+    additionalBudgetMemo = '기존 보험 조정까지 포함해 목표 보험료 안에서 검토';
+  } else {
+    additionalBudgetMemo = '목표와 현재 납입 보험료 확인 시 추가 가능 예산 계산';
+  }
+  return { targetPremium, currentPremium, additionalBudgetMemo };
+}
+
 async function getGrant(userId, productId) {
   const product = productById(productId);
   if (!product || !ALLOWED_PRODUCTS.has(product.id)) {
@@ -241,7 +301,11 @@ async function getGrant(userId, productId) {
     error.status = 403;
     throw error;
   }
-  return grant;
+  const user = await dbGet('users', { id: userId }).catch(() => null);
+  return {
+    ...grant,
+    unlimitedUsage: UNLIMITED_TEST_EMAILS.has(String(user?.email || '').trim().toLowerCase())
+  };
 }
 
 async function updateWorkspace(userId, productId, patch) {
@@ -258,20 +322,33 @@ async function updateWorkspace(userId, productId, patch) {
   };
   const [updated] = await dbUpdate('user_products', { user_id: userId, product_id: productId }, { settings: next });
   const settings = updated?.settings || next;
-  return withUsage(settings.workspace || next.workspace, settings, productId);
+  return withUsage(settings.workspace || next.workspace, { ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);
 }
 
 async function updateWorkspaceAndConsume(userId, productId, patch) {
   const grant = await getGrant(userId, productId);
   const current = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
   const usageRoot = current.usage && typeof current.usage === 'object' ? current.usage : {};
-  const usage = normalizeUsage(current, productId);
+  const usage = normalizeUsage({ ...current, unlimitedUsage: grant.unlimitedUsage }, productId);
   if (usage.remaining <= 0) {
     const error = new Error('무료 사용 횟수를 모두 사용했습니다.');
     error.status = 402;
     throw error;
   }
   const workspace = current.workspace && typeof current.workspace === 'object' ? current.workspace : {};
+  if (grant.unlimitedUsage) {
+    const next = {
+      ...current,
+      workspace: {
+        ...workspace,
+        ...patch,
+        updatedAt: now()
+      }
+    };
+    const [updated] = await dbUpdate('user_products', { user_id: userId, product_id: productId }, { settings: next });
+    const settings = updated?.settings || next;
+    return withUsage(settings.workspace || next.workspace, { ...settings, unlimitedUsage: true }, productId);
+  }
   const nextUsage = {
     limit: usage.limit,
     used: usage.used + 1
@@ -302,9 +379,10 @@ export async function getProductWorkspace(userId, productId) {
   if (Array.isArray(next.infludexResults)) next.infludexResults = sortInfludexResults(next.infludexResults);
   if (productId === 'polibot') {
     const currentKnowledge = Array.isArray(next.knowledgeSources) ? next.knowledgeSources : [];
+    const dbKnowledge = await listPolibotDbKnowledgeSources(userId);
     const seedKnowledge = polibotSeedKnowledgeSources();
     const catalogReviews = normalizeCatalogReviews(next.catalogReviews);
-    const merged = [...currentKnowledge, ...seedKnowledge];
+    const merged = [...dbKnowledge, ...currentKnowledge, ...seedKnowledge];
     next.knowledgeSources = merged
       .filter((item, index, all) => all.findIndex((row) => row.id === item.id || `${row.month}-${row.fileName}` === `${item.month}-${item.fileName}`) === index)
       .sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')))
@@ -317,8 +395,9 @@ export async function getProductWorkspace(userId, productId) {
     next.latestKnowledgeMonth = next.knowledgeSources[0]?.month || next.latestKnowledgeMonth || '';
     next.catalog = buildPolibotCatalog(next.knowledgeSources);
     next.qualityReport = buildPolibotQualityReport(next.knowledgeSources, catalogReviews);
+    next.knowledgeDbSummary = await getPolibotDbKnowledgeSummary(userId);
   }
-  return withUsage(next, settings, productId);
+  return withUsage(next, { ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);
 }
 
 export async function saveDexorCandidates(userId, { urls = '', fileName = '', targetCategory = '' } = {}) {
@@ -501,8 +580,19 @@ export async function savePolibotKnowledge(userId, { files = [], month = '', not
     error.status = 400;
     throw error;
   }
-  const workspace = await getProductWorkspace(userId, 'polibot');
-  const current = Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [];
+  await ingestPolibotKnowledge({
+    userId,
+    scope: 'user',
+    sourceChannel: 'web_upload',
+    sourceLabel: month || 'POLIBOT 웹 업로드',
+    files,
+    month,
+    note
+  });
+  const grant = await getGrant(userId, 'polibot');
+  const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  const rawWorkspace = settings.workspace && typeof settings.workspace === 'object' ? settings.workspace : {};
+  const current = Array.isArray(rawWorkspace.knowledgeSources) ? rawWorkspace.knowledgeSources : [];
   const knowledgeSources = [...items, ...current]
     .sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')))
     .slice(0, 500);
@@ -515,6 +605,8 @@ export async function savePolibotKnowledge(userId, { files = [], month = '', not
 function polibotEvidencePayload(source = {}, reviews = {}) {
   const catalogItems = sourceCatalogItems(source, reviews);
   return {
+    sourceId: source.dbSourceId || source.id || '',
+    dbSourceId: source.dbSourceId || '',
     fileName: source.fileName,
     month: source.month,
     company: source.company,
@@ -524,9 +616,62 @@ function polibotEvidencePayload(source = {}, reviews = {}) {
     catalogItems,
     keywords: source.keywordHits?.length ? source.keywordHits : source.keywords || [],
     matchScore: source.matchScore || 0,
+    sourceChannel: source.sourceChannel || '',
+    knowledgeStatus: source.knowledgeStatus || '',
+    evidenceQualityScore: Number(source.evidenceQualityScore || 0),
+    evidenceQualityLevel: source.evidenceQualityLevel || '',
+    evidenceQualityReasons: source.evidenceQualityReasons || [],
     targetAudience: source.targetAudience || [],
     cautions: source.cautions || [],
     summary: source.summary || ''
+  };
+}
+
+function compactPolibotDbSummary(summary = {}) {
+  return {
+    totalSources: summary.totalSources || 0,
+    globalSources: summary.globalSources || 0,
+    userSources: summary.userSources || 0,
+    latestMonth: summary.latestMonth || '',
+    recommendableCatalogItems: summary.recommendableCatalogItems || 0,
+    reviewNeededCatalogItems: summary.reviewNeededCatalogItems || 0,
+    conflictCatalogItems: summary.conflictCatalogItems || 0,
+    privacyRiskSources: summary.privacyRiskSources || 0,
+    highQualitySources: summary.highQualitySources || 0
+  };
+}
+
+function buildPolibotKnowledgeSnapshot({ workspace = {}, evidence = [], recommendations = [], recommendationNotice = '' } = {}) {
+  const usedSources = [...new Map(evidence
+    .map((source) => [source.dbSourceId || source.id || source.fileName, source])
+    .filter(([key]) => key)
+  ).values()].slice(0, 20);
+  const usedCatalogItems = recommendations
+    .flatMap((recommendation) => recommendation.catalogItems || [])
+    .map((item) => ({
+      sourceId: item.sourceId || '',
+      company: item.company || '',
+      productName: item.productName || '',
+      evidenceFile: item.evidenceFile || ''
+    }))
+    .filter((item, index, all) => item.productName && all.findIndex((row) => `${row.company}-${row.productName}-${row.sourceId}` === `${item.company}-${item.productName}-${item.sourceId}`) === index)
+    .slice(0, 30);
+  return {
+    createdAt: now(),
+    latestKnowledgeMonth: workspace.latestKnowledgeMonth || '',
+    dbSummary: compactPolibotDbSummary(workspace.knowledgeDbSummary || {}),
+    usedSources: usedSources.map((source) => ({
+      sourceId: source.dbSourceId || source.id || '',
+      fileName: source.fileName || '',
+      month: source.month || '',
+      scope: source.scope || '',
+      sourceChannel: source.sourceChannel || '',
+      knowledgeStatus: source.knowledgeStatus || '',
+      evidenceQualityScore: Number(source.evidenceQualityScore || 0)
+    })),
+    usedCatalogItems,
+    recommendationCount: recommendations.length,
+    failureReason: recommendations.length ? '' : recommendationNotice
   };
 }
 
@@ -603,8 +748,33 @@ function normalizeCatalogReviews(reviews = {}) {
 }
 
 function sourceCatalogItems(source = {}, reviews = {}) {
-  return buildPolibotCatalogItems([source], { reviews })
+  const dbCatalogItems = Array.isArray(source.catalogItems) && source.dbSourceId
+    ? source.catalogItems
+    : [];
+  const items = dbCatalogItems.length
+    ? dbCatalogItems
+    : buildPolibotCatalogItems([source], { reviews });
+  return items
     .filter((item) => item.status === 'confirmed' && Number(item.confidence || 0) >= 80 && ['충분', '보통'].includes(item.completeness || '부족'));
+}
+
+function catalogItemMatchesNeeds(item = {}, needs = []) {
+  if (!Array.isArray(needs) || needs.length === 0) return true;
+  const haystack = [
+    item.productName,
+    item.productGroup,
+    ...(Array.isArray(item.coverageKeywords) ? item.coverageKeywords : [])
+  ].filter(Boolean).join(' ');
+  return needs.some((need) => haystack.includes(need) || String(need || '').includes(item.productGroup || ''));
+}
+
+function normalizePolibotCautions(values = [], profile = {}) {
+  const existingMedicalPlan = String(profile.existingMedicalPlan || '').trim();
+  return [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value) => existingMedicalPlan !== '없음' || !/실손|중복/.test(value))
+  )].slice(0, 6);
 }
 
 function cleanPolibotProductNames(names = []) {
@@ -648,7 +818,7 @@ function classifyPolibotProducts(source = {}, reviews = {}) {
     statusLabel: {
       confirmed: '확정 상품',
       auto: '자동 추출',
-      review: '검수 필요',
+      review: '검토 필요',
       none: '상품명 부족'
     }[status],
     productNames: cleanNames,
@@ -694,6 +864,11 @@ function buildPolibotQualityReport(knowledgeSources = [], reviews = {}) {
   };
 }
 
+function isPolibotRecommendationEligibleSource(source = {}) {
+  return source.recommendationEligible !== false
+    && !['privacy_risk', 'ocr_needed', 'excluded', 'conflict'].includes(source.knowledgeStatus);
+}
+
 function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
   const needs = profile.needs || [];
   const missing = [];
@@ -717,7 +892,7 @@ function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
     !profile.existingMedicalPlan && '실손 중복 여부 확인 필요',
     !profile.medicalHistory && '병력/부담보 가능성 확인 필요',
     profile.renewalPreference === '비갱신 선호' && '비갱신형 보험료 부담 확인 필요',
-    qualityReport.recommendableProducts === 0 && '추천 가능한 상품명 자료 부족'
+    qualityReport.recommendableProducts === 0 && '자동 확정 상품 자료 부족'
   ].filter(Boolean);
   const completeness = missing.length <= 1 ? '충분' : missing.length <= 4 ? '보통' : '부족';
   return {
@@ -756,13 +931,13 @@ function polibotConfidence({ profile, sources, keywordHits, productNames, qualit
   if (catalogItems.some((item) => item.completeness === '부족')) score -= 8;
   if ((qualityReport?.recommendableProducts || 0) < 3) score -= 12;
   const level = score >= 72 ? '높음' : score >= 48 ? '보통' : '낮음';
-  const reasons = [
-    level === '낮음' && '고객 정보나 추천 가능 상품명이 부족해요.',
-    !profile.medicalHistory && '고지 이슈 확인 전이라 최종 추천은 보류가 필요해요.',
-    !profile.existingMedicalPlan && '기존 실손 중복 여부를 확인해야 해요.',
+  const reasons = normalizePolibotCautions([
+    level === '낮음' && '고객 정보 또는 상품 근거 보강 필요',
+    !profile.medicalHistory && '최종 가입 전 고지 확인 필요',
+    ...(Array.isArray(profile.riskHoldReasons) ? profile.riskHoldReasons.map((reason) => `${reason} 확인 필요`) : []),
     catalogItems.some((item) => item.completeness === '부족') && '확정 상품의 가입조건/주의사항 정보가 부족해요.',
     (qualityReport?.recommendableProducts || 0) < 3 && '추천 가능한 상품 카탈로그가 아직 적어요.'
-  ].filter(Boolean);
+  ].filter(Boolean), profile);
   return { level, score, reasons };
 }
 
@@ -785,7 +960,9 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
   const primary = sources[0] || {};
   const keywordHits = [...new Set(sources.flatMap((source) => source.keywordHits || []).filter(Boolean))].slice(0, 6);
   const productGroup = primary.productGroup || label;
-  const catalogItems = sources.flatMap((source) => sourceCatalogItems(source, profile.catalogReviews));
+  const rawCatalogItems = sources.flatMap((source) => sourceCatalogItems(source, profile.catalogReviews));
+  const needMatchedItems = rawCatalogItems.filter((item) => catalogItemMatchesNeeds(item, profile.needs));
+  const catalogItems = needMatchedItems.length ? needMatchedItems : rawCatalogItems;
   const productNames = [...new Set(catalogItems.map((item) => item.productName).filter(Boolean))];
   if (productNames.length === 0) return null;
   if (type === 'bundle' && productNames.length < 2) return null;
@@ -801,15 +978,22 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
   const gapText = coveredNeeds.length ? coveredNeeds.join(', ') : (profile.needs || []).slice(0, 3).join(', ') || productGroup;
   const itemKeywords = [...new Set(catalogItems.flatMap((item) => item.coverageKeywords || []).filter(Boolean))].slice(0, 8);
   const keywordText = keywordHits.length ? keywordHits.join(', ') : itemKeywords.length ? itemKeywords.join(', ') : productGroup;
-  const catalogCautions = [...new Set(catalogItems.flatMap((item) => [
+  const riskCautions = Array.isArray(profile.riskHoldReasons)
+    ? profile.riskHoldReasons.map((reason) => `${reason} 확인 필요`)
+    : [];
+  const catalogCautions = normalizePolibotCautions([
+    ...riskCautions,
+    ...catalogItems.flatMap((item) => [
     ...(item.cautions || []),
     item.cautionMemo,
     item.disclosureMemo,
     item.reductionMemo,
     ...(item.excludedAudience || []).map((value) => `제외/제한: ${value}`)
-  ]).filter(Boolean))].slice(0, 8);
-  const premiumMemo = catalogItems.find((item) => item.premiumExample)?.premiumExample
-    || (profile.budget ? `월 ${profile.budget}만원 안에서 조정 검토` : '예산 입력 시 보험료 메모를 더 구체화할 수 있어요.');
+    ])
+  ].filter(Boolean), profile);
+  const premiumMemo = catalogItems.find((item) => item.premiumExample && item.premiumConfidence !== 'none')?.premiumExample
+    || '보험료 자료 없음';
+  const premiumPlan = buildPolibotPremiumPlan(profile);
   return {
     id: `polibot-rec-${hashText(`${type}-${name}-${index}-${Date.now()}`)}`,
     type,
@@ -819,9 +1003,16 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     reason: `${keywordText} 자료가 고객 니즈와 맞아요.`,
     coverageGap: gapText ? `${gapText} 공백 점검` : '보장 공백 확인',
     premium: premiumMemo,
-    cautions: catalogCautions.length ? catalogCautions : [...new Set(sources.flatMap((source) => source.cautions || []))].slice(0, 5),
+    targetPremium: premiumPlan.targetPremium,
+    currentPremium: premiumPlan.currentPremium,
+    additionalBudgetMemo: premiumPlan.additionalBudgetMemo,
+    premiumConfidence: premiumMemo === '보험료 자료 없음' ? 'none' : 'confirmed',
+    cautions: catalogCautions.length ? catalogCautions : normalizePolibotCautions(sources.flatMap((source) => source.cautions || []), profile),
+    recommendationStatus: catalogCautions.length ? 'needs_review' : 'ready',
     keywords: keywordHits.length ? keywordHits : itemKeywords,
     catalogItems: catalogItems.map((item) => ({
+      id: item.id || '',
+      sourceId: item.sourceId || '',
       productName: item.productName,
       company: item.company,
       productGroup: item.productGroup,
@@ -832,12 +1023,15 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
       disclosureMemo: item.disclosureMemo || '',
       reductionMemo: item.reductionMemo || '',
       premiumExample: item.premiumExample || '',
+      premiumConfidence: item.premiumConfidence || '',
       refundRate: item.refundRate || '',
       targetAudience: item.targetAudience || [],
       excludedAudience: item.excludedAudience || [],
       cautionMemo: item.cautionMemo || '',
       completeness: item.completeness || '부족',
-      evidenceFile: item.evidenceFile || ''
+      evidenceFile: item.evidenceFile || '',
+      evidenceMonth: item.evidenceMonth || '',
+      conflictReasons: item.conflictReasons || []
     })),
     sourceCompanies,
     evidence: sources.map((source) => polibotEvidencePayload(source, profile.catalogReviews)),
@@ -878,6 +1072,10 @@ export async function savePolibotRecommendation(userId, {
     renewalPreference: String(renewalPreference || '').trim(),
     purpose: POLIBOT_PURPOSES.includes(String(purpose || '').trim()) ? String(purpose || '').trim() : String(purpose || '').trim()
   };
+  const premiumPlan = buildPolibotPremiumPlan(profile);
+  profile.targetPremium = premiumPlan.targetPremium;
+  profile.currentPremium = premiumPlan.currentPremium;
+  profile.additionalBudgetMemo = premiumPlan.additionalBudgetMemo;
   if (!profile.age && profile.needs.length === 0 && !profile.budget) {
     const error = new Error('고객 나이, 니즈, 예산 중 하나 이상을 입력해 주세요.');
     error.status = 400;
@@ -886,6 +1084,7 @@ export async function savePolibotRecommendation(userId, {
   const seed = hashText(JSON.stringify(profile));
   const workspace = await getProductWorkspace(userId, 'polibot');
   const knowledgeSources = Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [];
+  const recommendationKnowledgeSources = knowledgeSources.filter(isPolibotRecommendationEligibleSource);
   const catalogReviews = normalizeCatalogReviews(workspace.catalogReviews);
   const qualityReport = buildPolibotQualityReport(knowledgeSources, catalogReviews);
   const consultationDraft = buildPolibotConsultationDraft(profile, qualityReport);
@@ -898,7 +1097,8 @@ export async function savePolibotRecommendation(userId, {
     !profile.medicalHistory && '병력/고지 이슈'
   ].filter(Boolean);
   const riskHoldReasons = [
-    !profile.existingMedicalPlan && '실손 중복 여부',
+    !profile.existingMedicalPlan && '기존 실손 여부',
+    profile.existingMedicalPlan && profile.existingMedicalPlan !== '없음' && '실손 중복 여부',
     !profile.medicalHistory && '병력/고지 이슈',
     /있음|예|확인|수술|입원|투약|치료|진단/i.test(profile.medicalHistory) && '고지 상세',
     profile.renewalPreference === '비갱신 선호' && '갱신형 부담',
@@ -909,34 +1109,32 @@ export async function savePolibotRecommendation(userId, {
     profile.needs.length === 0 && '필요 보장',
     !profile.budget && '예산'
   ].filter(Boolean);
-  if (hardMissing.length > 0 || missingForRecommendation.length >= 4) {
+  if (hardMissing.length > 0) {
     const patch = {
       customerProfile: profile,
       consultationDraft,
       qualityReport,
       recommendations: [],
       excludedCandidates: [],
-      recommendationNotice: `추천 전에 ${(hardMissing.length ? hardMissing : missingForRecommendation).slice(0, 4).join(', ')} 정보를 먼저 확인해 주세요. 고객 조건이 부족해서 사용 횟수는 차감하지 않았어요.`
+    recommendationNotice: `추천 전에 ${(hardMissing.length ? hardMissing : missingForRecommendation).slice(0, 4).join(', ')} 정보를 먼저 확인해 주세요. 고객 조건이 부족해서 사용 횟수는 차감하지 않았어요.`
     };
-    return updateWorkspace(userId, 'polibot', patch);
-  }
-  if (riskHoldReasons.length > 0) {
-    const patch = {
-      customerProfile: profile,
-      consultationDraft,
-      qualityReport,
+    patch.knowledgeSnapshot = buildPolibotKnowledgeSnapshot({
+      workspace,
+      evidence: [],
       recommendations: [],
-      excludedCandidates: [],
-      recommendationNotice: `추천 전에 ${riskHoldReasons.slice(0, 3).join(', ')} 확인이 필요해요. 보류 조건이라 사용 횟수는 차감하지 않았어요.`
-    };
+      recommendationNotice: patch.recommendationNotice
+    });
     return updateWorkspace(userId, 'polibot', patch);
   }
-  const enrichedProfile = { ...profile, qualityReport, consultationDraft, catalogReviews };
-  const evidence = rankPolibotEvidence(knowledgeSources, profile)
-    .filter((source) => Number(source.matchScore || 0) >= 9 || (source.keywordHits || []).length > 0)
-    .slice(0, 8);
-  const productEvidence = evidence
-    .filter((source) => sourceCatalogItems(source, catalogReviews).length > 0)
+  const enrichedProfile = { ...profile, qualityReport, consultationDraft, catalogReviews, riskHoldReasons };
+  const rankedEvidence = rankPolibotEvidence(recommendationKnowledgeSources, profile);
+  const evidence = rankedEvidence
+    .filter((source) => Number(source.matchScore || 0) >= 9
+      || (source.keywordHits || []).length > 0
+      || sourceCatalogItems(source, catalogReviews).some((item) => catalogItemMatchesNeeds(item, profile.needs)))
+    .slice(0, 12);
+  const productEvidence = rankedEvidence
+    .filter((source) => sourceCatalogItems(source, catalogReviews).some((item) => catalogItemMatchesNeeds(item, profile.needs)))
     .slice(0, 6);
   const recommendationEvidence = productEvidence;
   const labels = recommendationEvidence.map((source) => source.productGroup || '보장 검토');
@@ -960,19 +1158,39 @@ export async function savePolibotRecommendation(userId, {
     .filter((item) => item && item.evidence.length > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 6);
+  const recommendationNotice = recommendations.length
+    ? (riskHoldReasons.length ? `${riskHoldReasons.slice(0, 3).join(', ')} 확인이 필요해요. 추천 후보의 주의 조건에 표시했어요.` : '')
+    : (qualityReport.recommendableProducts > 0
+      ? '추천 가능한 상품은 있지만 입력한 고객 조건과 직접 맞는 조합을 찾지 못했어요. 니즈, 예산, 보험사 조건을 조금 더 구체화해 주세요.'
+      : '추천 가능한 확정 상품 데이터가 부족해요. 상품 비교표나 설계 자료를 추가하거나 검토 필요 후보를 먼저 정리해 주세요.');
+  const knowledgeSnapshot = buildPolibotKnowledgeSnapshot({
+    workspace,
+    evidence: recommendationEvidence.length ? recommendationEvidence : evidence,
+    recommendations,
+    recommendationNotice
+  });
+  const recommendationsWithSnapshot = recommendations.map((recommendation) => ({
+    ...recommendation,
+    knowledgeSnapshot: {
+      createdAt: knowledgeSnapshot.createdAt,
+      latestKnowledgeMonth: knowledgeSnapshot.latestKnowledgeMonth,
+      dbSummary: knowledgeSnapshot.dbSummary,
+      usedSourceIds: knowledgeSnapshot.usedSources.map((source) => source.sourceId).filter(Boolean),
+      usedCatalogItems: knowledgeSnapshot.usedCatalogItems
+        .filter((item) => (recommendation.catalogItems || []).some((candidate) => candidate.productName === item.productName && candidate.company === item.company))
+        .slice(0, 10)
+    }
+  }));
   const patch = {
     customerProfile: profile,
     consultationDraft,
     qualityReport,
-    recommendations,
+    recommendations: recommendationsWithSnapshot,
     excludedCandidates: buildPolibotExcludedCandidates(evidence, profile),
-    recommendationNotice: recommendations.length
-      ? ''
-      : (qualityReport.recommendableProducts > 0
-        ? '추천 가능한 상품은 있지만 입력한 고객 조건과 직접 맞는 조합을 찾지 못했어요. 니즈, 예산, 보험사 조건을 조금 더 구체화해 주세요.'
-        : '추천 가능한 확정 상품 데이터가 부족해요. 상품 비교표나 설계 자료를 추가하거나 검수 필요 상품을 먼저 정리해 주세요.')
+    recommendationNotice,
+    knowledgeSnapshot
   };
-  return recommendations.length
+  return recommendationsWithSnapshot.length
     ? updateWorkspaceAndConsume(userId, 'polibot', patch)
     : updateWorkspace(userId, 'polibot', patch);
 }
@@ -1030,6 +1248,7 @@ export async function savePolibotCustomer(userId, { id = '', name = '', age = ''
     recommendations: Array.isArray(workspace.recommendations) && workspace.recommendations.length ? workspace.recommendations : existing?.recommendations || [],
     consultationDraft: workspace.consultationDraft || existing?.consultationDraft || null,
     excludedCandidates: workspace.excludedCandidates || existing?.excludedCandidates || [],
+    knowledgeSnapshot: workspace.knowledgeSnapshot || recommendation?.knowledgeSnapshot || existing?.knowledgeSnapshot || null,
     updatedAt: now(),
     createdAt: existing?.createdAt || now()
   };
@@ -1037,6 +1256,88 @@ export async function savePolibotCustomer(userId, { id = '', name = '', age = ''
   return updateWorkspace(userId, 'polibot', {
     customers: [customer, ...withoutCurrent].slice(0, 100)
   });
+}
+
+const POLIBOT_FEEDBACK_MAP = {
+  '좋음': 'good',
+  good: 'good',
+  '애매함': 'unclear',
+  unclear: 'unclear',
+  '틀림': 'wrong',
+  wrong: 'wrong'
+};
+
+function normalizePolibotFeedback(value = '') {
+  const key = String(value || '').trim();
+  return POLIBOT_FEEDBACK_MAP[key] || '';
+}
+
+export async function savePolibotRecommendationFeedback(userId, {
+  recommendationId = '',
+  feedback = '',
+  rating = '',
+  reason = '',
+  memo = '',
+  customerId = ''
+} = {}) {
+  const normalizedRating = normalizePolibotFeedback(rating || feedback);
+  if (!recommendationId || !normalizedRating) {
+    const error = new Error('recommendationId와 feedback은 필수입니다.');
+    error.status = 400;
+    throw error;
+  }
+  const workspace = await getProductWorkspace(userId, 'polibot');
+  const recommendations = Array.isArray(workspace.recommendations) ? workspace.recommendations : [];
+  const target = recommendations.find((item) => item.id === recommendationId);
+  if (!target) {
+    const error = new Error('추천 항목을 찾지 못했습니다.');
+    error.status = 404;
+    throw error;
+  }
+  const labelByRating = { good: '좋음', unclear: '애매함', wrong: '틀림' };
+  const feedbackPatch = {
+    feedback: labelByRating[normalizedRating],
+    feedbackRating: normalizedRating,
+    feedbackReason: String(reason || '').trim(),
+    feedbackMemo: String(memo || '').trim(),
+    feedbackSavedAt: now()
+  };
+  const nextRecommendations = recommendations.map((item) => item.id === recommendationId
+    ? { ...item, ...feedbackPatch }
+    : item);
+  const feedbackRow = await dbInsert('polibot_recommendation_feedback', {
+    user_id: userId,
+    recommendation_id: recommendationId,
+    customer_id: String(customerId || '').trim() || null,
+    rating: normalizedRating,
+    reason: feedbackPatch.feedbackReason,
+    memo: feedbackPatch.feedbackMemo,
+    recommendation_snapshot: {
+      id: target.id,
+      name: target.name,
+      type: target.type,
+      score: target.score,
+      cautions: target.cautions || [],
+      catalogItems: target.catalogItems || [],
+      evidence: target.evidence || []
+    },
+    knowledge_snapshot: target.knowledgeSnapshot || workspace.knowledgeSnapshot || {},
+    routed_to_review: normalizedRating !== 'good'
+  });
+  const nextWorkspace = await updateWorkspace(userId, 'polibot', {
+    recommendations: nextRecommendations,
+    feedbackSummary: {
+      ...(workspace.feedbackSummary || {}),
+      lastFeedbackAt: feedbackPatch.feedbackSavedAt,
+      lastFeedback: normalizedRating,
+      total: Number(workspace.feedbackSummary?.total || 0) + 1,
+      needsReview: Number(workspace.feedbackSummary?.needsReview || 0) + (normalizedRating === 'good' ? 0 : 1)
+    }
+  });
+  return {
+    ...nextWorkspace,
+    feedback: feedbackRow
+  };
 }
 
 export async function saveSpreadCampaign(userId, { goal = '', channel = '', product = '' } = {}) {

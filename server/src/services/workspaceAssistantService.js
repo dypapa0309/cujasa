@@ -65,7 +65,7 @@ function normalizeAssistantResult(result = {}, defaults = {}) {
   const productId = productById(result.productId)?.id || actionProductId(action) || defaults.productId || defaults.currentProduct || 'cujasa';
   const draft = result.draft && typeof result.draft === 'object' ? result.draft : {};
   const confidence = Number(result.confidence);
-  return {
+  const normalized = {
     answer: String(result.answer || '').trim(),
     intent: String(result.intent || 'assistant'),
     productId,
@@ -77,6 +77,12 @@ function normalizeAssistantResult(result = {}, defaults = {}) {
     buttons: safeButtons((result.buttons || []).map((item) => button(item.label, item.actionKey || item.action))),
     clarification: Boolean(result.clarification)
   };
+  if (result.workflow && typeof result.workflow === 'object') normalized.workflow = result.workflow;
+  if (Array.isArray(result.missingFields)) normalized.missingFields = result.missingFields;
+  if (Array.isArray(result.nextQuestions)) normalized.nextQuestions = result.nextQuestions;
+  if (typeof result.readyToSubmit === 'boolean') normalized.readyToSubmit = result.readyToSubmit;
+  if (result.confirmAction && typeof result.confirmAction === 'object') normalized.confirmAction = result.confirmAction;
+  return normalized;
 }
 
 function clarificationResult({ currentProduct = 'cujasa', buttons = [], answer = '' } = {}) {
@@ -158,8 +164,19 @@ function extractName(text = '') {
   return ['남성', '남자', '여성', '여자'].includes(name) ? '' : name;
 }
 
+function extractWorkflowName(text = '') {
+  const leadingName = String(text || '').match(/^([가-힣]{2,4})\s*\d{2}\s*(?:세|살)/)?.[1] || '';
+  const name = leadingName || extractName(text);
+  return INSURANCE_NEEDS.includes(name) ? '' : name;
+}
+
 function extractBudget(text = '') {
   const match = text.match(/월\s*(\d{1,3})\s*만/) || text.match(/(\d{1,3})\s*만원/);
+  return match?.[1] || '';
+}
+
+function extractPremiumNumber(text = '') {
+  const match = String(text || '').match(/(\d{1,3}(?:\.\d+)?)\s*(?:만|만원)?/);
   return match?.[1] || '';
 }
 
@@ -187,6 +204,184 @@ function extractInsuranceDetails(text = '') {
   else if (/신규|처음/.test(text)) draft.purpose = '신규 가입';
   else if (/보강|강화|추가/.test(text)) draft.purpose = '보장 강화';
   return draft;
+}
+
+const POLIBOT_WORKFLOW_REQUIRED_FIELDS = [
+  { key: 'age', label: '나이', importance: 'required', question: '고객 나이를 몇 세로 볼까요?' },
+  { key: 'needs', label: '필요 보장', importance: 'required', question: '필요 보장은 어떤 것들이에요? 예: 암, 뇌, 심장' },
+  { key: 'budget', label: '목표 월 보험료', importance: 'required', question: '목표 월 보험료는 얼마로 볼까요? 숫자만 40처럼 적어도 돼요.' }
+];
+
+const POLIBOT_WORKFLOW_CONFIRM_FIELDS = [
+  { key: 'gender', label: '성별', importance: 'confirm', question: '성별은 남성/여성 중 어디에 가까울까요?' },
+  { key: 'existingMedicalPlan', label: '기존 실손 여부', importance: 'confirm', question: '기존 실손보험은 있나요?' },
+  { key: 'medicalHistory', label: '병력/고지 이슈', importance: 'confirm', question: '최근 병력이나 고지할 이슈가 있나요?' }
+];
+
+function compactDraftValue(value) {
+  if (Array.isArray(value)) return value.filter(Boolean).join(', ');
+  return String(value ?? '').trim();
+}
+
+function normalizePolibotDraft(draft = {}) {
+  return Object.fromEntries(
+    Object.entries(draft || {})
+      .filter(([, value]) => value !== undefined && value !== null && compactDraftValue(value) !== '')
+      .map(([key, value]) => [key, Array.isArray(value) ? value.filter(Boolean).join(', ') : String(value).trim()])
+  );
+}
+
+function mergePolibotWorkflowDraft(previous = {}, incoming = {}) {
+  return {
+    ...normalizePolibotDraft(previous),
+    ...normalizePolibotDraft(incoming)
+  };
+}
+
+function polibotDraftNeeds(draft = {}) {
+  return extractInsuranceNeeds(String(draft.needs || '')).length
+    ? extractInsuranceNeeds(String(draft.needs || '')).join(', ')
+    : String(draft.needs || '').split(/[,，\n]/).map((item) => item.trim()).filter(Boolean).join(', ');
+}
+
+function extractPolibotWorkflowDraft(message = '', workflow = {}) {
+  const text = normalizeText(message);
+  const lower = text.toLowerCase();
+  const previous = workflow?.state?.draft || workflow?.draft || {};
+  const lastField = workflow?.state?.nextField || workflow?.nextField || '';
+  const draft = {
+    name: extractWorkflowName(text),
+    age: extractAge(text),
+    gender: /여성|여자|^여$|\s여\s/.test(text) ? '여성' : /남성|남자|^남$|\s남\s/.test(text) ? '남성' : '',
+    needs: extractInsuranceNeeds(text).join(', '),
+    budget: '',
+    ...extractInsuranceDetails(text)
+  };
+
+  const explicitTarget = text.match(/(?:목표|예산|희망|생각(?:하는)?|원하는)\s*(?:월\s*)?(?:보험료)?\s*(\d{1,3}(?:\.\d+)?)\s*(?:만|만원)?/);
+  const explicitCurrent = text.match(/(?:현재|지금|기존|납입)\s*(?:월\s*)?(?:보험료|납입)?\s*(\d{1,3}(?:\.\d+)?)\s*(?:만|만원)?/);
+  const pair = text.match(/(?:목표|예산|희망|생각(?:하는)?)\s*(\d{1,3}(?:\.\d+)?)\s*(?:만|만원)?[, ]+(?:현재|지금|기존|납입)\s*(\d{1,3}(?:\.\d+)?)\s*(?:만|만원)?/)
+    || text.match(/(?:현재|지금|기존|납입)\s*(\d{1,3}(?:\.\d+)?)\s*(?:만|만원)?[, ]+(?:목표|예산|희망|생각(?:하는)?)\s*(\d{1,3}(?:\.\d+)?)\s*(?:만|만원)?/);
+  if (pair) {
+    if (/^(?:현재|지금|기존|납입)/.test(pair[0])) {
+      draft.existingPremium = pair[1];
+      draft.budget = pair[2];
+    } else {
+      draft.budget = pair[1];
+      draft.existingPremium = pair[2];
+    }
+  }
+  if (explicitTarget) draft.budget = explicitTarget[1];
+  if (explicitCurrent) draft.existingPremium = explicitCurrent[1];
+
+  const bareNumber = extractPremiumNumber(text);
+  if (bareNumber && !draft.budget && !draft.existingPremium) {
+    if (lastField === 'budget') draft.budget = bareNumber;
+    if (lastField === 'existingPremium') draft.existingPremium = bareNumber;
+    if (!lastField && /월|만원|보험료|예산/.test(text)) draft.budget = bareNumber;
+  }
+
+  if (/실손|실비/.test(text) && /없|미가입|안\s*들/.test(text)) draft.existingMedicalPlan = '없음';
+  if (/실손|실비/.test(text) && /있|가입|들었/.test(text)) draft.existingMedicalPlan = '있음';
+  if (/고지|병력|수술|입원|투약|진단|치료/.test(text) && /없|이상\s*없|문제\s*없/.test(text)) draft.medicalHistory = '없음';
+  if (/고지|병력|수술|입원|투약|진단|치료/.test(text) && /있|필요|받았|했다|함/.test(text)) draft.medicalHistory = '있음';
+
+  if (/가족력/.test(text) && /없|이상\s*없/.test(text)) draft.familyHistory = '없음';
+  if (/암\s*가족력/.test(text)) draft.familyHistory = '암 가족력';
+  if (/뇌.*가족력/.test(text)) draft.familyHistory = '뇌혈관 가족력';
+  if (/심장.*가족력/.test(text)) draft.familyHistory = '심장 가족력';
+
+  if (/운전/.test(text) && /안\s*함|안해|없/.test(text)) draft.driving = '운전 안함';
+  if (/운전/.test(text) && /함|해|한다|있/.test(text)) draft.driving = '운전함';
+  if (/비갱신/.test(text)) draft.renewalPreference = '비갱신 선호';
+  if (/갱신.*상관|갱신.*괜찮|갱신.*허용/.test(text) || lower.includes('renewal ok')) draft.renewalPreference = '허용';
+
+  return mergePolibotWorkflowDraft(previous, draft);
+}
+
+function analyzePolibotWorkflowDraft(draft = {}) {
+  const normalized = normalizePolibotDraft({
+    ...draft,
+    needs: polibotDraftNeeds(draft)
+  });
+  const missingRequired = POLIBOT_WORKFLOW_REQUIRED_FIELDS.filter((field) => !compactDraftValue(normalized[field.key]));
+  const missingConfirm = POLIBOT_WORKFLOW_CONFIRM_FIELDS.filter((field) => !compactDraftValue(normalized[field.key]));
+  const nextField = missingRequired[0] || missingConfirm[0] || null;
+  const summaryParts = [
+    normalized.name,
+    normalized.age ? `${normalized.age}세` : '',
+    normalized.gender,
+    normalized.needs ? `보장 ${normalized.needs}` : '',
+    normalized.budget ? `목표 ${normalized.budget}만원` : '',
+    normalized.existingPremium ? `현재 ${normalized.existingPremium}만원` : ''
+  ].filter(Boolean);
+  return {
+    draft: normalized,
+    missingRequired,
+    missingConfirm,
+    nextField,
+    readyToSubmit: missingRequired.length === 0,
+    stateSummary: summaryParts.join(' · ')
+  };
+}
+
+function buildPolibotWorkflowResult({ message, currentProduct = 'polibot', workflow = {} } = {}) {
+  const draft = extractPolibotWorkflowDraft(message, workflow);
+  const analysis = analyzePolibotWorkflowDraft(draft);
+  const missingFields = [
+    ...analysis.missingRequired,
+    ...analysis.missingConfirm
+  ].map(({ key, label, importance }) => ({ key, label, importance }));
+  const nextQuestions = analysis.nextField ? [analysis.nextField.question] : [];
+  const needsConfirm = analysis.missingConfirm.length > 0;
+  const answer = !analysis.readyToSubmit
+    ? [
+      analysis.stateSummary ? `지금까지는 ${analysis.stateSummary}로 이해했어요.` : 'POLIBOT 추천 조건을 이어서 채울게요.',
+      analysis.nextField?.question || '핵심 조건을 조금 더 알려주세요.'
+    ].join(' ')
+    : needsConfirm
+      ? `핵심 조건은 잡았어요. ${analysis.stateSummary}로 추천 초안 생성은 가능하고, 정확도를 높이려면 ${analysis.missingConfirm.map((field) => field.label).join(', ')}만 확인하면 좋아요.`
+      : `좋아요. ${analysis.stateSummary}로 추천 초안을 만들 준비가 됐어요. 상품 추천 카드에서 추천 초안 만들기를 눌러주세요.`;
+
+  return normalizeAssistantResult({
+    answer,
+    intent: analysis.readyToSubmit ? 'polibot_workflow_ready' : 'polibot_workflow_collecting',
+    productId: 'polibot',
+    action: 'polibot-recommend',
+    draft: analysis.draft,
+    confidence: 0.93,
+    source: 'workflow_engine',
+    requiresConfirmation: true,
+    buttons: safeButtons([button('상품 추천 열기', 'polibot-recommend')]),
+    workflow: {
+      key: 'polibot_recommendation',
+      productId: 'polibot',
+      action: 'polibot-recommend',
+      draft: analysis.draft,
+      missingFields,
+      nextQuestions,
+      nextField: analysis.nextField?.key || '',
+      readyToSubmit: analysis.readyToSubmit,
+      stateSummary: analysis.stateSummary,
+      confirmAction: analysis.readyToSubmit
+        ? { key: 'polibot.generateRecommendation', label: '추천 초안 만들기', actionKey: 'polibot-recommend' }
+        : null
+    },
+    missingFields,
+    nextQuestions,
+    readyToSubmit: analysis.readyToSubmit,
+    confirmAction: analysis.readyToSubmit
+      ? { key: 'polibot.generateRecommendation', label: '추천 초안 만들기', actionKey: 'polibot-recommend' }
+      : null
+  }, { currentProduct });
+}
+
+function shouldUseTestWorkflow(message = '', currentProduct = 'cujasa', currentAction = '', workflow = {}) {
+  if (!workflow?.enabled) return false;
+  if (workflow.key === 'polibot_recommendation') return true;
+  if (currentAction === 'polibot-recommend') return true;
+  if (currentProduct === 'polibot' && /추천|상품|보험|보장|실손|실비|고지|병력|예산|보험료|목표|현재/.test(message)) return true;
+  return false;
 }
 
 function extractDexorCategory(text = '') {
@@ -394,7 +589,7 @@ export function classifyWorkspaceAssistantIntent({ message, currentProduct = 'cu
           ? '추천에 쓸 확정 상품 데이터가 아직 부족해요.'
           : '고객 조건과 추천 가능 상품의 매칭이 약해서 보수적으로 추천을 막았어요.');
       return normalizeAssistantResult({
-        answer: `${reason} 현재 추천 가능 상품은 ${summary.recommendableProducts || 0}개, 정보 부족 상품은 ${summary.insufficientProducts || 0}개, 검수 필요는 ${summary.reviewNeededProducts || 0}개예요. 자료 화면에서 확정 상품의 가입조건, 담보, 주의 문구를 먼저 확인해 주세요.`,
+        answer: `${reason} 현재 자동 확정 상품은 ${summary.recommendableProducts || 0}개, 확정 후 정보부족은 ${summary.insufficientProducts || 0}개, 검토 필요 후보는 ${summary.reviewNeededProducts || 0}개예요. 자료 화면에서 확정 상품의 가입조건, 담보, 주의 문구를 먼저 확인해 주세요.`,
         intent: 'polibot_recommendation_blocked_reason',
         productId: 'polibot',
         action: 'polibot-upload',
@@ -407,7 +602,7 @@ export function classifyWorkspaceAssistantIntent({ message, currentProduct = 'cu
     if (/자료|데이터|많|보험사|지식|뭐.*있|얼마나/.test(text)) {
       const companyText = summary.companies.length ? summary.companies.slice(0, 8).join(', ') : '아직 보험사 목록이 부족해요';
       return normalizeAssistantResult({
-        answer: `POLIBOT에는 자료 ${summary.knowledgeCount}개가 잡혀 있어요. 추천 가능 상품은 ${summary.recommendableProducts || 0}개, 정보 부족 상품은 ${summary.insufficientProducts || 0}개, 검수 필요는 ${summary.reviewNeededProducts || 0}개, OCR 필요 자료는 ${summary.ocrNeeded || 0}개예요. 최신 자료 월은 ${summary.latestMonth || '미확인'}이고, 보험사는 ${companyText} 기준으로 확인돼요.`,
+        answer: `POLIBOT에는 자료 ${summary.knowledgeCount}개가 잡혀 있어요. 자동 확정 상품은 ${summary.recommendableProducts || 0}개, 확정 후 정보부족은 ${summary.insufficientProducts || 0}개, 검토 필요 후보는 ${summary.reviewNeededProducts || 0}개, OCR 필요 자료는 ${summary.ocrNeeded || 0}개예요. 최신 자료 월은 ${summary.latestMonth || '미확인'}이고, 보험사는 ${companyText} 기준으로 확인돼요.`,
         intent: 'polibot_knowledge_status',
         productId: 'polibot',
         action: 'polibot-upload',
@@ -555,6 +750,10 @@ export function classifyWorkspaceAssistantIntent({ message, currentProduct = 'cu
   });
 }
 
+export function buildTestWorkspaceAssistantWorkflow(options = {}) {
+  return buildPolibotWorkflowResult(options);
+}
+
 function deterministicAssistant(options) {
   return classifyWorkspaceAssistantIntent(options);
 }
@@ -608,7 +807,8 @@ export async function logWorkspaceAssistantEvent(userId, payload = {}) {
     'workspace_assistant_draft_created',
     'workspace_assistant_wrong_panel',
     'workspace_assistant_slow_ai',
-    'workspace_assistant_clarification'
+    'workspace_assistant_clarification',
+    'workspace_assistant_workflow_step'
   ]);
   if (!allowed.has(event)) return { ok: false };
   await logWorkspaceAssistant(userId, {
@@ -635,6 +835,33 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
     ? [...new Set([currentProduct, inferredProduct, 'polibot'])]
     : [...new Set([currentProduct, inferredProduct])];
   const workspace = await loadWorkspaceContext(userId, contextProducts);
+  const workflowPayload = payload.assistantWorkflow && typeof payload.assistantWorkflow === 'object'
+    ? payload.assistantWorkflow
+    : {};
+  if (shouldUseTestWorkflow(message, currentProduct, payload.currentAction || '', workflowPayload)) {
+    const workflowResult = buildPolibotWorkflowResult({
+      message,
+      currentProduct,
+      workflow: workflowPayload
+    });
+    await logWorkspaceAssistant(userId, {
+      action: 'workspace_assistant_workflow_step',
+      message,
+      durationMs: Date.now() - startedAt,
+      payload: {
+        source: workflowResult.source,
+        intent: workflowResult.intent,
+        action: workflowResult.action || '',
+        productId: workflowResult.productId || '',
+        confidence: workflowResult.confidence,
+        readyToSubmit: Boolean(workflowResult.readyToSubmit),
+        missingFields: (workflowResult.missingFields || []).map((field) => field.label || field.key),
+        currentProduct,
+        inferredProduct
+      }
+    });
+    return workflowResult;
+  }
   const fallback = () => deterministicAssistant({
     message,
     currentProduct,

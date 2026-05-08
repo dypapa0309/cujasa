@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyWorkspaceAssistantIntent } from './workspaceAssistantService.js';
+import { buildTestWorkspaceAssistantWorkflow, classifyWorkspaceAssistantIntent } from './workspaceAssistantService.js';
 
 const allProducts = ['cujasa', 'dexor', 'spread', 'polibot', 'infludex'];
 
@@ -77,4 +77,37 @@ test('routes product-not-started requests to product start action', () => {
   assert.equal(result.action, 'polibot');
   assert.equal(result.productId, 'polibot');
   assert.equal(result.requiresConfirmation, true);
+});
+
+test('test workflow collects POLIBOT recommendation fields across turns', () => {
+  const first = buildTestWorkspaceAssistantWorkflow({
+    message: '이상빈 34세 남성 심장 실손 목표 40 현재 30',
+    currentProduct: 'polibot',
+    workflow: { enabled: true, key: 'polibot_recommendation' }
+  });
+  assert.equal(first.action, 'polibot-recommend');
+  assert.equal(first.workflow.key, 'polibot_recommendation');
+  assert.equal(first.draft.name, '이상빈');
+  assert.equal(first.draft.age, '34');
+  assert.equal(first.draft.gender, '남성');
+  assert.equal(first.draft.budget, '40');
+  assert.equal(first.draft.existingPremium, '30');
+  assert.match(first.draft.needs, /심장/);
+  assert.match(first.draft.needs, /실손/);
+  assert.equal(first.readyToSubmit, true);
+  assert.ok(first.missingFields.some((field) => field.key === 'medicalHistory'));
+
+  const second = buildTestWorkspaceAssistantWorkflow({
+    message: '실손 없음 고지 없음',
+    currentProduct: 'polibot',
+    workflow: {
+      enabled: true,
+      key: 'polibot_recommendation',
+      state: first.workflow
+    }
+  });
+  assert.equal(second.draft.existingMedicalPlan, '없음');
+  assert.equal(second.draft.medicalHistory, '없음');
+  assert.equal(second.readyToSubmit, true);
+  assert.equal(second.missingFields.filter((field) => field.importance === 'confirm').length, 0);
 });

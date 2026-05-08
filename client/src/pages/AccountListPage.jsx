@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import AccountCard from '../components/AccountCard.jsx';
 import AccountSettingsPage from './AccountSettingsPage.jsx';
+import SearchableSelect from '../components/SearchableSelect.jsx';
 
 export default function AccountListPage({ accounts, reloadAccounts, setSelectedAccountId, currentUser, accountSettingsOpenId, onAccountSettingsOpened }) {
   const [editing, setEditing] = useState(null);
@@ -17,6 +18,14 @@ export default function AccountListPage({ accounts, reloadAccounts, setSelectedA
     .filter((account) => account.owner)
     .map((account) => [account.owner.id, account.owner])).values()]
     .sort((a, b) => String(a.buyerName || a.username || a.email).localeCompare(String(b.buyerName || b.username || b.email)));
+  const customerOptions = customers.map((customer) => {
+    const label = [customer.buyerName || customer.username || customer.email, customer.username ? `ID ${customer.username}` : ''].filter(Boolean).join(' · ');
+    return {
+      value: customer.id,
+      label,
+      searchText: [label, customer.email, customer.buyerName, customer.username].filter(Boolean).join(' ')
+    };
+  });
   const displayAccounts = customerFilter
     ? sourceAccounts.filter((account) => account.owner?.id === customerFilter)
     : sourceAccounts;
@@ -94,14 +103,15 @@ export default function AccountListPage({ accounts, reloadAccounts, setSelectedA
         )}
         {isAdmin && (
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <select value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)} className="rounded border border-line bg-white px-3 py-2 text-sm text-slate-600">
-              <option value="">전체 고객</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {[customer.buyerName || customer.username || customer.email, customer.username ? `ID ${customer.username}` : ''].filter(Boolean).join(' · ')}
-                </option>
-              ))}
-            </select>
+            <SearchableSelect
+              value={customerFilter}
+              onChange={setCustomerFilter}
+              options={customerOptions}
+              placeholder="전체 고객"
+              searchPlaceholder="고객명 또는 ID 검색"
+              clearable
+              className="w-56"
+            />
             <label className="flex items-center gap-2 rounded border border-line bg-white px-3 py-2 text-sm text-slate-600">
               <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
               보관 계정 보기

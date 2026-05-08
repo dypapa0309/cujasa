@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import ProductCard from '../components/ProductCard.jsx';
+import SearchableSelect from '../components/SearchableSelect.jsx';
 
 export default function ProductResultPage({ selectedAccount }) {
   const toast = useToast();
@@ -206,25 +207,26 @@ export default function ProductResultPage({ selectedAccount }) {
 
         <section className="grid gap-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <select
-              className="max-w-md rounded border border-line px-3 py-2 text-sm"
+            <SearchableSelect
+              className="w-full max-w-md"
               value={topicId}
-              onChange={(e) => setTopicId(e.target.value)}
-            >
-              {topics.map((topic) => <option key={topic.id} value={topic.id}>{topic.title}</option>)}
-            </select>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={searchProducts} disabled={!topicId || actioning || searchBlocked} className="rounded border border-line bg-white px-3 py-2 text-sm font-semibold text-slate-600 disabled:opacity-50">
-            {searchBlocked ? `재검색 대기 ${waitSeconds}초` : '상품 재검색'}
-          </button>
-          <button type="button" onClick={autoSelectProducts} disabled={!topicId || actioning} className="rounded bg-coupang px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
-            실상품 자동 연결
-          </button>
-        </div>
+              onChange={setTopicId}
+              options={topics.map((topic) => ({ value: topic.id, label: topic.title }))}
+              placeholder="주제 선택"
+              searchPlaceholder="주제 검색"
+            />
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={searchProducts} disabled={!topicId || actioning || searchBlocked} className="rounded border border-line bg-white px-3 py-2 text-sm font-semibold text-slate-600 disabled:opacity-50">
+                {searchBlocked ? `재검색 대기 ${waitSeconds}초` : '상품 재검색'}
+              </button>
+              <button type="button" onClick={autoSelectProducts} disabled={!topicId || actioning} className="rounded bg-coupang px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">
+                실상품 자동 연결
+              </button>
+            </div>
           </div>
 
-      {(products.length > 0 || selectedAccount) && (
-        <div className={`rounded border px-4 py-3 text-sm ${needsRealLinkRecovery ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-line bg-white text-slate-600'}`}>
+          {(products.length > 0 || selectedAccount) && (
+            <div className={`rounded border px-4 py-3 text-sm ${needsRealLinkRecovery ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-line bg-white text-slate-600'}`}>
           <div className="font-semibold">
             {needsRealLinkRecovery ? '실상품 링크 복구 필요' : '상품 링크 상태'}
           </div>

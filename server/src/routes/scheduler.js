@@ -3,9 +3,30 @@ import { processDueQueue } from '../services/schedulerService.js';
 import { runFullPipeline } from '../services/pipelineService.js';
 import { generateBlogPost } from '../services/blogService.js';
 import { requireAdmin } from '../middleware/rateLimit.js';
+import { runDailyPipelineOnce } from '../services/schedulerRunService.js';
 
 const router = Router();
 let manualFullPipelineRunning = false;
+
+function requireSchedulerSecret(req, res, next) {
+  const expected = process.env.SCHEDULER_SECRET;
+  if (!expected) return res.status(503).json({ error: 'SCHEDULER_SECRET is not configured' });
+  const headerSecret = req.headers['x-scheduler-secret'];
+  const auth = req.headers.authorization || '';
+  const bearerSecret = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (headerSecret !== expected && bearerSecret !== expected) {
+    return res.status(403).json({ error: 'Invalid scheduler secret' });
+  }
+  return next();
+}
+
+router.post('/daily-pipeline', requireSchedulerSecret, async (req, res, next) => {
+  try {
+    res.json(await runDailyPipelineOnce({
+      triggeredBy: req.body?.triggeredBy || 'external_scheduler'
+    }));
+  } catch (e) { next(e); }
+});
 
 router.post('/run', requireAdmin, async (req, res, next) => {
   try { res.json({ processed: await processDueQueue() }); } catch (e) { next(e); }

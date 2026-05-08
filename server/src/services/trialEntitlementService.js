@@ -1,6 +1,7 @@
 import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
 
 const DEFAULT_FREE_LIMIT = 5;
+const UNLIMITED_TEST_EMAILS = new Set(['test1@test.com']);
 
 function isFreePlan(user) {
   return (user?.plan || 'free') === 'free';
@@ -8,6 +9,10 @@ function isFreePlan(user) {
 
 function isPaidPlan(user) {
   return ['onetime', 'monthly'].includes(user?.plan);
+}
+
+function isUnlimitedTestUser(user) {
+  return UNLIMITED_TEST_EMAILS.has(String(user?.email || '').trim().toLowerCase());
 }
 
 function blockedError(status) {
@@ -27,6 +32,17 @@ export function mapTrialStatus(user, { role = 'user' } = {}) {
       plan: 'admin',
       limit: null,
       used: null,
+      remaining: null,
+      blocked: false,
+      paidUntil: null
+    };
+  }
+  if (isUnlimitedTestUser(user)) {
+    return {
+      plan: 'paid',
+      paidPlan: 'test',
+      limit: null,
+      used: Number(user?.free_post_used ?? 0),
       remaining: null,
       blocked: false,
       paidUntil: null
@@ -126,6 +142,7 @@ export async function recordSuccessfulUpload(accountId) {
   const owner = await ownerForAccount(accountId);
   if (!owner) return null;
   const user = await dbGet('users', { id: owner.user_id });
+  if (isUnlimitedTestUser(user)) return mapTrialStatus(user);
   if (!isFreePlan(user)) return mapTrialStatus(user);
 
   // TODO: 체험 남용 방지 확장 지점. 같은 connected_threads_username/coupang_partner_id

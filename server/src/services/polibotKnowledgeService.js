@@ -36,6 +36,41 @@ const CONFIRMED_PRODUCT_HINT = /\(무\)|무배당|The|THE|Plus|PLUS|플러스|�
 
 const GENERIC_CATEGORY_PAIR = /^(?:생명|손해|장기|보장성|저축성|일반|건강|질병|상해)\s*[·ㆍ/]\s*(?:생명|손해|장기|보장성|저축성|일반|건강|질병|상해)\s*보험$/;
 
+const AUTO_CONFIRM_SCORE_THRESHOLD = 70;
+
+const PRODUCT_COMPANY_ALIASES = [
+  ['삼성화재', '삼성화재'],
+  ['현대해상', '현대해상'],
+  ['KB손해보험', 'KB손해보험'],
+  ['KB손보', 'KB손해보험'],
+  ['DB손해보험', 'DB손해보험'],
+  ['DB손보', 'DB손해보험'],
+  ['메리츠화재', '메리츠화재'],
+  ['메리츠', '메리츠화재'],
+  ['한화손해보험', '한화손해보험'],
+  ['한화손보', '한화손해보험'],
+  ['롯데손해보험', '롯데손해보험'],
+  ['롯데손보', '롯데손해보험'],
+  ['NH농협손해보험', 'NH농협손해보험'],
+  ['농협손보', 'NH농협손해보험'],
+  ['하나손보', '하나손해보험'],
+  ['흥국화재', '흥국화재'],
+  ['교보생명', '교보생명'],
+  ['한화생명', '한화생명'],
+  ['삼성생명', '삼성생명'],
+  ['DB생명', 'DB생명'],
+  ['동양생명', '동양생명'],
+  ['신한라이프', '신한라이프'],
+  ['미래에셋생명', '미래에셋생명'],
+  ['메트라이프', '메트라이프'],
+  ['라이나', '라이나']
+];
+
+const STRONG_PRODUCT_NAME_SIGNAL = /\(무\)|무배당|The|THE|Plus|PLUS|플러스|마이라이프|슬기로운|알뜰한|경영인|프리미엄|위너스|원픽|하이픽|더드림|The드림|굿앤굿|NEW|더스타트|건강쑥쑥|굿스타트|닥터플러스|원더풀/i;
+const PRODUCT_EVIDENCE_FILE_SIGNAL = /상품비교|비교|가입설계|상품요약|현황|보험료|가이드북/i;
+const GENERIC_AUTO_CONFIRM_NAME = /^(?:단기납\s*)?(?:종신보험|정기보험|운전자\s*보험|치매\s*간병보험|태아\s*\/\s*어린이\s*보험|반려동물보험|공시이율\s*종신보험|변액종신보험|CI\(GI\)\s*종신보험)$/;
+const BAD_AUTO_CONFIRM_NAME = /또는 보험|그리고 최근들어 보험|유사한 보험|회사 생명보험|가입금액|보장내용|표준형|기본형|료미제공|대질병진단비|다른 자동차|가족생활배상책임담보|종기\s*가입|받아봤고 보험|저는 보험|아참/i;
+
 function cleanText(value = '') {
   return String(value || '')
     .normalize('NFC')
@@ -62,6 +97,19 @@ function hashText(text = '') {
     hash |= 0;
   }
   return Math.abs(hash);
+}
+
+function normalizeProductKey(value = '') {
+  return String(value || '').replace(/\s+/g, '');
+}
+
+function inferCompanyFromProductName(productName = '') {
+  const normalized = normalizeProductKey(productName);
+  const match = PRODUCT_COMPANY_ALIASES.find(([alias]) => {
+    const aliasKey = normalizeProductKey(alias);
+    return productName.includes(alias) || normalized.includes(aliasKey);
+  });
+  return match?.[1] || '';
 }
 
 export function inferKnowledgeMonth(value = '', fallbackDate = new Date()) {
@@ -180,11 +228,14 @@ function extractPaymentTerm(text = '') {
 }
 
 function extractPremiumExample(text = '') {
-  return firstMatch(text, [
-    /월\s*\d{1,3}(?:,\d{3})*\s*원/,
-    /월\s*\d{1,3}\s*만\s*원/,
-    /보험료\s*[:：]?\s*[가-힣0-9,\s.만월원]{2,35}/
+  const value = firstMatch(text, [
+    /월\s*\d{1,3}(?:,\d{3})+\s*원/,
+    /월\s*\d{1,3}(?:\.\d+)?\s*만\s*원/,
+    /보험료\s*[:：]\s*(?:월\s*)?\d{1,3}(?:,\d{3})+\s*원/,
+    /보험료\s*[:：]\s*(?:월\s*)?\d{1,3}(?:\.\d+)?\s*만\s*원/
   ]);
+  if (/비교|자료|표|현황|예시|기준/.test(value) && !/\d{1,3}(?:,\d{3})+\s*원|\d{1,3}(?:\.\d+)?\s*만\s*원/.test(value)) return '';
+  return value;
 }
 
 function extractRefundRate(text = '') {
@@ -241,6 +292,17 @@ function extractCautions(text = '') {
   if (/중복|실손/.test(source)) cautions.push('중복 가입 여부 확인');
   if (/해지|환급률/.test(source)) cautions.push('해지환급률 확인');
   return cautions.slice(0, 5);
+}
+
+function candidateContext(text = '', candidateName = '') {
+  const source = cleanText(text);
+  const name = cleanText(candidateName);
+  if (!source || !name) return source.slice(0, 1000);
+  const index = source.indexOf(name);
+  if (index < 0) return source.slice(0, 1000);
+  const start = Math.max(0, index - 420);
+  const end = Math.min(source.length, index + name.length + 720);
+  return cleanText(source.slice(start, end));
 }
 
 function summarizeText(text = '', keywords = []) {
@@ -420,9 +482,70 @@ function applyCatalogReview(item = {}, reviews = {}) {
   };
 }
 
+function scorePolibotAutoConfirmation(item = {}, occurrenceMap = {}) {
+  if (!['auto', 'review'].includes(item.status)) return 0;
+  const productName = cleanText(item.productName);
+  if (!productName || item.fileType === 'image') return 0;
+
+  let score = item.status === 'auto' ? 25 : 8;
+  if (item.completeness === '충분') score += 15;
+  if (item.completeness === '보통') score += 8;
+  const hasCompanyInName = Boolean(inferCompanyFromProductName(productName));
+  const hasStrongSignal = STRONG_PRODUCT_NAME_SIGNAL.test(productName);
+  if (hasCompanyInName) score += 25;
+  if (hasCompanyInName && /(보험|플랜)$/.test(productName)) score += 3;
+  if (hasStrongSignal) score += 20;
+  if (item.status === 'auto' && hasStrongSignal) score += 2;
+  if (PRODUCT_EVIDENCE_FILE_SIGNAL.test(`${item.fileName || ''} ${item.evidenceFile || ''}`)) score += 8;
+  if (item.ageRange) score += 7;
+  if (item.paymentTerm) score += 7;
+  if (item.premiumExample) score += 7;
+  if ((occurrenceMap[normalizeProductKey(productName)] || 0) >= 2) score += 10;
+
+  const tokenCount = productName.split(/\s+/).filter(Boolean).length;
+  if (productName.length > 32) score -= 20;
+  if (tokenCount >= 5) score -= 18;
+  if (/^\d|\d+개|\d+\s/.test(productName)) score -= 12;
+  if (GENERIC_AUTO_CONFIRM_NAME.test(productName)) score -= 25;
+  if (BAD_AUTO_CONFIRM_NAME.test(productName)) score -= 35;
+
+  return score;
+}
+
+function applyAutoConfirmation(item = {}, occurrenceMap = {}) {
+  const autoConfirmationScore = scorePolibotAutoConfirmation(item, occurrenceMap);
+  if (autoConfirmationScore < AUTO_CONFIRM_SCORE_THRESHOLD) {
+    return { ...item, autoConfirmationScore };
+  }
+  return {
+    ...item,
+    status: 'confirmed',
+    confidence: Math.max(Number(item.confidence || 0), 88),
+    autoConfirmed: true,
+    autoConfirmationScore,
+    reviewReason: item.reviewReason || '근거점수 기준 자동 확정'
+  };
+}
+
 export function buildPolibotCatalogItems(knowledgeSources = [], options = {}) {
   const includeReview = Boolean(options.includeReview);
   const reviews = options.reviews && typeof options.reviews === 'object' ? options.reviews : {};
+  const occurrenceMap = knowledgeSources.reduce((acc, source) => {
+    const candidates = Array.isArray(source.productCandidates) && source.productCandidates.length
+      ? source.productCandidates
+      : buildPolibotProductCandidates({
+        text: [source.textSnippet, source.summary, ...(Array.isArray(source.productNames) ? source.productNames : [])].filter(Boolean).join('\n'),
+        fileName: source.fileName,
+        companies: source.companies || [source.company].filter(Boolean),
+        productGroup: source.productGroup,
+        keywords: source.keywords || []
+      });
+    candidates.forEach((candidate) => {
+      const key = normalizeProductKey(candidate.name);
+      if (key) acc[key] = (acc[key] || 0) + 1;
+    });
+    return acc;
+  }, {});
   return knowledgeSources.flatMap((source) => {
     const candidates = Array.isArray(source.productCandidates) && source.productCandidates.length
       ? source.productCandidates
@@ -436,21 +559,25 @@ export function buildPolibotCatalogItems(knowledgeSources = [], options = {}) {
     return candidates
       .filter((candidate) => ['confirmed', 'auto', 'review', 'excluded'].includes(candidate.status))
       .map((candidate) => {
+        const sourceContext = [source.textSnippet, source.summary, source.note].filter(Boolean).join('\n');
         const context = [
           candidate.name,
-          source.textSnippet,
-          source.summary,
-          source.note,
+          candidateContext(sourceContext, candidate.name),
           source.fileName
         ].filter(Boolean).join('\n');
+        const inferredCompany = inferCompanyFromProductName(candidate.name);
+        const candidateCompanies = candidate.companies?.length ? candidate.companies : source.companies || [source.company].filter(Boolean);
+        const companies = inferredCompany
+          ? [inferredCompany, ...candidateCompanies.filter((company) => company !== inferredCompany)]
+          : candidateCompanies;
         const baseItem = {
         id: `polibot-catalog-${hashText(`${source.id || source.fileName}-${candidate.name}`)}`,
         sourceId: source.id || '',
         fileName: source.fileName || '',
         month: source.month || '',
         fileType: source.fileType || inferPolibotFileType(source.fileName),
-        company: candidate.company || source.company || '미분류',
-        companies: candidate.companies?.length ? candidate.companies : source.companies || [source.company].filter(Boolean),
+        company: inferredCompany || candidate.company || source.company || '미분류',
+        companies,
         productName: candidate.name,
         productGroup: candidate.productGroup || source.productGroup || '종합 보장',
         coverageKeywords: candidate.keywords?.length ? candidate.keywords : source.keywords || [],
@@ -465,6 +592,7 @@ export function buildPolibotCatalogItems(knowledgeSources = [], options = {}) {
         disclosureMemo: extractDisclosureMemo(context),
         reductionMemo: extractReductionMemo(context),
         premiumExample: extractPremiumExample(context),
+        premiumConfidence: extractPremiumExample(context) ? 'confirmed' : 'none',
         refundRate: extractRefundRate(context),
         targetAudience: source.targetAudience || extractAudience(context),
         excludedAudience: extractExcludedAudience(context),
@@ -476,10 +604,11 @@ export function buildPolibotCatalogItems(knowledgeSources = [], options = {}) {
         status: candidate.status
         };
         const reviewed = applyCatalogReview(baseItem, reviews);
-        return {
+        const completed = {
           ...reviewed,
           completeness: catalogCompleteness(reviewed)
         };
+        return applyAutoConfirmation(completed, occurrenceMap);
       })
       .filter((item) => includeReview
         ? ['confirmed', 'auto', 'review', 'excluded'].includes(item.status)
@@ -537,16 +666,31 @@ export function rankPolibotEvidence(knowledgeSources = [], profile = {}) {
   const needs = Array.isArray(profile.needs) ? profile.needs : [];
   const needsText = needs.join(' ');
   const selectedCompany = String(profile.company || '').trim();
+  const diseaseNeeds = needs.some((need) => /암|뇌|심장|수술|입원|실손|실비|질병|간병|치매/.test(need));
   return [...knowledgeSources]
     .map((item) => {
       const companies = Array.isArray(item.companies) && item.companies.length ? item.companies : [item.company].filter(Boolean);
       const companyMatch = selectedCompany && companies.includes(selectedCompany);
       const keywordHits = (item.keywords || []).filter((keyword) => needsText.includes(keyword));
       const groupHit = item.productGroup && needsText.includes(String(item.productGroup).replace('/',''));
-      const score = (companyMatch ? 30 : 0) + keywordHits.length * 9 + (groupHit ? 8 : 0) + (item.month ? 3 : 0);
+      const qualityScore = Number(item.evidenceQualityScore || 0);
+      const qualityBonus = qualityScore ? Math.min(14, Math.round(qualityScore / 8)) : 0;
+      const lowTrustPenalty = item.sourceChannel === 'kakao_txt' ? 14 : 0;
+      const privacyPenalty = item.knowledgeStatus === 'privacy_risk' ? 80 : 0;
+      const ocrPenalty = item.knowledgeStatus === 'ocr_needed' ? 40 : 0;
+      const driverMismatchPenalty = diseaseNeeds && /운전자/.test(String(item.productGroup || '')) && !needsText.includes('운전자') ? 18 : 0;
+      const score = (companyMatch ? 30 : 0)
+        + keywordHits.length * 9
+        + (groupHit ? 8 : 0)
+        + (item.month ? 3 : 0)
+        + qualityBonus
+        - lowTrustPenalty
+        - privacyPenalty
+        - ocrPenalty
+        - driverMismatchPenalty;
       return { ...item, matchScore: score, keywordHits };
     })
     .filter((item) => !selectedCompany || selectedCompany === '전체 보험사' || (item.companies || [item.company]).includes(selectedCompany))
     .sort((a, b) => b.matchScore - a.matchScore || String(b.month || '').localeCompare(String(a.month || '')))
-    .slice(0, 12);
+    .slice(0, 40);
 }

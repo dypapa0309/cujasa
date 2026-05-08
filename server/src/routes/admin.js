@@ -11,14 +11,22 @@ import {
 } from '../services/authService.js';
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
 import { hashPassword } from '../utils/password.js';
-import { cleanupQueueErrors, operationAccountRows, operationEvents, operationSummary } from '../services/operationsService.js';
+import { cleanupQueueErrors, operationAccountRows, operationDashboard, operationEvents, operationSummary } from '../services/operationsService.js';
+import { runDailyPipelineOnce } from '../services/schedulerRunService.js';
 import { buildOpsHealthSummary, runDailyOpsHealthCheck } from '../services/opsHealthService.js';
 import { cleanupUnusedPipelineArtifacts } from '../services/unusedArtifactCleanupService.js';
 import { cleanupOldQueueIssues, dismissPastQueueIssuesForAccount } from '../services/queueVisibilityService.js';
+import { rescheduleTodayQueue } from '../services/schedulerService.js';
 import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js';
 import { buildMisassignmentReport } from '../services/accountOwnershipService.js';
 import { createManualPayment, expireDueEntitlements } from '../services/billingEntitlementService.js';
 import { listPolibotCatalogReview, savePolibotCatalogReviews } from '../services/productWorkspaceService.js';
+import {
+  listPolibotKnowledgeReviewQueue,
+  runPolibotSourceOcr,
+  updatePolibotCatalogItemReview,
+  updatePolibotKnowledgeSourceReview
+} from '../services/polibotKnowledgeDbService.js';
 import { redactAccount, redactAccounts, redactBillingSettings, redactPayment } from '../services/redactionService.js';
 
 const router = Router();
@@ -119,6 +127,10 @@ router.get('/operations/accounts', async (req, res, next) => {
   try { res.json(await operationAccountRows()); } catch (e) { next(e); }
 });
 
+router.get('/operations/dashboard', async (req, res, next) => {
+  try { res.json(await operationDashboard()); } catch (e) { next(e); }
+});
+
 router.get('/operations/events', async (req, res, next) => {
   try {
     res.json(await operationEvents({
@@ -132,6 +144,20 @@ router.post('/operations/cleanup-queue-errors', async (req, res, next) => {
   try {
     const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
     res.json(await cleanupQueueErrors({ mode }));
+  } catch (e) { next(e); }
+});
+
+router.post('/operations/daily-pipeline/catch-up', async (req, res, next) => {
+  try {
+    res.json(await runDailyPipelineOnce({
+      triggeredBy: req.user?.email || req.user?.type || 'admin_catch_up'
+    }));
+  } catch (e) { next(e); }
+});
+
+router.post('/operations/reschedule-today-queue', async (req, res, next) => {
+  try {
+    res.json(await rescheduleTodayQueue({ accountId: req.body?.accountId || null }));
   } catch (e) { next(e); }
 });
 
@@ -598,6 +624,44 @@ router.patch('/users/:id/products/polibot/catalog-reviews', async (req, res, nex
   try {
     await savePolibotCatalogReviews(req.params.id, req.body?.reviews || {});
     res.json(await listPolibotCatalogReview(req.params.id));
+  } catch (e) { next(e); }
+});
+
+router.get('/polibot/knowledge-review', async (req, res, next) => {
+  try {
+    res.json(await listPolibotKnowledgeReviewQueue({
+      status: req.query?.status || 'all',
+      scope: req.query?.scope || 'all',
+      limit: req.query?.limit || 120
+    }));
+  } catch (e) { next(e); }
+});
+
+router.patch('/polibot/catalog-items/:id/review', async (req, res, next) => {
+  try {
+    res.json(await updatePolibotCatalogItemReview(req.params.id, {
+      status: req.body?.status,
+      reviewNote: req.body?.reviewNote || req.body?.note || '',
+      reviewerId: req.user?.adminId || req.user?.email || 'admin'
+    }));
+  } catch (e) { next(e); }
+});
+
+router.patch('/polibot/sources/:id/review', async (req, res, next) => {
+  try {
+    res.json(await updatePolibotKnowledgeSourceReview(req.params.id, {
+      status: req.body?.status,
+      reviewNote: req.body?.reviewNote || req.body?.note || '',
+      reviewerId: req.user?.adminId || req.user?.email || 'admin'
+    }));
+  } catch (e) { next(e); }
+});
+
+router.post('/polibot/sources/:id/ocr', async (req, res, next) => {
+  try {
+    res.json(await runPolibotSourceOcr(req.params.id, {
+      reviewerId: req.user?.adminId || req.user?.email || 'admin'
+    }));
   } catch (e) { next(e); }
 });
 

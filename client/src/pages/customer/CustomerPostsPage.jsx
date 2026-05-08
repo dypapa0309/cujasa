@@ -165,6 +165,13 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
               <div className="text-xs opacity-80">
                 주제 {pipelineTopics}개 · 콘텐츠 {pipelinePosts}개 · {pipelineQueued}개 예약 완료
               </div>
+              {pipelineResult.queueDiagnostics?.schedulePlan && (
+                <div className="mt-1 text-xs opacity-80">
+                  예약 분배 {pipelineResult.queueDiagnostics.schedulePlan.strategy === 'fixed_start' ? '고정 간격' : '균등 분산'} ·
+                  최소 간격 {pipelineResult.queueDiagnostics.schedulePlan.minGapMinutes}분 ·
+                  {(pipelineResult.queueDiagnostics.schedulePlan.actualTimes || []).slice(0, 5).map(dateTime).join(' / ')}
+                </div>
+              )}
               {pipelineResult.queueDiagnostics?.linkShortage > 0 && (
                 <div className="mt-1 text-xs opacity-80">
                   상품 매칭이 완료된 링크 글만 예약했습니다.
@@ -190,6 +197,7 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
               {pipelineResult.queueDiagnostics && (
                 <div className="mt-2 text-[11px] opacity-70">
                   예약 후보 {pipelineResult.queueDiagnostics.scheduleCount ?? 0}개 · 연결 가능한 글 {pipelineResult.queueDiagnostics.availableLinkPosts ?? 0}개
+                  {pipelineResult.queueDiagnostics.schedulePlan?.reasonCode ? ` · ${pipelineResult.queueDiagnostics.schedulePlan.reasonCode}` : ''}
                 </div>
               )}
               <div className="mt-3">

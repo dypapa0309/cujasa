@@ -25,19 +25,23 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
   const [preflightModal, setPreflightModal] = useState(null);
   const [runSummaryModal, setRunSummaryModal] = useState(null);
   const [cleaningQueue, setCleaningQueue] = useState(false);
+  const [catchingUpDaily, setCatchingUpDaily] = useState(false);
+  const [reschedulingToday, setReschedulingToday] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
   const [eventModal, setEventModal] = useState(null);
   const [eventLoading, setEventLoading] = useState(false);
 
   const load = async () => {
-    const [nextSummary, nextRows, nextConflicts, nextMisassignments] = await Promise.all([
-      api.get('/api/admin/operations/summary'),
-      api.get('/api/admin/operations/accounts'),
+    const dashboard = await api.get('/api/admin/operations/dashboard');
+    setSummary(dashboard.summary || null);
+    setRows(dashboard.rows || []);
+  };
+
+  const loadRiskPanels = async () => {
+    const [nextConflicts, nextMisassignments] = await Promise.all([
       api.get('/api/admin/account-conflicts').catch(() => []),
       api.get('/api/admin/account-misassignments').catch(() => null)
     ]);
-    setSummary(nextSummary);
-    setRows(nextRows);
     setConflicts(nextConflicts || []);
     setMisassignments(nextMisassignments);
   };
@@ -46,6 +50,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
     setRefreshing(true);
     try {
       await load();
+      loadRiskPanels().catch(() => {});
       toast('대시보드를 새로고침했습니다.', 'success');
     } catch {
       toast('새로고침에 실패했습니다.', 'error');
@@ -55,7 +60,10 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
   };
 
   useEffect(() => {
-    load().catch(() => toast('운영 대시보드를 불러오지 못했습니다.', 'error')).finally(() => setLoading(false));
+    load()
+      .then(() => loadRiskPanels().catch(() => {}))
+      .catch(() => toast('운영 대시보드를 불러오지 못했습니다.', 'error'))
+      .finally(() => setLoading(false));
   }, []);
 
   const runAll = async () => {
@@ -142,6 +150,34 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
     }
   };
 
+  const catchUpDailyPipeline = async () => {
+    setCatchingUpDaily(true);
+    try {
+      const result = await api.post('/api/admin/operations/daily-pipeline/catch-up', {});
+      toast(result.duplicate
+        ? '오늘 2시 자동 실행 기록이 이미 있습니다.'
+        : '오늘 2시 자동 실행 보정을 시작/완료했습니다.', result.ok ? 'success' : 'info');
+      await load();
+    } catch (err) {
+      toast(err.message || '자동 실행 보정에 실패했습니다.', 'error');
+    } finally {
+      setCatchingUpDaily(false);
+    }
+  };
+
+  const rescheduleTodayQueue = async () => {
+    setReschedulingToday(true);
+    try {
+      const result = await api.post('/api/admin/operations/reschedule-today-queue', {});
+      toast(`오늘 예약 ${result.updatedCount || 0}건을 09-23시 랜덤 분산으로 재배치했습니다.`, 'success');
+      await load();
+    } catch (err) {
+      toast(err.message || '오늘 예약 재배치에 실패했습니다.', 'error');
+    } finally {
+      setReschedulingToday(false);
+    }
+  };
+
   const openEvents = async (type, title) => {
     setEventLoading(true);
     setEventModal({ type, title, events: [], count: 0 });
@@ -225,6 +261,24 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
             {cleaningQueue ? <Spinner /> : <Wrench size={16} />}
             실패 큐 정리
           </button>
+          <button
+            onClick={rescheduleTodayQueue}
+            disabled={reschedulingToday}
+            className="inline-flex items-center gap-2 rounded border border-line bg-white px-3 py-2 text-sm font-medium disabled:opacity-50"
+          >
+            {reschedulingToday ? <Spinner /> : <RefreshCw size={16} />}
+            오늘 예약 재분산
+          </button>
+          {summary?.dailyPipeline?.missing && (
+            <button
+              onClick={catchUpDailyPipeline}
+              disabled={catchingUpDaily}
+              className="inline-flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800 disabled:opacity-50"
+            >
+              {catchingUpDaily ? <Spinner /> : <Clock3 size={16} />}
+              오늘 2시 실행 보정
+            </button>
+          )}
         </div>
       </div>
 
@@ -239,8 +293,15 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
         issueBreakdown={summary?.issueBreakdown}
       />
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid gap-3 md:grid-cols-5">
         <OpsCard label="계정" value={`${summary?.cards?.accountsActive ?? 0}/${summary?.cards?.accountsTotal ?? 0}`} hint="활성 / 전체" tone="ok" onClick={() => setStatusFilter('all')} />
+        <OpsCard
+          label="2시 자동 실행"
+          value={dailyPipelineLabel(summary?.dailyPipeline)}
+          hint={dailyPipelineHint(summary?.dailyPipeline)}
+          tone={dailyPipelineTone(summary?.dailyPipeline)}
+          onClick={summary?.dailyPipeline?.missing ? catchUpDailyPipeline : undefined}
+        />
         <OpsCard label="오늘 예약" value={summary?.cards?.scheduledToday ?? 0} hint={`오늘 업로드 완료 ${summary?.cards?.postedToday ?? 0}개`} tone="ok" onClick={() => openEvents('scheduled_today', '오늘 예약/업로드')} />
         <OpsCard label="실패/검토" value={summary?.cards?.queueProblems ?? 0} hint={`큐 정리 ${summary?.issueBreakdown?.queueCleanup ?? 0}개 · 확인 ${summary?.issueBreakdown?.pipelineStuck ?? 0}개`} tone={(summary?.cards?.queueProblems ?? 0) > 0 || (summary?.issueBreakdown?.pipelineStuck ?? 0) > 0 ? 'error' : 'ok'} onClick={() => openEvents('queue_problems', '실패/검토 항목')} />
         <OpsCard label="연결 문제" value={summary?.cards?.threadsProblems ?? 0} hint={`재연결 ${summary?.issueBreakdown?.threadsReconnect ?? 0}개 · 테스트 ${summary?.cards?.mockUploads ?? 0}개`} tone={(summary?.cards?.threadsProblems ?? 0) > 0 ? 'warn' : 'ok'} onClick={() => openEvents('connection_problems', '연결 문제')} />
@@ -341,13 +402,27 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
                   <td className="px-4 py-3">
                     <div className="font-semibold">예약 {row.todayScheduled} · 완료 {row.todayPosted}</div>
                     <div className="text-xs text-slate-400">실패/검토 {row.failedCount} · 댓글경고 {row.replyWarningCount || 0} · 테스트 {row.mockCount}</div>
-                    <div className="mt-1 text-xs text-slate-400">{runCategoryLabel(row.runCategory)}</div>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      <StatusPill status={row.automationStatus === 'running' ? 'ok' : 'warn'} label={`자동화 ${row.automationStatus === 'running' ? '실행중' : '중지됨'}`} />
+                      <span className="text-xs text-slate-400">{runCategoryLabel(row.runCategory)}</span>
+                    </div>
+                    {row.dailyPipelineResult && (
+                      <div className="mt-1 text-xs text-slate-400">
+                        2시 결과 {dailyResultLabel(row.dailyPipelineResult)}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
-                    {row.pipelineRun?.status === 'running' ? (
+                    {isPipelineRunActive(row) ? (
                       <div className="inline-flex items-center gap-1 text-xs font-bold text-blue-600"><Clock3 size={13} />자동화 실행 중</div>
-                    ) : row.pipelineRun?.status === 'stuck' ? (
-                      <div className="inline-flex items-center gap-1 text-xs font-bold text-rose-600"><AlertTriangle size={13} />{row.pipelineRun.label || '파이프라인 점검 필요'}</div>
+                    ) : isPipelineRunStale(row) ? (
+                      <>
+                        <div className="inline-flex items-center gap-1 text-xs font-bold text-amber-600"><AlertTriangle size={13} />{row.pipelineRun.label || '파이프라인 자동 복구 가능'}</div>
+                        <div className="mt-0.5 max-w-[260px] text-xs text-slate-400">
+                          {row.pipelineRun.stage ? `${row.pipelineRun.stage} · ` : ''}
+                          마지막 진행 {row.pipelineRun.lastProgressAt ? dateTime(row.pipelineRun.lastProgressAt) : '-'}
+                        </div>
+                      </>
                     ) : row.lastActivity ? (
                       <>
                         <div className="text-xs font-medium text-slate-600">{row.lastActivity.label || activityLabel(row.lastActivity.action)}</div>
@@ -365,10 +440,10 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
                       <IconButton title="고객 계정 보기" onClick={() => setPage?.('admin-users')}><Users size={15} /></IconButton>
                       <button
                         onClick={() => runAccount(row)}
-                        disabled={runningAccountId === row.accountId || row.pipelineRun?.status === 'running' || row.runCategory === 'pipeline_stuck'}
+                        disabled={runningAccountId === row.accountId || isPipelineRunActive(row)}
                         className="inline-flex items-center gap-1 rounded border border-line px-2.5 py-1.5 text-xs font-medium hover:bg-panel disabled:opacity-50"
                       >
-                        {runningAccountId === row.accountId || row.pipelineRun?.status === 'running' ? <Spinner /> : <Play size={13} />}
+                        {runningAccountId === row.accountId || isPipelineRunActive(row) ? <Spinner /> : <Play size={13} />}
                         실행
                       </button>
                     </div>
@@ -422,13 +497,24 @@ function buildAccountFilterCounts(rows) {
     ok: rows.filter((row) => row.health === 'ok').length,
     warn: rows.filter((row) => row.health === 'warn').length,
     error: rows.filter((row) => row.health === 'error').length,
-    running: rows.filter((row) => row.health === 'running' || row.pipelineRun?.status === 'running').length,
+    running: rows.filter((row) => row.health === 'running' || isPipelineRunActive(row)).length,
     threads_reconnect: rows.filter((row) => row.runCategory === 'threads_reconnect' || row.threads?.status === 'error').length,
     coupang_settings: rows.filter((row) => row.runCategory === 'coupang_settings' || row.coupang?.status === 'error').length,
     no_schedule: rows.filter((row) => Number(row.todayScheduled || 0) === 0 && row.accountStatus === 'active').length,
     failed_review: rows.filter((row) => Number(row.failedCount || 0) > 0 || Number(row.retryAvailableCount || 0) > 0 || Number(row.replyWarningCount || 0) > 0 || Number(row.contentBlockedCount || 0) > 0).length,
     pipeline_check: rows.filter((row) => row.runCategory === 'pipeline_stuck' || ['stuck', 'failed', 'expired'].includes(row.pipelineRun?.status)).length
   };
+}
+
+function isPipelineRunStale(row) {
+  const run = row?.pipelineRun;
+  return Boolean(run?.stale || run?.staleCode || run?.status === 'stuck' || row?.runCategory === 'pipeline_stuck');
+}
+
+function isPipelineRunActive(row) {
+  const run = row?.pipelineRun;
+  if (!run || isPipelineRunStale(row)) return false;
+  return run.status === 'running' || run.rawStatus === 'running';
 }
 
 function buildAccountFilters(counts) {
@@ -450,7 +536,7 @@ function matchesAccountFilter(row, filter) {
   if (filter === 'ok') return row.health === 'ok';
   if (filter === 'warn') return row.health === 'warn';
   if (filter === 'error') return row.health === 'error';
-  if (filter === 'running') return row.health === 'running' || row.pipelineRun?.status === 'running';
+  if (filter === 'running') return row.health === 'running' || isPipelineRunActive(row);
   if (filter === 'threads_reconnect') return row.runCategory === 'threads_reconnect' || row.threads?.status === 'error';
   if (filter === 'coupang_settings') return row.runCategory === 'coupang_settings' || row.coupang?.status === 'error';
   if (filter === 'no_schedule') return Number(row.todayScheduled || 0) === 0 && row.accountStatus === 'active';
@@ -752,9 +838,46 @@ function healthLabel(status) {
   return status === 'ok' ? '정상' : status === 'running' ? '실행 중' : status === 'error' ? '오류' : '주의';
 }
 
+function dailyPipelineLabel(dailyPipeline) {
+  if (!dailyPipeline) return '-';
+  if (dailyPipeline.missing) return '누락';
+  if (dailyPipeline.status === 'completed') return '성공';
+  if (dailyPipeline.status === 'running') return '실행중';
+  if (dailyPipeline.status === 'failed') return '실패';
+  return '대기';
+}
+
+function dailyPipelineTone(dailyPipeline) {
+  if (!dailyPipeline) return 'warn';
+  if (dailyPipeline.missing || dailyPipeline.status === 'failed') return 'error';
+  if (dailyPipeline.status === 'running' || dailyPipeline.status === 'pending') return 'warn';
+  return 'ok';
+}
+
+function dailyPipelineHint(dailyPipeline) {
+  if (!dailyPipeline) return '오늘 2시 실행 기록 확인 중';
+  if (dailyPipeline.missing) return '오늘 02:00 실행 기록 없음';
+  const summary = dailyPipeline.run?.summary || {};
+  if (dailyPipeline.status === 'completed') {
+    return `대상 ${summary.total || 0} · 성공 ${summary.ok || 0} · 후보없음 ${summary.noLinkCandidates || 0}`;
+  }
+  if (dailyPipeline.status === 'running') return '현재 자동 실행 중';
+  if (dailyPipeline.status === 'failed') return dailyPipeline.run?.errorMessage || '자동 실행 실패';
+  return 'KST 02:00 대기';
+}
+
+function dailyResultLabel(result) {
+  if (!result) return '';
+  if (result.status === 'no_link_candidates' || result.reason === 'pipeline_skipped_no_link_candidates') return '상품 후보 없음';
+  if (result.status === 'ok') return '성공';
+  if (result.status === 'skipped') return '스킵';
+  if (result.status === 'error') return '실패';
+  return result.status || '확인 필요';
+}
+
 function runCategoryLabel(category) {
   return ({
-    ready: '실행 가능',
+    ready: '수동 실행 가능',
     threads_reconnect: 'Threads 재연결 필요',
     coupang_settings: '쿠팡 설정 필요',
     queue_cleanup: '큐 정리 필요',

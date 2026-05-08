@@ -213,17 +213,61 @@ export function buildFallbackPostBody(topic, account = {}) {
   return `${title}, 생각보다 은근 신경 쓰이는 부분이에요.\n\n${angle}만 잘 봐도 일상이 조금 편해집니다.\n\n크게 바꾸기보다 자주 쓰는 물건부터 맞춰보면 좋아요.`;
 }
 
+function firstSentenceOf(body = '') {
+  return String(body || '').split(/\n|[.!?。！？]/).map((line) => line.trim()).filter(Boolean)[0] || '';
+}
+
+export function scorePostHook(body = '') {
+  const first = firstSentenceOf(body);
+  const checks = {
+    concreteInconvenience: /귀찮|불편|신경|피곤|번거|막상|은근|자꾸|놓치|고민|헷갈/.test(first),
+    choiceTension: /갈리|취향|습관|상황|공간|예산|빈도|기준|먼저|차이|쪽/.test(first),
+    regretPrevention: /후회|실수|사고 나서|사기 전|고르기 전|놓치기 쉬운|체크/.test(first),
+    replyPrompt: /여러분|다들|혹시|어때|뭐가|어느 쪽|고르/.test(first)
+  };
+  const score = Object.values(checks).filter(Boolean).length;
+  return {
+    firstSentence: first,
+    score,
+    checks,
+    strong: score >= 1 && first.length >= 12
+  };
+}
+
+export function strengthenPostHook(body = '', topic = {}, account = {}) {
+  const original = String(body || '').trim();
+  const profile = getAccountStyleProfile(account);
+  const title = clean(topic?.title, profile.contentScope);
+  const angle = clean(topic?.angle, '고를 때 놓치기 쉬운 기준');
+  const mode = profile.strategy.effectiveMode;
+  const hooks = {
+    empathy: `${title}, 이거 은근 나만 불편한 줄 알았는데 생각보다 많이 겪는 상황이에요.`,
+    daily: `${title}, 평소에는 별거 아닌데 막상 필요할 때마다 은근 신경 쓰이죠.`,
+    problem_solution: `${title}, 사고 나서 후회하는 포인트는 보통 ${angle}에서 갈립니다.`,
+    checklist: `${title}, 고르기 전에 ${angle} 하나만 놓쳐도 다시 찾게 되는 경우가 많아요.`,
+    question: `${title}, 여러분은 ${angle} 쪽을 먼저 보세요, 아니면 편하게 쓰는 쪽을 먼저 보세요?`,
+    safe_debate: `${title}, 이건 취향보다 사용 습관에 따라 꽤 갈리는 선택이에요.`
+  };
+  const hook = hooks[mode] || hooks.empathy;
+  const lines = original.split('\n');
+  const firstLineIndex = lines.findIndex((line) => line.trim());
+  if (firstLineIndex === -1) return hook;
+  lines[firstLineIndex] = hook;
+  return lines.join('\n').trim();
+}
+
 export function validatePostStyleFit(body, account = {}) {
   const profile = getAccountStyleProfile(account);
   const text = String(body || '');
   const reasons = [];
+  const hostileTerms = ['한심', '극혐', '노답', '틀딱', '맘충', '남혐', '여혐', '거지', '무식', '병신', '바보', '편가르', '갈라치기', '정치', '남자들은', '여자들은'];
 
-  if (profile.strategy.contentMode === 'safe_debate' || profile.strategy.safeDebateEnabled) {
-    const hostileTerms = ['한심', '극혐', '노답', '틀딱', '맘충', '남혐', '여혐', '거지', '무식', '병신', '바보'];
-    if (includesAny(text, hostileTerms)) {
-      reasons.push('안전 논쟁형 위반: 비하/혐오/조롱 표현 포함');
-    }
+  if (includesAny(text, hostileTerms)) {
+    reasons.push('후킹 안전장치 위반: 비하/혐오/조롱/위험 갈등 표현 포함');
   }
+
+  const hook = scorePostHook(text);
+  if (!hook.strong) reasons.push('후킹 부족: 첫 문장에 구체적 불편/선택 갈등/후회 방지/경험 질문 신호 부족');
 
   if (profile.strategy.effectiveMode === 'question') {
     if (!/[?？]|어때|있어|인가요|할까|고르|추천해/.test(text)) reasons.push('콘텐츠 방식 불일치: 질문형 신호 부족');

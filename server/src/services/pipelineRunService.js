@@ -26,14 +26,20 @@ export function pipelineStaleReason(run) {
   if (new Date(run.expires_at).getTime() <= currentTime) {
     return {
       code: 'PIPELINE_LOCK_EXPIRED',
-      message: 'pipeline lock expired'
+      message: '예약 작업 실행 잠금이 만료되어 자동 복구가 필요합니다.',
+      label: '만료된 실행 잠금',
+      lastProgressAt: getLastProgressAt(run),
+      stage: getResult(run).stage || null
     };
   }
   const lastProgressAt = getLastProgressAt(run);
   if (lastProgressAt && currentTime - new Date(lastProgressAt).getTime() > PIPELINE_STALE_PROGRESS_MS) {
     return {
       code: 'PIPELINE_PROGRESS_STALE',
-      message: 'pipeline progress stale'
+      message: '예약 작업 진행이 오래 멈춰 자동 복구가 필요합니다.',
+      label: '진행 멈춤',
+      lastProgressAt,
+      stage: getResult(run).stage || null
     };
   }
   return null;
@@ -61,7 +67,9 @@ export async function expireStalePipelineRuns(accountId = null) {
           status: 'expired',
           code: reason.code,
           message: reason.message,
-          label: '예약 작업 진행이 오래 멈춰 만료 처리했습니다',
+          label: reason.label || '예약 작업을 만료 처리했습니다',
+          staleStage: reason.stage || currentResult.stage || null,
+          lastProgressAt: reason.lastProgressAt || getLastProgressAt(run),
           expiredAt
         }
       });

@@ -4,7 +4,7 @@ import { dbGet, dbInsert, dbList, logActivity } from './supabaseService.js';
 import { generatePostsPrompt } from '../prompts/generatePostsPrompt.js';
 import { checkAndRewriteRisk } from './riskService.js';
 import { validatePostCandidate } from '../utils/contentGuardrails.js';
-import { buildFallbackPostBody, validatePostStyleFit } from '../utils/accountStyle.js';
+import { buildFallbackPostBody, scorePostHook, strengthenPostHook, validatePostStyleFit } from '../utils/accountStyle.js';
 import { prepareGeneratedPostBody } from '../utils/koreanContentQuality.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { validatePostsResponse } from '../utils/aiResponseSchemas.js';
@@ -65,6 +65,25 @@ export async function generatePosts(topicId) {
         message: prepared.warnings.join(', '),
         payload: { contentType: item.contentType, warnings: prepared.warnings }
       });
+    }
+
+    const hookScore = scorePostHook(prepared.body);
+    if (!hookScore.strong) {
+      const strengthened = prepareGeneratedPostBody(strengthenPostHook(prepared.body, topic, account));
+      await logActivity({
+        account_id: topic.account_id,
+        project_id: topic.project_id,
+        topic_id: topic.id,
+        action: 'post_hook_strengthened',
+        level: 'info',
+        message: '첫 문장 후킹 신호가 약해 공감/댓글 유도형 훅으로 강화했습니다.',
+        payload: {
+          originalFirstSentence: hookScore.firstSentence,
+          nextFirstSentence: scorePostHook(strengthened.body).firstSentence,
+          checks: hookScore.checks
+        }
+      });
+      prepared = strengthened;
     }
 
     const guardrail = validatePostCandidate(prepared.body, account, topic);

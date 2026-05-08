@@ -41,7 +41,7 @@ create table if not exists accounts (
   threads_user_id text,
   threads_token_expires_at timestamptz,
   threads_token_status text not null default 'not_connected',
-  threads_link_delivery_mode text default 'body_fallback' check (threads_link_delivery_mode in ('reply', 'body_fallback')),
+  threads_link_delivery_mode text default 'reply' check (threads_link_delivery_mode = 'reply'),
   threads_connected_at timestamptz,
   last_threads_refresh_at timestamptz,
   automation_status text not null default 'paused' check (automation_status in ('running', 'paused')),
@@ -61,7 +61,7 @@ create table if not exists accounts (
 alter table accounts add column if not exists threads_user_id text;
 alter table accounts add column if not exists threads_token_expires_at timestamptz;
 alter table accounts add column if not exists threads_token_status text not null default 'not_connected';
-alter table accounts add column if not exists threads_link_delivery_mode text default 'body_fallback';
+alter table accounts add column if not exists threads_link_delivery_mode text default 'reply';
 alter table accounts add column if not exists threads_connected_at timestamptz;
 alter table accounts add column if not exists last_threads_refresh_at timestamptz;
 alter table accounts add column if not exists automation_status text not null default 'paused';

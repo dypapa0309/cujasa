@@ -9,6 +9,7 @@ import CustomerBillingPage from './CustomerBillingPage.jsx';
 import CustomerRunPage from './CustomerRunPage.jsx';
 import CustomerBetaPage from './CustomerBetaPage.jsx';
 import { CURRENT_PRODUCT, JASAIN_BRAND, productById } from '../../config/products.js';
+import SearchableSelect from '../../components/SearchableSelect.jsx';
 
 const baseTabs = [
   ['home', '홈', Home],
@@ -163,16 +164,19 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
         </div>
         <div className="flex items-center gap-2">
           {activeProducts.length > 1 && (
-            <select
+            <SearchableSelect
               value={selectedProductId}
-              onChange={(event) => changeProduct(event.target.value)}
-              className="max-w-[132px] rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-xs font-bold text-gray-700"
-              aria-label="솔루션 선택"
-            >
-              {activeProducts.map((product) => (
-                <option key={product.id} value={product.id}>{product.name}</option>
-              ))}
-            </select>
+              onChange={changeProduct}
+              options={activeProducts.map((product) => ({
+                value: product.id,
+                label: product.name,
+                searchText: [product.name, product.supportLabel, product.description].filter(Boolean).join(' ')
+              }))}
+              placeholder="솔루션"
+              searchPlaceholder="솔루션 검색"
+              variant="compact"
+              className="w-36 text-xs font-bold"
+            />
           )}
           <button onClick={() => { if (!guardDuringPipeline()) onLogout(); }} className="text-xs text-gray-400 hover:text-gray-600 border border-gray-200 rounded-lg px-3 py-1.5">
             로그아웃

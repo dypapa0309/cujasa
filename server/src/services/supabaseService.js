@@ -50,7 +50,7 @@ const tables = {
     rest_days_per_week: 1,
     coupang_search_status: 'ok',
     coupang_search_cooldown_until: null,
-    threads_link_delivery_mode: 'body_fallback',
+    threads_link_delivery_mode: 'reply',
     status: 'active',
     automation_status: 'paused',
     created_at: now(),
@@ -66,6 +66,7 @@ const tables = {
   click_events: [],
   post_queue: [],
   pipeline_runs: [],
+  scheduler_runs: [],
   post_metrics_jobs: [],
   post_metrics: [],
   activity_logs: [],
@@ -127,6 +128,12 @@ const tables = {
     }
   ],
   user_products: [],
+  polibot_ingest_jobs: [],
+  polibot_knowledge_sources: [],
+  polibot_knowledge_chunks: [],
+  polibot_catalog_items: [],
+  polibot_conversation_insights: [],
+  polibot_recommendation_feedback: [],
   billing_products: [
     {
       id: 'onetime_590000',
@@ -233,6 +240,13 @@ const updatedAtTables = new Set([
   'user_accounts',
   'jasain_products',
   'user_products',
+  'polibot_ingest_jobs',
+  'polibot_knowledge_sources',
+  'polibot_knowledge_chunks',
+  'polibot_catalog_items',
+  'polibot_conversation_insights',
+  'polibot_recommendation_feedback',
+  'scheduler_runs',
   'billing_payments',
   'billing_subscriptions',
   'setup_tasks'
@@ -247,7 +261,9 @@ function stampUpdate(table, patch) {
 export async function dbList(table, filters = {}, options = {}) {
   if (supabase) {
     let q = supabase.from(table).select(options.select || '*');
-    Object.entries(filters).forEach(([key, value]) => { q = q.eq(key, value); });
+    Object.entries(filters).forEach(([key, value]) => {
+      q = value === null ? q.is(key, null) : q.eq(key, value);
+    });
     if (options.order) q = q.order(options.order, { ascending: options.ascending ?? false });
     if (options.limit) q = q.limit(options.limit);
     const { data, error } = await q;

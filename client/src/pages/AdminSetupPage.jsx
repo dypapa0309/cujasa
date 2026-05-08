@@ -3,6 +3,7 @@ import { CheckCircle2, Clock3, Pencil, RefreshCw, Trash2, Wrench } from 'lucide-
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import { dateTime } from '../lib/format.js';
+import SearchableSelect from '../components/SearchableSelect.jsx';
 
 const statusLabels = {
   pending: '대기',
@@ -80,6 +81,18 @@ export default function AdminSetupPage() {
     if (customerFilter === 'open') return users.filter((user) => !taskUserIdsByStatus.completed.has(user.id));
     return users.filter((user) => statusSet?.has(user.id));
   }, [customerFilter, taskUserIdsByStatus, users]);
+
+  const selectableUserOptions = useMemo(() => selectableUsers.map((user) => ({
+    value: user.id,
+    label: [user.email, user.buyerName || user.buyer_name].filter(Boolean).join(' · '),
+    searchText: [user.email, user.buyerName, user.buyer_name, user.username, user.phone].filter(Boolean).join(' ')
+  })), [selectableUsers]);
+
+  const productOptions = useMemo(() => products.map((product) => ({
+    value: product.id,
+    label: product.name || product.id,
+    searchText: [product.name, product.id].filter(Boolean).join(' ')
+  })), [products]);
 
   const updateStatus = async (task, status) => {
     setSavingId(task.id);
@@ -253,16 +266,23 @@ export default function AdminSetupPage() {
           </label>
           <label className="grid gap-1 text-xs">
             <span className="font-bold text-slate-500">고객</span>
-            <select required className="rounded border border-line px-3 py-2 text-sm" value={manual.userId} onChange={(e) => setManual((p) => ({ ...p, userId: e.target.value }))}>
-              <option value="">고객 선택</option>
-              {selectableUsers.map((user) => <option key={user.id} value={user.id}>{user.email}{user.buyerName ? ` · ${user.buyerName}` : ''}</option>)}
-            </select>
+            <SearchableSelect
+              value={manual.userId}
+              onChange={(value) => setManual((p) => ({ ...p, userId: value }))}
+              options={selectableUserOptions}
+              placeholder="고객 선택"
+              searchPlaceholder="고객명 또는 이메일 검색"
+            />
           </label>
           <label className="grid gap-1 text-xs">
             <span className="font-bold text-slate-500">상품</span>
-            <select className="rounded border border-line px-3 py-2 text-sm" value={manual.productId} onChange={(e) => setManual((p) => ({ ...p, productId: e.target.value }))}>
-              {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-            </select>
+            <SearchableSelect
+              value={manual.productId}
+              onChange={(value) => setManual((p) => ({ ...p, productId: value }))}
+              options={productOptions}
+              placeholder="상품 선택"
+              searchPlaceholder="상품명 검색"
+            />
           </label>
           <label className="grid gap-1 text-xs">
             <span className="font-bold text-slate-500">금액</span>
@@ -372,9 +392,13 @@ export default function AdminSetupPage() {
               </label>
               <label className="grid gap-1 text-xs">
                 <span className="font-bold text-slate-500">상품</span>
-                <select className="rounded border border-line px-3 py-2 text-sm" value={editForm.product_id} onChange={(e) => setEditForm((p) => ({ ...p, product_id: e.target.value }))}>
-                  {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-                </select>
+                <SearchableSelect
+                  value={editForm.product_id}
+                  onChange={(value) => setEditForm((p) => ({ ...p, product_id: value }))}
+                  options={productOptions}
+                  placeholder="상품 선택"
+                  searchPlaceholder="상품명 검색"
+                />
               </label>
               <EditField label="금액" value={editForm.amount} onChange={(value) => setEditForm((p) => ({ ...p, amount: value }))} />
               <label className="grid gap-1 text-xs md:col-span-2">

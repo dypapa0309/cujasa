@@ -16,6 +16,7 @@ export function stripLinkCta(text) {
       .replace(/댓글에서?\s*확인!?/g, '')
       .replace(/구매\s*링크|댓글\s*링크|아래\s*링크|프로필\s*링크/g, '')
       .replace(/최저가|특가|할인\s*(정보|링크)?/g, '')
+      .replace(/https?:\/\/\S+/gi, '')
       .trim())
     .filter((line) => line && !/^(링크|댓글|구매|바로\s*가기|확인해?\s*봐)[\s.!?]*$/i.test(line))
     .join('\n')
@@ -38,24 +39,13 @@ function trimToThreadsLimit(text) {
   return `${takeChars(value, THREADS_TEXT_LIMIT - 3).trimEnd()}...`;
 }
 
-export function buildPostText(post, linkUrl = null, deliveryMode = 'reply') {
+export function buildPostText(post) {
   const cleanBody = stripLinkCta(post.body);
   if (!cleanBody) return '';
-  if (!linkUrl || deliveryMode !== 'body_fallback') return trimToThreadsLimit(cleanBody);
-
-  const footer = `${COUPANG_DISCLOSURE}\n${linkUrl}`;
-  const separator = '\n\n';
-  const footerLength = charLength(footer);
-  if (footerLength + charLength(separator) >= THREADS_TEXT_LIMIT) return footer;
-
-  const bodyLimit = THREADS_TEXT_LIMIT - footerLength - charLength(separator);
-  const trimmedBody = charLength(cleanBody) > bodyLimit
-    ? `${takeChars(cleanBody, Math.max(0, bodyLimit - 3)).trimEnd()}...`
-    : cleanBody;
-  return `${trimmedBody.trim()}\n\n${footer}`.trim();
+  return trimToThreadsLimit(cleanBody);
 }
 
-function buildReplyText(linkUrl) {
+export function buildReplyText(linkUrl) {
   if (!linkUrl) return '';
   return `${COUPANG_DISCLOSURE}\n\n${linkUrl}`;
 }
@@ -103,12 +93,18 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
     ? (linkMode === 'tracking' ? `${baseUrl}/r/${trackingLink.code}` : trackingLink.destination_url)
     : null;
   const replyModeEnabled = process.env.THREADS_REPLY_LINK_MODE_ENABLED === 'true';
-  const deliveryMode = replyModeEnabled && account.threads_link_delivery_mode === 'reply' ? 'reply' : 'body_fallback';
-  const replyText = linkUrl && deliveryMode === 'reply' ? buildReplyText(linkUrl) : '';
+  const deliveryMode = linkUrl ? 'reply' : 'none';
+  if (linkUrl && (!replyModeEnabled || account.threads_link_delivery_mode !== 'reply')) {
+    const error = new Error('THREADS_REPLY_LINK_MODE_REQUIRED: 링크 글은 댓글 링크 모드에서만 업로드할 수 있습니다.');
+    error.code = 'THREADS_REPLY_LINK_MODE_REQUIRED';
+    error.permanent = true;
+    throw error;
+  }
+  const replyText = linkUrl ? buildReplyText(linkUrl) : '';
 
   if (process.env.MOCK_UPLOAD === 'true') {
     const url = `${baseUrl}/mock/threads/${post.id}`;
-    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: buildPostText(post, linkUrl, deliveryMode), comment: replyText || null, linkMode });
+    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: buildPostText(post), comment: replyText || null, linkMode });
     return { postUrl: url, raw: { mock: true, linkDeliveryMode: linkUrl ? deliveryMode : 'none', linkMode } };
   }
   if (!token) {
@@ -118,7 +114,7 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
     throw error;
   }
 
-  const text = buildPostText(post, linkUrl, deliveryMode);
+  const text = buildPostText(post);
   if (!text) {
     const error = new Error('Threads post text is empty after content cleanup. 콘텐츠 본문을 다시 생성해주세요.');
     error.code = 'POST_BODY_EMPTY';

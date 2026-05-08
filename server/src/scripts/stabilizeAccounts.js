@@ -78,30 +78,14 @@ async function main() {
     const tokenTargets = accountQueues.filter((row) => isPastTokenFailure(row, currentThreadsOk));
     const replyTargets = problems.filter(isReplyFailure);
     const linkHistoryTargets = accountQueues.filter(isLinkMissingHistory);
-    const shouldEnableBodyFallback = replyTargets.length > 0 && account.threads_link_delivery_mode !== 'body_fallback';
     const hidden = [];
-    let bodyFallbackEnabled = false;
 
     if (apply) {
-      if (shouldEnableBodyFallback) {
-        await dbUpdate('accounts', { id: account.id }, { threads_link_delivery_mode: 'body_fallback' });
-        bodyFallbackEnabled = true;
-        await logActivity({
-          account_id: account.id,
-          project_id: account.project_id,
-          action: 'threads_link_delivery_body_fallback_enabled',
-          level: 'warn',
-          message: '댓글 권한 실패 이력으로 이후 링크 글은 본문 하단 링크 백업 방식으로 발행합니다.',
-          payload: { code: 'THREADS_BODY_FALLBACK_ENABLED' }
-        }).catch(() => null);
-      }
-      for (const row of [...tokenTargets, ...replyTargets, ...linkHistoryTargets]) {
+      for (const row of [...tokenTargets, ...linkHistoryTargets]) {
         if (hidden.includes(row.id)) continue;
         const [updated] = await dbUpdate('post_queue', { id: row.id }, {
           customer_hidden_at: new Date().toISOString(),
-          customer_hidden_reason: isReplyFailure(row)
-            ? 'reply_failure_body_fallback_enabled'
-            : isLinkMissingHistory(row)
+          customer_hidden_reason: isLinkMissingHistory(row)
               ? 'link_issue_history_cleanup'
               : 'past_threads_token_failure_auto_hidden',
           error_category: isLinkMissingHistory(row) ? 'link_missing_published' : row.error_category
@@ -128,7 +112,7 @@ async function main() {
       status: account.status,
       automationStatus: account.automation_status,
       threadsTokenStatus: account.threads_token_status,
-      threadsLinkDeliveryMode: bodyFallbackEnabled ? 'body_fallback' : (account.threads_link_delivery_mode || 'reply'),
+      threadsLinkDeliveryMode: account.threads_link_delivery_mode || 'reply',
       coupangSearchStatus: account.coupang_search_status || 'ok',
       coupangCooldownUntil: account.coupang_search_cooldown_until || null,
       visible: {

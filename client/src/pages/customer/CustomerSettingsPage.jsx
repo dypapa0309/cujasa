@@ -334,7 +334,7 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
             onChange={(e) => setForm((p) => ({ ...p, daily_post_max: clampDailyPostCount(e.target.value, 5) }))}
             className={`${input} text-center font-bold text-lg`} />
         </Field>
-        <Field label="첫 업로드 시각">
+        <Field label="분산 기준 시각">
           <input
             type="time"
             value={form.first_upload_time}

@@ -2,6 +2,7 @@ import { dbGet, dbList, dbUpdate } from './supabaseService.js';
 import { latestPipelineRunReadOnly, pipelineStaleReason } from './pipelineRunService.js';
 import { resolveCoupangCredentialsForAccount } from './coupangService.js';
 import { adminActivityLabel, adminActivityMessage, normalizeQueueClassification } from './queueErrorService.js';
+import { dailyPipelineStatus } from './schedulerRunService.js';
 
 const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -108,7 +109,10 @@ function pipelineState(pipelineRun) {
       status: 'stuck',
       stale: true,
       staleCode: stale.code,
-      label: stale.code === 'PIPELINE_LOCK_EXPIRED' ? '만료된 실행 잠금' : '진행 멈춤'
+      label: stale.label || (stale.code === 'PIPELINE_LOCK_EXPIRED' ? '만료된 실행 잠금' : '진행 멈춤'),
+      message: stale.message,
+      lastProgressAt: stale.lastProgressAt || null,
+      stage: stale.stage || null
     };
   }
   if (pipelineRun?.status === 'running') return { status: 'running', stale: false, label: '자동화 실행 중' };
@@ -124,6 +128,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
     activityLogs = [],
     userAccounts = [],
     usersById = new Map(),
+    pipelineRunsByAccountId = null,
     start,
     end
   } = context;
@@ -140,7 +145,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
     .filter((row) => row.status === 'posted' && row.posted_at)
     .sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at))[0];
   const lastActivity = activityLogs.find((row) => row.account_id === account.id) || null;
-  const pipelineRun = await latestPipelineRunReadOnly(account.id);
+  const pipelineRun = pipelineRunsByAccountId?.get(account.id) || await latestPipelineRunReadOnly(account.id);
   const pipeline = pipelineState(pipelineRun);
   const threads = tokenState(account);
   const coupang = await coupangState(account);
@@ -164,7 +169,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   if (queueBreakdown.contentBlocked > 0) pushProblem(problems, account, 'warn', 'content_blocked', `콘텐츠 후보 제외 ${queueBreakdown.contentBlocked}건`);
   if (mockCount > 0) pushProblem(problems, account, 'warn', 'mock_upload', `테스트 업로드 흔적 ${mockCount}건`);
   if (fallbackRatio >= 0.5 && accountProducts.length >= 5) pushProblem(problems, account, 'warn', 'fallback_products', `fallback 상품 ${Math.round(fallbackRatio * 100)}%`);
-  if (pipeline.status === 'stuck') pushProblem(problems, account, 'error', STALE_RUNNING_CATEGORY, pipeline.label, pipeline.staleCode);
+  if (pipeline.status === 'stuck') pushProblem(problems, account, 'warn', STALE_RUNNING_CATEGORY, pipeline.label, pipeline.message || pipeline.staleCode);
   else if ((lastActivity?.action === 'pipeline_failed' || pipeline.status === 'failed') && problems.some((p) => p.severity === 'error')) {
     pushProblem(problems, account, 'error', 'pipeline_failed', '최근 파이프라인 실패', pipelineRun?.error_message || lastActivity?.message || '');
   }
@@ -173,11 +178,13 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   }
 
   const runBlockers = problems.filter((problem) => problem.severity === 'error');
-  const runCategory = runBlockers.length === 0
-    ? 'ready'
-    : runBlockers.some((problem) => problem.type === 'threads') ? 'threads_reconnect'
-      : runBlockers.some((problem) => problem.type === 'coupang') ? 'coupang_settings'
-        : runBlockers.some((problem) => problem.type === STALE_RUNNING_CATEGORY) ? 'pipeline_stuck'
+  const hasStalePipeline = problems.some((problem) => problem.type === STALE_RUNNING_CATEGORY);
+  const runCategory = hasStalePipeline
+    ? STALE_RUNNING_CATEGORY
+    : runBlockers.length === 0
+      ? 'ready'
+      : runBlockers.some((problem) => problem.type === 'threads') ? 'threads_reconnect'
+        : runBlockers.some((problem) => problem.type === 'coupang') ? 'coupang_settings'
           : runBlockers.some((problem) => problem.type === 'queue_failed') ? 'queue_cleanup'
             : 'blocked';
 
@@ -190,7 +197,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
     automationStatus: account.automation_status,
     health: pipeline.status === 'running' ? 'running' : runBlockers.length ? 'error' : problems.length ? 'warn' : 'ok',
     runCategory,
-    canRunNow: runCategory === 'ready',
+    canRunNow: runCategory === 'ready' || runCategory === STALE_RUNNING_CATEGORY,
     threads,
     coupang,
     todayScheduled,
@@ -218,6 +225,10 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
       stale: pipeline.stale,
       staleCode: pipeline.staleCode,
       label: pipeline.label,
+      message: pipeline.message || null,
+      stage: pipeline.stage || pipelineRun.result?.stage || null,
+      percent: pipelineRun.result?.percent ?? null,
+      lastProgressAt: pipeline.lastProgressAt || pipelineRun.result?.updatedAt || pipelineRun.updated_at || null,
       startedAt: pipelineRun.started_at,
       finishedAt: pipelineRun.finished_at,
       expiresAt: pipelineRun.expires_at,
@@ -249,24 +260,33 @@ async function customerLabelFor(accountId, userAccounts, usersById) {
   return labels.join(', ');
 }
 
-export async function operationAccountRows() {
-  const { start, end } = kstDayRange();
-  const [
-    accounts,
-    queue,
-    products,
-    activityLogs,
-    users,
-    userAccounts
-  ] = await Promise.all([
+function latestPipelineRunsByAccount(runs = []) {
+  const map = new Map();
+  for (const run of runs) {
+    if (!run.account_id || map.has(run.account_id)) continue;
+    map.set(run.account_id, run);
+  }
+  return map;
+}
+
+async function loadOperationContext() {
+  const range = kstDayRange();
+  const [accounts, queue, products, activityLogs, users, userAccounts, pipelineRuns] = await Promise.all([
     dbList('accounts'),
     dbList('post_queue'),
     dbList('coupang_products'),
     dbList('activity_logs', {}, { order: 'created_at', ascending: false, limit: 300 }),
     dbList('users'),
-    dbList('user_accounts')
+    dbList('user_accounts'),
+    dbList('pipeline_runs', {}, { order: 'started_at', ascending: false, limit: 1000 })
   ]);
+  return { ...range, accounts, queue, products, activityLogs, users, userAccounts, pipelineRuns };
+}
+
+async function buildOperationAccountRows(context) {
+  const { accounts, queue, products, activityLogs, users, userAccounts, pipelineRuns, start, end } = context;
   const usersById = new Map(users.map((user) => [user.id, user]));
+  const pipelineRunsByAccountId = latestPipelineRunsByAccount(pipelineRuns);
   const activeAccounts = accounts.filter((account) => account.status === 'active');
 
   return Promise.all(activeAccounts.map((account) => diagnoseAccountReadOnly(account, {
@@ -275,18 +295,20 @@ export async function operationAccountRows() {
     activityLogs,
     usersById,
     userAccounts,
+    pipelineRunsByAccountId,
     start,
     end
   })));
 }
 
-export async function operationSummary() {
-  const { start, end } = kstDayRange();
-  const [accounts, queue, rows] = await Promise.all([
-    dbList('accounts'),
-    dbList('post_queue'),
-    operationAccountRows()
-  ]);
+export async function operationAccountRows() {
+  return buildOperationAccountRows(await loadOperationContext());
+}
+
+async function buildOperationSummary({ accounts = [], queue = [], rows = [], start, end }) {
+  const range = start && end ? { start, end } : kstDayRange();
+  start = range.start;
+  end = range.end;
   const activeAccountIds = new Set(accounts.filter((account) => account.status === 'active').map((account) => account.id));
   const activeQueue = queue.filter((row) => activeAccountIds.has(row.account_id) && !row.customer_hidden_at);
   const todayQueue = activeQueue.filter((row) => inRange(row.scheduled_at, start, end));
@@ -296,6 +318,7 @@ export async function operationSummary() {
     return rank[a.severity] - rank[b.severity];
   });
 
+  const dailyPipeline = await dailyPipelineStatus().catch(() => null);
   return {
     cards: {
       accountsTotal: accounts.length,
@@ -318,7 +341,7 @@ export async function operationSummary() {
       threadsReconnect: rows.filter((row) => row.runCategory === 'threads_reconnect').length,
       coupangSettings: rows.filter((row) => row.runCategory === 'coupang_settings').length,
       queueCleanup: rows.filter((row) => row.runCategory === 'queue_cleanup').length,
-      pipelineStuck: rows.filter((row) => row.runCategory === 'pipeline_stuck').length,
+      pipelineStuck: rows.filter((row) => row.problems?.some((problem) => problem.type === STALE_RUNNING_CATEGORY)).length,
       mockUploads: activeQueue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length,
       byProblemType: countBy(problemAccounts, (problem) => problem.type)
     },
@@ -328,9 +351,32 @@ export async function operationSummary() {
       threadsReconnect: rows.filter((row) => row.runCategory === 'threads_reconnect').length,
       coupangSettings: rows.filter((row) => row.runCategory === 'coupang_settings').length,
       queueCleanup: rows.filter((row) => row.runCategory === 'queue_cleanup').length,
-      pipelineStuck: rows.filter((row) => row.runCategory === 'pipeline_stuck').length
+      pipelineStuck: rows.filter((row) => row.problems?.some((problem) => problem.type === STALE_RUNNING_CATEGORY)).length
     },
-    problemAccounts
+    problemAccounts,
+    dailyPipeline
+  };
+}
+
+export async function operationSummary() {
+  const context = await loadOperationContext();
+  const rows = await buildOperationAccountRows(context);
+  return buildOperationSummary({ accounts: context.accounts, queue: context.queue, rows, start: context.start, end: context.end });
+}
+
+export async function operationDashboard() {
+  const context = await loadOperationContext();
+  const rows = await buildOperationAccountRows(context);
+  const summary = await buildOperationSummary({ accounts: context.accounts, queue: context.queue, rows, start: context.start, end: context.end });
+  const dailyResultsByAccountId = new Map((summary.dailyPipeline?.run?.summary?.results || [])
+    .filter((result) => result.accountId)
+    .map((result) => [result.accountId, result]));
+  return {
+    summary,
+    rows: rows.map((row) => ({
+      ...row,
+      dailyPipelineResult: dailyResultsByAccountId.get(row.accountId) || null
+    }))
   };
 }
 

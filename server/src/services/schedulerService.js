@@ -1,5 +1,5 @@
 import { dbGet, dbInsert, dbList, dbUpdate, logActivity } from './supabaseService.js';
-import { createDailySchedule } from '../utils/randomSchedule.js';
+import { createDailySchedulePlan } from '../utils/randomSchedule.js';
 import { uploadPost as uploadThreads } from '../platformAdapters/threadsAdapter.js';
 import { createMetricJobs } from './metricsJobService.js';
 import { listCtas } from './ctaService.js';
@@ -16,6 +16,19 @@ import { sendOpsAlert } from './notificationService.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+function kstDayRange(date = new Date()) {
+  const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+  const start = new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - 9 * 60 * 60 * 1000);
+  const end = new Date(start.getTime() + ONE_DAY_MS);
+  return { start, end };
+}
+
+function inRange(value, start, end) {
+  const time = value ? new Date(value).getTime() : 0;
+  return time >= start.getTime() && time < end.getTime();
+}
 
 function isLinkableCoupangProduct(product = {}) {
   return isRealCoupangProduct(product);
@@ -34,6 +47,42 @@ function createNoRealCoupangLinksError(message = '수익화 가능한 실제 쿠
   error.code = 'NO_REAL_COUPANG_LINKS';
   error.permanent = true;
   return error;
+}
+
+function createReplyLinkRequiredError(code, message) {
+  const error = new Error(`${code}: ${message}`);
+  error.status = 422;
+  error.code = code;
+  error.permanent = true;
+  return error;
+}
+
+function isReplyFailureQueue(row = {}) {
+  if (row.customer_hidden_at) return false;
+  if (!['failed', 'retry', 'manual_required'].includes(row.status)) return false;
+  if (row.error_category === 'reply_warning') return true;
+  return classifyQueueError(row.error_message || '').category === 'reply_warning';
+}
+
+async function replyLinkReadiness(account) {
+  if (process.env.THREADS_REPLY_LINK_MODE_ENABLED !== 'true' || account?.threads_link_delivery_mode !== 'reply') {
+    return {
+      ok: false,
+      code: 'REPLY_LINK_MODE_REQUIRED',
+      message: '링크 글은 댓글 링크 모드에서만 예약/업로드할 수 있습니다.'
+    };
+  }
+  const queues = await dbList('post_queue', { account_id: account.id });
+  const unresolved = queues.filter(isReplyFailureQueue);
+  if (unresolved.length > 0) {
+    return {
+      ok: false,
+      code: 'REPLY_LINK_FAILURE_UNRESOLVED',
+      message: '이전 댓글 링크 실패 항목을 정리하기 전까지 새 링크 글을 예약하지 않습니다.',
+      unresolvedCount: unresolved.length
+    };
+  }
+  return { ok: true, code: null, message: null };
 }
 
 async function getFirstLinkableProductForTopic(topicId) {
@@ -116,6 +165,10 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
   if (postMode === 'link' && !linkCandidate.product) {
     throw createNoRealCoupangLinksError('링크 글로 큐에 추가하려면 실제 쿠팡 상품 선택이 필요합니다.');
   }
+  if (postMode === 'link') {
+    const reply = await replyLinkReadiness(account);
+    if (!reply.ok) throw createReplyLinkRequiredError(reply.code, reply.message);
+  }
   const payload = {
     project_id: post.project_id,
     account_id: post.account_id,
@@ -196,6 +249,30 @@ export async function createDailyQueue(accountId, options = {}) {
   if (!options.skipPreflight) {
     assertPreflightCanPublish(await preflightAccount(accountId, { includeQueue: false }));
   }
+  const reply = await replyLinkReadiness(account);
+  if (!reply.ok) {
+    const diagnostics = {
+      scheduleCount: 0,
+      requiredLinkCount: 0,
+      requiredNoLinkCount: 0,
+      availableDraftPosts: 0,
+      availableLinkPosts: 0,
+      selectedLinkPosts: 0,
+      queuedCount: 0,
+      reasonCode: reply.code,
+      message: reply.message,
+      unresolvedReplyFailures: reply.unresolvedCount || 0
+    };
+    await logActivity({
+      account_id: account.id,
+      project_id: account.project_id,
+      action: 'daily_queue_blocked_reply_link_mode',
+      level: 'warn',
+      message: reply.message,
+      payload: diagnostics
+    }).catch(() => null);
+    return attachQueueDiagnostics([], diagnostics);
+  }
   const allDrafts = [];
   for (const post of (await dbList('posts', { account_id: accountId })).filter((p) => ['draft', 'ready'].includes(p.status))) {
     if (await isPostAllowedForQueue(post, account)) allDrafts.push(post);
@@ -213,10 +290,22 @@ export async function createDailyQueue(accountId, options = {}) {
     }
   }
 
-  const scheduleTimes = createDailySchedule(account);
+  const { start, end } = kstDayRange();
+  const spacingQueues = (await dbList('post_queue', { account_id: accountId }))
+    .filter((row) => ['scheduled', 'retry', 'posting', 'posted'].includes(row.status))
+    .map((row) => row.posted_at || row.scheduled_at)
+    .filter((value) => inRange(value, start, end));
+  const schedulePlan = createDailySchedulePlan(account, new Date(), { blockedTimes: spacingQueues });
+  const scheduleTimes = schedulePlan.times;
   const times = trialStatus?.plan === 'free'
     ? scheduleTimes.slice(0, Math.max(0, Number(trialStatus.remaining ?? scheduleTimes.length)))
     : scheduleTimes;
+  const visibleSchedulePlan = {
+    ...schedulePlan.diagnostics,
+    actualTimes: times,
+    generatedCount: times.length,
+    trialCapped: times.length < scheduleTimes.length
+  };
   const total = times.length;
   const linkCount = total;
   const repairOutcomes = [];
@@ -238,6 +327,8 @@ export async function createDailyQueue(accountId, options = {}) {
     trialPlan: trialStatus?.plan || null,
     trialRemaining: trialStatus?.remaining ?? null,
     uncappedScheduleCount: scheduleTimes.length,
+    blockedScheduleCount: spacingQueues.length,
+    schedulePlan: visibleSchedulePlan,
     productRepairAttempts: repairOutcomes.length,
     productRepairFallbacks: repairOutcomes.filter((row) => row.finalMode === 'no_link').length,
     repairOutcomes: repairOutcomes.map((row) => ({
@@ -338,6 +429,73 @@ export async function processDueQueue() {
   return due.length;
 }
 
+export async function rescheduleTodayQueue({ accountId = null } = {}) {
+  const { start, end } = kstDayRange();
+  const [accounts, queue] = await Promise.all([
+    dbList('accounts'),
+    dbList('post_queue')
+  ]);
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const todayRows = queue.filter((row) => {
+    if (accountId && row.account_id !== accountId) return false;
+    return inRange(row.scheduled_at || row.posted_at, start, end);
+  });
+  const targetsByAccount = new Map();
+  for (const row of todayRows.filter((item) => item.status === 'scheduled')) {
+    targetsByAccount.set(row.account_id, [...(targetsByAccount.get(row.account_id) || []), row]);
+  }
+
+  const results = [];
+  for (const [targetAccountId, targets] of targetsByAccount.entries()) {
+    const account = accountsById.get(targetAccountId);
+    if (!account) continue;
+    const targetIds = new Set(targets.map((row) => row.id));
+    const blockedTimes = todayRows
+      .filter((row) => row.account_id === targetAccountId && !targetIds.has(row.id))
+      .filter((row) => ['posted', 'posting', 'retry'].includes(row.status))
+      .map((row) => row.posted_at || row.scheduled_at)
+      .filter(Boolean);
+    const plan = createDailySchedulePlan({
+      ...account,
+      daily_post_max: targets.length
+    }, new Date(), {
+      blockedTimes,
+      rollPastToNextDay: false
+    });
+    const sortedTargets = targets.slice().sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
+    const updated = [];
+    for (const [index, row] of sortedTargets.entries()) {
+      const scheduledAt = plan.times[index];
+      if (!scheduledAt) break;
+      const [next] = await dbUpdate('post_queue', { id: row.id, status: 'scheduled' }, { scheduled_at: scheduledAt });
+      if (next) updated.push(next);
+    }
+    await logActivity({
+      account_id: targetAccountId,
+      project_id: account.project_id,
+      action: 'today_queue_rescheduled',
+      level: 'info',
+      message: `오늘 예약 ${updated.length}건을 09-23시 랜덤 분산으로 재배치했습니다.`,
+      payload: { diagnostics: plan.diagnostics, targetCount: targets.length, updatedCount: updated.length }
+    }).catch(() => null);
+    results.push({
+      accountId: targetAccountId,
+      accountName: account.name,
+      targetCount: targets.length,
+      updatedCount: updated.length,
+      diagnostics: plan.diagnostics,
+      times: updated.map((row) => row.scheduled_at)
+    });
+  }
+
+  return {
+    ok: true,
+    accountCount: results.length,
+    updatedCount: results.reduce((sum, row) => sum + row.updatedCount, 0),
+    results
+  };
+}
+
 export async function uploadQueueItem(queueId) {
   const queue = await dbGet('post_queue', { id: queueId });
   if (!queue) {
@@ -383,6 +541,10 @@ export async function uploadQueueItem(queueId) {
     const resolvedPostMode = requiresLink ? 'link' : 'no_link';
     if (postMode !== resolvedPostMode) {
       await dbUpdate('post_queue', { id: queueId }, { post_mode: resolvedPostMode }).catch(() => []);
+    }
+    if (requiresLink) {
+      const reply = await replyLinkReadiness(account);
+      if (!reply.ok) throw createReplyLinkRequiredError(reply.code, reply.message);
     }
     const ctas = requiresLink ? await listCtas(post.id) : [];
     const cta = requiresLink ? (ctas[Math.floor(Math.random() * Math.max(1, ctas.length))] || null) : null;
@@ -448,9 +610,6 @@ export async function uploadQueueItem(queueId) {
     }
     return updated;
   } catch (error) {
-    if (error.replyFailed) {
-      await dbUpdate('accounts', { id: queue.account_id }, { threads_link_delivery_mode: 'body_fallback' }).catch(() => []);
-    }
     const retry = (queue.retry_count || 0) + 1;
     const status = error.permanent || retry >= 3 ? 'manual_required' : 'retry';
     const classified = classifyQueueError(error.message);

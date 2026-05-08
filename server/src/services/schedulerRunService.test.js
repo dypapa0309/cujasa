@@ -1,0 +1,35 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { dailyPipelineStatus, hasDailyPipelineWindowPassed, kstDateString, runDailyPipelineOnce } from './schedulerRunService.js';
+
+test('kstDateString resolves dates in Korea time', () => {
+  assert.equal(kstDateString(new Date('2026-05-08T16:59:00.000Z')), '2026-05-09');
+  assert.equal(kstDateString(new Date('2026-05-08T14:59:00.000Z')), '2026-05-08');
+});
+
+test('hasDailyPipelineWindowPassed uses 02:00 KST as the daily cutoff', () => {
+  assert.equal(hasDailyPipelineWindowPassed(new Date('2026-05-08T16:59:00.000Z')), false);
+  assert.equal(hasDailyPipelineWindowPassed(new Date('2026-05-08T17:00:00.000Z')), true);
+});
+
+test('runDailyPipelineOnce records a daily run once and returns duplicates afterward', async () => {
+  const runDateKst = '2099-01-31';
+  const first = await runDailyPipelineOnce({ triggeredBy: 'test_first', runDateKst });
+  const second = await runDailyPipelineOnce({ triggeredBy: 'test_second', runDateKst });
+
+  assert.equal(first.duplicate, false);
+  assert.equal(first.status, 'completed');
+  assert.equal(second.duplicate, true);
+  assert.equal(second.status, 'completed');
+  assert.equal(second.run.run_date_kst, runDateKst);
+});
+
+test('dailyPipelineStatus reports missing after 02:00 KST when no run exists', async () => {
+  const status = await dailyPipelineStatus(new Date('2099-02-01T17:30:00.000Z'));
+
+  assert.equal(status.runDateKst, '2099-02-02');
+  assert.equal(status.windowPassed, true);
+  assert.equal(status.missing, true);
+  assert.equal(status.status, 'missing');
+});

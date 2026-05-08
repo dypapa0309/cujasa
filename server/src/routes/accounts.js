@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { archiveAccount, createAccount, deleteAccount, getAccount, listAccounts, listAllAccounts, updateAccount } from '../services/accountService.js';
 import { dbGet, dbInsert, dbList, logActivity, safeLogActivity } from '../services/supabaseService.js';
-import { getRunningPipeline, latestPipelineRun } from '../services/pipelineRunService.js';
+import { expireStalePipelineRuns, getRunningPipeline, latestPipelineRun } from '../services/pipelineRunService.js';
 import { runPipelineForAccountInBackground } from '../services/pipelineBackgroundService.js';
 import { markedOkKeysFromAudits, shouldHideAssignment, suspiciousAssignmentsForUser } from '../services/accountOwnershipService.js';
 import { assertPreflightCanPublish, preflightAccount } from '../services/accountPreflightService.js';
@@ -296,6 +296,7 @@ router.patch('/:accountId/automation', async (req, res, next) => {
     if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
     const preflight = await preflightAccount(accountId, { mode: 'start' });
     assertPreflightCanPublish(preflight);
+    await expireStalePipelineRuns(accountId);
 
     const updated = await setAutomationStatus(accountId, AUTOMATION_RUNNING);
     await safeLogActivity({
@@ -351,6 +352,7 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
     if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
     const preflight = await preflightAccount(req.params.accountId, { mode: 'start' });
     assertPreflightCanPublish(preflight);
+    await expireStalePipelineRuns(req.params.accountId);
     const runningRun = await getRunningPipeline(req.params.accountId);
     if (runningRun) {
       return res.status(202).json({
