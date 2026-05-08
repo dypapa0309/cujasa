@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import SensitiveInput from '../components/SensitiveInput.jsx';
+import SearchableSelect from '../components/SearchableSelect.jsx';
 
 export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const toast = useToast();
@@ -16,19 +17,23 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [buyerNameDrafts, setBuyerNameDrafts] = useState({});
   const [accountDrafts, setAccountDrafts] = useState({});
   const [search, setSearch] = useState('');
+  const [customerSegment, setCustomerSegment] = useState('all');
+  const [setupTasks, setSetupTasks] = useState([]);
   const [planBusyUserId, setPlanBusyUserId] = useState('');
 
   const load = async () => {
-    const [nextUsers, nextProducts, nextConflicts, nextMisassignments] = await Promise.all([
+    const [nextUsers, nextProducts, nextConflicts, nextMisassignments, nextSetupTasks] = await Promise.all([
       api.get('/api/admin/users'),
       api.get('/api/admin/products'),
       api.get('/api/admin/account-conflicts'),
       api.get('/api/admin/account-misassignments'),
+      api.get('/api/admin/setup-tasks'),
     ]);
     setUsers(nextUsers);
     setProducts(nextProducts);
     setConflicts(nextConflicts);
     setMisassignments(nextMisassignments);
+    setSetupTasks(nextSetupTasks);
     setBuyerNameDrafts(Object.fromEntries(nextUsers.map((user) => [user.id, user.buyer_name || user.buyerName || ''])));
   };
 
@@ -275,7 +280,50 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     }
   };
 
+  const setupStatusByUser = setupTasks.reduce((acc, task) => {
+    if (!task?.user_id) return acc;
+    const priority = { pending: 1, in_progress: 2, completed: 3, canceled: 0 };
+    const current = acc[task.user_id];
+    if (!current || (priority[task.status] || 0) > (priority[current.status] || 0)) acc[task.user_id] = task.status;
+    return acc;
+  }, {});
+  const segmentDefinitions = [
+    { key: 'all', label: '전체', description: '모든 회원' },
+    { key: 'free', label: '무료회원', description: '무료 플랜' },
+    { key: 'onetime', label: '영구구매', description: '일시불 고객' },
+    { key: 'monthly', label: '월회원', description: '월결제 고객' },
+    { key: 'attention', label: '정지/연체', description: '확인 필요' },
+    { key: 'signup_only', label: '회원가입만', description: '권한/계정/셋업 없음' }
+  ];
+  const isSignupOnlyUser = (user) => (
+    (user.plan || 'free') === 'free'
+    && user.status !== 'suspended'
+    && (user.products || []).length === 0
+    && (user.accounts || []).length === 0
+    && !setupStatusByUser[user.id]
+  );
+  const userInSegment = (user, segment) => {
+    if (segment === 'all') return true;
+    if (segment === 'free') return (user.plan || 'free') === 'free' && user.status !== 'suspended';
+    if (segment === 'onetime') return user.plan === 'onetime' && user.status !== 'suspended';
+    if (segment === 'monthly') return user.plan === 'monthly' && user.status !== 'suspended' && user.billing_status !== 'past_due';
+    if (segment === 'attention') return user.status === 'suspended' || user.billing_status === 'past_due';
+    if (segment === 'signup_only') return isSignupOnlyUser(user);
+    return true;
+  };
+  const segmentCounts = Object.fromEntries(segmentDefinitions.map((segment) => [
+    segment.key,
+    users.filter((user) => userInSegment(user, segment.key)).length
+  ]));
+  const setupStatusLabel = (status) => ({
+    pending: '셋업 대기',
+    in_progress: '셋업 중',
+    completed: '셋업 완료',
+    canceled: '셋업 삭제'
+  }[status] || '');
+
   const filteredUsers = users.filter((user) => {
+    if (!userInSegment(user, customerSegment)) return false;
     const needle = search.trim().toLowerCase();
     if (!needle) return true;
     const haystack = [
@@ -285,6 +333,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
       user.email,
       user.plan,
       user.billing_status,
+      setupStatusLabel(setupStatusByUser[user.id]),
       ...(user.accounts || []).flatMap((account) => [account.name, account.account_handle, account.threads_user_id])
     ].filter(Boolean).join(' ').toLowerCase();
     return haystack.includes(needle);
@@ -299,6 +348,27 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
         </button>
       </div>
       <div className="rounded border border-line bg-white p-4">
+        <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+          {segmentDefinitions.map((segment) => {
+            const active = customerSegment === segment.key;
+            return (
+              <button
+                key={segment.key}
+                type="button"
+                onClick={() => setCustomerSegment(segment.key)}
+                className={`rounded border px-3 py-3 text-left transition ${
+                  active ? 'border-coupang bg-orange-50 text-coupang shadow-sm' : 'border-line bg-white text-slate-600 hover:border-slate-300 hover:bg-panel'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-black">{segment.label}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-black ${active ? 'bg-white text-coupang' : 'bg-slate-100 text-slate-500'}`}>{segmentCounts[segment.key] || 0}</span>
+                </div>
+                <div className="mt-1 text-[11px] font-medium text-slate-400">{segment.description}</div>
+              </button>
+            );
+          })}
+        </div>
         <label className="grid gap-1 text-sm">
           <span className="font-semibold text-slate-600">고객 검색</span>
           <input
@@ -391,6 +461,11 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                       {[user.buyer_name || user.buyerName, user.username ? `ID ${user.username}` : '', planLabel(user)].filter(Boolean).join(' · ')}
                     </div>
                   </div>
+                  {setupStatusByUser[user.id] && (
+                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
+                      {setupStatusLabel(setupStatusByUser[user.id])}
+                    </span>
+                  )}
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
                     {user.status === 'active' ? '활성' : '정지'}
                   </span>
@@ -450,11 +525,19 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                   </div>
                   {ungrantedProducts.length > 0 && (
                     <div className="flex items-center gap-2 mt-1">
-                      <select className="rounded border border-line px-2 py-1 text-xs" defaultValue=""
-                        onChange={(e) => { if (e.target.value) { assignProduct(user.id, e.target.value); e.target.value = ''; } }}>
-                        <option value="">+ 제품 권한 추가...</option>
-                        {ungrantedProducts.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
-                      </select>
+                      <SearchableSelect
+                        value=""
+                        onChange={(value) => { if (value) assignProduct(user.id, value); }}
+                        options={ungrantedProducts.map((product) => ({
+                          value: product.id,
+                          label: product.name,
+                          searchText: [product.name, product.id].filter(Boolean).join(' ')
+                        }))}
+                        placeholder="+ 제품 권한 추가..."
+                        searchPlaceholder="제품명 검색"
+                        variant="compact"
+                        className="w-56 text-xs"
+                      />
                     </div>
                   )}
                 </div>
@@ -496,11 +579,19 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
 
                   {unassigned.length > 0 && user.accounts?.length < user.max_accounts && (
                     <div className="flex items-center gap-2 mt-1">
-                      <select className="rounded border border-line px-2 py-1 text-xs" defaultValue=""
-                        onChange={(e) => { if (e.target.value) { assignAccount(user.id, e.target.value); e.target.value = ''; } }}>
-                        <option value="">+ 계정 할당...</option>
-                        {unassigned.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                      </select>
+                      <SearchableSelect
+                        value=""
+                        onChange={(value) => { if (value) assignAccount(user.id, value); }}
+                        options={unassigned.map((account) => ({
+                          value: account.id,
+                          label: [account.name, account.account_handle].filter(Boolean).join(' · '),
+                          searchText: [account.name, account.account_handle, account.owner?.email].filter(Boolean).join(' ')
+                        }))}
+                        placeholder="+ 계정 할당..."
+                        searchPlaceholder="계정명 또는 핸들 검색"
+                        variant="compact"
+                        className="w-56 text-xs"
+                      />
                     </div>
                   )}
                   {user.accounts?.length < user.max_accounts && (
