@@ -5,9 +5,10 @@ import { sendOpsAlert } from './notificationService.js';
 
 const host = 'https://api-gateway.coupang.com';
 const COUPANG_FETCH_TIMEOUT_MS = Number(process.env.COUPANG_FETCH_TIMEOUT_MS || 5000);
-const COUPANG_KEYWORDS_PER_TOPIC = Math.max(1, Number(process.env.COUPANG_KEYWORDS_PER_TOPIC || 1));
+const COUPANG_KEYWORDS_PER_TOPIC = Math.max(1, Number(process.env.COUPANG_KEYWORDS_PER_TOPIC || 2));
 const COUPANG_ACCOUNT_SEARCH_INTERVAL_MS = Math.max(0, Number(process.env.COUPANG_ACCOUNT_SEARCH_INTERVAL_MS || 90000));
 const COUPANG_SEARCH_RESULT_LIMIT = Math.min(10, Math.max(1, Number(process.env.COUPANG_SEARCH_RESULT_LIMIT || 10)));
+const COUPANG_PIPELINE_SEARCH_WAIT_BUDGET_MS = Math.max(0, Number(process.env.COUPANG_PIPELINE_SEARCH_WAIT_BUDGET_MS || 10 * 60 * 1000));
 const SUCCESS_CODES = new Set(['0', 'SUCCESS']);
 const accountSearchNextAllowedAt = new Map();
 let coupangLockHealth = { checkedAt: 0, available: null, message: null };
@@ -27,6 +28,17 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = COUPANG_FETCH_TIM
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function resolveThrottleWaitMs({ retryAfterMs, throttleWaitBudgetMs, startedAt, now = Date.now() } = {}) {
+  const retryAfter = Math.max(0, Number(retryAfterMs || 0));
+  const budget = Math.max(0, Number(throttleWaitBudgetMs || 0));
+  const elapsed = Math.max(0, Number(now || 0) - Number(startedAt || now || 0));
+  return Math.max(0, Math.min(retryAfter, budget - elapsed));
 }
 
 function createSearchPath(keyword, limit = 10, trackingCode) {
@@ -433,6 +445,9 @@ export async function searchProductsForTopic(topicId, options = {}) {
   const keywordLimit = Math.max(1, Number(options.keywordLimit || COUPANG_KEYWORDS_PER_TOPIC));
   const keywords = rawKeywords.slice(0, keywordLimit);
   const stopAfterRealCount = Number(options.stopAfterRealCount || 0);
+  const waitForThrottle = Boolean(options.waitForThrottle);
+  const throttleWaitBudgetMs = Math.max(0, Number(options.throttleWaitBudgetMs ?? COUPANG_PIPELINE_SEARCH_WAIT_BUDGET_MS));
+  const throttleWaitStartedAt = Date.now();
 
   const existing = await dbList('coupang_products', { topic_id: topic.id });
   const seen = new Set(existing.map((p) => p.product_id));
@@ -461,7 +476,33 @@ export async function searchProductsForTopic(topicId, options = {}) {
     return [status];
   }
   for (const keyword of keywords) {
-    const products = await searchKeyword(keyword, COUPANG_SEARCH_RESULT_LIMIT, creds);
+    let products = await searchKeyword(keyword, COUPANG_SEARCH_RESULT_LIMIT, creds);
+    const throttled = products.find((product) => product.raw_data?.code === 'COUPANG_SEARCH_THROTTLED');
+    if (waitForThrottle && throttled?.raw_data?.retryAfterMs) {
+      const waitMs = resolveThrottleWaitMs({
+        retryAfterMs: throttled.raw_data.retryAfterMs,
+        throttleWaitBudgetMs,
+        startedAt: throttleWaitStartedAt
+      });
+      if (waitMs > 0) {
+        await logActivity({
+          account_id: account.id,
+          project_id: account.project_id,
+          topic_id: topic.id,
+          action: 'coupang_search_waiting_for_throttle',
+          level: 'info',
+          message: `쿠팡 검색 간격 보호로 ${Math.ceil(waitMs / 1000)}초 대기 후 재시도합니다.`,
+          payload: {
+            keyword,
+            retryAfterMs: throttled.raw_data.retryAfterMs,
+            waitMs,
+            throttleWaitBudgetMs
+          }
+        }).catch(() => null);
+        await sleep(waitMs);
+        products = await searchKeyword(keyword, COUPANG_SEARCH_RESULT_LIMIT, creds);
+      }
+    }
     for (const product of products) {
       if (product.is_search_status) {
         saved.push(product);

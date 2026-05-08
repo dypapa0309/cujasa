@@ -12,6 +12,12 @@ import { assertAutomationRunning, isAutomationRunning } from './accountAutomatio
 import { repairProductsForTopic } from './productRepairService.js';
 import { sendOpsAlert } from './notificationService.js';
 
+const PIPELINE_COUPANG_SEARCH_WAIT_BUDGET_MS = Math.max(0, Number(process.env.COUPANG_PIPELINE_SEARCH_WAIT_BUDGET_MS || 10 * 60 * 1000));
+
+export function hasLinkProductsForContentGeneration(selectedProducts) {
+  return Array.isArray(selectedProducts) && selectedProducts.length > 0;
+}
+
 function createNoQueueMessage(diagnostics = {}) {
   if (diagnostics.reasonCode === 'COUPANG_LOCK_UNAVAILABLE') {
     return '쿠팡 검색 보호 락이 준비되지 않아 예약을 만들지 않았습니다. 운영 DB 마이그레이션 적용 후 다시 시도해주세요.';
@@ -90,6 +96,8 @@ export async function runPipelineForAccount(accountId, options = {}) {
 
     let totalPosts = 0;
     const totalTopics = Math.max(topics.length, 1);
+    const coupangWaitStartedAt = Date.now();
+    const remainingCoupangWaitBudget = () => Math.max(0, PIPELINE_COUPANG_SEARCH_WAIT_BUDGET_MS - (Date.now() - coupangWaitStartedAt));
     for (const [index, topic] of topics.entries()) {
       const basePercent = 25 + Math.round((index / totalTopics) * 55);
       try {
@@ -101,7 +109,10 @@ export async function runPipelineForAccount(accountId, options = {}) {
           topicsDone: index,
           postsCreated: totalPosts
         });
-        const searchedProducts = await searchProductsForTopic(topic.id);
+        const searchedProducts = await searchProductsForTopic(topic.id, {
+          waitForThrottle: true,
+          throttleWaitBudgetMs: remainingCoupangWaitBudget()
+        });
         if (searchedProducts.some((product) => ['COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE'].includes(product.raw_data?.code))) {
           const lockUnavailable = searchedProducts.some((product) => product.raw_data?.code === 'COUPANG_LOCK_UNAVAILABLE');
           const error = new Error(lockUnavailable
@@ -119,15 +130,42 @@ export async function runPipelineForAccount(accountId, options = {}) {
           topicsDone: index,
           postsCreated: totalPosts
         });
-        const selectedProducts = await selectProducts(topic.id);
-        if (selectedProducts.length === 0) {
-          const repair = await repairProductsForTopic(topic.id, { account });
+        let selectedProducts = await selectProducts(topic.id);
+        if (!hasLinkProductsForContentGeneration(selectedProducts)) {
+          const repair = await repairProductsForTopic(topic.id, {
+            account,
+            waitForThrottle: true,
+            throttleWaitBudgetMs: remainingCoupangWaitBudget()
+          });
           if (repair.reasonCode === 'COUPANG_RATE_LIMIT') {
             const error = new Error('쿠팡 요청 제한 보호 중이라 상품 복구와 예약 생성을 중단했습니다.');
             error.status = 429;
             error.code = 'COUPANG_RATE_LIMIT';
             throw error;
           }
+          if (repair.reasonCode === 'COUPANG_LOCK_UNAVAILABLE') {
+            const error = new Error('쿠팡 검색 보호 락이 준비되지 않아 상품 복구와 예약 생성을 중단했습니다.');
+            error.status = 503;
+            error.code = 'COUPANG_LOCK_UNAVAILABLE';
+            throw error;
+          }
+          selectedProducts = repair.selectedProducts || [];
+        }
+        if (!hasLinkProductsForContentGeneration(selectedProducts)) {
+          await logActivity({
+            account_id: account.id,
+            project_id: account.project_id,
+            topic_id: topic.id,
+            action: 'pipeline_topic_skipped_no_link_product',
+            level: 'info',
+            message: '실제 쿠팡 상품 링크 후보가 없어 콘텐츠 생성을 건너뜁니다.',
+            payload: {
+              code: 'NO_REAL_COUPANG_LINKS',
+              topicIndex: index + 1,
+              topicsTotal: topics.length
+            }
+          });
+          continue;
         }
         await progress({
           percent: Math.min(80, basePercent + 14),

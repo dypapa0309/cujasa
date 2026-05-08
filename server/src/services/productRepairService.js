@@ -5,8 +5,15 @@ import { selectProducts } from './productSelectionService.js';
 import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 
-const DEFAULT_ATTEMPT_LIMIT = Math.max(0, Number(process.env.COUPANG_REPAIR_ATTEMPT_LIMIT || 0));
-const REPAIR_KEYWORDS_PER_ATTEMPT = Math.max(1, Number(process.env.COUPANG_REPAIR_KEYWORDS_PER_ATTEMPT || 1));
+const DEFAULT_ATTEMPT_LIMIT = Math.max(0, Number(process.env.COUPANG_REPAIR_ATTEMPT_LIMIT || 1));
+const REPAIR_KEYWORDS_PER_ATTEMPT = Math.max(1, Number(process.env.COUPANG_REPAIR_KEYWORDS_PER_ATTEMPT || 2));
+
+export function getProductRepairDefaults() {
+  return {
+    attemptLimit: DEFAULT_ATTEMPT_LIMIT,
+    keywordsPerAttempt: REPAIR_KEYWORDS_PER_ATTEMPT
+  };
+}
 
 function normalizeKeyword(value) {
   return String(value || '')
@@ -161,7 +168,9 @@ export async function repairProductsForTopic(topicId, options = {}) {
     const products = await searchProductsForTopic(topicId, {
       keywords,
       stopAfterRealCount: 3,
-      keywordLimit: REPAIR_KEYWORDS_PER_ATTEMPT
+      keywordLimit: REPAIR_KEYWORDS_PER_ATTEMPT,
+      waitForThrottle: Boolean(options.waitForThrottle),
+      throttleWaitBudgetMs: options.throttleWaitBudgetMs
     });
     const rateLimited = products.some((product) => product.raw_data?.code === 'COUPANG_RATE_LIMIT');
     const lockUnavailable = products.some((product) => product.raw_data?.code === 'COUPANG_LOCK_UNAVAILABLE');
