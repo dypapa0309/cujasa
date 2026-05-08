@@ -7,10 +7,69 @@ const COMMENT_STYLES = new Set(['none', 'soft_question', 'experience_question', 
 const PRODUCT_MENTION_STYLES = new Set(['none', 'natural', 'direct']);
 const EMOJI_LEVELS = new Set(['none', 'low', 'medium']);
 const MAX_DAILY_POSTS = 5;
+const SENSITIVE_ACCOUNT_KEYS = new Set([
+  'threads_access_token',
+  'coupang_access_key',
+  'coupang_secret_key',
+  'coupang_partner_id',
+  'coupang_tracking_code'
+]);
+const ACCOUNT_COLUMNS = new Set([
+  'project_id',
+  'name',
+  'platform',
+  'account_handle',
+  'target_audience',
+  'content_scope',
+  'forbidden_topics',
+  'forbidden_words',
+  'tone',
+  'cta_style',
+  'content_mode',
+  'content_intensity',
+  'seasonality_enabled',
+  'comment_induction_style',
+  'product_mention_style',
+  'emoji_level',
+  'safe_debate_enabled',
+  'content_style_note',
+  'daily_post_min',
+  'daily_post_max',
+  'active_time_windows',
+  'min_interval_minutes',
+  'link_post_ratio',
+  'no_link_post_ratio',
+  'rest_days_per_week',
+  'threads_access_token',
+  'threads_user_id',
+  'threads_token_expires_at',
+  'threads_token_status',
+  'threads_link_delivery_mode',
+  'threads_connected_at',
+  'last_threads_refresh_at',
+  'automation_status',
+  'automation_started_at',
+  'automation_stopped_at',
+  'coupang_access_key',
+  'coupang_secret_key',
+  'coupang_partner_id',
+  'coupang_tracking_code',
+  'coupang_search_cooldown_until',
+  'coupang_search_status',
+  'status'
+]);
 
 function toFiniteNumber(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
+}
+
+export function sanitizeAccountPayload(payload = {}) {
+  return Object.fromEntries(Object.entries(payload || {}).filter(([key, value]) => {
+    if (!ACCOUNT_COLUMNS.has(key)) return false;
+    if (SENSITIVE_ACCOUNT_KEYS.has(key) && !String(value ?? '').trim()) return false;
+    return true;
+  }));
 }
 
 function normalizeAccount(payload) {
@@ -83,11 +142,16 @@ export const createAccount = (payload) => dbInsert('accounts', normalizeAccount(
   link_post_ratio: 1,
   no_link_post_ratio: 0,
   rest_days_per_week: 1,
-  ...payload
+  ...sanitizeAccountPayload(payload)
 }));
 export const updateAccount = async (id, payload) => {
   const current = await getAccount(id);
-  const [updated] = await dbUpdate('accounts', { id }, normalizeAccount({ ...current, ...payload }));
+  if (!current) {
+    const error = new Error('Account not found');
+    error.status = 404;
+    throw error;
+  }
+  const [updated] = await dbUpdate('accounts', { id }, normalizeAccount({ ...current, ...sanitizeAccountPayload(payload) }));
   return updated;
 };
 export async function archiveAccount(id) {

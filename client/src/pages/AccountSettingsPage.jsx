@@ -11,13 +11,41 @@ const sensitiveAccountKeys = [
   'coupang_tracking_code'
 ];
 
+const editableAccountKeys = new Set([
+  'status',
+  'name',
+  'account_handle',
+  'target_audience',
+  'content_scope',
+  'forbidden_topics',
+  'forbidden_words',
+  'tone',
+  'cta_style',
+  'content_mode',
+  'content_intensity',
+  'seasonality_enabled',
+  'comment_induction_style',
+  'product_mention_style',
+  'emoji_level',
+  'safe_debate_enabled',
+  'content_style_note',
+  'daily_post_min',
+  'daily_post_max',
+  'active_time_windows',
+  'min_interval_minutes',
+  'link_post_ratio',
+  'no_link_post_ratio',
+  'rest_days_per_week',
+  ...sensitiveAccountKeys
+]);
+
 function sanitizeAccountPayload(form) {
-  const payload = { ...form };
+  const payload = Object.fromEntries(
+    Object.entries(form || {}).filter(([key]) => editableAccountKeys.has(key))
+  );
   payload.daily_post_min = 0;
   for (const key of sensitiveAccountKeys) {
     if (!String(payload[key] || '').trim()) delete payload[key];
-    delete payload[`has_${key}`];
-    delete payload[`masked_${key}`];
   }
   return payload;
 }
@@ -38,8 +66,8 @@ export default function AccountSettingsPage({ selectedAccount, reloadAccounts })
       setForm(saved);
       await reloadAccounts?.();
       toast('설정이 변경되었습니다.', 'success');
-    } catch {
-      toast('저장에 실패했습니다.', 'error');
+    } catch (err) {
+      toast(err.message || '저장에 실패했습니다.', 'error');
     } finally {
       setSaving(false);
     }
