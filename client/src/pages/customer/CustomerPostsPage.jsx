@@ -19,6 +19,16 @@ function queueFriendly(row = {}, detail = null) {
   };
 }
 
+function isPostedLinkIssue(row = {}) {
+  return row.status === 'posted' && ['reply_warning', 'reply_repair_blocked'].includes(row.error_category);
+}
+
+function queueAttentionLabel(row = {}) {
+  if (row.error_category === 'reply_repair_blocked') return '링크 수동확인';
+  if (row.error_category === 'reply_warning') return '댓글 링크 확인';
+  return null;
+}
+
 function startOfTodayKst(date = new Date()) {
   const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
   return new Date(Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), kst.getUTCDate()) - 9 * 60 * 60 * 1000);
@@ -157,7 +167,7 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
   const scheduled = queue.filter((r) => r.status === 'scheduled').sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
   const posted = queue.filter((r) => r.status === 'posted').sort((a, b) => queueCompletedTime(b) - queueCompletedTime(a));
   const needsAttention = queue
-    .filter((r) => ['failed', 'retry', 'manual_required'].includes(r.status))
+    .filter((r) => ['failed', 'retry', 'manual_required'].includes(r.status) || isPostedLinkIssue(r))
     .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
   const pastNeedsAttention = needsAttention.filter((row) => queueUpdatedTime(row) < startOfTodayKst().getTime());
   const pipelineQueued = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? 0;
@@ -271,7 +281,7 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
             {needsAttention.map((r) => {
               const isExpanded = expandedId === r.id;
               const d = detail[r.id];
-              const label = {
+              const label = isPostedLinkIssue(r) ? queueAttentionLabel(r) : {
                 failed: '실패',
                 retry: '재시도',
                 manual_required: '수동 검토',
@@ -279,12 +289,12 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
               }[r.status] || r.status;
               const friendly = queueFriendly(r);
               return (
-                <div key={r.id} className="bg-white rounded-2xl border border-rose-100 overflow-hidden">
+                <div key={r.id} className={`bg-white rounded-2xl overflow-hidden ${isPostedLinkIssue(r) ? 'border border-amber-100' : 'border border-rose-100'}`}>
                   <button onClick={() => toggleDetail(r.id)} className="w-full px-5 py-4 flex items-center gap-3 text-left">
-                    <div className="w-2 h-2 rounded-full bg-rose-400 flex-shrink-0" />
+                    <div className={`w-2 h-2 rounded-full flex-shrink-0 ${isPostedLinkIssue(r) ? 'bg-amber-400' : 'bg-rose-400'}`} />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-700">{dateTime(r.scheduled_at)}</div>
-                      <div className="text-xs text-rose-500 mt-0.5 truncate">{friendly?.title || label}</div>
+                      <div className={`text-xs mt-0.5 truncate ${isPostedLinkIssue(r) ? 'text-amber-600' : 'text-rose-500'}`}>{friendly?.title || label}</div>
                     </div>
                     <span className="text-gray-300 text-sm flex-shrink-0">{isExpanded ? '▲' : '▼'}</span>
                   </button>
@@ -307,7 +317,7 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
                             <ModeBadge mode={d.postMode || r.post_mode} linkStatus={d.linkStatus} />
                           </div>
                           {(r.error_message || d.queue?.friendly_title) && (
-                            <div className="grid gap-3 rounded-xl bg-rose-50 px-4 py-3 text-xs text-rose-600">
+                            <div className={`grid gap-3 rounded-xl px-4 py-3 text-xs ${isPostedLinkIssue(r) ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-600'}`}>
                               <div>
                                 <div className="font-black">{detailFriendly.title || '업로드 오류'}</div>
                                 <div className="mt-1 leading-relaxed">
@@ -432,6 +442,9 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
                     <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-700">{dateTime(r.posted_at)}</div>
+                      {isPostedLinkIssue(r) && (
+                        <div className="mt-0.5 text-xs font-bold text-amber-600">{queueAttentionLabel(r)}</div>
+                      )}
                       {getPost(r.post_id) && (
                         <div className="text-xs text-gray-400 mt-0.5 truncate">{getPost(r.post_id).body?.slice(0, 50)}...</div>
                       )}

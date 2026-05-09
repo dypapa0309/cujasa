@@ -3,6 +3,7 @@ import { normalizeQueueClassification } from './queueErrorService.js';
 
 const CUSTOMER_VISIBLE_PROBLEM_STATUSES = new Set(['failed', 'retry', 'manual_required']);
 const CUSTOMER_DISMISSIBLE_STATUSES = new Set(['failed', 'retry', 'manual_required', 'skipped']);
+const CUSTOMER_ATTENTION_POSTED_CATEGORIES = new Set(['reply_warning', 'reply_repair_blocked']);
 const PAST_TOKEN_CATEGORIES = new Set(['threads_reconnect_required', 'retry_available', 'recheck_required']);
 const DEFAULT_RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const AUTO_HIDE_ISSUE_DAYS = Math.max(1, Number(process.env.QUEUE_ISSUE_AUTO_HIDE_DAYS || 7));
@@ -32,12 +33,19 @@ export function isCustomerVisibleQueue(row = {}) {
   return true;
 }
 
+export function isCustomerAttentionPostedQueue(row = {}) {
+  if (!isCustomerVisibleQueue(row)) return false;
+  return row.status === 'posted' && CUSTOMER_ATTENTION_POSTED_CATEGORIES.has(row.error_category);
+}
+
 export function isCustomerDismissibleQueue(row = {}) {
+  if (isCustomerAttentionPostedQueue(row)) return true;
   return CUSTOMER_DISMISSIBLE_STATUSES.has(row.status);
 }
 
 export function isCustomerVisibleProblemQueue(row = {}) {
-  return isCustomerVisibleQueue(row) && CUSTOMER_VISIBLE_PROBLEM_STATUSES.has(row.status);
+  return (isCustomerVisibleQueue(row) && CUSTOMER_VISIBLE_PROBLEM_STATUSES.has(row.status))
+    || isCustomerAttentionPostedQueue(row);
 }
 
 export function shouldAutoHidePastTokenFailure(row = {}, options = {}) {
@@ -106,7 +114,7 @@ export async function dismissPastQueueIssuesForAccount(accountId, options = {}) 
   const rows = await dbList('post_queue', { account_id: accountId });
   const targets = rows.filter((row) => {
     if (row.customer_hidden_at) return false;
-    if (!CUSTOMER_VISIBLE_PROBLEM_STATUSES.has(row.status)) return false;
+    if (!CUSTOMER_VISIBLE_PROBLEM_STATUSES.has(row.status) && !isCustomerAttentionPostedQueue(row)) return false;
     return queueTime(row) < cutoff.getTime();
   });
   const hidden = [];

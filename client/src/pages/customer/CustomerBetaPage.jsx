@@ -161,6 +161,28 @@ function statusLabel(status) {
   }[status] || status || '대기';
 }
 
+function isPostedLinkIssue(row = {}) {
+  return row.status === 'posted' && ['reply_warning', 'reply_repair_blocked'].includes(row.error_category);
+}
+
+function queueAttentionLabel(row = {}) {
+  if (row.error_category === 'reply_repair_blocked') return '링크 수동확인';
+  if (row.error_category === 'reply_warning') return '댓글 링크 확인';
+  return null;
+}
+
+function queueDisplayTitle(row = {}) {
+  return queueAttentionLabel(row) || statusLabel(row.status);
+}
+
+function queueDotClass(row = {}) {
+  if (isPostedLinkIssue(row)) return 'bg-amber-400';
+  if (row.status === 'posted') return 'bg-white';
+  if (row.status === 'scheduled') return 'bg-zinc-400';
+  if (row.status === 'failed' || row.status === 'manual_required') return 'bg-rose-500';
+  return 'bg-zinc-700';
+}
+
 function price(value) {
   return `${Number(value || 0).toLocaleString()}원`;
 }
@@ -2661,7 +2683,7 @@ function BetaPostsPanel({ account, currentUser, queue, posts, loading, reloadWor
 
   const scheduled = queue.filter((row) => row.status === 'scheduled').sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
   const posted = queue.filter((row) => row.status === 'posted').sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at));
-  const needsAttention = queue.filter((row) => ['failed', 'retry', 'manual_required'].includes(row.status)).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+  const needsAttention = queue.filter((row) => ['failed', 'retry', 'manual_required'].includes(row.status) || isPostedLinkIssue(row)).sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
 
   const toggleDetail = async (queueId) => {
     if (expandedId === queueId) {
@@ -5358,9 +5380,9 @@ function QueueSection({ title, rows, posts, expandedId, detail, loadingDetailId,
           return (
             <div key={row.id} className="overflow-hidden rounded-2xl bg-black/25">
               <button type="button" onClick={() => onToggle(row.id)} className="flex w-full items-center gap-3 px-4 py-3 text-left">
-                <span className={`h-2 w-2 shrink-0 rounded-full ${row.status === 'posted' ? 'bg-white' : row.status === 'scheduled' ? 'bg-zinc-400' : 'bg-zinc-700'}`} />
+                <span className={`h-2 w-2 shrink-0 rounded-full ${queueDotClass(row)}`} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-black text-zinc-200">{statusLabel(row.status)}</div>
+                  <div className={`text-sm font-black ${isPostedLinkIssue(row) ? 'text-amber-300' : 'text-zinc-200'}`}>{queueDisplayTitle(row)}</div>
                   <div className="mt-0.5 truncate text-xs text-zinc-500">{dateTime(row.posted_at || row.scheduled_at || row.created_at)} {post?.body ? `· ${post.body.slice(0, 36)}` : ''}</div>
                 </div>
                 <span className="text-xs text-zinc-600">{expanded ? '접기' : '보기'}</span>
@@ -5378,7 +5400,7 @@ function QueueSection({ title, rows, posts, expandedId, detail, loadingDetailId,
                           <CandidateScoreSummary post={rowDetail?.post || post} />
                         </div>
                       )}
-                      {(row.friendly_message || row.error_message) && <Notice tone="error">{row.friendly_message || row.error_message}</Notice>}
+                      {(row.friendly_message || row.error_message) && <Notice tone={isPostedLinkIssue(row) ? 'warning' : 'error'}>{row.friendly_title ? `${row.friendly_title} · ` : ''}{row.friendly_message || row.error_message}</Notice>}
                       {row.post_url && <a href={row.post_url} target="_blank" rel="noreferrer" className="text-sm font-bold text-zinc-100 hover:text-white">게시글 보기</a>}
                       {onDismiss && (
                         <DarkButton variant="ghost" size="sm" onClick={() => onDismiss(row.id)} disabled={dismissingId === row.id}>
@@ -5413,7 +5435,7 @@ function SimpleQueueRows({ rows, emptyText }) {
     <div className="grid gap-2">
       {rows.map((row) => (
         <div key={row.id} className="flex items-center justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3 text-sm">
-          <span className="font-black text-zinc-200">{statusLabel(row.status)}</span>
+          <span className={`font-black ${isPostedLinkIssue(row) ? 'text-amber-300' : 'text-zinc-200'}`}>{queueDisplayTitle(row)}</span>
           <span className="text-xs text-zinc-500">{dateTime(row.posted_at || row.scheduled_at || row.created_at)}</span>
         </div>
       ))}
@@ -5680,7 +5702,9 @@ function Notice({ children, tone = 'info' }) {
     ? 'border-white/15 bg-black/25 text-zinc-200'
     : tone === 'success'
       ? 'border-white/20 bg-white/10 text-zinc-100'
-      : 'border-white/10 bg-white/[0.03] text-zinc-400';
+      : tone === 'warning'
+        ? 'border-amber-400/20 bg-amber-400/10 text-amber-200'
+        : 'border-white/10 bg-white/[0.03] text-zinc-400';
   return (
     <div className={`rounded-2xl border px-4 py-3 text-sm leading-relaxed ${className}`}>
       {children}
