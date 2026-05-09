@@ -19,3 +19,15 @@ test('product names with letters are not treated as account token leaks', () => 
   assert.equal(inspected.accountTokenLeak, false);
   assert.equal(inspected.publishable, true);
 });
+
+test('rejects generic practicality versus comfort template posts', () => {
+  const account = { name: 'lovehyun45', account_handle: '@lovehyun45' };
+  const inspected = inspectGeneratedPostText(
+    'lovehyun45 냄새 줄이는 법, 이건 은근 기준이 갈리는 선택이에요.\n생활 속 원인부터 잡기를 먼저 보는 사람도 있고, 편하게 쓰는 쪽을 더 중요하게 보는 사람도 있더라고요.\n여러분은 이런 거 고를 때 실용성 쪽이에요, 아니면 편한 사용감 쪽이에요?',
+    account
+  );
+
+  assert.equal(inspected.accountTokenLeak, true);
+  assert.equal(inspected.genericTemplate, true);
+  assert.equal(inspected.publishable, false);
+});

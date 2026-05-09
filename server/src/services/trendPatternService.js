@@ -237,6 +237,9 @@ function trendFallbackPosts({ query = '', contentScope = '', targetAudience = ''
   const topic = normalizeText(query || productCategory || contentScope || '생활용품');
   const audience = normalizeText(targetAudience || '이 계정의 독자');
   const pattern = patterns[0] || {};
+  const livingDetails = /자취|원룸|집기|살림|생활/.test(`${topic} ${contentScope} ${audience}`)
+    ? ['설거지 끝나고 바로 둘 자리', '빨래 전 잠깐 모아둘 바구니', '현관에서 나갈 때 바로 집는 물건']
+    : ['자주 쓰는 순간에 바로 닿는 자리', '다시 넣을 때 손이 덜 가는 구조', '눈에 보여도 덜 어지러운 방식'];
   const listLike = /라벨|목록|줄별|>|나열|year of birth|traits/i.test([
     pattern.listStructure,
     pattern.formatPattern,
@@ -300,17 +303,17 @@ function trendFallbackPosts({ query = '', contentScope = '', targetAudience = ''
     {
       contentType: '질문형',
       patternSourceId: pattern.sourceId || '',
-      body: `${topic}, 이건 은근 기준이 갈리는 선택이에요.\n\n${audience} 기준으로 보면 보기 좋은 쪽보다 자주 쓰기 편한지가 더 오래 가더라고요.\n\n여러분은 이런 거 고를 때 실용성 쪽이에요, 아니면 편한 사용감 쪽이에요?`
+      body: `${topic}, 많이 사는 것보다 먼저 둘 자리를 정하는 게 덜 후회되더라고요.\n\n${audience} 기준이면 ${livingDetails[0]}처럼 매일 손 가는 곳부터 티가 나요.\n\n처음 살림 맞출 때 제일 먼저 챙기고 싶은 자리는 어디예요?`
     },
     {
       contentType: '공감형',
       patternSourceId: pattern.sourceId || '',
-      body: `${topic}, 막상 필요할 때마다 신경 쓰이면 생각보다 피곤하죠.\n\n작은 기준 하나만 정해도 매번 고민하는 시간이 줄어듭니다.\n\n다들 이런 물건은 먼저 가격을 보세요, 아니면 관리하기 쉬운지를 보세요?`
+      body: `${topic} 고를 때 처음엔 예쁜 것부터 보이는데, 살아보면 귀찮은 순간이 기준을 바꾸더라고요.\n\n${livingDetails[1]}처럼 잠깐 둘 곳이 있으면 바닥에 쌓이는 일이 확 줄어요.\n\n다들 집기 살 때 예쁜 쪽이 먼저예요, 아니면 치우기 쉬운 쪽이 먼저예요?`
     },
     {
       contentType: '체크리스트형',
       patternSourceId: pattern.sourceId || '',
-      body: `${topic} 고를 때는 처음 눈에 띄는 것보다 계속 쓸 상황을 먼저 보는 게 좋더라고요.\n\n1. 자주 쓰는지\n2. 보관이 쉬운지\n3. 관리가 부담 없는지\n\n여러분은 셋 중에 뭐가 제일 중요해요?`
+      body: `${topic} 사기 전에는 큰 것보다 작은 동선을 먼저 보면 좋아요.\n\n1. ${livingDetails[0]}\n2. ${livingDetails[1]}\n3. ${livingDetails[2]}\n\n이 세 자리만 맞아도 처음 자취할 때 덜 어수선해요. 여러분은 어디부터 맞출 것 같아요?`
     }
   ];
 }

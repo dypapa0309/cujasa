@@ -91,11 +91,27 @@ test('human style fallback matches the target lived-in post shape', () => {
   );
   const score = scorePostEngagement(body);
 
-  assert.match(body, /작은데 자주 쓰는 것/);
-  assert.match(body, /1\. 설거지 후 바로 둘 곳/);
-  assert.match(body, /자취 시작할 때/);
+  assert.match(body, /어디에 둘지/);
+  assert.match(body, /1\. 설거지 끝나고 바로 내려둘 자리/);
+  assert.match(body, /빨래 돌리기 전 잠깐 모아둘 바구니 자리/);
+  assert.match(body, /처음 자취할 때/);
   assert.equal(score.checks.livedInStructure, true);
   assert.equal(score.checks.concreteCriteria, true);
+  assert.equal(score.checks.microDetail, true);
+  assert.equal(score.checks.saveWorthiness, true);
+  assert.equal(score.checks.humanWarmth, true);
+  assert.equal(score.checks.shallowChecklist, false);
   assert.equal(score.checks.safe, true);
   assert.ok(score.engagementScore >= 82);
+});
+
+test('penalizes shallow checklist without lived-in micro details', () => {
+  const shallow = '자취생을 위한 집기 추천 고를 때는 처음 눈에 띄는 것보다 계속 쓸 상황을 먼저 보는 게 좋더라고요.\n\n1. 자주 쓰는지\n2. 보관이 쉬운지\n3. 관리가 부담 없는지\n\n여러분은 셋 중에 뭐가 제일 중요해요?';
+  const score = scorePostEngagement(shallow);
+
+  assert.equal(score.checks.genericTemplate, true);
+  assert.equal(score.checks.microDetail, false);
+  assert.equal(score.checks.shallowChecklist, true);
+  assert.ok(score.rubric.shallowChecklistPenalty < 0);
+  assert.ok(score.engagementScore < 70);
 });

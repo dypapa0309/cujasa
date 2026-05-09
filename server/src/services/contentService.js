@@ -61,6 +61,9 @@ function isStableHumanlikeCandidate(candidate) {
   return engagement?.engagementScore >= STABLE_HUMANLIKE_SCORE
     && engagement?.checks?.livedInStructure
     && engagement?.checks?.concreteCriteria
+    && engagement?.checks?.microDetail
+    && engagement?.checks?.saveWorthiness
+    && !engagement?.checks?.shallowChecklist
     && !engagement?.checks?.genericTemplate
     && !engagement?.checks?.aiLikeTone
     && !engagement?.checks?.accountTokenLeak;
