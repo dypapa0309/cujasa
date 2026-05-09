@@ -8,7 +8,8 @@ const labelClass = 'grid gap-2 text-sm font-bold text-zinc-300';
 const spreadMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_SPREAD_BETA !== 'true';
 const infludexMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_INFLUDEX_BETA !== 'true';
 
-function isProductRegistrationOpen(product = {}) {
+function isProductRegistrationOpen(product = null) {
+  if (!product?.id) return false;
   if (product?.status === 'preparing' || product?.status === 'inactive') return false;
   if (product?.id === 'spread') return !spreadMaintenanceEnabled;
   if (product?.id === 'infludex') return !infludexMaintenanceEnabled;
@@ -19,10 +20,11 @@ export default function LoginPage({ onLogin }) {
   const params = new URLSearchParams(window.location.search);
   const requestedMode = params.get('mode') === 'register' ? 'register' : 'login';
   const registrationProducts = PRODUCTS.filter(isProductRegistrationOpen);
+  const fallbackProduct = registrationProducts[0] || CURRENT_PRODUCT || PRODUCTS.find((product) => product?.id) || { id: 'cujasa', name: 'CUJASA', supportLabel: '쿠팡 파트너스 자동화', description: '쿠팡 파트너스 자동화 콘솔' };
   const requestedProductConfig = productById(params.get('product'));
   const requestedProduct = isProductRegistrationOpen(requestedProductConfig)
     ? requestedProductConfig.id
-    : (registrationProducts[0]?.id || CURRENT_PRODUCT.id);
+    : fallbackProduct.id;
   const [form, setForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({
     buyerName: '',
@@ -39,7 +41,7 @@ export default function LoginPage({ onLogin }) {
   const [busy, setBusy] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [businessInfoOpen, setBusinessInfoOpen] = useState(false);
-  const previewProduct = productById(previewProductId) || CURRENT_PRODUCT;
+  const previewProduct = productById(previewProductId) || fallbackProduct;
 
   const submit = async (event) => {
     event.preventDefault();
