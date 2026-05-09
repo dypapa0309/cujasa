@@ -359,8 +359,6 @@ export default function CustomerBetaPage({
   const [queue, setQueue] = useState([]);
   const [posts, setPosts] = useState([]);
   const [analytics, setAnalytics] = useState(null);
-  const [homeSummary, setHomeSummary] = useState(null);
-  const [homeSummaryLoading, setHomeSummaryLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -407,26 +405,9 @@ export default function CustomerBetaPage({
     }
   }, [account?.id]);
 
-  const loadHomeSummary = useCallback(async () => {
-    if (!currentUser?.userId) return;
-    setHomeSummaryLoading(true);
-    try {
-      const summaryData = await api.get('/api/product-workspace/summary');
-      setHomeSummary(summaryData || null);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setHomeSummaryLoading(false);
-    }
-  }, [currentUser?.userId]);
-
   useEffect(() => {
     loadWorkspaceData();
   }, [loadWorkspaceData, pipelineResult]);
-
-  useEffect(() => {
-    loadHomeSummary();
-  }, [loadHomeSummary, pipelineResult]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ block: 'end' });
@@ -630,7 +611,6 @@ export default function CustomerBetaPage({
     try {
       await api.post(`/api/auth/products/${encodeURIComponent(productId)}/start`);
       await reloadCurrentUser?.();
-      await loadHomeSummary();
       setSelectedProductId(productId);
       setShowOtherProducts(false);
       setActiveActionKey('');
@@ -936,18 +916,39 @@ export default function CustomerBetaPage({
           </header>
 
           <section className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3 pb-3 lg:px-10 lg:py-4">
-            <div className={`mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-hidden ${messages.length > 0 ? 'grid grid-rows-[minmax(0,1fr)_auto]' : 'flex flex-col justify-start pt-2 lg:pt-3'}`}>
+            <div className={`mx-auto min-h-0 w-full max-w-5xl flex-1 overflow-hidden ${messages.length > 0 ? 'grid grid-rows-[minmax(0,1fr)_auto]' : 'flex flex-col justify-start pt-[13vh] sm:pt-[16vh] lg:pt-[18vh]'}`}>
               {messages.length === 0 && (
-                <JasainHome
-                  summary={homeSummary}
-                  loading={homeSummaryLoading}
-                  selectedProduct={selectedProduct}
-                  needsThreadsReconnect={needsThreadsReconnect}
-                  selectedProductPreparing={selectedProductPreparing}
-                  startingProductId={startingProductId}
-                  onOpenAction={openWorkspaceAction}
-                  onStartProduct={startProduct}
-                />
+              <div className="text-center">
+                <div className="mx-auto mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-400 lg:mb-5">
+                  <Bot size={14} />
+                  {selectedProduct.name}
+                </div>
+                <h1 className="text-[28px] font-semibold leading-tight tracking-normal text-zinc-100 sm:text-5xl">무엇을 자동화할까요?</h1>
+                <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-zinc-500 lg:mt-4">
+                  필요한 작업을 입력하거나 왼쪽에서 선택해 주세요. 실행과 설정도 오른쪽 작업 패널 안에서 처리해요.
+                </p>
+                {needsThreadsReconnect && (
+                  <button
+                    type="button"
+                    onClick={() => openWorkspaceAction('settings')}
+                    className="mx-auto mt-5 flex max-w-xl items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left text-sm text-zinc-300 hover:bg-white/10"
+                  >
+                    <span>
+                      <span className="block font-black text-zinc-100">Threads 재연결이 필요해요</span>
+                      <span className="mt-1 block text-xs leading-relaxed text-zinc-500">기존 설정과 예약 기록은 유지돼요. 설정 확인에서 Threads만 다시 연결해 주세요.</span>
+                    </span>
+                    <ChevronRight size={18} className="shrink-0 text-zinc-500" />
+                  </button>
+                )}
+                {selectedProductPreparing && (
+                  <div className="mx-auto mt-5 max-w-xl rounded-3xl border border-amber-300/20 bg-amber-400/10 px-5 py-4 text-left">
+                    <div className="text-sm font-black text-amber-100">{selectedProduct.name} 서비스 점검 중</div>
+                    <p className="mt-2 text-xs leading-relaxed text-amber-100/70">
+                      테스트 환경에서는 계속 확인할 수 있고, 배포 환경에서는 안정화가 끝날 때까지 잠시 닫아둘게요.
+                    </p>
+                  </div>
+                )}
+              </div>
               )}
 
               {messages.length > 0 && (
@@ -5492,170 +5493,6 @@ function MetricGrid({ summary, loading }) {
         </div>
       ))}
     </div>
-  );
-}
-
-function healthLabel(health = '') {
-  return {
-    ready: '정상',
-    needs_setup: '설정 필요',
-    needs_attention: '확인 필요',
-    empty: '대기',
-    locked: '미시작',
-    maintenance: '준비중'
-  }[health] || '상태 확인';
-}
-
-function healthClass(health = '') {
-  if (health === 'ready') return 'border-emerald-300/20 bg-emerald-400/10 text-emerald-100';
-  if (health === 'needs_attention') return 'border-rose-300/20 bg-rose-400/10 text-rose-100';
-  if (health === 'needs_setup') return 'border-amber-300/20 bg-amber-400/10 text-amber-100';
-  if (health === 'locked') return 'border-white/10 bg-white/[0.03] text-zinc-400';
-  if (health === 'maintenance') return 'border-white/10 bg-black/25 text-zinc-500';
-  return 'border-sky-300/20 bg-sky-400/10 text-sky-100';
-}
-
-function JasainHome({ summary, loading, selectedProduct, needsThreadsReconnect, selectedProductPreparing, startingProductId, onOpenAction, onStartProduct }) {
-  const products = Array.isArray(summary?.products) ? summary.products.filter((product) => product?.productId || product?.id) : [];
-  const overview = summary?.overview || {};
-  const rawPrimary = summary?.primaryAction && (summary.primaryAction.productId || summary.primaryAction.id) ? summary.primaryAction : null;
-  const primary = rawPrimary || products[0] || null;
-  const configuredProducts = PRODUCTS.filter((product) => product?.id);
-  const visibleProducts = products.length ? products : configuredProducts.map((product) => ({
-    productId: product.id,
-    name: product.name,
-    description: product.description,
-    granted: product.id === CURRENT_PRODUCT?.id,
-    health: product.id === CURRENT_PRODUCT?.id ? 'empty' : 'locked',
-    summary: product.id === CURRENT_PRODUCT?.id ? '운영 데이터를 불러오는 중이에요.' : '시작하면 이 제품의 작업 메뉴가 열려요.',
-    nextAction: product.id === CURRENT_PRODUCT?.id ? '자동화 실행' : `${product.name} 시작하기`,
-    actionKey: product.id === CURRENT_PRODUCT?.id ? 'run' : product.id
-  }));
-
-  const runProductAction = (product) => {
-    if (!product) return;
-    const productId = product.productId || product.id;
-    if (!product.granted && product.health !== 'maintenance') {
-      onStartProduct?.(productId);
-      return;
-    }
-    if (product.actionKey) onOpenAction?.(product.actionKey);
-  };
-
-  return (
-    <section className="min-h-0 overflow-y-auto pr-1">
-      <div className="grid gap-4 pb-2">
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.04] px-5 py-5 shadow-2xl shadow-black/20 lg:px-6">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0">
-              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-black text-zinc-400">
-                <Bot size={14} />
-                JASAIN Home
-              </div>
-              <h1 className="mt-4 text-2xl font-black leading-tight text-zinc-100 sm:text-4xl">지금 처리할 일을 먼저 볼게요.</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-zinc-500">
-                보유 솔루션의 연결 상태, 사용량, 확인 필요 항목을 한 화면에서 정리해요. 막힌 제품부터 처리하고 바로 작업 패널로 들어갈 수 있어요.
-              </p>
-            </div>
-            {primary && (
-              <button
-                type="button"
-                onClick={() => runProductAction(primary)}
-                disabled={primary.health === 'maintenance' || startingProductId === (primary.productId || primary.id)}
-                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-950 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {startingProductId === (primary.productId || primary.id) ? '시작하는 중...' : primary.nextAction || '다음 액션'}
-                <ChevronRight size={17} />
-              </button>
-            )}
-          </div>
-
-          <div className="mt-5 grid grid-cols-2 gap-2 lg:grid-cols-4">
-            {[
-              ['사용 중 솔루션', overview.activeCount ?? 0],
-              ['확인 필요', overview.needsAttention ?? 0],
-              ['오늘 예약', overview.scheduled ?? 0],
-              ['완료 포스팅', overview.posted ?? 0]
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-2xl bg-black/25 px-4 py-3">
-                <div className="text-xs font-bold text-zinc-500">{label}</div>
-                <div className="mt-1 text-2xl font-black text-zinc-100">{loading ? '-' : value}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {(needsThreadsReconnect || selectedProductPreparing) && (
-          <div className="grid gap-2">
-            {needsThreadsReconnect && (
-              <button
-                type="button"
-                onClick={() => onOpenAction?.('settings')}
-                className="flex items-center justify-between gap-3 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-left text-sm text-amber-100 hover:bg-amber-400/15"
-              >
-                <span>
-                  <span className="block font-black">Threads 재연결이 필요해요</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-amber-100/70">기존 설정과 예약 기록은 유지돼요. 설정 확인에서 Threads만 다시 연결해 주세요.</span>
-                </span>
-                <ChevronRight size={18} className="shrink-0" />
-              </button>
-            )}
-            {selectedProductPreparing && (
-              <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-zinc-400">
-                <span className="font-black text-zinc-200">{selectedProduct?.name || '선택한 제품'}</span>는 서비스 점검 중이에요.
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {visibleProducts.filter((product) => product?.productId || product?.id).map((product) => {
-            const productId = product.productId || product.id;
-            const configured = productById(productId);
-            const Icon = productId === 'cujasa' ? PlayCircle
-              : productId === 'dexor' ? Search
-                : productId === 'spread' ? Sparkles
-                  : productId === 'polibot' ? ShieldCheck
-                    : BarChart3;
-            const disabled = product.health === 'maintenance' || startingProductId === productId;
-            return (
-              <article key={productId} className="flex min-h-[218px] flex-col rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/10 text-zinc-100">
-                      <Icon size={20} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-black text-zinc-100">{product.name}</div>
-                      <div className="mt-0.5 truncate text-xs text-zinc-600">{configured?.supportLabel || product.description}</div>
-                    </div>
-                  </div>
-                  <span className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-black ${healthClass(product.health)}`}>
-                    {healthLabel(product.health)}
-                  </span>
-                </div>
-                <p className="mt-4 min-h-[44px] text-sm leading-relaxed text-zinc-400">{product.summary}</p>
-                {product.usage && (
-                  <div className="mt-3 rounded-2xl bg-black/25 px-3 py-2">
-                    <div className="text-[11px] font-black text-zinc-600">사용량</div>
-                    <div className="mt-0.5 text-sm font-bold text-zinc-300">{usageSummaryLabel(product.usage)}</div>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => runProductAction(product)}
-                  disabled={disabled}
-                  className="mt-auto inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black text-zinc-100 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {startingProductId === productId ? '시작하는 중...' : product.nextAction}
-                  {!disabled && <ChevronRight size={16} />}
-                </button>
-              </article>
-            );
-          })}
-        </div>
-      </div>
-    </section>
   );
 }
 
