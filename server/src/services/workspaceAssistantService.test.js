@@ -79,6 +79,18 @@ test('routes product-not-started requests to product start action', () => {
   assert.equal(result.requiresConfirmation, true);
 });
 
+test('routes JASAIN hub and next-action requests to home', () => {
+  const overview = classify('자사인 뭐 하는 서비스야?');
+  assert.equal(overview.intent, 'jasain_product_overview');
+  assert.equal(overview.action, 'home');
+  assert.ok(overview.answer.includes('허브'));
+  assert.ok(overview.buttons.some((item) => item.actionKey === 'home'));
+
+  const next = classify('지금 뭐 해야 돼?');
+  assert.equal(next.intent, 'jasain_home_next_action');
+  assert.equal(next.action, 'home');
+});
+
 test('test workflow collects POLIBOT recommendation fields across turns', () => {
   const first = buildTestWorkspaceAssistantWorkflow({
     message: '이상빈 34세 남성 심장 실손 목표 40 현재 30',

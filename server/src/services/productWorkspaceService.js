@@ -1,6 +1,7 @@
-import { productById } from '../config/products.js';
+import { PRODUCTS, productById } from '../config/products.js';
 import AdmZip from 'adm-zip';
-import { dbGet, dbInsert, dbUpdate } from './supabaseService.js';
+import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
+import { productServiceClosedInProduction } from '../utils/productAvailability.js';
 import {
   buildPolibotCatalog,
   buildPolibotCatalogItems,
@@ -261,6 +262,200 @@ function withUsage(workspace = {}, settings = {}, productId) {
   return {
     ...workspace,
     usage: normalizeUsage(settings, productId)
+  };
+}
+
+function productUsageFromGrant(grant = {}, productId = '') {
+  const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  return normalizeUsage({ ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);
+}
+
+function workspaceFromGrant(grant = {}) {
+  const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  return settings.workspace && typeof settings.workspace === 'object' ? settings.workspace : {};
+}
+
+function actionForLockedProduct(product = {}) {
+  return {
+    health: product.status === 'preparing' || productServiceClosedInProduction(product.id) ? 'maintenance' : 'locked',
+    summary: product.status === 'preparing' || productServiceClosedInProduction(product.id)
+      ? '서비스 안정화 후 열릴 예정이에요.'
+      : '시작하면 이 제품의 작업 메뉴가 열려요.',
+    nextAction: product.status === 'preparing' || productServiceClosedInProduction(product.id) ? '준비중' : `${product.name} 시작하기`,
+    actionKey: product.id
+  };
+}
+
+function summarizeCujasaProduct({ product, grant, accounts = [], queue = [] } = {}) {
+  const activeAccounts = accounts.filter((account) => account?.status !== 'archived');
+  const selectedAccount = activeAccounts[0] || null;
+  const scheduled = queue.filter((row) => row.status === 'scheduled').length;
+  const posted = queue.filter((row) => row.status === 'posted').length;
+  const needsReview = queue.filter((row) => ['failed', 'retry', 'manual_required', 'skipped'].includes(row.status)).length;
+  const hasThreads = Boolean(selectedAccount?.has_threads_access_token)
+    && (!selectedAccount?.threads_token_status || selectedAccount.threads_token_status === 'connected');
+  const hasCoupang = Boolean(selectedAccount?.coupang_access_key && selectedAccount?.coupang_secret_key && selectedAccount?.coupang_partner_id);
+  let health = 'ready';
+  let summary = `${scheduled}개 예약 · ${posted}개 완료`;
+  let nextAction = '포스팅 현황 보기';
+  let actionKey = 'posts';
+
+  if (activeAccounts.length === 0) {
+    health = 'needs_setup';
+    summary = 'Threads 계정을 먼저 연결해야 자동화가 시작돼요.';
+    nextAction = 'CUJASA 설정 열기';
+    actionKey = 'settings';
+  } else if (!hasThreads || !hasCoupang) {
+    health = 'needs_setup';
+    summary = !hasThreads ? 'Threads 연결이 필요해요.' : '쿠팡 API 설정이 필요해요.';
+    nextAction = '설정 확인';
+    actionKey = 'settings';
+  } else if (needsReview > 0) {
+    health = 'needs_attention';
+    summary = `${needsReview}개 포스팅 확인이 필요해요.`;
+    nextAction = '포스팅 현황 보기';
+    actionKey = 'posts';
+  } else if (scheduled === 0) {
+    health = 'empty';
+    summary = '오늘 예약된 포스팅이 없어요.';
+    nextAction = '자동화 실행';
+    actionKey = 'run';
+  }
+
+  return {
+    productId: product.id,
+    name: product.name,
+    description: product.description,
+    granted: Boolean(grant),
+    status: grant?.status || 'active',
+    health,
+    summary,
+    nextAction,
+    actionKey,
+    usage: null,
+    metrics: { accounts: activeAccounts.length, scheduled, posted, needsReview }
+  };
+}
+
+function summarizeDexorProduct({ product, grant } = {}) {
+  const workspace = workspaceFromGrant(grant);
+  const usage = productUsageFromGrant(grant, product.id);
+  const candidates = Array.isArray(workspace.candidates) ? workspace.candidates.length : 0;
+  const results = Array.isArray(workspace.analysisResults) ? workspace.analysisResults.length : 0;
+  if (results > 0) {
+    return { health: 'ready', summary: `${results}개 후보 분석 결과가 준비됐어요.`, nextAction: '후보 다운로드', actionKey: 'dexor-download', usage };
+  }
+  if (candidates > 0) {
+    return { health: usage.remaining <= 0 ? 'needs_attention' : 'needs_setup', summary: `${candidates}개 후보가 분석 대기 중이에요.`, nextAction: usage.remaining <= 0 ? '크레딧 충전' : '등급 분석', actionKey: usage.remaining <= 0 ? 'billing' : 'dexor-grade', usage };
+  }
+  return { health: 'empty', summary: '블로그 후보를 업로드하면 등급 분석을 시작할 수 있어요.', nextAction: '후보 업로드', actionKey: 'dexor-upload', usage };
+}
+
+function summarizeSpreadProduct({ product, grant } = {}) {
+  const workspace = workspaceFromGrant(grant);
+  const usage = productUsageFromGrant(grant, product.id);
+  const campaigns = Array.isArray(workspace.campaigns) ? workspace.campaigns : (workspace.campaignDraft ? [workspace.campaignDraft] : []);
+  const selected = campaigns[0] || {};
+  if (selected.submissionReview || workspace.submissionReview) return { health: 'ready', summary: '제출물 검수 결과가 준비됐어요.', nextAction: '제출물 검수', actionKey: 'spread-review', usage };
+  if (Array.isArray(selected.applicants || workspace.applicants) && (selected.applicants || workspace.applicants).length > 0) return { health: 'needs_setup', summary: '참여자 선정 다음 단계가 남아 있어요.', nextAction: '제출물 검수', actionKey: 'spread-review', usage };
+  if (campaigns.length > 0) return { health: 'needs_setup', summary: `${campaigns.length}개 캠페인이 운영 대기 중이에요.`, nextAction: '참여자 선정', actionKey: 'spread-applicants', usage };
+  return { health: 'empty', summary: '캠페인 초안을 만들면 운영 흐름이 시작돼요.', nextAction: '캠페인 추천', actionKey: 'spread-campaign', usage };
+}
+
+function summarizePolibotProduct({ product, grant } = {}) {
+  const workspace = workspaceFromGrant(grant);
+  const usage = productUsageFromGrant(grant, product.id);
+  const knowledgeCount = Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources.length : 0;
+  const recommendationCount = Array.isArray(workspace.recommendations) ? workspace.recommendations.length : 0;
+  const feedbackNeedsReview = Number(workspace.feedbackSummary?.needsReview || 0);
+  if (feedbackNeedsReview > 0) return { health: 'needs_attention', summary: `${feedbackNeedsReview}개 추천 피드백 검토가 필요해요.`, nextAction: '상품 추천', actionKey: 'polibot-recommend', usage };
+  if (recommendationCount > 0) return { health: 'ready', summary: `${recommendationCount}개 추천 초안이 준비됐어요.`, nextAction: '결과 다운로드', actionKey: 'polibot-download', usage };
+  if (knowledgeCount === 0) return { health: 'needs_setup', summary: '보험 상품 PDF나 지식 자료를 먼저 넣어야 해요.', nextAction: 'PDF 업로드', actionKey: 'polibot-upload', usage };
+  return { health: 'empty', summary: `${knowledgeCount}개 자료가 준비됐어요. 고객 조건을 넣어 추천을 만들 수 있어요.`, nextAction: '상품 추천', actionKey: 'polibot-recommend', usage };
+}
+
+function summarizeInfludexProduct({ product, grant } = {}) {
+  const workspace = workspaceFromGrant(grant);
+  const usage = productUsageFromGrant(grant, product.id);
+  const candidates = Array.isArray(workspace.candidates) ? workspace.candidates.length : 0;
+  const results = Array.isArray(workspace.infludexResults) ? workspace.infludexResults.length : 0;
+  const missing = Array.isArray(workspace.infludexResults) ? workspace.infludexResults.filter((item) => item.analysisStatus === 'data_missing').length : 0;
+  if (results > 0) return { health: missing > 0 ? 'needs_attention' : 'ready', summary: missing > 0 ? `${missing}개 후보 데이터 보강이 필요해요.` : `${results}개 인플루언서 분석 결과가 준비됐어요.`, nextAction: '결과 다운로드', actionKey: 'infludex-download', usage };
+  if (candidates > 0) return { health: usage.remaining <= 0 ? 'needs_attention' : 'needs_setup', summary: `${candidates}개 후보가 분석 대기 중이에요.`, nextAction: usage.remaining <= 0 ? '크레딧 충전' : '링크 분석', actionKey: usage.remaining <= 0 ? 'billing' : 'infludex-grade', usage };
+  return { health: 'empty', summary: '인스타그램 후보를 업로드하면 등급 분석을 시작할 수 있어요.', nextAction: '후보 업로드', actionKey: 'infludex-upload', usage };
+}
+
+function summarizeGrantedProduct({ product, grant } = {}) {
+  const base = {
+    productId: product.id,
+    name: product.name,
+    description: product.description,
+    granted: true,
+    status: grant.status || 'active'
+  };
+  if (product.status === 'preparing' || productServiceClosedInProduction(product.id)) {
+    return { ...base, ...actionForLockedProduct(product), granted: true };
+  }
+  if (product.id === 'dexor') return { ...base, ...summarizeDexorProduct({ product, grant }) };
+  if (product.id === 'spread') return { ...base, ...summarizeSpreadProduct({ product, grant }) };
+  if (product.id === 'polibot') return { ...base, ...summarizePolibotProduct({ product, grant }) };
+  if (product.id === 'infludex') return { ...base, ...summarizeInfludexProduct({ product, grant }) };
+  return { ...base, health: 'ready', summary: '제품을 사용할 수 있어요.', nextAction: `${product.name} 열기`, actionKey: product.id, usage: productUsageFromGrant(grant, product.id) };
+}
+
+export async function buildProductWorkspaceSummary({ userId, allowedAccountIds = [] } = {}) {
+  const [rawGrants, user] = await Promise.all([
+    dbList('user_products', { user_id: userId }).catch(() => []),
+    dbGet('users', { id: userId }).catch(() => null)
+  ]);
+  const unlimitedUsage = UNLIMITED_TEST_EMAILS.has(String(user?.email || '').trim().toLowerCase());
+  const grants = rawGrants.map((grant) => ({ ...grant, unlimitedUsage }));
+  const grantByProductId = new Map(grants.map((grant) => [grant.product_id, grant]));
+  const accountIds = Array.isArray(allowedAccountIds) ? allowedAccountIds.filter(Boolean) : [];
+  const [accounts, queueGroups] = await Promise.all([
+    Promise.all(accountIds.map((id) => dbGet('accounts', { id }).catch(() => null))),
+    Promise.all(accountIds.map((id) => dbList('post_queue', { account_id: id }).catch(() => [])))
+  ]);
+  const cujasaGrant = grantByProductId.get('cujasa') || { status: 'active', settings: {}, unlimitedUsage };
+  const products = PRODUCTS.map((product) => {
+    const grant = product.id === 'cujasa' ? cujasaGrant : grantByProductId.get(product.id);
+    if (product.id === 'cujasa') {
+      return summarizeCujasaProduct({
+        product,
+        grant,
+        accounts: accounts.filter(Boolean),
+        queue: queueGroups.flat()
+      });
+    }
+    if (!grant || grant.status === 'suspended' || grant.status === 'expired') {
+      return {
+        productId: product.id,
+        name: product.name,
+        description: product.description,
+        granted: false,
+        status: product.status || 'active',
+        usage: null,
+        ...actionForLockedProduct(product)
+      };
+    }
+    return summarizeGrantedProduct({ product, grant });
+  });
+  const needsAttention = products.filter((item) => ['needs_attention', 'needs_setup'].includes(item.health)).length;
+  const activeCount = products.filter((item) => item.granted && item.health !== 'maintenance').length;
+  const cujasa = products.find((item) => item.productId === 'cujasa');
+  return {
+    products,
+    overview: {
+      activeCount,
+      needsAttention,
+      scheduled: cujasa?.metrics?.scheduled || 0,
+      posted: cujasa?.metrics?.posted || 0,
+      accounts: cujasa?.metrics?.accounts || 0
+    },
+    primaryAction: products.find((item) => ['needs_attention', 'needs_setup'].includes(item.health))
+      || products.find((item) => item.granted && item.health === 'empty')
+      || products.find((item) => item.granted)
+      || products[0]
   };
 }
 

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   analyzeDexorCandidates,
   analyzeInfludexCandidates,
+  buildProductWorkspaceSummary,
   getProductWorkspace,
   resetDexorWorkspace,
   resetInfludexWorkspace,
@@ -41,6 +42,19 @@ function requireWorkspaceServiceOpen(req, res, productId) {
   res.status(503).json(productMaintenancePayload(productId));
   return false;
 }
+
+router.get('/summary', async (req, res, next) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await buildProductWorkspaceSummary({
+      userId: user.userId,
+      allowedAccountIds: user.allowedAccountIds || []
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
 
 router.get('/:productId', async (req, res, next) => {
   try {

@@ -8,6 +8,7 @@ import {
 } from './polibotKnowledgeDbService.js';
 import {
   analyzeInfludexCandidates,
+  buildProductWorkspaceSummary,
   getProductWorkspace,
   saveInfludexCandidates,
   savePolibotRecommendation,
@@ -17,6 +18,66 @@ import {
   reviewSpreadSubmission,
   updateSpreadCampaignStatus
 } from './productWorkspaceService.js';
+
+test('buildProductWorkspaceSummary returns hub cards with next actions', async () => {
+  const userId = '10101010-1010-4110-8110-101010101010';
+  const accountId = '20202020-2020-4220-8220-202020202020';
+  await dbInsert('users', {
+    id: userId,
+    email: 'jasain-summary-test@example.com',
+    password_hash: 'test',
+    name: 'JASAIN Summary',
+    role: 'customer'
+  });
+  await dbInsert('accounts', {
+    id: accountId,
+    project_id: 'summary-project',
+    name: 'Summary CUJASA',
+    account_handle: '@summary',
+    status: 'active',
+    has_threads_access_token: true,
+    threads_token_status: 'connected',
+    coupang_access_key: 'ak',
+    coupang_secret_key: 'sk',
+    coupang_partner_id: 'pid'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'dexor',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      usage: { dexor: { limit: 5, used: 1 } },
+      workspace: {
+        candidates: [{ id: 'candidate-1', url: 'https://blog.naver.com/test' }],
+        analysisResults: []
+      }
+    }
+  });
+  await dbInsert('post_queue', {
+    id: '30303030-3030-4330-8330-303030303030',
+    account_id: accountId,
+    status: 'scheduled',
+    scheduled_at: new Date().toISOString()
+  });
+
+  const summary = await buildProductWorkspaceSummary({ userId, allowedAccountIds: [accountId] });
+  const cujasa = summary.products.find((item) => item.productId === 'cujasa');
+  const dexor = summary.products.find((item) => item.productId === 'dexor');
+  const polibot = summary.products.find((item) => item.productId === 'polibot');
+
+  assert.equal(summary.overview.activeCount >= 2, true);
+  assert.equal(summary.overview.scheduled, 1);
+  assert.equal(cujasa.health, 'ready');
+  assert.equal(cujasa.actionKey, 'posts');
+  assert.equal(dexor.granted, true);
+  assert.equal(dexor.health, 'needs_setup');
+  assert.equal(dexor.actionKey, 'dexor-grade');
+  assert.equal(dexor.usage.remaining, 4);
+  assert.equal(polibot.granted, false);
+  assert.equal(polibot.health, 'locked');
+  assert.equal(polibot.actionKey, 'polibot');
+});
 
 test('stores POLIBOT recommendation knowledge snapshot with source trace', async () => {
   const userId = '11111111-1111-4111-8111-111111111111';

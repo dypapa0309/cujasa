@@ -465,17 +465,29 @@ function summarizeWorkspace(workspace = {}, productId = '') {
 export function classifyWorkspaceAssistantIntent({ message, currentProduct = 'cujasa', workspace = {}, availableProducts = [] } = {}) {
   const text = normalizeText(message);
   const lower = text.toLowerCase();
-  if (/작업|기능|메뉴|뭐\s*있|뭐있|할\s*수|뭘\s*할/.test(text)) return taskListResult(currentProduct);
-  if (/자사인|jasain|회사|서비스|솔루션|상품.*뭐|제품.*뭐|뭐.*있|무슨\s*서비스/.test(text)) {
+  if (/지금\s*뭐|뭐\s*해야|다음\s*액션|다음\s*할|우선순위|홈|대시보드|전체\s*상태|통합\s*상태/.test(text)) {
     return normalizeAssistantResult({
-      answer: 'JASAIN은 자동화 솔루션 허브예요. 현재 CUJASA는 쿠팡 파트너스/Threads 자동화, DEXOR는 블로그 후보 분석, SPREAD는 캠페인 운영, POLIBOT은 보험 보장분석과 추천 초안, INFLUDEX는 인스타그램 후보 분석을 맡아요.',
-      intent: 'jasain_product_overview',
+      answer: 'JASAIN 홈에서 보유 솔루션의 연결 상태, 사용량, 확인 필요 항목과 다음 액션을 한 번에 볼 수 있어요. 먼저 홈을 보고 막힌 제품부터 처리하는 흐름이 좋아요.',
+      intent: 'jasain_home_next_action',
       productId: currentProduct,
-      action: '',
+      action: 'home',
       draft: {},
       confidence: 0.9,
       requiresConfirmation: false,
-      buttons: safeButtons([button('CUJASA 설정', 'settings'), button('POLIBOT 상품 추천', 'polibot-recommend'), button('DEXOR 후보 분석', 'dexor-upload')])
+      buttons: safeButtons([button('JASAIN 홈', 'home'), button('설정 확인', 'settings'), button('결제 확인', 'billing')])
+    }, { currentProduct });
+  }
+  if (/작업|기능|메뉴|뭐\s*있|뭐있|할\s*수|뭘\s*할/.test(text)) return taskListResult(currentProduct);
+  if (/자사인|jasain|회사|서비스|솔루션|상품.*뭐|제품.*뭐|뭐.*있|무슨\s*서비스/.test(text)) {
+    return normalizeAssistantResult({
+      answer: 'JASAIN은 여러 자동화 솔루션을 한 계정에서 운영하는 허브예요. CUJASA는 콘텐츠/Threads 자동화, DEXOR는 블로그 후보 분석, SPREAD는 캠페인 운영, POLIBOT은 보험 추천 초안, INFLUDEX는 인스타그램 후보 분석을 맡고 JASAIN 홈에서 상태와 다음 액션을 같이 볼 수 있어요.',
+      intent: 'jasain_product_overview',
+      productId: currentProduct,
+      action: 'home',
+      draft: {},
+      confidence: 0.9,
+      requiresConfirmation: false,
+      buttons: safeButtons([button('JASAIN 홈', 'home'), button('CUJASA 설정', 'settings'), button('POLIBOT 상품 추천', 'polibot-recommend'), button('DEXOR 후보 분석', 'dexor-upload')])
     }, { currentProduct });
   }
   if (/쿠자사|cujasa|쿠팡.*자동화|threads.*자동화|스레드.*자동화/.test(text) && /뭐|설명|란|어떤|서비스/.test(text)) {
