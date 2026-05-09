@@ -69,11 +69,23 @@ export function inspectGeneratedPostText(value, account = {}) {
     /편하게\s*쓰는\s*쪽을\s*더\s*중요하게\s*보는\s*사람/i,
     /실용성\s*쪽이에요,\s*아니면\s*편한\s*사용감\s*쪽이에요/i,
     /이런\s*거\s*고를\s*때/i,
-    /여러분은\s*이런\s*거/i
+    /여러분은\s*이런\s*거/i,
+    /사람마다\s*고르는\s*기준이\s*꽤\s*다르/i,
+    /상황마다\s*선택이\s*갈릴\s*수밖에\s*없/i
+  ].some((pattern) => pattern.test(text));
+  const aiLikeTone = [
+    /경향이\s*있습니다/,
+    /영향을\s*미칩니다/,
+    /특징이\s*있습니다/,
+    /도움이\s*됩니다/,
+    /고려해야\s*합니다/,
+    /선택하는\s*것이\s*좋습니다/,
+    /중요합니다/
   ].some((pattern) => pattern.test(text));
   return {
     accountTokenLeak: hasAccountTokenLeak(text, account) || sanitized !== text,
     genericTemplate,
+    aiLikeTone,
     publishable: Boolean(text) && !genericTemplate && !(hasAccountTokenLeak(text, account) || sanitized !== text),
     sanitized
   };

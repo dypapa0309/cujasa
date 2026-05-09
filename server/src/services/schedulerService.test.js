@@ -308,3 +308,79 @@ test('createDailyQueue keeps no-link posting available when reply failures block
     globalThis.fetch = previousFetch;
   }
 });
+
+test('uploadQueueItem falls back to no-link when prior reply failures block safe link posting', async () => {
+  const previousMock = process.env.MOCK_UPLOAD;
+  const previousFetch = globalThis.fetch;
+  process.env.MOCK_UPLOAD = 'true';
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'replytest' })
+  });
+
+  try {
+    const { account } = await createReplyFailureQueue();
+    await dbUpdate('post_queue', { account_id: account.id }, {
+      retry_count: 3,
+      status: 'manual_required',
+      error_category: 'reply_warning'
+    });
+    const topic = await dbInsert('topics', {
+      project_id: account.project_id,
+      account_id: account.id,
+      title: '생활 수납 추가',
+      angle: '꺼내기 쉬운 기준'
+    });
+    const post = await dbInsert('posts', {
+      project_id: account.project_id,
+      account_id: account.id,
+      topic_id: topic.id,
+      content_type: '공감형',
+      body: '집 정리할 때 수납 기준은 은근 갈리죠. 꺼내기 쉬운 쪽을 보세요, 보기 깔끔한 쪽을 보세요?',
+      risk_level: 'low',
+      status: 'queued'
+    });
+    const product = await dbInsert('coupang_products', {
+      project_id: account.project_id,
+      account_id: account.id,
+      topic_id: topic.id,
+      keyword: '수납함',
+      product_id: 'product-fallback-1',
+      product_name: '수납함',
+      product_price: 12900,
+      product_image: 'https://example.com/image.jpg',
+      product_url: 'https://www.coupang.com/vp/products/11?itemId=2&vendorItemId=3',
+      partner_url: 'https://link.coupang.com/re/AFFSDP?pageKey=11&itemId=2&vendorItemId=3',
+      category_name: '생활',
+      is_fallback: false
+    });
+    await dbInsert('post_products', {
+      topic_id: topic.id,
+      product_id: product.id,
+      rank: 1,
+      fit_score: 90,
+      recommendation_reason: '상황에 맞습니다.'
+    });
+    const queue = await dbInsert('post_queue', {
+      project_id: account.project_id,
+      account_id: account.id,
+      topic_id: topic.id,
+      post_id: post.id,
+      platform: 'threads',
+      scheduled_at: '2026-05-09T00:00:00.000Z',
+      status: 'scheduled',
+      post_mode: 'link',
+      retry_count: 0
+    });
+
+    const uploaded = await uploadQueueItem(queue.id);
+
+    assert.equal(uploaded.status, 'posted');
+    assert.equal(uploaded.post_mode, 'no_link');
+    assert.equal(uploaded.tracking_link_id, null);
+    assert.equal(uploaded.error_message, null);
+  } finally {
+    restoreEnv('MOCK_UPLOAD', previousMock);
+    globalThis.fetch = previousFetch;
+  }
+});

@@ -20,6 +20,7 @@ const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const REPLY_REPAIR_MAX_ATTEMPTS = 3;
+const FALLBACK_LINK_FAILURE_TO_NO_LINK = String(process.env.THREADS_LINK_FAILURE_FALLBACK_TO_NO_LINK ?? 'true').toLowerCase() !== 'false';
 
 function kstDayRange(date = new Date()) {
   const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -88,8 +89,15 @@ function isReplyFailureQueue(row = {}) {
   return classifyQueueError(row.error_message || '').category === 'reply_warning';
 }
 
+function isRepairableReplyWarningQueue(row = {}) {
+  if (row.customer_hidden_at) return false;
+  if (!['failed', 'retry', 'manual_required', 'posted'].includes(row.status)) return false;
+  if (row.status === 'posted') return row.error_category === 'reply_warning';
+  return isReplyFailureQueue(row);
+}
+
 function canRepairReplyFailureQueue(row = {}) {
-  return isReplyFailureQueue(row)
+  return isRepairableReplyWarningQueue(row)
     && (row.post_mode || 'auto') === 'link'
     && Boolean(row.post_url)
     && Number(row.retry_count || 0) < REPLY_REPAIR_MAX_ATTEMPTS;
@@ -826,13 +834,32 @@ export async function uploadQueueItem(queueId) {
       : null;
     const postMode = queue.post_mode || 'auto';
     let requiresLink = postMode === 'link' || (postMode === 'auto' && isLinkableCoupangProduct(product));
+    if (requiresLink) {
+      const reply = await replyLinkReadiness(account);
+      if (!reply.ok) {
+        if (!FALLBACK_LINK_FAILURE_TO_NO_LINK) throw createReplyLinkRequiredError(reply.code, reply.message);
+        requiresLink = false;
+        await dbUpdate('post_queue', { id: queueId }, {
+          post_mode: 'no_link',
+          error_message: null,
+          error_category: null
+        }).catch(() => []);
+        await logActivity({
+          account_id: queue.account_id,
+          project_id: queue.project_id,
+          topic_id: queue.topic_id,
+          post_id: queue.post_id,
+          queue_id: queue.id,
+          action: 'link_queue_fallback_to_no_link',
+          level: 'warn',
+          message: reply.message || '댓글 링크 상태가 안전하지 않아 본문만 업로드합니다.',
+          payload: { reasonCode: reply.code, unresolvedReplyFailures: reply.unresolvedCount || 0 }
+        }).catch(() => null);
+      }
+    }
     const resolvedPostMode = requiresLink ? 'link' : 'no_link';
     if (postMode !== resolvedPostMode) {
       await dbUpdate('post_queue', { id: queueId }, { post_mode: resolvedPostMode }).catch(() => []);
-    }
-    if (requiresLink) {
-      const reply = await replyLinkReadiness(account);
-      if (!reply.ok) throw createReplyLinkRequiredError(reply.code, reply.message);
     }
     const ctas = requiresLink ? await listCtas(post.id) : [];
     const cta = requiresLink ? (ctas[Math.floor(Math.random() * Math.max(1, ctas.length))] || null) : null;
@@ -867,8 +894,8 @@ export async function uploadQueueItem(queueId) {
         post_url: uploaded.postUrl,
         selected_cta_id: cta?.id,
         tracking_link_id: trackingLink?.id || queue.tracking_link_id || null,
-        error_message: null,
-        error_category: null
+        error_message: uploaded.raw?.replyWarning || null,
+        error_category: uploaded.raw?.replyWarning ? 'reply_warning' : null
       });
     } catch (updateError) {
       if (!/error_category|schema cache|column/i.test(updateError.message || '')) throw updateError;
@@ -878,7 +905,7 @@ export async function uploadQueueItem(queueId) {
         post_url: uploaded.postUrl,
         selected_cta_id: cta?.id,
         tracking_link_id: trackingLink?.id || queue.tracking_link_id || null,
-        error_message: null
+        error_message: uploaded.raw?.replyWarning || null
       });
     }
     const [updated] = postedRows;

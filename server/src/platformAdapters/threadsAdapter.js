@@ -195,13 +195,19 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
       }
     }
     if (deliveryMode === 'reply' && replyWarning) {
-      const error = new Error(replyWarning);
-      error.code = 'THREADS_REPLY_FAILED';
-      error.replyFailed = true;
-      error.permanent = true;
-      error.postUrl = `https://www.threads.net/@${account.account_handle?.replace('@', '') || 'unknown'}/post/${postId}`;
-      error.postId = postId;
-      throw error;
+      const handle = account.account_handle?.replace('@', '') || 'unknown';
+      return {
+        postUrl: `https://www.threads.net/@${handle}/post/${postId}`,
+        raw: {
+          creationId,
+          postId,
+          linkDeliveryMode: deliveryMode,
+          linkMode,
+          replyWarning,
+          replyFailed: true,
+          replyText
+        }
+      };
     }
   }
 

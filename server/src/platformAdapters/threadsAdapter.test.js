@@ -108,3 +108,35 @@ test('uploadPost blocks leaked account ids before mock or live upload', async ()
     restoreEnv('MOCK_UPLOAD', previousMock);
   }
 });
+
+test('uploadPost returns posted result with reply warning when body succeeds but reply fails', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousMock = process.env.MOCK_UPLOAD;
+  delete process.env.MOCK_UPLOAD;
+  const responses = [
+    { ok: true, json: async () => ({ id: 'creation-1' }), text: async () => '{}' },
+    { ok: true, json: async () => ({ id: 'post-threads-1' }), text: async () => '{}' },
+    { ok: false, json: async () => ({}), text: async () => '{"error":{"message":"Application does not have permission for this action","code":10}}' }
+  ];
+  globalThis.fetch = async () => responses.shift();
+
+  try {
+    const uploaded = await uploadPost({
+      account: {
+        name: 'test',
+        account_handle: '@replytest',
+        threads_access_token: 'token',
+        threads_link_delivery_mode: 'reply'
+      },
+      post: { id: 'post-5', body: '집 정리할 때 수납 기준은 은근 갈리죠. 꺼내기 쉬운 쪽을 보세요, 보기 깔끔한 쪽을 보세요?' },
+      trackingLink: { code: 'abc', destination_url: 'https://link.coupang.com/example' }
+    });
+
+    assert.equal(uploaded.postUrl, 'https://www.threads.net/@replytest/post/post-threads-1');
+    assert.equal(uploaded.raw.replyFailed, true);
+    assert.match(uploaded.raw.replyWarning, /permission/);
+  } finally {
+    globalThis.fetch = previousFetch;
+    restoreEnv('MOCK_UPLOAD', previousMock);
+  }
+});

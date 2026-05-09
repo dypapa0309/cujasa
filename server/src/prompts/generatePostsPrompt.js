@@ -14,7 +14,6 @@ export function generatePostsPrompt(topic, products, account) {
         contentContext,
         accountProfile,
         account: {
-          name: account.name,
           tone: account.tone,
           ctaStyle: account.cta_style,
           targetAudience: account.target_audience,
@@ -63,6 +62,9 @@ export function generatePostsPrompt(topic, products, account) {
           'Generate exactly 5 candidate posts for this topic. The service will score them and save only the best one.',
           'Never include account names, login IDs, Threads handles, or @handles in the post body.',
           'Prioritize comments/replies over pure information density.',
+          'Write like a specific person noticing a small real situation, not like an AI summarizing pros and cons.',
+          'Avoid template openings such as "이건 은근 기준이 갈리는 선택", "사람마다 다르더라고요", and generic "실용성 vs 사용감" questions unless the words are tied to a concrete scene.',
+          'Every candidate needs at least one concrete daily detail: where it happens, what is annoying, when it gets noticed, or what changes after choosing.',
           'Default to safe choice-tension frames: A/B choice, criteria that split opinions, "people who tried this" questions, and situation-based preferences.',
           referencePatterns.length
             ? 'Use referencePatterns as strong structural and voice inspiration. Never copy exact source wording, but mirror the pacing, line breaks, list shape, punctuation habits, tone register, hook pattern, question pattern, and tension type.'
@@ -76,6 +78,8 @@ export function generatePostsPrompt(topic, products, account) {
           referencePatterns.length
             ? 'If a reference pattern uses raw list-style observations, keep that raw Threads feel. Avoid formal explanatory phrases such as "경향이 있습니다", "영향을 미칩니다", or "특징이 있습니다".'
             : 'Keep the tone conversational and not essay-like.',
+          'Avoid formal AI-ish connective phrases such as "중요합니다", "도움이 됩니다", "고려해야 합니다", "선택하는 것이 좋습니다", unless the account tone explicitly asks for expert writing.',
+          'Do not write balanced essay paragraphs. Use short lived-in observations, slightly uneven rhythm, and natural Korean phrasing.',
           referencePatterns.length
             ? 'When mirroring a list pattern, write short subjective one-line observations with new labels and new details. End with one light comment prompt only.'
             : 'Avoid long explanations.',

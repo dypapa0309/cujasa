@@ -33,6 +33,7 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
     concise: text.length >= 35 && text.length <= 230,
     safe: !/(한심|극혐|노답|틀딱|맘충|남혐|여혐|거지|무식|병신|정치|남자들은|여자들은|요즘 애들|아줌마|아재|지역|진보|보수)/.test(text),
     genericTemplate: inspection.genericTemplate,
+    aiLikeTone: inspection.aiLikeTone,
     accountTokenLeak: inspection.accountTokenLeak
   };
   const rubric = {
@@ -45,6 +46,7 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
     safetyPenalty: checks.safe ? 0 : -70,
     readabilityScore: checks.concise ? 10 : 2,
     templatePenalty: checks.genericTemplate ? -35 : 0,
+    aiTonePenalty: checks.aiLikeTone ? -35 : 0,
     accountTokenPenalty: checks.accountTokenLeak ? -80 : 0
   };
   const reasons = [];
@@ -61,6 +63,7 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
   else reasons.push('길이 감점');
   if (!checks.safe) reasons.push('안전성 위험');
   if (checks.genericTemplate) reasons.push('템플릿 문장 감점');
+  if (checks.aiLikeTone) reasons.push('AI 문체 감점');
   if (checks.accountTokenLeak) reasons.push('계정 아이디 노출 감점');
 
   let pattern = 'empathy_prompt';
@@ -77,6 +80,7 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
     + rubric.adTonePenalty
     + rubric.safetyPenalty
     + rubric.templatePenalty
+    + rubric.aiTonePenalty
     + rubric.accountTokenPenalty;
 
   return {

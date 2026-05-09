@@ -63,3 +63,12 @@ test('penalizes leaked account ids and generic template questions', () => {
   assert.ok(score.rubric.templatePenalty < 0);
   assert.ok(score.engagementScore < 60);
 });
+
+test('penalizes formal AI-like explanatory tone', () => {
+  const formal = '수납함을 선택하는 것이 좋습니다.\n\n공간 활용에 도움이 됩니다.\n\n관리 기준을 고려해야 합니다.';
+  const score = scorePostEngagement(formal);
+
+  assert.equal(score.checks.aiLikeTone, true);
+  assert.ok(score.rubric.aiTonePenalty < 0);
+  assert.ok(score.engagementScore < 60);
+});
