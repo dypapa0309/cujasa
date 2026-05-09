@@ -61,6 +61,7 @@ export function generatePostsPrompt(topic, products, account) {
         },
         rules: [
           'Generate exactly 5 candidate posts for this topic. The service will score them and save only the best one.',
+          'Never include account names, login IDs, Threads handles, or @handles in the post body.',
           'Prioritize comments/replies over pure information density.',
           'Default to safe choice-tension frames: A/B choice, criteria that split opinions, "people who tried this" questions, and situation-based preferences.',
           referencePatterns.length

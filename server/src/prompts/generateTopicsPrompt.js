@@ -18,7 +18,6 @@ export function generateTopicsPrompt(account, recentTopics = [], performanceSign
         contentContext,
         accountProfile,
         account: {
-          name: account.name,
           targetAudience: account.target_audience,
           contentScope: account.content_scope,
           forbiddenTopics: account.forbidden_topics,
@@ -41,6 +40,7 @@ export function generateTopicsPrompt(account, recentTopics = [], performanceSign
             ? 'Prefer adjacent purchasable product keywords near high-click product groups when they still fit contentScope.'
             : 'Do not invent performance claims without click signals.',
           'Avoid repeating recentTopicMemory titles, angles, hooks, and product keyword clusters.',
+          'Never use the account name, login ID, Threads handle, or any @handle as a topic word. These are routing metadata, not content material.',
           'Distribute topic angles across problem-solving, checklist, comparison, mistake-prevention, small-space/occasion use, and relatable question frames when they fit contentScope.',
           'Do not generate eight topics with the same sentence pattern or the same purchase trigger.',
           accountProfile.strategy.seasonalityEnabled

@@ -42,6 +42,22 @@ test('strengthens weak first sentence with a safer engagement hook', () => {
   assert.equal(scorePostHook(strengthened).strong, true);
 });
 
+test('strengthened hooks do not expose account login ids', () => {
+  const strengthened = strengthenPostHook('좋은 제품을 고르는 방법입니다.', {
+    title: 'lovehyun45 냄새 줄이는 법',
+    angle: '생활 속 원인'
+  }, {
+    name: 'lovehyun45',
+    account_handle: '@lovehyun45',
+    content_mode: 'empathy',
+    target_audience: '생활용품 관심 고객',
+    content_scope: '생활 냄새 관리'
+  });
+
+  assert.doesNotMatch(strengthened, /lovehyun45/i);
+  assert.match(strengthened, /냄새 줄이는 법/);
+});
+
 test('blocks hostile safe-debate framing', () => {
   const result = validatePostStyleFit('남자들은 이런 거 못 고르더라.\n\n여러분은 어느 쪽이에요?', {
     content_mode: 'safe_debate',

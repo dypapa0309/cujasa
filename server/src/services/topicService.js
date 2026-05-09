@@ -6,19 +6,20 @@ import { isDuplicateTopic } from './similarityService.js';
 import { validateTopicCandidate } from '../utils/contentGuardrails.js';
 import { validateTopicsResponse } from '../utils/aiResponseSchemas.js';
 import { buildAccountPerformanceSignals } from './analyticsService.js';
+import { sanitizeContentTitle } from '../utils/contentText.js';
 
 const sampleTopics = (account) => ({
   topics: [
     {
-      title: `${account.name.replace(' 꿀템', '')} 냄새 줄이는 법`,
+      title: `${sanitizeContentTitle(account.content_scope || '생활용품', account)} 냄새 줄이는 법`,
       angle: '생활 속 원인부터 잡기',
       targetUser: account.target_audience || '일상 사용자',
       reason: '불편이 명확하고 상품 연결성이 높음',
       expectedIntent: 'high',
-      searchKeywords: ['탈취제', '냄새 차단', `${account.name.replace(' 꿀템', '')} 정리용품`]
+      searchKeywords: ['탈취제', '냄새 차단 용품', '방향제']
     },
     {
-      title: `${account.name.replace(' 꿀템', '')} 정리 쉽게 하는 법`,
+      title: `${sanitizeContentTitle(account.content_scope || '생활용품', account)} 정리 쉽게 하는 법`,
       angle: '작은 공간 수납',
       targetUser: account.target_audience || '일상 사용자',
       reason: '반복 수요가 있고 구매 의도가 높음',
@@ -43,32 +44,36 @@ export async function generateTopics(accountId) {
   });
   const rows = [];
   for (const topic of generated.topics || []) {
-    const guardrail = validateTopicCandidate(topic, account);
+    const sanitizedTopic = {
+      ...topic,
+      title: sanitizeContentTitle(topic.title, account)
+    };
+    const guardrail = validateTopicCandidate(sanitizedTopic, account);
     if (!guardrail.allowed) {
       await logActivity({
         account_id: accountId,
         project_id: account.project_id,
         action: 'topic_guardrail_blocked',
         level: 'warn',
-        message: topic.title,
+        message: sanitizedTopic.title,
         payload: { reasons: guardrail.reasons, context: guardrail.context }
       });
       continue;
     }
-    const duplicate = isDuplicateTopic(topic, recent.concat(rows));
+    const duplicate = isDuplicateTopic(sanitizedTopic, recent.concat(rows));
     if (duplicate.duplicate) {
-      await logActivity({ account_id: accountId, project_id: account.project_id, action: 'topic_duplicate_skipped', message: topic.title });
+      await logActivity({ account_id: accountId, project_id: account.project_id, action: 'topic_duplicate_skipped', message: sanitizedTopic.title });
       continue;
     }
     rows.push(await dbInsert('topics', {
       account_id: accountId,
       project_id: account.project_id,
-      title: topic.title,
-      angle: topic.angle,
-      target_user: topic.targetUser,
-      reason: topic.reason,
-      expected_intent: topic.expectedIntent,
-      search_keywords: topic.searchKeywords || [],
+      title: sanitizedTopic.title,
+      angle: sanitizedTopic.angle,
+      target_user: sanitizedTopic.targetUser,
+      reason: sanitizedTopic.reason,
+      expected_intent: sanitizedTopic.expectedIntent,
+      search_keywords: sanitizedTopic.searchKeywords || [],
       status: 'new'
     }));
   }
@@ -80,14 +85,15 @@ export const listTopics = (accountId) => dbList('topics', { account_id: accountI
 export async function createManualTopic(accountId, { title, angle }) {
   const account = await getAccount(accountId);
   assertAccountActive(account, 'create manual topic');
-  const guardrail = validateTopicCandidate({ title, angle, searchKeywords: [] }, account);
+  const sanitizedTitle = sanitizeContentTitle(title, account);
+  const guardrail = validateTopicCandidate({ title: sanitizedTitle, angle, searchKeywords: [] }, account);
   if (!guardrail.allowed) {
     await logActivity({
       account_id: accountId,
       project_id: account.project_id,
       action: 'manual_topic_guardrail_blocked',
       level: 'warn',
-      message: title,
+      message: sanitizedTitle,
       payload: { reasons: guardrail.reasons, context: guardrail.context }
     });
     const error = new Error(`Topic blocked by content guardrails: ${guardrail.reasons.join(', ')}`);
@@ -97,7 +103,7 @@ export async function createManualTopic(accountId, { title, angle }) {
   return dbInsert('topics', {
     account_id: accountId,
     project_id: account.project_id,
-    title,
+    title: sanitizedTitle,
     angle: angle || null,
     search_keywords: [],
     status: 'new'

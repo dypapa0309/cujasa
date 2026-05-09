@@ -1,3 +1,5 @@
+import { sanitizeContentTitle } from './contentText.js';
+
 function firstSentenceOf(body = '') {
   return String(body || '').split(/\n|[.!?。！？]/).map((line) => line.trim()).filter(Boolean)[0] || '';
 }
@@ -79,7 +81,7 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
 }
 
 export function buildChoiceTensionFallback(topic = {}, account = {}) {
-  const title = String(topic.title || account.content_scope || '이런 제품').trim();
+  const title = sanitizeContentTitle(topic.title || account.content_scope || '생활용품 고르는 기준', account);
   const angle = String(topic.angle || '사용 기준').trim();
-  return `${title}, 이건 은근 기준이 갈리는 선택이에요.\n\n${angle}를 먼저 보는 사람도 있고, 편하게 쓰는 쪽을 더 중요하게 보는 사람도 있더라고요.\n\n여러분은 이런 거 고를 때 실용성 쪽이에요, 아니면 편한 사용감 쪽이에요?`;
+  return `${title} 고를 때 처음엔 다 비슷해 보이는데, 막상 쓰면 ${angle}에서 차이가 나요.\n\n자주 쓰는 사람은 관리 쉬운 쪽을 보고, 가끔 쓰는 사람은 보관이 편한 쪽을 더 보더라고요.\n\n여러분은 이런 거 고를 때 관리 쉬운 쪽이에요, 보관 편한 쪽이에요?`;
 }

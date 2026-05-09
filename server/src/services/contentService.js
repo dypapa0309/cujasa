@@ -11,6 +11,7 @@ import { validatePostsResponse } from '../utils/aiResponseSchemas.js';
 import { buildChoiceTensionFallback, scorePostEngagement } from '../utils/postEngagementScoring.js';
 import { buildReferencePatternContext } from './trendReferenceLearningService.js';
 import { buildAccountPerformanceSignals } from './analyticsService.js';
+import { sanitizePostBody } from '../utils/contentText.js';
 
 const MIN_ENGAGEMENT_SCORE = 60;
 
@@ -78,6 +79,7 @@ export async function generatePosts(topicId) {
   for (const item of result.posts || []) {
     const risk = checkAndRewriteRisk(item.body);
     let prepared = prepareGeneratedPostBody(risk.body);
+    prepared = { ...prepared, body: sanitizePostBody(prepared.body, account) };
     let contentTypeToSave = item.contentType || getFallbackContentType(account);
     const rejectionReasons = [];
     if (!prepared.body || prepared.body.length < 20) {
@@ -99,6 +101,7 @@ export async function generatePosts(topicId) {
     const hookScore = scorePostHook(prepared.body);
     if (!hookScore.strong) {
       const strengthened = prepareGeneratedPostBody(strengthenPostHook(prepared.body, topic, account));
+      strengthened.body = sanitizePostBody(strengthened.body, account);
       await logActivity({
         account_id: topic.account_id,
         project_id: topic.project_id,
@@ -139,6 +142,7 @@ export async function generatePosts(topicId) {
     if (!styleFit.allowed) {
       const originalBody = prepared.body;
       const fallbackPrepared = prepareGeneratedPostBody(buildChoiceTensionFallback(topic, account));
+      fallbackPrepared.body = sanitizePostBody(fallbackPrepared.body, account);
       const fallbackStyleFit = validatePostStyleFit(fallbackPrepared.body, account);
       await logActivity({
         account_id: topic.account_id,
@@ -205,6 +209,7 @@ export async function generatePosts(topicId) {
     const fallbackBody = prepareGeneratedPostBody(buildChoiceTensionFallback(topic, account)).body;
     const fallbackRisk = checkAndRewriteRisk(fallbackBody);
     const fallbackPrepared = prepareGeneratedPostBody(fallbackRisk.body);
+    fallbackPrepared.body = sanitizePostBody(fallbackPrepared.body, account);
     const fallbackGuardrail = validatePostCandidate(fallbackPrepared.body, account, topic);
     const fallbackStyleFit = validatePostStyleFit(fallbackPrepared.body, account);
     if (fallbackGuardrail.allowed && fallbackStyleFit.allowed && fallbackRisk.riskLevel !== 'high') {

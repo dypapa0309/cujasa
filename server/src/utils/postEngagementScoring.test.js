@@ -41,3 +41,14 @@ test('choice tension fallback is comment-oriented', () => {
   assert.equal(score.engagementPattern, 'choice_tension');
   assert.ok(score.engagementScore >= 60);
 });
+
+test('choice tension fallback removes account login ids from topic titles', () => {
+  const body = buildChoiceTensionFallback(
+    { title: 'lovehyun45 냄새 줄이는 법', angle: '생활 속 원인부터 잡기' },
+    { name: 'lovehyun45', account_handle: '@lovehyun45', content_scope: '생활 냄새 관리' }
+  );
+
+  assert.doesNotMatch(body, /lovehyun45/i);
+  assert.match(body, /냄새 줄이는 법/);
+  assert.match(body, /관리 쉬운 쪽/);
+});

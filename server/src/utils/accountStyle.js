@@ -1,3 +1,5 @@
+import { sanitizeContentTitle } from './contentText.js';
+
 function clean(value, fallback) {
   const text = String(value || '').trim();
   return text || fallback;
@@ -182,7 +184,7 @@ export function getAccountStyleProfile(account = {}) {
 
 export function buildFallbackPostBody(topic, account = {}) {
   const profile = getAccountStyleProfile(account);
-  const title = clean(topic?.title, profile.contentScope);
+  const title = sanitizeContentTitle(topic?.title || profile.contentScope, account);
   const angle = clean(topic?.angle, '고를 때 놓치기 쉬운 포인트');
   const toneKey = profile.tone.replace(/\s+/g, '');
   const mode = profile.strategy.effectiveMode;
@@ -246,7 +248,7 @@ export function scorePostHook(body = '') {
 export function strengthenPostHook(body = '', topic = {}, account = {}) {
   const original = String(body || '').trim();
   const profile = getAccountStyleProfile(account);
-  const title = clean(topic?.title, profile.contentScope);
+  const title = sanitizeContentTitle(topic?.title || profile.contentScope, account);
   const angle = clean(topic?.angle, '고를 때 놓치기 쉬운 기준');
   const mode = profile.strategy.effectiveMode;
   const hooks = {
