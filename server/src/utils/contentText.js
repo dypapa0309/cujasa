@@ -57,7 +57,8 @@ export function hasAccountTokenLeak(value, account = {}) {
   })) {
     return true;
   }
-  return /(^|\s)@?[a-z][a-z0-9._-]{2,30}(?=\s|$)/i.test(text) && /\d/.test(text);
+  const leadingToken = text.match(/^\s*@?([a-z][a-z0-9._-]{2,30})(?=\s|$)/i)?.[1] || '';
+  return isLikelyHandle(leadingToken);
 }
 
 export function inspectGeneratedPostText(value, account = {}) {

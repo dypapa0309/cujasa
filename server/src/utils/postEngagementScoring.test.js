@@ -72,3 +72,11 @@ test('penalizes formal AI-like explanatory tone', () => {
   assert.ok(score.rubric.aiTonePenalty < 0);
   assert.ok(score.engagementScore < 60);
 });
+
+test('does not treat product model numbers as account id leaks', () => {
+  const body = '주방 수납장은 막상 들이면 깊이감이 제일 먼저 보이더라고요.\n\nLPM 1200 같은 모델명보다 우리 집 조리대 옆 폭이 먼저예요.\n\n여러분은 넉넉한 수납 쪽을 보세요, 딱 맞는 크기 쪽을 보세요?';
+  const score = scorePostEngagement(body);
+
+  assert.equal(score.checks.accountTokenLeak, false);
+  assert.ok(score.engagementScore >= 60);
+});
