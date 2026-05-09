@@ -48,6 +48,14 @@ export function classifyQueueError(message = '') {
       message: '본문 업로드는 완료됐지만 댓글 또는 링크 답글 등록에 실패했습니다.'
     };
   }
+  if (/REPLY_REPAIR_BLOCKED|댓글 링크 복구 불가|복구에 필요한/i.test(value)) {
+    return {
+      category: 'reply_repair_blocked',
+      severity: 'warn',
+      title: '댓글 링크 수동확인',
+      message: '본문은 올라갔지만 댓글 링크 자동 복구에 필요한 정보가 부족합니다. 게시글/상품/트래킹 링크를 확인해주세요.'
+    };
+  }
   if (/Post blocked by content guardrails|post_style_blocked|guardrail|톤 불일치|content guardrails/i.test(value)) {
     return {
       category: 'content_blocked',
@@ -113,6 +121,14 @@ export function classificationForCategory(category, fallbackMessage = '') {
       severity: 'warn',
       title: '댓글/링크 답글 실패',
       message: '본문 업로드는 완료됐지만 댓글 또는 링크 답글 등록에 실패했습니다.'
+    };
+  }
+  if (category === 'reply_repair_blocked') {
+    return {
+      category,
+      severity: 'warn',
+      title: '댓글 링크 수동확인',
+      message: '본문은 올라갔지만 댓글 링크 자동 복구에 필요한 정보가 부족합니다. 게시글/상품/트래킹 링크를 확인해주세요.'
     };
   }
   if (category === 'content_blocked') {
@@ -195,6 +211,7 @@ export function postModeLabel(postMode = 'auto') {
 export function adminActivityLabel(action, message = '') {
   if (action === 'upload_failed') return classifyQueueError(message).title;
   if (action === 'upload_reply_failed') return '댓글/링크 답글 실패';
+  if (action === 'reply_link_repair_blocked') return '댓글 링크 수동확인';
   if (action === 'reply_link_failure_repaired') return '댓글 링크 복구 완료';
   if (action === 'reply_link_failure_repair_failed') return '댓글 링크 복구 실패';
   if (action === 'reply_link_mode_queue_recovered') return '댓글 링크 모드 큐 복구';
@@ -215,6 +232,7 @@ export function adminActivityLabel(action, message = '') {
 export function adminActivityMessage(action, message = '') {
   if (action === 'upload_failed') return classifyQueueError(message).message;
   if (action === 'upload_reply_failed') return '본문 업로드는 완료됐고, 댓글/링크 답글만 재시도하면 됩니다.';
+  if (action === 'reply_link_repair_blocked') return message || '댓글 링크 자동 복구에 필요한 정보가 부족해 수동확인으로 분리했습니다.';
   if (action === 'reply_link_failure_repaired') return message || '기존 Threads 게시글에 쿠팡 링크 댓글을 다시 등록했습니다.';
   if (action === 'reply_link_failure_repair_failed') return message || '댓글 링크 복구에 실패했습니다. 반복되면 수동 확인이 필요합니다.';
   if (action === 'reply_link_mode_queue_recovered') return message || '댓글 링크 모드 설정 누락으로 막힌 큐를 재시도 가능 상태로 복구했습니다.';

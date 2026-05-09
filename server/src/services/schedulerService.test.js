@@ -180,6 +180,119 @@ test('repairReplyLinkFailures posts only the missing reply and marks queue poste
   }
 });
 
+test('repairReplyLinkFailures marks posted reply warnings as blocked when threads post id is missing', async () => {
+  const previousMock = process.env.MOCK_UPLOAD;
+  const previousFetch = globalThis.fetch;
+  process.env.MOCK_UPLOAD = 'true';
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'replytest' })
+  });
+
+  try {
+    const { account, queue } = await createReplyFailureQueue();
+    await dbUpdate('post_queue', { id: queue.id }, {
+      status: 'posted',
+      post_url: 'https://www.threads.net/@replytest',
+      error_category: 'reply_warning',
+      error_message: 'Threads reply publish failed: temporary error'
+    });
+
+    const result = await repairReplyLinkFailures({ accountId: account.id });
+    const saved = await dbGet('post_queue', { id: queue.id });
+
+    assert.equal(result.repairedCount, 0);
+    assert.equal(result.skippedCount, 1);
+    assert.equal(saved.status, 'posted');
+    assert.equal(saved.error_category, 'reply_repair_blocked');
+    assert.match(saved.error_message, /threads_post_id_missing/);
+  } finally {
+    restoreEnv('MOCK_UPLOAD', previousMock);
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('repairReplyLinkFailures moves unrecoverable reply failures out of retry loop when product is missing', async () => {
+  const previousMock = process.env.MOCK_UPLOAD;
+  const previousFetch = globalThis.fetch;
+  process.env.MOCK_UPLOAD = 'true';
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'replyblocked' })
+  });
+
+  try {
+    const project = await dbInsert('projects', {
+      name: 'reply blocked project',
+      type: 'coupang',
+      status: 'active'
+    });
+    const account = await dbInsert('accounts', {
+      project_id: project.id,
+      name: 'reply blocked account',
+      platform: 'threads',
+      account_handle: 'replyblocked',
+      target_audience: '살림 관심 고객',
+      content_scope: '생활용품',
+      forbidden_topics: [],
+      forbidden_words: [],
+      daily_post_max: 1,
+      active_time_windows: [{ start: '09:00', end: '23:00' }],
+      min_interval_minutes: 50,
+      status: 'active',
+      automation_status: 'running',
+      threads_access_token: 'token',
+      threads_link_delivery_mode: 'reply',
+      coupang_access_key: 'access',
+      coupang_secret_key: 'secret',
+      coupang_partner_id: 'partner',
+      coupang_search_status: 'ok'
+    });
+    const topic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '생활 수납',
+      angle: '꺼내기 쉬운 수납'
+    });
+    const post = await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: topic.id,
+      content_type: '공감형',
+      body: '집 정리할 때 수납 기준은 은근 갈리죠. 꺼내기 쉬운 쪽이에요, 보기 깔끔한 쪽이에요?',
+      risk_level: 'low',
+      status: 'queued'
+    });
+    const queue = await dbInsert('post_queue', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: topic.id,
+      post_id: post.id,
+      platform: 'threads',
+      scheduled_at: '2026-05-09T00:00:00.000Z',
+      status: 'manual_required',
+      post_mode: 'link',
+      retry_count: 1,
+      post_url: 'https://www.threads.net/@replyblocked/post/1234567890',
+      error_message: 'Threads reply publish failed: temporary error',
+      error_category: 'reply_warning'
+    });
+
+    const result = await repairReplyLinkFailures({ accountId: account.id });
+    const saved = await dbGet('post_queue', { id: queue.id });
+
+    assert.equal(result.repairedCount, 0);
+    assert.equal(result.targetCount, 1);
+    assert.equal(saved.status, 'manual_required');
+    assert.equal(saved.error_category, 'reply_repair_blocked');
+    assert.equal(saved.retry_count, 3);
+    assert.match(saved.error_message, /linkable_product_missing/);
+  } finally {
+    restoreEnv('MOCK_UPLOAD', previousMock);
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('createDailyQueue uses balanced link and no-link mix', async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => ({

@@ -8,7 +8,8 @@ import { cleanupOldQueueIssues } from './queueVisibilityService.js';
 
 const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const NON_FATAL_QUEUE_CATEGORIES = new Set(['reply_warning', 'reply_link_mode_required', 'content_blocked', 'retry_available', 'recheck_required']);
+const NON_FATAL_QUEUE_CATEGORIES = new Set(['reply_warning', 'reply_repair_blocked', 'reply_link_mode_required', 'content_blocked', 'retry_available', 'recheck_required']);
+const REPLY_ATTENTION_CATEGORIES = new Set(['reply_warning', 'reply_repair_blocked']);
 const STALE_RUNNING_CATEGORY = 'pipeline_stuck';
 
 function kstDayRange(date = new Date()) {
@@ -97,6 +98,7 @@ function queueProblemBreakdown(categorizedProblems) {
     threadsReconnect: categorizedProblems.filter((row) => row.category === 'threads_reconnect_required').length,
     retryAvailable: categorizedProblems.filter((row) => row.category === 'retry_available' || row.category === 'recheck_required').length,
     replyWarning: categorizedProblems.filter((row) => row.category === 'reply_warning').length,
+    replyRepairBlocked: categorizedProblems.filter((row) => row.category === 'reply_repair_blocked').length,
     contentBlocked: categorizedProblems.filter((row) => row.category === 'content_blocked').length,
     coupangLinkMissing: categorizedProblems.filter((row) => row.category === 'coupang_link_missing').length,
     manualRequired: categorizedProblems.filter((row) => row.category === 'manual_required').length,
@@ -139,6 +141,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   const todayScheduled = todayQueue.filter((row) => row.status === 'scheduled').length;
   const todayPosted = accountQueue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length;
   const problemQueue = accountQueue.filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status));
+  const postedReplyAttentionQueue = accountQueue.filter((row) => row.status === 'posted' && REPLY_ATTENTION_CATEGORIES.has(row.error_category));
   const mockCount = accountQueue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length;
   const accountProducts = products.filter((row) => row.account_id === account.id);
   const fallbackCount = accountProducts.filter((row) => row.is_fallback).length;
@@ -154,7 +157,9 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   const customer = await customerLabelFor(account.id, userAccounts, usersById);
   const problems = [];
   const currentThreadsOk = threads.status !== 'error';
-  const categorizedProblems = problemQueue.map((row) => normalizeQueueClassification(row, { currentThreadsOk }));
+  const issueRows = [...problemQueue, ...postedReplyAttentionQueue]
+    .filter((row, index, rows) => rows.findIndex((item) => item.id === row.id) === index);
+  const categorizedProblems = issueRows.map((row) => normalizeQueueClassification(row, { currentThreadsOk }));
   const queueBreakdown = queueProblemBreakdown(categorizedProblems);
 
   if (threads.status === 'error') pushProblem(problems, account, 'error', 'threads', threads.label);
@@ -168,6 +173,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   }
   if (queueBreakdown.retryAvailable > 0) pushProblem(problems, account, 'warn', 'retry_available', `재연결 후 재시도 가능 ${queueBreakdown.retryAvailable}건`);
   if (queueBreakdown.replyWarning > 0) pushProblem(problems, account, 'warn', 'reply_warning', `댓글/링크 답글 실패 ${queueBreakdown.replyWarning}건`);
+  if (queueBreakdown.replyRepairBlocked > 0) pushProblem(problems, account, 'warn', 'reply_repair_blocked', `댓글 링크 수동확인 ${queueBreakdown.replyRepairBlocked}건`);
   if (queueBreakdown.contentBlocked > 0) pushProblem(problems, account, 'warn', 'content_blocked', `콘텐츠 후보 제외 ${queueBreakdown.contentBlocked}건`);
   if (mockCount > 0) pushProblem(problems, account, 'warn', 'mock_upload', `테스트 업로드 흔적 ${mockCount}건`);
   if (fallbackRatio >= 0.5 && accountProducts.length >= 5) pushProblem(problems, account, 'warn', 'fallback_products', `fallback 상품 ${Math.round(fallbackRatio * 100)}%`);
@@ -206,6 +212,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
     todayPosted,
     failedCount: queueBreakdown.fatal,
     replyWarningCount: queueBreakdown.replyWarning,
+    replyRepairBlockedCount: queueBreakdown.replyRepairBlocked,
     retryAvailableCount: queueBreakdown.retryAvailable,
     contentBlockedCount: queueBreakdown.contentBlocked,
     queueBreakdown,
@@ -480,7 +487,7 @@ export async function operationEvents({ type = 'queue_problems', limit = 200 } =
   } else {
     const threadsOkByAccountId = new Map(rows.map((row) => [row.accountId, row.threads.status !== 'error']));
     const queueEvents = visibleQueue
-      .filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status))
+      .filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status) || (row.status === 'posted' && REPLY_ATTENTION_CATEGORIES.has(row.error_category)))
       .map((row) => {
         const classification = normalizeQueueClassification(row, {
           currentThreadsOk: threadsOkByAccountId.get(row.account_id) ?? true

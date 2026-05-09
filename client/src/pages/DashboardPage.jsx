@@ -431,7 +431,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
                   </td>
                   <td className="px-4 py-3">
                     <div className="font-semibold">예약 {row.todayScheduled} · 완료 {row.todayPosted}</div>
-                    <div className="text-xs text-slate-400">실패/검토 {row.failedCount} · 댓글경고 {row.replyWarningCount || 0} · 테스트 {row.mockCount}</div>
+                    <div className="text-xs text-slate-400">실패/검토 {row.failedCount} · 댓글경고 {row.replyWarningCount || 0} · 복구불가 {row.replyRepairBlockedCount || 0} · 테스트 {row.mockCount}</div>
                     <div className="mt-1 flex flex-wrap gap-1">
                       <StatusPill status={row.automationStatus === 'running' ? 'ok' : 'warn'} label={`자동화 ${row.automationStatus === 'running' ? '실행중' : '중지됨'}`} />
                       <span className="text-xs text-slate-400">{runCategoryLabel(row.runCategory)}</span>
@@ -539,7 +539,7 @@ function buildAccountFilterCounts(rows) {
     threads_reconnect: rows.filter((row) => row.runCategory === 'threads_reconnect' || row.threads?.status === 'error').length,
     coupang_settings: rows.filter((row) => row.runCategory === 'coupang_settings' || row.coupang?.status === 'error').length,
     no_schedule: rows.filter((row) => Number(row.todayScheduled || 0) === 0 && row.accountStatus === 'active').length,
-    failed_review: rows.filter((row) => Number(row.failedCount || 0) > 0 || Number(row.retryAvailableCount || 0) > 0 || Number(row.replyWarningCount || 0) > 0 || Number(row.contentBlockedCount || 0) > 0).length,
+    failed_review: rows.filter((row) => Number(row.failedCount || 0) > 0 || Number(row.retryAvailableCount || 0) > 0 || Number(row.replyWarningCount || 0) > 0 || Number(row.replyRepairBlockedCount || 0) > 0 || Number(row.contentBlockedCount || 0) > 0).length,
     pipeline_check: rows.filter((row) => row.runCategory === 'pipeline_stuck' || ['stuck', 'failed', 'expired'].includes(row.pipelineRun?.status)).length
   };
 }
@@ -582,6 +582,7 @@ function matchesAccountFilter(row, filter) {
     return Number(row.failedCount || 0) > 0
       || Number(row.retryAvailableCount || 0) > 0
       || Number(row.replyWarningCount || 0) > 0
+      || Number(row.replyRepairBlockedCount || 0) > 0
       || Number(row.contentBlockedCount || 0) > 0;
   }
   if (filter === 'pipeline_check') return row.runCategory === 'pipeline_stuck' || ['stuck', 'failed', 'expired'].includes(row.pipelineRun?.status);

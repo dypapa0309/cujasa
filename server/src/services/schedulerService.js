@@ -103,6 +103,29 @@ function canRepairReplyFailureQueue(row = {}) {
     && Number(row.retry_count || 0) < REPLY_REPAIR_MAX_ATTEMPTS;
 }
 
+async function markReplyRepairBlocked(queue, reason, detail = '') {
+  const message = `REPLY_REPAIR_BLOCKED: 댓글 링크 복구 불가 - ${reason}${detail ? ` (${detail})` : ''}`;
+  const patch = {
+    status: queue.status === 'posted' ? 'posted' : 'manual_required',
+    error_message: message,
+    error_category: 'reply_repair_blocked',
+    retry_count: Math.max(Number(queue.retry_count || 0), REPLY_REPAIR_MAX_ATTEMPTS)
+  };
+  const [updated] = await dbUpdate('post_queue', { id: queue.id }, patch);
+  await logActivity({
+    account_id: queue.account_id,
+    project_id: queue.project_id,
+    topic_id: queue.topic_id,
+    post_id: queue.post_id,
+    queue_id: queue.id,
+    action: 'reply_link_repair_blocked',
+    level: 'warn',
+    message,
+    payload: { reason, detail, previousStatus: queue.status }
+  }).catch(() => null);
+  return updated || { ...queue, ...patch };
+}
+
 async function replyLinkReadiness(account) {
   if (!isReplyLinkModeEnabled() || account?.threads_link_delivery_mode !== 'reply') {
     return {
@@ -514,31 +537,39 @@ export async function repairReplyLinkFailures({ accountId = null } = {}) {
     const account = accountsById.get(queue.account_id);
     const post = queue.post_id ? await dbGet('posts', { id: queue.post_id }) : null;
     const threadsPostId = extractThreadsPostId(queue.post_url);
+    let repairStage = 'preflight';
 
     if (!account || account.status !== 'active' || !isAutomationRunning(account)) {
       skipped.push({ queueId: queue.id, reason: 'account_not_active_or_automation_paused' });
       continue;
     }
     if (!post || !threadsPostId) {
-      skipped.push({ queueId: queue.id, reason: !post ? 'post_missing' : 'threads_post_id_missing' });
+      const reason = !post ? 'post_missing' : 'threads_post_id_missing';
+      skipped.push({ queueId: queue.id, reason });
+      await markReplyRepairBlocked(queue, reason);
       continue;
     }
 
     try {
-      assertPreflightCanPublish(await preflightAccount(account.id, { includeQueue: false }));
+      assertPreflightCanPublish(await preflightAccount(account.id, { includeQueue: false, allowInitialLinkDiscovery: true }));
+      repairStage = 'product_lookup';
       const { product } = await getFirstLinkableProductForTopic(post.topic_id);
-      if (!isLinkableCoupangProduct(product)) {
+      if (!product || !isLinkableCoupangProduct(product)) {
         skipped.push({ queueId: queue.id, reason: 'linkable_product_missing' });
+        await markReplyRepairBlocked(queue, 'linkable_product_missing');
         continue;
       }
+      repairStage = 'tracking_link';
       const trackingLink = await resolveTrackingLinkForQueue(queue, post, product);
       if (!trackingLink) {
         skipped.push({ queueId: queue.id, reason: 'tracking_link_missing' });
+        await markReplyRepairBlocked(queue, 'tracking_link_missing');
         continue;
       }
       const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
       const linkMode = String(process.env.THREADS_COUPANG_LINK_MODE || 'direct').toLowerCase();
       const linkUrl = linkMode === 'tracking' ? `${baseUrl}/r/${trackingLink.code}` : trackingLink.destination_url;
+      repairStage = 'reply_upload';
       await uploadReplyOnly({ account, postId: threadsPostId, text: buildReplyText(linkUrl) });
       let updatedRows;
       try {
@@ -570,6 +601,11 @@ export async function repairReplyLinkFailures({ accountId = null } = {}) {
         payload: { postUrl: queue.post_url, threadsPostId, trackingLinkId: trackingLink.id, linkMode }
       }).catch(() => null);
     } catch (error) {
+      if (repairStage !== 'reply_upload') {
+        skipped.push({ queueId: queue.id, reason: `${repairStage}_failed`, message: error.message });
+        await markReplyRepairBlocked(queue, `${repairStage}_failed`, error.message);
+        continue;
+      }
       const retry = Number(queue.retry_count || 0) + 1;
       const status = retry >= REPLY_REPAIR_MAX_ATTEMPTS ? 'manual_required' : 'retry';
       const classified = classifyQueueError(error.message || 'THREADS_REPLY_FAILED');
@@ -732,9 +768,9 @@ export async function recoverReplyLinkModeRequiredQueues({ accountId = null } = 
       continue;
     }
     try {
-      assertPreflightCanPublish(await preflightAccount(account.id, { includeQueue: false }));
+      assertPreflightCanPublish(await preflightAccount(account.id, { includeQueue: false, allowInitialLinkDiscovery: true }));
       const { product } = await getFirstLinkableProductForTopic(post.topic_id);
-      if (!isLinkableCoupangProduct(product)) {
+      if (!product || !isLinkableCoupangProduct(product)) {
         skipped.push({ queueId: queue.id, reason: 'linkable_product_missing' });
         continue;
       }
