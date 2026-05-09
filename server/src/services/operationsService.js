@@ -6,7 +6,7 @@ import { dailyPipelineStatus } from './schedulerRunService.js';
 
 const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const NON_FATAL_QUEUE_CATEGORIES = new Set(['reply_warning', 'content_blocked', 'retry_available', 'recheck_required']);
+const NON_FATAL_QUEUE_CATEGORIES = new Set(['reply_warning', 'reply_link_mode_required', 'content_blocked', 'retry_available', 'recheck_required']);
 const STALE_RUNNING_CATEGORY = 'pipeline_stuck';
 
 function kstDayRange(date = new Date()) {

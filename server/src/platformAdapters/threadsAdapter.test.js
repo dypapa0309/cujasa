@@ -64,3 +64,23 @@ test('uploadPost mock uses reply delivery when reply link mode is enabled', asyn
     restoreEnv('THREADS_REPLY_LINK_MODE_ENABLED', previousReply);
   }
 });
+
+test('uploadPost treats missing reply link env as enabled by default', async () => {
+  const previousMock = process.env.MOCK_UPLOAD;
+  const previousReply = process.env.THREADS_REPLY_LINK_MODE_ENABLED;
+  process.env.MOCK_UPLOAD = 'true';
+  delete process.env.THREADS_REPLY_LINK_MODE_ENABLED;
+
+  try {
+    const uploaded = await uploadPost({
+      account: { name: 'test', threads_link_delivery_mode: 'reply' },
+      post: { id: 'post-3', body: '본문' },
+      trackingLink: { code: 'abc', destination_url: 'https://link.coupang.com/example' }
+    });
+
+    assert.equal(uploaded.raw.linkDeliveryMode, 'reply');
+  } finally {
+    restoreEnv('MOCK_UPLOAD', previousMock);
+    restoreEnv('THREADS_REPLY_LINK_MODE_ENABLED', previousReply);
+  }
+});

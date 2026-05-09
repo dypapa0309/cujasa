@@ -1,5 +1,13 @@
 export function classifyQueueError(message = '') {
   const value = String(message || '');
+  if (/REPLY_LINK_MODE_REQUIRED/i.test(value)) {
+    return {
+      category: 'reply_link_mode_required',
+      severity: 'warn',
+      title: '댓글 링크 모드 복구 가능',
+      message: '댓글 링크 모드 설정 누락으로 막힌 예약입니다. 복구 후 다시 업로드할 수 있습니다.'
+    };
+  }
   if (/COUPANG_PRODUCT_MISSING|상품 매칭 누락|링크 글.*상품|tracking link.*missing|트래킹 링크/i.test(value)) {
     return {
       category: 'coupang_link_missing',
@@ -65,6 +73,14 @@ export function classificationForCategory(category, fallbackMessage = '') {
       severity: 'warn',
       title: '다시 시도 가능',
       message: '이전 업로드가 끝나지 않은 기록이에요. 현재 연결 상태를 확인한 뒤 본문 게시 여부를 보고 다시 시도할 수 있어요.'
+    };
+  }
+  if (category === 'reply_link_mode_required') {
+    return {
+      category,
+      severity: 'warn',
+      title: '댓글 링크 모드 복구 가능',
+      message: '댓글 링크 모드 설정 누락으로 막힌 예약입니다. 복구 후 다시 업로드할 수 있습니다.'
     };
   }
   if (category === 'recheck_required') {
@@ -171,6 +187,7 @@ export function postModeLabel(postMode = 'auto') {
 export function adminActivityLabel(action, message = '') {
   if (action === 'upload_failed') return classifyQueueError(message).title;
   if (action === 'upload_reply_failed') return '댓글/링크 답글 실패';
+  if (action === 'reply_link_mode_queue_recovered') return '댓글 링크 모드 큐 복구';
   if (action === 'post_style_blocked' || action === 'queue_guardrail_skipped') return '콘텐츠 후보 제외';
   if (action === 'operations_safety_pause') return '운영 안전 점검으로 일시중지';
   if (action === 'operations_link_setup_hold') return '실상품 링크 확인 대기';
@@ -188,6 +205,7 @@ export function adminActivityLabel(action, message = '') {
 export function adminActivityMessage(action, message = '') {
   if (action === 'upload_failed') return classifyQueueError(message).message;
   if (action === 'upload_reply_failed') return '본문 업로드는 완료됐고, 댓글/링크 답글만 재시도하면 됩니다.';
+  if (action === 'reply_link_mode_queue_recovered') return message || '댓글 링크 모드 설정 누락으로 막힌 큐를 재시도 가능 상태로 복구했습니다.';
   if (action === 'post_style_blocked' || action === 'queue_guardrail_skipped') return message || '계정 규칙에 맞지 않아 제외되었습니다.';
   if (action === 'operations_safety_pause') return message || '운영 안전 점검으로 자동화를 일시중지했습니다.';
   if (action === 'operations_link_setup_hold') return message || '실상품 쿠팡 링크 확인 전까지 링크 글 예약을 보류했습니다.';

@@ -16,7 +16,7 @@ import { runDailyPipelineOnce } from '../services/schedulerRunService.js';
 import { buildOpsHealthSummary, runDailyOpsHealthCheck } from '../services/opsHealthService.js';
 import { cleanupUnusedPipelineArtifacts } from '../services/unusedArtifactCleanupService.js';
 import { cleanupOldQueueIssues, dismissPastQueueIssuesForAccount } from '../services/queueVisibilityService.js';
-import { rescheduleTodayQueue } from '../services/schedulerService.js';
+import { recoverReplyLinkModeRequiredQueues, rescheduleTodayQueue } from '../services/schedulerService.js';
 import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js';
 import { buildMisassignmentReport } from '../services/accountOwnershipService.js';
 import { createManualPayment, expireDueEntitlements } from '../services/billingEntitlementService.js';
@@ -158,6 +158,12 @@ router.post('/operations/daily-pipeline/catch-up', async (req, res, next) => {
 router.post('/operations/reschedule-today-queue', async (req, res, next) => {
   try {
     res.json(await rescheduleTodayQueue({ accountId: req.body?.accountId || null }));
+  } catch (e) { next(e); }
+});
+
+router.post('/operations/recover-reply-link-mode-queues', async (req, res, next) => {
+  try {
+    res.json(await recoverReplyLinkModeRequiredQueues({ accountId: req.body?.accountId || null }));
   } catch (e) { next(e); }
 });
 

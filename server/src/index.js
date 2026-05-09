@@ -36,6 +36,7 @@ import { sendOpsAlert } from './services/notificationService.js';
 import { runDailyOpsHealthCheck } from './services/opsHealthService.js';
 import { redactSensitivePayload } from './services/redactionService.js';
 import { dailyPipelineStatus, runDailyPipelineOnce } from './services/schedulerRunService.js';
+import { replyLinkModeStatus } from './utils/replyLinkMode.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -268,6 +269,7 @@ async function runStartupDailyPipelineCatchUp() {
 
 app.listen(port, () => {
   console.log(`JASAIN API running on http://localhost:${port}`);
+  console.log('[threads reply link mode]', JSON.stringify(replyLinkModeStatus()));
   setTimeout(() => {
     runStartupDailyPipelineCatchUp().catch((error) => {
       console.error('[startup daily-pipeline catch-up] failed', error);

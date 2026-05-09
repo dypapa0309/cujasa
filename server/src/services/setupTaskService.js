@@ -1,4 +1,5 @@
 import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
+import { sendEmailNotification } from './notificationService.js';
 import { sendSlackMessage } from './slackService.js';
 import { sendSetupSms } from './smsService.js';
 
@@ -22,6 +23,45 @@ function normalizeEditablePatch(patch = {}) {
   }
   if (patch.buyerName !== undefined) next.buyer_name = String(patch.buyerName || '').trim() || null;
   return next;
+}
+
+function unique(values = []) {
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
+}
+
+function setupManagerEmails() {
+  return unique([
+    ...(process.env.SETUP_MANAGER_EMAILS || '').split(','),
+    ...(process.env.OPS_EMAIL_TO || '').split(','),
+    process.env.ADMIN_EMAIL
+  ]);
+}
+
+async function sendSetupEmails(type, subject, text, payload = {}) {
+  const recipients = setupManagerEmails();
+  if (recipients.length === 0) {
+    return { configured: false, recipients: [] };
+  }
+  const results = [];
+  for (const email of recipients) {
+    try {
+      const row = await sendEmailNotification(type, email, subject, text, payload);
+      results.push({
+        email,
+        ok: row.status === 'sent',
+        status: row.status,
+        error: row.payload?.delivery?.email?.error || null
+      });
+    } catch (error) {
+      results.push({ email, ok: false, error: error.message });
+    }
+  }
+  return {
+    configured: true,
+    recipients: results,
+    ok: results.some((row) => row.ok),
+    failed: results.filter((row) => !row.ok).length
+  };
 }
 
 export async function listSetupTasks() {
@@ -167,16 +207,26 @@ async function notifySetupRequest(task, { user, account, missing = [] } = {}) {
     missing.length ? missing.join(', ') : '확인 필요'
   ].join('\n');
 
-  const [sms, slack] = await Promise.allSettled([
+  const emailSubject = `[CUJASA] 셋업 요청 - ${name}`;
+  const [sms, slack, email] = await Promise.allSettled([
     sendSetupSms(smsText),
-    sendSlackMessage(text)
+    sendSlackMessage(text),
+    sendSetupEmails('setup_request_created', emailSubject, text, {
+      setupTaskId: task.id,
+      userId: task.user_id,
+      accountId: account?.id || null,
+      source: task.source,
+      missing
+    })
   ]);
   const smsResult = sms.status === 'fulfilled' ? sms.value : { ok: false, error: sms.reason?.message || 'SMS failed' };
   const slackResult = slack.status === 'fulfilled' ? slack.value : { ok: false, error: slack.reason?.message || 'Slack failed' };
+  const emailResult = email.status === 'fulfilled' ? email.value : { ok: false, error: email.reason?.message || 'Email failed' };
   return {
     sms: smsResult,
     slack: slackResult,
-    sent: Boolean(smsResult?.ok || slackResult?.ok)
+    email: emailResult,
+    sent: Boolean(smsResult?.ok || slackResult?.ok || emailResult?.ok)
   };
 }
 
@@ -198,15 +248,24 @@ async function notifySetupTask(task, payment, product) {
     `주문 ${payment.order_id || payment.id}`
   ].join('\n');
 
-  const [sms, slack] = await Promise.allSettled([
+  const emailSubject = `[CUJASA] 결제 완료 / 셋업 필요 - ${task.buyer_name || '구매자'}`;
+  const [sms, slack, email] = await Promise.allSettled([
     sendSetupSms(smsText),
-    sendSlackMessage(text)
+    sendSlackMessage(text),
+    sendSetupEmails('setup_task_created_from_payment', emailSubject, text, {
+      setupTaskId: task.id,
+      userId: task.user_id,
+      paymentId: payment.id,
+      productId: payment.product_id
+    })
   ]);
   const smsResult = sms.status === 'fulfilled' ? sms.value : { ok: false, error: sms.reason?.message || 'SMS failed' };
   const slackResult = slack.status === 'fulfilled' ? slack.value : { ok: false, error: slack.reason?.message || 'Slack failed' };
+  const emailResult = email.status === 'fulfilled' ? email.value : { ok: false, error: email.reason?.message || 'Email failed' };
   return {
     sms: smsResult,
     slack: slackResult,
-    sent: Boolean(smsResult?.ok || slackResult?.ok)
+    email: emailResult,
+    sent: Boolean(smsResult?.ok || slackResult?.ok || emailResult?.ok)
   };
 }

@@ -1,3 +1,5 @@
+import { isReplyLinkModeEnabled } from '../utils/replyLinkMode.js';
+
 const THREADS_API = 'https://graph.threads.net/v1.0';
 const COUPANG_DISCLOSURE = '[광고] 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
 const THREADS_TEXT_LIMIT = 500;
@@ -92,7 +94,7 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   const linkUrl = trackingLink
     ? (linkMode === 'tracking' ? `${baseUrl}/r/${trackingLink.code}` : trackingLink.destination_url)
     : null;
-  const replyModeEnabled = process.env.THREADS_REPLY_LINK_MODE_ENABLED === 'true';
+  const replyModeEnabled = isReplyLinkModeEnabled();
   const deliveryMode = linkUrl ? 'reply' : 'none';
   if (linkUrl && (!replyModeEnabled || account.threads_link_delivery_mode !== 'reply')) {
     const error = new Error('THREADS_REPLY_LINK_MODE_REQUIRED: 링크 글은 댓글 링크 모드에서만 업로드할 수 있습니다.');

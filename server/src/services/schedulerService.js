@@ -13,6 +13,7 @@ import { assertAutomationRunning, isAutomationRunning } from './accountAutomatio
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { createCoupangCooldownError, isCoupangCooldownActive, isCoupangSearchLockAvailable } from './coupangService.js';
 import { sendOpsAlert } from './notificationService.js';
+import { isReplyLinkModeEnabled } from '../utils/replyLinkMode.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
@@ -57,6 +58,11 @@ function createReplyLinkRequiredError(code, message) {
   return error;
 }
 
+function isReplyLinkModeRequiredQueue(row = {}) {
+  const value = `${row.error_category || ''} ${row.error_message || ''}`;
+  return /REPLY_LINK_MODE_REQUIRED/i.test(value);
+}
+
 function isReplyFailureQueue(row = {}) {
   if (row.customer_hidden_at) return false;
   if (!['failed', 'retry', 'manual_required'].includes(row.status)) return false;
@@ -65,7 +71,7 @@ function isReplyFailureQueue(row = {}) {
 }
 
 async function replyLinkReadiness(account) {
-  if (process.env.THREADS_REPLY_LINK_MODE_ENABLED !== 'true' || account?.threads_link_delivery_mode !== 'reply') {
+  if (!isReplyLinkModeEnabled() || account?.threads_link_delivery_mode !== 'reply') {
     return {
       ok: false,
       code: 'REPLY_LINK_MODE_REQUIRED',
@@ -83,6 +89,13 @@ async function replyLinkReadiness(account) {
     };
   }
   return { ok: true, code: null, message: null };
+}
+
+function canRecoverReplyLinkModeQueue(queue = {}, account = {}) {
+  return ['manual_required', 'failed'].includes(queue.status)
+    && (queue.post_mode || 'auto') === 'link'
+    && account?.threads_link_delivery_mode === 'reply'
+    && isReplyLinkModeRequiredQueue(queue);
 }
 
 async function getFirstLinkableProductForTopic(topicId) {
@@ -409,6 +422,7 @@ export async function recoverStalePostingQueue() {
 
 export async function processDueQueue() {
   await recoverStalePostingQueue();
+  await recoverReplyLinkModeRequiredQueues();
   const [scheduled, retrying] = await Promise.all([
     dbList('post_queue', { status: 'scheduled' }),
     dbList('post_queue', { status: 'retry' })
@@ -496,6 +510,74 @@ export async function rescheduleTodayQueue({ accountId = null } = {}) {
   };
 }
 
+export async function recoverReplyLinkModeRequiredQueues({ accountId = null } = {}) {
+  const [queues, accounts] = await Promise.all([
+    dbList('post_queue'),
+    dbList('accounts')
+  ]);
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const nowIso = new Date().toISOString();
+  const recovered = [];
+  const skipped = [];
+
+  for (const queue of queues) {
+    if (accountId && queue.account_id !== accountId) continue;
+    const account = accountsById.get(queue.account_id);
+    if (!canRecoverReplyLinkModeQueue(queue, account)) continue;
+    if (account?.status !== 'active' || !isAutomationRunning(account)) {
+      skipped.push({ queueId: queue.id, reason: 'account_not_active_or_automation_paused' });
+      continue;
+    }
+    const post = queue.post_id ? await dbGet('posts', { id: queue.post_id }) : null;
+    if (!post) {
+      skipped.push({ queueId: queue.id, reason: 'post_missing' });
+      continue;
+    }
+    try {
+      assertPreflightCanPublish(await preflightAccount(account.id, { includeQueue: false }));
+      const { product } = await getFirstLinkableProductForTopic(post.topic_id);
+      if (!isLinkableCoupangProduct(product)) {
+        skipped.push({ queueId: queue.id, reason: 'linkable_product_missing' });
+        continue;
+      }
+    } catch (error) {
+      skipped.push({ queueId: queue.id, reason: 'preflight_failed', message: error.message });
+      continue;
+    }
+
+    const scheduledAt = new Date(queue.scheduled_at || 0).getTime() <= Date.now()
+      ? nowIso
+      : queue.scheduled_at;
+    const [updated] = await dbUpdate('post_queue', { id: queue.id }, {
+      status: 'retry',
+      scheduled_at: scheduledAt,
+      error_message: null,
+      error_category: null
+    });
+    if (!updated) continue;
+    recovered.push(updated);
+    await logActivity({
+      account_id: queue.account_id,
+      project_id: queue.project_id,
+      topic_id: queue.topic_id,
+      post_id: queue.post_id,
+      queue_id: queue.id,
+      action: 'reply_link_mode_queue_recovered',
+      level: 'info',
+      message: '댓글 링크 모드 설정 누락으로 막힌 큐를 재시도 가능 상태로 복구했습니다.',
+      payload: { previousStatus: queue.status, scheduledAt }
+    }).catch(() => null);
+  }
+
+  return {
+    ok: true,
+    recoveredCount: recovered.length,
+    skippedCount: skipped.length,
+    recovered,
+    skipped
+  };
+}
+
 export async function uploadQueueItem(queueId) {
   const queue = await dbGet('post_queue', { id: queueId });
   if (!queue) {
@@ -511,10 +593,15 @@ export async function uploadQueueItem(queueId) {
     error.code = 'AUTOMATION_PAUSED';
     throw error;
   }
-  if (!['scheduled', 'retry'].includes(queue.status)) {
+  const recoverableManualRequired = canRecoverReplyLinkModeQueue(queue, account);
+  if (!['scheduled', 'retry'].includes(queue.status) && !recoverableManualRequired) {
     throw createQueueAlreadyClaimedError(queueId, queue.status);
   }
-  const [claimed] = await dbUpdate('post_queue', { id: queueId, status: queue.status }, { status: 'posting' });
+  const [claimed] = await dbUpdate('post_queue', { id: queueId, status: queue.status }, {
+    status: 'posting',
+    error_message: recoverableManualRequired ? null : queue.error_message,
+    error_category: recoverableManualRequired ? null : queue.error_category
+  });
   if (!claimed) {
     throw createQueueAlreadyClaimedError(queueId, queue.status);
   }
