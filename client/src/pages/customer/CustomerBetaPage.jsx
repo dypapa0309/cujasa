@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, CreditCard, Download, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, RefreshCw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, CreditCard, Download, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, Plus, RefreshCw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, X } from 'lucide-react';
 import { api, postEvent } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 import { useToast } from '../../lib/toast.jsx';
@@ -22,6 +22,7 @@ const infludexMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_
 const cujasaActions = [
   { key: 'run', label: '자동화 실행', icon: PlayCircle, hint: '오늘 예약을 만들고 실행 상태를 확인해요.' },
   { key: 'settings', label: '설정 확인', icon: Settings, hint: 'Threads, 쿠팡 API, 콘텐츠 기준을 점검해요.' },
+  { key: 'trend-references', label: '인기글 학습', icon: Plus, hint: '반응 좋았던 글에서 말투와 패턴을 배워 다음 콘텐츠에 반영해요.' },
   { key: 'posts', label: '포스팅 현황', icon: FileText, hint: '예약, 완료, 확인 필요 글을 봐요.' },
   { key: 'home', label: '성과 보기', icon: BarChart3, hint: '예약 수와 클릭 성과를 요약해요.' }
 ];
@@ -1429,7 +1430,14 @@ function TaskDrawer(props) {
               <Icon size={19} />
             </div>
             <div>
-              <div className="text-lg font-black text-zinc-100">{action.label}</div>
+              <div className="flex flex-wrap items-center gap-2 text-lg font-black text-zinc-100">
+                {action.label}
+                {action.key === 'trend-references' && (
+                  <span className="rounded-full border border-emerald-300/25 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-100">
+                    beta
+                  </span>
+                )}
+              </div>
               <div className="mt-1 text-xs leading-relaxed text-zinc-500">{action.hint}</div>
             </div>
           </div>
@@ -1442,6 +1450,7 @@ function TaskDrawer(props) {
           {loadError && <Notice tone="error">{loadError}</Notice>}
           {action.key === 'run' && <BetaRunPanel {...props} />}
           {action.key === 'settings' && <BetaSettingsPanel {...props} />}
+          {action.key === 'trend-references' && <TrendReferencesPanel {...props} />}
           {action.key === 'posts' && <BetaPostsPanel {...props} />}
           {action.key === 'home' && <BetaHomePanel {...props} />}
           {action.key === 'account-settings' && <BetaAccountSettingsPanel {...props} />}
@@ -1642,6 +1651,14 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
       product_mention_style: account.product_mention_style || 'natural',
       emoji_level: account.emoji_level || 'low',
       safe_debate_enabled: Boolean(account.safe_debate_enabled),
+      anonymous_learning_enabled: Boolean(account.anonymous_learning_enabled),
+      blog_auto_publish_enabled: Boolean(account.blog_auto_publish_enabled),
+      blog_publish_mode: account.blog_publish_mode || 'test_only',
+      blog_base_url: account.blog_base_url || '',
+      toss_share_link_enabled: Boolean(account.toss_share_link_enabled),
+      toss_share_link_url: account.toss_share_link_url || '',
+      toss_share_link_label: account.toss_share_link_label || '',
+      toss_share_link_memo: account.toss_share_link_memo || '',
       content_style_note: account.content_style_note || '',
       forbidden_topics: Array.isArray(account.forbidden_topics) ? account.forbidden_topics.join('\n') : '',
       forbidden_words: Array.isArray(account.forbidden_words) ? account.forbidden_words.join('\n') : '',
@@ -1829,7 +1846,57 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
               }))}
             />
           </label>
+          <label className="flex items-center justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3 text-sm font-bold text-zinc-300">
+            <span>
+              <span className="block">콘텐츠 품질 향상 참여</span>
+              <span className="mt-1 block text-xs font-medium leading-relaxed text-zinc-500">
+                반응 좋은 글의 말투와 패턴을 참고해 콘텐츠 품질을 높여요.
+              </span>
+            </span>
+            <input type="checkbox" checked={form.anonymous_learning_enabled} onChange={(e) => update('anonymous_learning_enabled', e.target.checked)} />
+          </label>
           <label className={labelClass}>추가 요청사항<textarea className={inputClass} rows="3" value={form.content_style_note} onChange={(e) => update('content_style_note', e.target.value)} placeholder="예: 너무 광고처럼 쓰지 말기, 자취생 말투 유지" /></label>
+        </div>
+      </CollapsiblePanel>
+
+      <CollapsiblePanel title="테스트 연결 설정">
+        <div className="grid gap-4">
+          <label className="flex items-center justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3 text-sm font-bold text-zinc-300">
+            <span>
+              <span className="block">자체 블로그 자동 발행</span>
+              <span className="mt-1 block text-xs font-medium leading-relaxed text-zinc-500">
+                테스트 환경에서 Threads 업로드 성공 시 내부 블로그 글을 1회 생성해요.
+              </span>
+            </span>
+            <input type="checkbox" checked={form.blog_auto_publish_enabled} onChange={(e) => update('blog_auto_publish_enabled', e.target.checked)} />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DarkSelect
+              label="블로그 발행 방식"
+              value={form.blog_publish_mode}
+              onChange={(value) => update('blog_publish_mode', value)}
+              options={[
+                { value: 'test_only', label: '테스트 환경만' },
+                { value: 'manual', label: '수동 확인' },
+                { value: 'auto', label: '자동' }
+              ]}
+            />
+            <label className={labelClass}>블로그 기준 URL<input className={inputClass} value={form.blog_base_url} onChange={(e) => update('blog_base_url', e.target.value)} placeholder="https://api.jasain.kr/blog" /></label>
+          </div>
+          <label className="flex items-center justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3 text-sm font-bold text-zinc-300">
+            <span>
+              <span className="block">토스 쉐어링크 사용</span>
+              <span className="mt-1 block text-xs font-medium leading-relaxed text-zinc-500">
+                v1에서는 계정별 저장만 하고 포스팅 본문에는 자동 삽입하지 않아요.
+              </span>
+            </span>
+            <input type="checkbox" checked={form.toss_share_link_enabled} onChange={(e) => update('toss_share_link_enabled', e.target.checked)} />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className={labelClass}>토스 쉐어링크 URL<input className={inputClass} value={form.toss_share_link_url} onChange={(e) => update('toss_share_link_url', e.target.value)} placeholder="https://toss.me/..." /></label>
+            <label className={labelClass}>표시 라벨<input className={inputClass} value={form.toss_share_link_label} onChange={(e) => update('toss_share_link_label', e.target.value)} placeholder="결제/상담 링크" /></label>
+          </div>
+          <label className={labelClass}>관리 메모<textarea className={inputClass} rows="2" value={form.toss_share_link_memo} onChange={(e) => update('toss_share_link_memo', e.target.value)} placeholder="사용처, 고객별 안내 문구 등" /></label>
         </div>
       </CollapsiblePanel>
 
@@ -1852,6 +1919,257 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
 
       <DarkButton onClick={save} disabled={saving}>{saving ? '저장 중...' : '설정 저장'}</DarkButton>
     </>
+  );
+}
+
+function parseTrendReferenceText(text = '', category = '') {
+  return String(text || '')
+    .split(/\n\s*---+\s*\n|\n{2,}/)
+    .map((block, index) => {
+      const sourceText = block
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .filter((line) => !/^(@|작성자|계정|url|https?:\/\/)/i.test(line))
+        .join('\n')
+        .trim();
+      if (sourceText.length < 20) return null;
+      const metricText = block.replace(/,/g, '');
+      const pick = (patterns) => {
+        for (const pattern of patterns) {
+          const match = metricText.match(pattern);
+          if (match) return Number(match[1] || 0);
+        }
+        return 0;
+      };
+      return {
+        id: `paste-${Date.now()}-${index}`,
+        sourceText,
+        topicKeyword: category,
+        likes: pick([/좋아요\s*([0-9]+)/i, /likes?\s*([0-9]+)/i]),
+        replies: pick([/댓글\s*([0-9]+)/i, /답글\s*([0-9]+)/i, /comments?\s*([0-9]+)/i]),
+        views: pick([/조회\s*([0-9]+)/i, /views?\s*([0-9]+)/i]),
+        sourceType: 'text_paste'
+      };
+    })
+    .filter(Boolean);
+}
+
+function fileToBase64Payload(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',').pop() || '');
+    reader.onerror = () => reject(new Error('파일을 읽지 못했습니다.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function TrendReferencesPanel({ account, reloadAccounts }) {
+  const toast = useToast();
+  const [category, setCategory] = useState(account?.content_scope || '');
+  const [targetAudienceHint, setTargetAudienceHint] = useState(account?.target_audience || '');
+  const [text, setText] = useState('');
+  const [ocrSamples, setOcrSamples] = useState([]);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [savingLearning, setSavingLearning] = useState(false);
+  const [showLearningInfo, setShowLearningInfo] = useState(false);
+  const [learningEnabled, setLearningEnabled] = useState(Boolean(account?.anonymous_learning_enabled));
+
+  useEffect(() => {
+    setLearningEnabled(Boolean(account?.anonymous_learning_enabled));
+  }, [account?.anonymous_learning_enabled]);
+
+  const textSamples = useMemo(() => parseTrendReferenceText(text, category), [text, category]);
+  const samples = useMemo(() => [...ocrSamples, ...textSamples], [ocrSamples, textSamples]);
+
+  const updateAnonymousLearning = async (enabled) => {
+    if (!account?.id) return;
+    setSavingLearning(true);
+    try {
+      await api.patch(`/api/accounts/${account.id}`, { anonymous_learning_enabled: enabled });
+      setLearningEnabled(enabled);
+      await reloadAccounts?.();
+      toast(enabled ? '콘텐츠 품질 향상 참여를 켰어요.' : '콘텐츠 품질 향상 참여를 껐어요.', 'success');
+    } catch (err) {
+      toast(err.message || '품질 향상 설정을 저장하지 못했어요.', 'error');
+    } finally {
+      setSavingLearning(false);
+      setShowLearningInfo(false);
+    }
+  };
+
+  const handleLearningToggle = () => {
+    if (savingLearning) return;
+    if (learningEnabled) {
+      updateAnonymousLearning(false);
+      return;
+    }
+    setShowLearningInfo(true);
+  };
+
+  const uploadCapture = async (files) => {
+    const selected = Array.from(files || []).slice(0, 5);
+    if (!selected.length) return;
+    setOcrLoading(true);
+    try {
+      const nextSamples = [];
+      for (const file of selected) {
+        if (!/^image\/(png|jpe?g|webp)$/i.test(file.type || '')) {
+          toast('PNG/JPG/WEBP 캡처만 업로드할 수 있어요.', 'error');
+          continue;
+        }
+        if (file.size > 12 * 1024 * 1024) {
+          toast(`${file.name}은 12MB 이하로 올려주세요.`, 'error');
+          continue;
+        }
+        const base64 = await fileToBase64Payload(file);
+        const sample = await api.post('/api/product-workspace/cujasa/trend-reference-ocr', {
+          accountId: account?.id,
+          fileName: file.name,
+          mimeType: file.type || 'image/png',
+          base64,
+          category,
+          topicKeyword: category
+        });
+        if (sample?.sourceText) nextSamples.push(sample);
+      }
+      if (nextSamples.length) {
+        setOcrSamples((prev) => [...prev, ...nextSamples]);
+        toast(`캡처 ${nextSamples.length}개에서 텍스트를 추출했어요.`, 'success');
+      }
+    } catch (err) {
+      toast(err.message || '캡처 OCR에 실패했어요.', 'error');
+    } finally {
+      setOcrLoading(false);
+    }
+  };
+
+  const analyze = async () => {
+    if (!account?.id) return;
+    if (!samples.length) {
+      toast('학습할 글을 붙여넣거나 캡처를 올려주세요.', 'error');
+      return;
+    }
+    setLoading(true);
+    try {
+      const next = await api.post('/api/product-workspace/cujasa/trend-references', {
+        accountId: account.id,
+        samples,
+        category,
+        targetAudienceHint,
+        sourceType: ocrSamples.length && !textSamples.length ? 'screenshot_ocr' : 'text_paste'
+      });
+      setResult(next);
+      toast('앞으로 만들 글에 참고할 기준을 저장했어요.', 'success');
+    } catch (err) {
+      toast(err.message || '학습할 글을 저장하지 못했어요.', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-4">
+      <PanelCard>
+        <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-black text-emerald-100">
+                <Plus size={17} /> 반응 좋은 글의 말투와 패턴을 학습해요
+              </div>
+              <p className="mt-1 text-xs leading-relaxed text-emerald-100/65">
+                반응이 좋았던 글을 붙여넣거나 캡처로 올려주세요.<br />
+                다음 글을 만들 때 말투와 패턴만 참고합니다.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleLearningToggle}
+              disabled={savingLearning}
+              className={`relative h-8 w-14 rounded-full border transition ${learningEnabled ? 'border-emerald-300 bg-emerald-400' : 'border-white/15 bg-black/40'} disabled:opacity-60`}
+              aria-pressed={learningEnabled}
+            >
+              <span className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow transition ${learningEnabled ? 'left-7' : 'left-1'}`} />
+            </button>
+          </div>
+          <button type="button" onClick={() => setShowLearningInfo(true)} className="mt-3 text-xs font-black text-emerald-100/80 underline-offset-4 hover:text-emerald-50 hover:underline">
+            자세히 보기
+          </button>
+        </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className={labelClass}>어떤 주제에 참고할까요?<input className={inputClass} value={category} onChange={(event) => setCategory(event.target.value)} placeholder="자취 꿀템, 살림 꿀템" /></label>
+          <label className={labelClass}>누구에게 보여줄 글인가요?<input className={inputClass} value={targetAudienceHint} onChange={(event) => setTargetAudienceHint(event.target.value)} placeholder="2030 자취생" /></label>
+        </div>
+        <label className={`${labelClass} mt-3`}>
+          학습할 글 붙여넣기
+          <textarea
+            className={inputClass}
+            rows="8"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder={'반응이 좋았던 글 본문을 붙여넣어 주세요.\n\n여러 개는 빈 줄이나 --- 로 구분하면 됩니다.\n좋아요 1200 / 댓글 80 같은 반응 수치가 있으면 함께 넣어도 좋아요.'}
+          />
+        </label>
+        <div className="mt-3 grid gap-2">
+          <div className="text-sm font-black text-zinc-300">캡처로 올리기</div>
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 bg-black/25 px-4 py-5 text-sm font-bold text-zinc-300 hover:bg-white/5">
+            <span className="inline-flex items-center gap-2"><Upload size={17} /> 화면 캡처 올리기 PNG/JPG/WEBP</span>
+            <input type="file" accept=".png,.jpg,.jpeg,.webp" multiple className="hidden" onChange={(event) => uploadCapture(event.target.files)} />
+          </label>
+          {ocrLoading && <Notice>캡처에서 글 내용과 반응 수치를 읽고 있어요.</Notice>}
+        </div>
+        <div className="mt-3 rounded-2xl bg-black/25 px-4 py-3 text-sm text-zinc-500">
+          학습할 글 {samples.length}개 · 품질 향상 참여 {learningEnabled ? '켜짐' : '꺼짐'}
+        </div>
+        <div className="mt-3 flex gap-2">
+          <DarkButton onClick={analyze} disabled={loading || ocrLoading || samples.length === 0}>{loading ? '저장 중...' : '이 글 학습하기'}</DarkButton>
+          <DarkButton variant="ghost" onClick={() => { setText(''); setOcrSamples([]); setResult(null); }} disabled={loading || ocrLoading}>초기화</DarkButton>
+        </div>
+      </PanelCard>
+
+      {result && (
+        <PanelCard title="저장 완료">
+          <div className="grid gap-2 text-sm font-bold text-zinc-300">
+            <div className="rounded-2xl bg-black/25 px-4 py-3">인기글 {result.personalPatterns?.length || result.personalPatternCount || 0}개를 학습했어요.</div>
+            <div className="rounded-2xl bg-black/25 px-4 py-3">품질 향상 참여 {result.anonymousLearningEnabled ? '켜짐' : '꺼짐'}</div>
+            <div className="rounded-2xl bg-black/25 px-4 py-3">다음 콘텐츠부터 이 계정의 말투와 패턴에 참고됩니다.</div>
+          </div>
+        </PanelCard>
+      )}
+
+      {showLearningInfo && (
+        <div className="fixed inset-0 z-[80] grid place-items-center bg-black/70 px-4">
+          <div className="w-full max-w-md rounded-[28px] border border-white/10 bg-[#1f1f1f] p-5 shadow-2xl shadow-black/60">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-lg font-black text-zinc-100">콘텐츠 품질 향상 참여</div>
+                <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+                  허용하면 올려주신 인기글의 말투와 패턴을 참고해 다음 콘텐츠를 더 자연스럽게 만듭니다.
+                </p>
+              </div>
+              <button type="button" onClick={() => setShowLearningInfo(false)} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-zinc-500 hover:bg-white/10 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+            <p className="mt-4 rounded-2xl bg-black/25 px-4 py-3 text-sm leading-relaxed text-zinc-400">
+              내 계정의 글 품질을 높이기 위한 베타 기능이에요. 언제든 다시 끄고 켤 수 있습니다.
+            </p>
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              {!learningEnabled && (
+                <DarkButton onClick={() => updateAnonymousLearning(true)} disabled={savingLearning}>
+                  {savingLearning ? '저장 중...' : '참여하고 글 품질 높이기'}
+                </DarkButton>
+              )}
+              <DarkButton variant="ghost" onClick={() => setShowLearningInfo(false)} disabled={savingLearning}>
+                {learningEnabled ? '확인' : '나중에'}
+              </DarkButton>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

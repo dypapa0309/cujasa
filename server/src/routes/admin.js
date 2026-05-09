@@ -30,6 +30,7 @@ import {
   updatePolibotKnowledgeSourceReview
 } from '../services/polibotKnowledgeDbService.js';
 import { redactAccount, redactAccounts, redactBillingSettings, redactPayment } from '../services/redactionService.js';
+import { listTrendPatternAssets, updateTrendPatternQualityStatus } from '../services/trendReferenceLearningService.js';
 
 const router = Router();
 
@@ -260,6 +261,25 @@ router.get('/operations/assistant-metrics', async (req, res, next) => {
       }))
     });
   } catch (e) { next(e); }
+});
+
+router.get('/trend-reference-patterns', async (req, res, next) => {
+  try {
+    res.json(await listTrendPatternAssets({
+      status: req.query.status || 'candidate',
+      limit: req.query.limit || 100
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch('/trend-reference-patterns/:id', async (req, res, next) => {
+  try {
+    res.json(await updateTrendPatternQualityStatus(req.params.id, req.body?.qualityStatus || req.body?.status));
+  } catch (error) {
+    next(error);
+  }
 });
 
 router.post('/operations/healthcheck/run', async (req, res, next) => {

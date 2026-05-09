@@ -1,0 +1,57 @@
+[
+  {
+    "id": "fixture-closet-choice",
+    "sourceUrl": "fixture://threads/closet-choice",
+    "topicKeyword": "자취 수납",
+    "sourceText": "옷장 정리할 때 접어서 넣는 사람 vs 걸어두는 사람 진짜 갈리더라. 나는 꺼내기 쉬운 쪽이 좋은데 다들 어느 쪽이 편해?",
+    "likes": 920,
+    "replies": 148,
+    "reposts": 32,
+    "views": 18500,
+    "createdAt": "2026-05-08T03:00:00.000Z"
+  },
+  {
+    "id": "fixture-kitchen-regret",
+    "sourceUrl": "fixture://threads/kitchen-regret",
+    "topicKeyword": "주방 정리",
+    "sourceText": "주방용품은 사고 나서 후회하는 기준이 항상 비슷함. 예쁜 것보다 씻기 쉬운지가 오래 가더라. 여러분은 디자인 먼저 봐, 관리 편한 거 먼저 봐?",
+    "likes": 760,
+    "replies": 121,
+    "reposts": 27,
+    "views": 14200,
+    "createdAt": "2026-05-08T05:00:00.000Z"
+  },
+  {
+    "id": "fixture-cleaning-empathy",
+    "sourceUrl": "fixture://threads/cleaning-empathy",
+    "topicKeyword": "청소",
+    "sourceText": "청소는 큰맘 먹고 하는 것보다 보이는 데 하나만 치우는 날이 오히려 오래 감. 다들 청소 시작할 때 제일 먼저 손대는 곳 어디야?",
+    "likes": 530,
+    "replies": 96,
+    "reposts": 15,
+    "views": 9800,
+    "createdAt": "2026-05-07T22:00:00.000Z"
+  },
+  {
+    "id": "fixture-unsafe-conflict",
+    "sourceUrl": "fixture://threads/unsafe-conflict",
+    "topicKeyword": "생활",
+    "sourceText": "요즘 애들은 집안일도 못하면서 말만 많다. 세대 차이 진짜 심각함.",
+    "likes": 1200,
+    "replies": 360,
+    "reposts": 95,
+    "views": 40000,
+    "createdAt": "2026-05-08T01:00:00.000Z"
+  },
+  {
+    "id": "fixture-weak-info",
+    "sourceUrl": "fixture://threads/weak-info",
+    "topicKeyword": "생활용품",
+    "sourceText": "생활용품을 구매할 때는 가격과 품질을 고려하는 것이 좋습니다. 여러 제품을 비교해보세요.",
+    "likes": 42,
+    "replies": 3,
+    "reposts": 1,
+    "views": 1200,
+    "createdAt": "2026-05-06T04:00:00.000Z"
+  }
+]

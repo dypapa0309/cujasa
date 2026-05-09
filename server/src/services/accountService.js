@@ -34,6 +34,14 @@ const ACCOUNT_COLUMNS = new Set([
   'product_mention_style',
   'emoji_level',
   'safe_debate_enabled',
+  'anonymous_learning_enabled',
+  'blog_auto_publish_enabled',
+  'blog_publish_mode',
+  'blog_base_url',
+  'toss_share_link_enabled',
+  'toss_share_link_url',
+  'toss_share_link_label',
+  'toss_share_link_memo',
   'content_style_note',
   'daily_post_min',
   'daily_post_max',
@@ -103,6 +111,15 @@ function normalizeAccount(payload) {
   if (!EMOJI_LEVELS.has(next.emoji_level)) next.emoji_level = 'low';
   next.seasonality_enabled = next.seasonality_enabled !== false;
   next.safe_debate_enabled = Boolean(next.safe_debate_enabled);
+  next.anonymous_learning_enabled = Boolean(next.anonymous_learning_enabled);
+  next.blog_auto_publish_enabled = Boolean(next.blog_auto_publish_enabled);
+  next.blog_publish_mode = ['test_only', 'manual', 'auto'].includes(next.blog_publish_mode) ? next.blog_publish_mode : 'test_only';
+  next.blog_base_url = next.blog_base_url == null ? '' : String(next.blog_base_url).trim().slice(0, 300);
+  next.toss_share_link_enabled = Boolean(next.toss_share_link_enabled);
+  next.toss_share_link_url = next.toss_share_link_url == null ? '' : String(next.toss_share_link_url).trim().slice(0, 500);
+  next.toss_share_link_label = next.toss_share_link_label == null ? '' : String(next.toss_share_link_label).trim().slice(0, 80);
+  next.toss_share_link_memo = next.toss_share_link_memo == null ? '' : String(next.toss_share_link_memo).trim().slice(0, 500);
+  if (!Array.isArray(next.personal_reference_patterns)) next.personal_reference_patterns = [];
   if (next.content_mode === 'safe_debate' && !next.safe_debate_enabled) next.content_mode = 'question';
   next.threads_link_delivery_mode = 'reply';
   next.content_style_note = next.content_style_note == null ? '' : String(next.content_style_note).slice(0, 1000);
@@ -137,6 +154,15 @@ export const createAccount = (payload) => dbInsert('accounts', normalizeAccount(
   product_mention_style: 'natural',
   emoji_level: 'low',
   safe_debate_enabled: false,
+  anonymous_learning_enabled: false,
+  personal_reference_patterns: [],
+  blog_auto_publish_enabled: false,
+  blog_publish_mode: 'test_only',
+  blog_base_url: '',
+  toss_share_link_enabled: false,
+  toss_share_link_url: '',
+  toss_share_link_label: '',
+  toss_share_link_memo: '',
   content_style_note: '',
   daily_post_min: 0,
   daily_post_max: 3,

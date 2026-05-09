@@ -14,6 +14,7 @@ import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { createCoupangCooldownError, isCoupangCooldownActive, isCoupangSearchLockAvailable } from './coupangService.js';
 import { sendOpsAlert } from './notificationService.js';
 import { isReplyLinkModeEnabled } from '../utils/replyLinkMode.js';
+import { maybeGenerateBlogPostForQueue } from './blogService.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
@@ -878,6 +879,27 @@ export async function uploadQueueItem(queueId) {
     await dbUpdate('posts', { id: post.id }, { status: 'posted' });
     await recordSuccessfulUpload(account.id);
     await createMetricJobs(updated);
+    const blogPost = await maybeGenerateBlogPostForQueue({ account, post, queue: updated }).catch(async (blogError) => {
+      await logActivity({
+        account_id: account.id,
+        project_id: account.project_id,
+        post_id: post.id,
+        action: 'blog_auto_publish_failed',
+        level: 'warn',
+        message: blogError.message
+      });
+      return null;
+    });
+    if (blogPost) {
+      await logActivity({
+        account_id: account.id,
+        project_id: account.project_id,
+        post_id: post.id,
+        action: 'blog_auto_published',
+        message: blogPost.slug,
+        payload: { blogPostId: blogPost.id, slug: blogPost.slug }
+      });
+    }
     await logActivity({ account_id: account.id, project_id: account.project_id, post_id: post.id, action: 'upload_completed', message: uploaded.postUrl });
     if (uploaded.raw?.replyWarning) {
       await logActivity({

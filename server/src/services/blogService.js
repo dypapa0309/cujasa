@@ -27,6 +27,18 @@ function toSlug(title) {
 }
 
 export async function generateBlogPost(topicId) {
+  return generateBlogPostForTopic(topicId);
+}
+
+export async function generateBlogPostForTopic(topicId, { queueId = null, postId = null, account = null } = {}) {
+  if (queueId) {
+    const existing = await dbGet('blog_posts', { queue_id: queueId }).catch(() => null);
+    if (existing) return existing;
+  }
+  if (postId) {
+    const existing = await dbGet('blog_posts', { post_id: postId }).catch(() => null);
+    if (existing) return existing;
+  }
   const topic = await dbGet('topics', { id: topicId });
   const postProducts = await dbList('post_products', { topic_id: topicId });
   const products = await Promise.all(
@@ -45,12 +57,29 @@ export async function generateBlogPost(topicId) {
   return dbInsert('blog_posts', {
     account_id: topic.account_id,
     topic_id: topicId,
+    post_id: postId,
+    queue_id: queueId,
     slug: toSlug(result.title || topic.title),
     title: result.title || topic.title,
     meta_description: result.metaDescription || fallback.metaDescription,
     content: sanitizeHtml(result.content || fallback.content),
+    cover_image_url: process.env.BLOG_IMAGE_URL || '',
+    tags: [topic.title, topic.target_user, account?.content_scope].filter(Boolean).slice(0, 8),
+    seo_keywords: [topic.title, ...(topic.search_keywords || []), account?.content_scope].filter(Boolean).slice(0, 12),
     status: 'published',
-    published_at: new Date().toISOString()
+    published_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  });
+}
+
+export async function maybeGenerateBlogPostForQueue({ account, post, queue } = {}) {
+  if (!account?.blog_auto_publish_enabled) return null;
+  if (process.env.NODE_ENV === 'production') return null;
+  if (!post?.topic_id || !queue?.id) return null;
+  return generateBlogPostForTopic(post.topic_id, {
+    queueId: queue.id,
+    postId: post.id,
+    account
   });
 }
 

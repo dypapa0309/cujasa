@@ -48,6 +48,7 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
       product_mention_style: account.product_mention_style || 'natural',
       emoji_level: account.emoji_level || 'low',
       safe_debate_enabled: Boolean(account.safe_debate_enabled),
+      anonymous_learning_enabled: Boolean(account.anonymous_learning_enabled),
       content_style_note: account.content_style_note || '',
       forbidden_topics: Array.isArray(account.forbidden_topics) ? account.forbidden_topics.join('\n') : '',
       forbidden_words: Array.isArray(account.forbidden_words) ? account.forbidden_words.join('\n') : '',
@@ -310,6 +311,17 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
                 safe_debate_enabled: e.target.checked,
                 content_mode: !e.target.checked && p.content_mode === 'safe_debate' ? 'question' : p.content_mode
               }))}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-3">
+            <span>
+              <span className="block font-bold text-gray-700">익명 패턴 학습 활용 허용</span>
+              <span className="text-xs text-gray-400">인기글 레퍼런스에서 원문 없이 패턴만 익명 공용 자산으로 활용합니다.</span>
+            </span>
+            <input
+              type="checkbox"
+              checked={form.anonymous_learning_enabled}
+              onChange={(e) => setForm((p) => ({ ...p, anonymous_learning_enabled: e.target.checked }))}
             />
           </label>
         </div>

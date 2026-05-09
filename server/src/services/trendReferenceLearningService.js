@@ -1,0 +1,286 @@
+import { createHash } from 'node:crypto';
+import { getAccount } from './accountService.js';
+import { dbGet, dbInsert, dbList, dbUpdate, logActivity } from './supabaseService.js';
+import { extractTrendPatterns, rankTrendSamples } from './trendPatternService.js';
+
+const SOURCE_TYPES = new Set(['text_paste', 'screenshot_ocr', 'admin_seed']);
+const QUALITY_STATUSES = new Set(['candidate', 'approved', 'rejected']);
+const UNSAFE_FLAGS = new Set(['unsafe_conflict_frame', 'empty_text', 'source_similarity_high']);
+
+function normalizeText(value = '') {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function shortText(value = '', max = 120) {
+  return normalizeText(value).slice(0, max);
+}
+
+function sourceFingerprint(sample = {}) {
+  const base = [
+    normalizeText(sample.sourceText || sample.text || ''),
+    normalizeText(sample.topicKeyword || ''),
+    normalizeText(sample.sourceType || '')
+  ].join('|');
+  return createHash('sha256').update(base).digest('hex');
+}
+
+function patternFingerprint(pattern = {}, sourceType = '') {
+  const base = [
+    pattern.hookPattern,
+    pattern.commentQuestion,
+    pattern.tensionType,
+    pattern.emotionSignal,
+    pattern.reusableStructure,
+    pattern.voicePattern,
+    pattern.formatPattern,
+    pattern.lineBreakPattern,
+    pattern.listStructure,
+    pattern.punctuationStyle,
+    pattern.toneRegister,
+    sourceType
+  ].map(normalizeText).join('|');
+  return createHash('sha256').update(base).digest('hex');
+}
+
+function isSafePattern(pattern = {}) {
+  const flags = Array.isArray(pattern.safetyFlags) ? pattern.safetyFlags : [];
+  return !flags.some((flag) => UNSAFE_FLAGS.has(flag));
+}
+
+export function sanitizeTrendPatternAsset(pattern = {}, context = {}) {
+  return {
+    category: shortText(context.category || pattern.topicKeyword || ''),
+    target_audience_hint: shortText(context.targetAudienceHint || ''),
+    hook_pattern: shortText(pattern.hookPattern, 180) || '생활 기준 질문으로 시작',
+    comment_question_pattern: shortText(pattern.commentQuestion, 220) || '개인 기준을 가볍게 묻기',
+    tension_type: shortText(pattern.tensionType, 60),
+    emotion_signal: shortText(pattern.emotionSignal, 80),
+    reusable_structure: shortText(pattern.reusableStructure, 400),
+    voice_pattern: shortText(pattern.voicePattern, 220),
+    format_pattern: shortText(pattern.formatPattern, 220),
+    line_break_pattern: shortText(pattern.lineBreakPattern, 180),
+    list_structure: shortText(pattern.listStructure, 220),
+    punctuation_style: shortText(pattern.punctuationStyle, 160),
+    tone_register: shortText(pattern.toneRegister, 160),
+    performance_score: Math.max(0, Number(pattern.performanceScore || 0)),
+    safety_flags: Array.isArray(pattern.safetyFlags) ? pattern.safetyFlags.map(shortText).slice(0, 10) : [],
+    source_type: SOURCE_TYPES.has(context.sourceType) ? context.sourceType : 'text_paste',
+    quality_status: QUALITY_STATUSES.has(context.qualityStatus) ? context.qualityStatus : 'candidate',
+    source_fingerprint: context.sourceFingerprint || patternFingerprint(pattern, context.sourceType),
+    usage_count: 0
+  };
+}
+
+export function publicAssetToPromptPattern(asset = {}) {
+  return {
+    sourceId: `public-${asset.id || asset.source_fingerprint || 'pattern'}`,
+    sourceType: asset.source_type || 'admin_seed',
+    hookPattern: asset.hook_pattern || '',
+    commentQuestion: asset.comment_question_pattern || '',
+    tensionType: asset.tension_type || '',
+    emotionSignal: asset.emotion_signal || '',
+    reusableStructure: asset.reusable_structure || '',
+    voicePattern: asset.voice_pattern || '',
+    formatPattern: asset.format_pattern || '',
+    lineBreakPattern: asset.line_break_pattern || '',
+    listStructure: asset.list_structure || '',
+    punctuationStyle: asset.punctuation_style || '',
+    toneRegister: asset.tone_register || '',
+    performanceScore: Number(asset.performance_score || 0),
+    safetyFlags: Array.isArray(asset.safety_flags) ? asset.safety_flags : [],
+    sourceText: ''
+  };
+}
+
+function sanitizePersonalPattern(pattern = {}, context = {}) {
+  return {
+    sourceId: `personal-${pattern.sourceId || patternFingerprint(pattern, context.sourceType).slice(0, 12)}`,
+    sourceType: SOURCE_TYPES.has(context.sourceType) ? context.sourceType : 'text_paste',
+    category: shortText(context.category || pattern.topicKeyword || '', 120),
+    targetAudienceHint: shortText(context.targetAudienceHint || '', 120),
+    hookPattern: shortText(pattern.hookPattern, 180) || '생활 기준 질문으로 시작',
+    commentQuestion: shortText(pattern.commentQuestion, 220) || '개인 기준을 가볍게 묻기',
+    tensionType: shortText(pattern.tensionType, 60),
+    emotionSignal: shortText(pattern.emotionSignal, 80),
+    reusableStructure: shortText(pattern.reusableStructure, 400),
+    voicePattern: shortText(pattern.voicePattern, 220),
+    formatPattern: shortText(pattern.formatPattern, 220),
+    lineBreakPattern: shortText(pattern.lineBreakPattern, 180),
+    listStructure: shortText(pattern.listStructure, 220),
+    punctuationStyle: shortText(pattern.punctuationStyle, 160),
+    toneRegister: shortText(pattern.toneRegister, 160),
+    performanceScore: Math.max(0, Number(pattern.performanceScore || 0)),
+    safetyFlags: Array.isArray(pattern.safetyFlags) ? pattern.safetyFlags.map(shortText).slice(0, 10) : [],
+    sourceText: ''
+  };
+}
+
+async function savePersonalReferencePatterns(account, patterns = [], context = {}) {
+  const existing = Array.isArray(account.personal_reference_patterns) ? account.personal_reference_patterns : [];
+  const next = [
+    ...patterns.filter(isSafePattern).map((pattern) => sanitizePersonalPattern(pattern, context)),
+    ...existing
+  ];
+  const seen = new Set();
+  const deduped = next.filter((pattern) => {
+    const key = patternFingerprint(pattern, pattern.sourceType);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 30);
+  await dbUpdate('accounts', { id: account.id }, { personal_reference_patterns: deduped });
+  return deduped;
+}
+
+export async function saveAnonymousTrendPatternAssets(patterns = [], context = {}) {
+  const rows = [];
+  for (const pattern of patterns) {
+    if (!isSafePattern(pattern)) continue;
+    const row = sanitizeTrendPatternAsset(pattern, context);
+    if (row.source_fingerprint) {
+      const existing = await dbGet('trend_reference_patterns', { source_fingerprint: row.source_fingerprint }).catch(() => null);
+      if (existing) continue;
+    }
+    rows.push(await dbInsert('trend_reference_patterns', row));
+  }
+  return rows;
+}
+
+export async function ingestTrendReferencesForAccount(accountId, {
+  samples = [],
+  sourceType = 'text_paste',
+  category = '',
+  targetAudienceHint = '',
+  useAi = true
+} = {}) {
+  const account = await getAccount(accountId);
+  if (!account) {
+    const error = new Error('Account not found');
+    error.status = 404;
+    throw error;
+  }
+  const normalizedSamples = (Array.isArray(samples) ? samples : [])
+    .map((sample, index) => ({
+      id: sample.id || `customer-reference-${index}`,
+      sourceText: normalizeText(sample.sourceText || sample.text || ''),
+      topicKeyword: normalizeText(sample.topicKeyword || category || account.content_scope || ''),
+      likes: Number(sample.likes || 0),
+      replies: Number(sample.replies || sample.comments || 0),
+      reposts: Number(sample.reposts || 0),
+      views: Number(sample.views || 0),
+      sourceType
+    }))
+    .filter((sample) => sample.sourceText.length >= 20);
+
+  const rankedSamples = rankTrendSamples(normalizedSamples, { query: category || account.content_scope || '', limit: 20 });
+  const patterns = await extractTrendPatterns(rankedSamples, { query: category || account.content_scope || '', limit: 8, useAi });
+  const safePatterns = patterns.filter(isSafePattern);
+  const savedPersonalPatterns = await savePersonalReferencePatterns(account, safePatterns, {
+    category: category || account.content_scope || '',
+    targetAudienceHint: targetAudienceHint || account.target_audience || '',
+    sourceType
+  });
+  let sharedPatterns = [];
+
+  if (account.anonymous_learning_enabled) {
+    sharedPatterns = await saveAnonymousTrendPatternAssets(safePatterns, {
+      category: category || account.content_scope || '',
+      targetAudienceHint: targetAudienceHint || account.target_audience || '',
+      sourceType,
+      qualityStatus: 'candidate',
+      sourceFingerprint: normalizedSamples.length === 1 ? sourceFingerprint(normalizedSamples[0]) : ''
+    });
+  }
+
+  await logActivity({
+    account_id: account.id,
+    project_id: account.project_id,
+    action: 'trend_references_ingested',
+    level: 'info',
+    message: `인기글 레퍼런스 ${normalizedSamples.length}개에서 패턴 ${safePatterns.length}개를 추출했습니다.`,
+    payload: {
+      sourceType,
+      anonymousLearningEnabled: Boolean(account.anonymous_learning_enabled),
+      sharedPatternCount: sharedPatterns.length,
+      personalPatternCount: savedPersonalPatterns.length,
+      rejectedUnsafeCount: patterns.length - safePatterns.length
+    }
+  });
+
+  return {
+    samples: rankedSamples,
+    personalPatterns: savedPersonalPatterns,
+    sharedPatternCount: sharedPatterns.length,
+    personalPatternCount: savedPersonalPatterns.length,
+    anonymousLearningEnabled: Boolean(account.anonymous_learning_enabled)
+  };
+}
+
+export async function listApprovedTrendPatternAssets({ category = '', targetAudienceHint = '', limit = 8 } = {}) {
+  const rows = await dbList('trend_reference_patterns', { quality_status: 'approved' }, {
+    order: 'performance_score',
+    ascending: false,
+    limit: Math.max(1, Number(limit || 8) * 3)
+  }).catch(() => []);
+  const categoryText = normalizeText(category).toLowerCase();
+  const audienceText = normalizeText(targetAudienceHint).toLowerCase();
+  return rows
+    .filter((row) => {
+      const flags = Array.isArray(row.safety_flags) ? row.safety_flags : [];
+      if (flags.some((flag) => UNSAFE_FLAGS.has(flag))) return false;
+      const haystack = normalizeText([row.category, row.target_audience_hint].filter(Boolean).join(' ')).toLowerCase();
+      if (categoryText && haystack.includes(categoryText)) return true;
+      if (audienceText && haystack.includes(audienceText)) return true;
+      return !categoryText && !audienceText;
+    })
+    .slice(0, Math.max(1, Number(limit || 8)));
+}
+
+export async function buildReferencePatternContext(account = {}, { personalPatterns = [], limit = 5 } = {}) {
+  const storedPersonal = Array.isArray(account.personal_reference_patterns) ? account.personal_reference_patterns : [];
+  const personal = [
+    ...(Array.isArray(personalPatterns) ? personalPatterns : []),
+    ...storedPersonal
+  ].filter(isSafePattern);
+  const publicRows = await listApprovedTrendPatternAssets({
+    category: account.content_scope || '',
+    targetAudienceHint: account.target_audience || '',
+    limit
+  });
+  const publicPatterns = publicRows.map(publicAssetToPromptPattern);
+  const hasPersonal = personal.length > 0;
+  const selectedPersonal = hasPersonal ? personal.slice(0, Math.ceil(limit * 0.7)) : [];
+  const selectedPublic = publicPatterns.slice(0, hasPersonal ? Math.max(1, Math.floor(limit * 0.2)) : Math.ceil(limit * 0.6));
+  return {
+    mix: hasPersonal
+      ? { personalReferences: 0.7, publicAnonymousPatterns: 0.2, safeDefault: 0.1 }
+      : { personalReferences: 0, publicAnonymousPatterns: 0.6, safeDefault: 0.4 },
+    patterns: [...selectedPersonal, ...selectedPublic].slice(0, limit),
+    publicPatternCount: publicPatterns.length,
+    personalPatternCount: personal.length
+  };
+}
+
+export async function updateTrendPatternQualityStatus(id, status) {
+  if (!QUALITY_STATUSES.has(status)) {
+    const error = new Error('지원하지 않는 패턴 상태입니다.');
+    error.status = 400;
+    throw error;
+  }
+  const [updated] = await dbUpdate('trend_reference_patterns', { id }, { quality_status: status });
+  if (!updated) {
+    const error = new Error('패턴을 찾지 못했습니다.');
+    error.status = 404;
+    throw error;
+  }
+  return updated;
+}
+
+export async function listTrendPatternAssets({ status = 'candidate', limit = 100 } = {}) {
+  const filters = QUALITY_STATUSES.has(status) ? { quality_status: status } : {};
+  return dbList('trend_reference_patterns', filters, {
+    order: 'created_at',
+    ascending: false,
+    limit: Math.max(1, Math.min(200, Number(limit || 100)))
+  }).catch(() => []);
+}

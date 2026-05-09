@@ -6,10 +6,18 @@ create table if not exists blog_posts (
   title text not null,
   meta_description text,
   content text not null,
+  post_id uuid references posts(id) on delete set null,
+  queue_id uuid references post_queue(id) on delete set null,
+  cover_image_url text,
+  tags jsonb not null default '[]',
+  seo_keywords jsonb not null default '[]',
   status text not null default 'published' check (status in ('draft', 'published')),
   published_at timestamptz not null default now(),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 create index if not exists idx_blog_posts_slug on blog_posts(slug);
 create index if not exists idx_blog_posts_published on blog_posts(published_at desc) where status = 'published';
+create unique index if not exists idx_blog_posts_queue_id on blog_posts(queue_id) where queue_id is not null;
+create unique index if not exists idx_blog_posts_post_id on blog_posts(post_id) where post_id is not null;

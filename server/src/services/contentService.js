@@ -9,6 +9,7 @@ import { prepareGeneratedPostBody } from '../utils/koreanContentQuality.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { validatePostsResponse } from '../utils/aiResponseSchemas.js';
 import { buildChoiceTensionFallback, scorePostEngagement } from '../utils/postEngagementScoring.js';
+import { buildReferencePatternContext } from './trendReferenceLearningService.js';
 
 const MIN_ENGAGEMENT_SCORE = 60;
 
@@ -41,6 +42,12 @@ function candidateScoreSummary(candidate, index, selected) {
 export async function generatePosts(topicId) {
   const topic = await dbGet('topics', { id: topicId });
   const account = await getAccount(topic.account_id);
+  const referenceContext = await buildReferencePatternContext(account, { limit: 5 });
+  const accountForPrompt = {
+    ...account,
+    referencePatterns: referenceContext.patterns,
+    referencePatternMix: referenceContext.mix
+  };
   const selectedRows = await dbList('post_products', { topic_id: topicId });
   const selected = (await Promise.all(selectedRows.map(async (row) => {
     const product = await dbGet('coupang_products', { id: row.product_id });
@@ -48,12 +55,12 @@ export async function generatePosts(topicId) {
   }))).filter(Boolean);
   const fallback = {
     posts: [{
-      contentType: getFallbackContentType(account),
-      body: buildFallbackPostBody(topic, account),
+      contentType: getFallbackContentType(accountForPrompt),
+      body: buildFallbackPostBody(topic, accountForPrompt),
       riskLevel: 'low'
     }]
   };
-  const result = await getJson(generatePostsPrompt(topic, selected, account), fallback, {
+  const result = await getJson(generatePostsPrompt(topic, selected, accountForPrompt), fallback, {
     schemaName: 'generate_posts',
     validate: validatePostsResponse,
     logContext: {
@@ -240,7 +247,11 @@ export async function generatePosts(topicId) {
     rubric: best.engagement.rubric,
     rejectedCandidateCount: rejectedCandidates.length + candidates.filter((candidate) => candidate !== best).length,
     candidateScores,
-    fallbackUsed: Boolean(best.fallbackUsed)
+    fallbackUsed: Boolean(best.fallbackUsed),
+    referencePatternMix: referenceContext.mix,
+    referencePatternCount: referenceContext.patterns.length,
+    publicReferencePatternCount: referenceContext.publicPatternCount,
+    personalReferencePatternCount: referenceContext.personalPatternCount
   };
 
   for (const [index, candidate] of allCandidates.entries()) {

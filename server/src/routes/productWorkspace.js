@@ -17,6 +17,9 @@ import {
   saveSpreadCampaign,
   updateSpreadCampaignStatus
 } from '../services/productWorkspaceService.js';
+import { buildReferencePatternContext, ingestTrendReferencesForAccount } from '../services/trendReferenceLearningService.js';
+import { getAccount } from '../services/accountService.js';
+import { extractTrendReferenceFromImage } from '../services/trendReferenceOcrService.js';
 
 const router = Router();
 
@@ -80,6 +83,53 @@ router.post('/dexor/reset', async (req, res, next) => {
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await resetDexorWorkspace(user.userId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/cujasa/trend-references', async (req, res, next) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const accountId = req.body?.accountId;
+    if (!accountId || !user.allowedAccountIds?.includes(accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(await ingestTrendReferencesForAccount(accountId, req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/cujasa/trend-reference-ocr', async (req, res, next) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const accountId = req.body?.accountId;
+    if (!accountId || !user.allowedAccountIds?.includes(accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(await extractTrendReferenceFromImage({
+      fileName: req.body?.fileName || '',
+      mimeType: req.body?.mimeType || req.body?.type || 'image/png',
+      base64: req.body?.base64 || '',
+      topicKeyword: req.body?.topicKeyword || req.body?.category || ''
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/cujasa/reference-pattern-context/:accountId', async (req, res, next) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!user.allowedAccountIds?.includes(req.params.accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const account = await getAccount(req.params.accountId);
+    res.json(await buildReferencePatternContext(account, { limit: Number(req.query.limit || 5) }));
   } catch (error) {
     next(error);
   }

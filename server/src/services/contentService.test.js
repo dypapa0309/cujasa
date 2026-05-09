@@ -25,4 +25,6 @@ test('generatePosts stores one selected post with engagement metadata', async ()
   assert.equal(typeof saved.metadata.rubric.commentEaseScore, 'number');
   assert.equal(typeof saved.metadata.rubric.choiceTensionScore, 'number');
   assert.equal(typeof saved.metadata.rubric.adTonePenalty, 'number');
+  assert.ok(saved.metadata.referencePatternMix);
+  assert.equal(typeof saved.metadata.referencePatternCount, 'number');
 });

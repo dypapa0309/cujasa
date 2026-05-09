@@ -4,6 +4,7 @@ import { getAccountStyleProfile } from '../utils/accountStyle.js';
 export function generatePostsPrompt(topic, products, account) {
   const contentContext = getContentGuardrailContext();
   const accountProfile = getAccountStyleProfile(account);
+  const referencePatterns = Array.isArray(account.referencePatterns) ? account.referencePatterns : [];
   return [
     { role: 'system', content: 'You write short, natural Korean Threads posts. Return strict JSON only. Account tone is a style guide, not a keyword checklist. Natural readability comes first.' },
     {
@@ -19,8 +20,24 @@ export function generatePostsPrompt(topic, products, account) {
           contentScope: account.content_scope,
           forbiddenTopics: account.forbidden_topics,
           forbiddenWords: account.forbidden_words,
-          contentStrategy: accountProfile.strategy
+          contentStrategy: accountProfile.strategy,
+          referencePatternMix: account.referencePatternMix || null
         },
+        referencePatterns: referencePatterns.map((pattern) => ({
+          hookPattern: pattern.hookPattern,
+          commentQuestion: pattern.commentQuestion,
+          tensionType: pattern.tensionType,
+          emotionSignal: pattern.emotionSignal,
+          reusableStructure: pattern.reusableStructure,
+          voicePattern: pattern.voicePattern,
+          formatPattern: pattern.formatPattern,
+          lineBreakPattern: pattern.lineBreakPattern,
+          listStructure: pattern.listStructure,
+          punctuationStyle: pattern.punctuationStyle,
+          toneRegister: pattern.toneRegister,
+          performanceScore: pattern.performanceScore,
+          sourceType: pattern.sourceType || 'anonymous_pattern'
+        })),
         topic,
         selectedProducts: products.map((p) => ({
           name: p.product_name,
@@ -39,6 +56,15 @@ export function generatePostsPrompt(topic, products, account) {
           'Generate exactly 5 candidate posts for this topic. The service will score them and save only the best one.',
           'Prioritize comments/replies over pure information density.',
           'Default to safe choice-tension frames: A/B choice, criteria that split opinions, "people who tried this" questions, and situation-based preferences.',
+          referencePatterns.length
+            ? 'Use referencePatterns as strong structural and voice inspiration. Never copy exact source wording, but mirror the pacing, line breaks, list shape, punctuation habits, tone register, hook pattern, question pattern, and tension type.'
+            : 'No referencePatterns are available, so rely on the safe default engagement frames.',
+          referencePatterns.length
+            ? 'If a reference pattern uses raw list-style observations, keep that raw Threads feel. Avoid formal explanatory phrases such as "경향이 있습니다", "영향을 미칩니다", or "특징이 있습니다".'
+            : 'Keep the tone conversational and not essay-like.',
+          referencePatterns.length
+            ? 'When mirroring a list pattern, write short subjective one-line observations with new labels and new details. End with one light comment prompt only.'
+            : 'Avoid long explanations.',
           'Every post should make the reader able to answer in under 5 seconds.',
           'When returning multiple posts, distribute contentType across the allowed contentTypes instead of using one type repeatedly.',
           'Use varied angles: one can be empathy, one checklist, one problem-solution, one question, or one mistake-prevention when allowed.',
