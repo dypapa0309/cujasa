@@ -88,3 +88,23 @@ test('uploadPost treats missing reply link env as enabled by default', async () 
     restoreEnv('THREADS_REPLY_LINK_MODE_ENABLED', previousReply);
   }
 });
+
+test('uploadPost blocks leaked account ids before mock or live upload', async () => {
+  const previousMock = process.env.MOCK_UPLOAD;
+  process.env.MOCK_UPLOAD = 'true';
+
+  try {
+    await assert.rejects(
+      uploadPost({
+        account: { name: 'lovehyun45', account_handle: '@lovehyun45', threads_link_delivery_mode: 'reply' },
+        post: {
+          id: 'post-4',
+          body: 'lovehyun45 냄새 줄이는 법, 이건 은근 기준이 갈리는 선택이에요.\n\n여러분은 이런 거 고를 때 실용성 쪽이에요, 아니면 편한 사용감 쪽이에요?'
+        }
+      }),
+      (error) => error.code === 'POST_BODY_QUALITY_BLOCKED'
+    );
+  } finally {
+    restoreEnv('MOCK_UPLOAD', previousMock);
+  }
+});

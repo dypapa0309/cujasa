@@ -1,4 +1,4 @@
-import { sanitizeContentTitle } from './contentText.js';
+import { inspectGeneratedPostText, sanitizeContentTitle } from './contentText.js';
 
 function firstSentenceOf(body = '') {
   return String(body || '').split(/\n|[.!?。！？]/).map((line) => line.trim()).filter(Boolean)[0] || '';
@@ -19,6 +19,7 @@ function clampScore(value, min = 0, max = 100) {
 export function scorePostEngagement(body = '', { products = [] } = {}) {
   const text = String(body || '').trim();
   const first = firstSentenceOf(text);
+  const inspection = inspectGeneratedPostText(text);
   const productNames = products.map((product) => String(product.product_name || product.name || '').trim()).filter(Boolean);
   const productMentions = productNames.reduce((sum, name) => sum + (name && text.includes(name) ? 1 : 0), 0);
   const questionCount = countMatches(text, /[?？]/g);
@@ -30,17 +31,21 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
     lowAdTone: !/(구매|최저가|특가|할인|링크|가격|꼭 필요한|필수템|강추|대박|완벽|무조건)/.test(text),
     productNatural: productMentions <= 1 && !/(상품|제품).{0,8}(추천|구매)/.test(text),
     concise: text.length >= 35 && text.length <= 230,
-    safe: !/(한심|극혐|노답|틀딱|맘충|남혐|여혐|거지|무식|병신|정치|남자들은|여자들은|요즘 애들|아줌마|아재|지역|진보|보수)/.test(text)
+    safe: !/(한심|극혐|노답|틀딱|맘충|남혐|여혐|거지|무식|병신|정치|남자들은|여자들은|요즘 애들|아줌마|아재|지역|진보|보수)/.test(text),
+    genericTemplate: inspection.genericTemplate,
+    accountTokenLeak: inspection.accountTokenLeak
   };
   const rubric = {
     hookScore: checks.hook ? 18 : (first.length >= 12 ? 8 : 2),
     commentEaseScore: checks.easyQuestion ? (questionCount <= 1 ? 20 : 16) : 4,
-    choiceTensionScore: checks.choiceTension ? 18 : 4,
-    specificityScore: checks.concreteSituation ? 16 : 5,
+    choiceTensionScore: checks.choiceTension ? (checks.genericTemplate ? 6 : 18) : 4,
+    specificityScore: checks.concreteSituation ? 16 : -8,
     adTonePenalty: checks.lowAdTone ? 0 : -18,
     productFitScore: checks.productNatural ? 12 : -12,
     safetyPenalty: checks.safe ? 0 : -70,
-    readabilityScore: checks.concise ? 10 : 2
+    readabilityScore: checks.concise ? 10 : 2,
+    templatePenalty: checks.genericTemplate ? -35 : 0,
+    accountTokenPenalty: checks.accountTokenLeak ? -80 : 0
   };
   const reasons = [];
   if (checks.hook) reasons.push('첫 문장 후킹');
@@ -55,6 +60,8 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
   if (checks.concise) reasons.push('짧고 읽기 쉬움');
   else reasons.push('길이 감점');
   if (!checks.safe) reasons.push('안전성 위험');
+  if (checks.genericTemplate) reasons.push('템플릿 문장 감점');
+  if (checks.accountTokenLeak) reasons.push('계정 아이디 노출 감점');
 
   let pattern = 'empathy_prompt';
   if (checks.choiceTension) pattern = 'choice_tension';
@@ -68,7 +75,9 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
     + rubric.productFitScore
     + rubric.readabilityScore
     + rubric.adTonePenalty
-    + rubric.safetyPenalty;
+    + rubric.safetyPenalty
+    + rubric.templatePenalty
+    + rubric.accountTokenPenalty;
 
   return {
     engagementScore: clampScore(rawScore),
@@ -83,5 +92,5 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
 export function buildChoiceTensionFallback(topic = {}, account = {}) {
   const title = sanitizeContentTitle(topic.title || account.content_scope || '생활용품 고르는 기준', account);
   const angle = String(topic.angle || '사용 기준').trim();
-  return `${title} 고를 때 처음엔 다 비슷해 보이는데, 막상 쓰면 ${angle}에서 차이가 나요.\n\n자주 쓰는 사람은 관리 쉬운 쪽을 보고, 가끔 쓰는 사람은 보관이 편한 쪽을 더 보더라고요.\n\n여러분은 이런 거 고를 때 관리 쉬운 쪽이에요, 보관 편한 쪽이에요?`;
+  return `${title}은 처음엔 다 비슷해 보여도 실제로 쓰면 기준이 꽤 갈려요.\n\n저는 ${angle}처럼 바로 체감되는 기준을 먼저 보는 편입니다.\n\n여러분은 오래 관리하기 쉬운 쪽을 보세요, 당장 쓰기 편한 쪽을 보세요?`;
 }

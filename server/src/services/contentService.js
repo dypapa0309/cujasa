@@ -15,6 +15,20 @@ import { sanitizePostBody } from '../utils/contentText.js';
 
 const MIN_ENGAGEMENT_SCORE = 60;
 
+function preparePostBodyCandidate(rawBody, account) {
+  const initialRisk = checkAndRewriteRisk(rawBody);
+  const prepared = prepareGeneratedPostBody(initialRisk.body);
+  const sanitized = sanitizePostBody(prepared.body, account);
+  const normalized = prepareGeneratedPostBody(sanitized);
+  return {
+    risk: checkAndRewriteRisk(normalized.body),
+    prepared: {
+      ...normalized,
+      warnings: [...prepared.warnings, ...normalized.warnings]
+    }
+  };
+}
+
 function getFallbackContentType(account = {}) {
   const mode = account.content_mode || 'empathy';
   const typeMap = {
@@ -77,13 +91,11 @@ export async function generatePosts(topicId) {
   const candidates = [];
   const rejectedCandidates = [];
   for (const item of result.posts || []) {
-    const risk = checkAndRewriteRisk(item.body);
-    let prepared = prepareGeneratedPostBody(risk.body);
-    prepared = { ...prepared, body: sanitizePostBody(prepared.body, account) };
+    let { risk, prepared } = preparePostBodyCandidate(item.body, account);
     let contentTypeToSave = item.contentType || getFallbackContentType(account);
     const rejectionReasons = [];
     if (!prepared.body || prepared.body.length < 20) {
-      prepared = prepareGeneratedPostBody(buildFallbackPostBody(topic, account));
+      ({ risk, prepared } = preparePostBodyCandidate(buildFallbackPostBody(topic, account), account));
       prepared.warnings.push('fallback_body_used_after_cta_cleanup');
     }
     if (prepared.warnings.length) {
@@ -100,8 +112,7 @@ export async function generatePosts(topicId) {
 
     const hookScore = scorePostHook(prepared.body);
     if (!hookScore.strong) {
-      const strengthened = prepareGeneratedPostBody(strengthenPostHook(prepared.body, topic, account));
-      strengthened.body = sanitizePostBody(strengthened.body, account);
+      const strengthened = preparePostBodyCandidate(strengthenPostHook(prepared.body, topic, account), account);
       await logActivity({
         account_id: topic.account_id,
         project_id: topic.project_id,
@@ -111,11 +122,12 @@ export async function generatePosts(topicId) {
         message: '첫 문장 후킹 신호가 약해 공감/댓글 유도형 훅으로 강화했습니다.',
         payload: {
           originalFirstSentence: hookScore.firstSentence,
-          nextFirstSentence: scorePostHook(strengthened.body).firstSentence,
+          nextFirstSentence: scorePostHook(strengthened.prepared.body).firstSentence,
           checks: hookScore.checks
         }
       });
-      prepared = strengthened;
+      risk = strengthened.risk;
+      prepared = strengthened.prepared;
     }
 
     const guardrail = validatePostCandidate(prepared.body, account, topic);
@@ -141,8 +153,8 @@ export async function generatePosts(topicId) {
     const styleFit = validatePostStyleFit(prepared.body, account);
     if (!styleFit.allowed) {
       const originalBody = prepared.body;
-      const fallbackPrepared = prepareGeneratedPostBody(buildChoiceTensionFallback(topic, account));
-      fallbackPrepared.body = sanitizePostBody(fallbackPrepared.body, account);
+      const fallbackCandidate = preparePostBodyCandidate(buildChoiceTensionFallback(topic, account), account);
+      const fallbackPrepared = fallbackCandidate.prepared;
       const fallbackStyleFit = validatePostStyleFit(fallbackPrepared.body, account);
       await logActivity({
         account_id: topic.account_id,
@@ -170,6 +182,7 @@ export async function generatePosts(topicId) {
         });
         continue;
       }
+      risk = fallbackCandidate.risk;
       prepared = fallbackPrepared;
       contentTypeToSave = getFallbackContentType(account);
     }
@@ -206,10 +219,7 @@ export async function generatePosts(topicId) {
   }
 
   if (!candidates.length || Math.max(...candidates.map((candidate) => candidate.engagement.engagementScore)) < MIN_ENGAGEMENT_SCORE) {
-    const fallbackBody = prepareGeneratedPostBody(buildChoiceTensionFallback(topic, account)).body;
-    const fallbackRisk = checkAndRewriteRisk(fallbackBody);
-    const fallbackPrepared = prepareGeneratedPostBody(fallbackRisk.body);
-    fallbackPrepared.body = sanitizePostBody(fallbackPrepared.body, account);
+    const { risk: fallbackRisk, prepared: fallbackPrepared } = preparePostBodyCandidate(buildChoiceTensionFallback(topic, account), account);
     const fallbackGuardrail = validatePostCandidate(fallbackPrepared.body, account, topic);
     const fallbackStyleFit = validatePostStyleFit(fallbackPrepared.body, account);
     if (fallbackGuardrail.allowed && fallbackStyleFit.allowed && fallbackRisk.riskLevel !== 'high') {

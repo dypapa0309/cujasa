@@ -12,7 +12,6 @@ export function selectProductsPrompt(topic, products, account = null, performanc
         contentContext,
         accountProfile,
         account: account ? {
-          name: account.name,
           targetAudience: account.target_audience,
           contentScope: account.content_scope,
           forbiddenTopics: account.forbidden_topics,
@@ -44,6 +43,7 @@ export function selectProductsPrompt(topic, products, account = null, performanc
           'account target audience fit',
           'account content scope fit',
           'account tone fit',
+          'never use account names, login IDs, Threads handles, or @handles as product/topic matching signals',
           performanceSignals?.topProducts?.length
             ? 'When candidates are otherwise equally relevant, prefer products or product groups similar to historically high-click products.'
             : 'No reliable product click history is available yet, so judge fit from the current topic and account only.',

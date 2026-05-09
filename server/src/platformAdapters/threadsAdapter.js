@@ -1,4 +1,5 @@
 import { isReplyLinkModeEnabled } from '../utils/replyLinkMode.js';
+import { inspectGeneratedPostText } from '../utils/contentText.js';
 
 const THREADS_API = 'https://graph.threads.net/v1.0';
 const COUPANG_DISCLOSURE = '[광고] 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
@@ -125,19 +126,6 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
     throw error;
   }
   const replyText = linkUrl ? buildReplyText(linkUrl) : '';
-
-  if (process.env.MOCK_UPLOAD === 'true') {
-    const url = `${baseUrl}/mock/threads/${post.id}`;
-    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: buildPostText(post), comment: replyText || null, linkMode });
-    return { postUrl: url, raw: { mock: true, linkDeliveryMode: linkUrl ? deliveryMode : 'none', linkMode, replyText } };
-  }
-  if (!token) {
-    const error = new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');
-    error.code = 'THREADS_TOKEN_MISSING';
-    error.permanent = true;
-    throw error;
-  }
-
   const text = buildPostText(post);
   if (!text) {
     const error = new Error('Threads post text is empty after content cleanup. 콘텐츠 본문을 다시 생성해주세요.');
@@ -145,9 +133,29 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
     error.permanent = true;
     throw error;
   }
+  const quality = inspectGeneratedPostText(text, account);
+  if (!quality.publishable) {
+    const error = new Error('POST_BODY_QUALITY_BLOCKED: 계정 아이디 노출 또는 템플릿성 본문이 감지되어 업로드를 중단했습니다.');
+    error.code = 'POST_BODY_QUALITY_BLOCKED';
+    error.permanent = true;
+    error.quality = quality;
+    throw error;
+  }
   if (charLength(text) > THREADS_TEXT_LIMIT) {
     const error = new Error('Threads post text exceeds 500 characters after adding disclosure and link. 콘텐츠 본문을 줄인 뒤 다시 시도해주세요.');
     error.code = 'THREADS_TEXT_TOO_LONG';
+    error.permanent = true;
+    throw error;
+  }
+
+  if (process.env.MOCK_UPLOAD === 'true') {
+    const url = `${baseUrl}/mock/threads/${post.id}`;
+    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: text, comment: replyText || null, linkMode });
+    return { postUrl: url, raw: { mock: true, linkDeliveryMode: linkUrl ? deliveryMode : 'none', linkMode, replyText } };
+  }
+  if (!token) {
+    const error = new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');
+    error.code = 'THREADS_TOKEN_MISSING';
     error.permanent = true;
     throw error;
   }

@@ -37,7 +37,7 @@ test('choice tension fallback is comment-oriented', () => {
   );
   const score = scorePostEngagement(body);
 
-  assert.match(body, /쪽이에요/);
+  assert.match(body, /쪽을 보세요/);
   assert.equal(score.engagementPattern, 'choice_tension');
   assert.ok(score.engagementScore >= 60);
 });
@@ -50,5 +50,16 @@ test('choice tension fallback removes account login ids from topic titles', () =
 
   assert.doesNotMatch(body, /lovehyun45/i);
   assert.match(body, /냄새 줄이는 법/);
-  assert.match(body, /관리 쉬운 쪽/);
+  assert.match(body, /관리하기 쉬운 쪽/);
+});
+
+test('penalizes leaked account ids and generic template questions', () => {
+  const bad = 'lovehyun45 냄새 줄이는 법, 이건 은근 기준이 갈리는 선택이에요.\n생활 속 원인부터 잡기를 먼저 보는 사람도 있고, 편하게 쓰는 쪽을 더 중요하게 보는 사람도 있더라고요.\n여러분은 이런 거 고를 때 실용성 쪽이에요, 아니면 편한 사용감 쪽이에요?';
+  const score = scorePostEngagement(bad);
+
+  assert.equal(score.checks.accountTokenLeak, true);
+  assert.equal(score.checks.genericTemplate, true);
+  assert.ok(score.rubric.accountTokenPenalty < 0);
+  assert.ok(score.rubric.templatePenalty < 0);
+  assert.ok(score.engagementScore < 60);
 });
