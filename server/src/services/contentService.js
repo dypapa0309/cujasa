@@ -2,13 +2,15 @@ import { getJson } from './openaiService.js';
 import { getAccount } from './accountService.js';
 import { dbGet, dbInsert, dbList, logActivity } from './supabaseService.js';
 import { generatePostsPrompt } from '../prompts/generatePostsPrompt.js';
+import { rewritePostQualityPrompt } from '../prompts/rewritePostQualityPrompt.js';
 import { checkAndRewriteRisk } from './riskService.js';
 import { validatePostCandidate } from '../utils/contentGuardrails.js';
 import { buildFallbackPostBody, scorePostHook, strengthenPostHook, validatePostStyleFit } from '../utils/accountStyle.js';
 import { prepareGeneratedPostBody } from '../utils/koreanContentQuality.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
-import { validatePostsResponse } from '../utils/aiResponseSchemas.js';
+import { validatePostRewriteResponse, validatePostsResponse } from '../utils/aiResponseSchemas.js';
 import { buildChoiceTensionFallback, scorePostEngagement } from '../utils/postEngagementScoring.js';
+import { evaluatePostQualityGate } from '../utils/postQualityGate.js';
 import { buildReferencePatternContext, publicPatternIdFromSourceId } from './trendReferenceLearningService.js';
 import { buildAccountPerformanceSignals } from './analyticsService.js';
 import { sanitizePostBody } from '../utils/contentText.js';
@@ -50,6 +52,8 @@ function candidateScoreSummary(candidate, index, selected) {
     engagementScore: candidate.engagement?.engagementScore ?? 0,
     engagementPattern: candidate.engagement?.engagementPattern || null,
     rubric: candidate.engagement?.rubric || {},
+    qualityGate: candidate.qualityGate || null,
+    qualityRewriteUsed: Boolean(candidate.qualityRewriteUsed),
     selected,
     rejected: Boolean(candidate.rejected),
     rejectionReasons: candidate.rejectionReasons || []
@@ -58,7 +62,9 @@ function candidateScoreSummary(candidate, index, selected) {
 
 function isStableHumanlikeCandidate(candidate) {
   const engagement = candidate?.engagement;
-  return engagement?.engagementScore >= STABLE_HUMANLIKE_SCORE
+  const qualityGate = candidate?.qualityGate || evaluatePostQualityGate(engagement);
+  return qualityGate.passed
+    && engagement?.engagementScore >= STABLE_HUMANLIKE_SCORE
     && engagement?.checks?.livedInStructure
     && engagement?.checks?.concreteCriteria
     && engagement?.checks?.microDetail
@@ -67,6 +73,128 @@ function isStableHumanlikeCandidate(candidate) {
     && !engagement?.checks?.genericTemplate
     && !engagement?.checks?.aiLikeTone
     && !engagement?.checks?.accountTokenLeak;
+}
+
+function buildRewriteFallback(topic, account) {
+  return {
+    body: buildChoiceTensionFallback(topic, account),
+    contentType: getFallbackContentType(account),
+    changeSummary: '품질 기준 미달 후보를 안전한 생활 장면 fallback으로 재작성했습니다.',
+    riskLevel: 'low'
+  };
+}
+
+async function tryRewriteCandidateForQuality({
+  body,
+  contentType,
+  riskLevel,
+  engagement,
+  qualityGate,
+  topic,
+  account,
+  products,
+  logContext
+}) {
+  if (qualityGate.passed) {
+    return {
+      rewritten: false,
+      body,
+      contentType,
+      riskLevel,
+      engagement,
+      qualityGate
+    };
+  }
+
+  await logActivity({
+    ...logContext,
+    action: 'post_quality_rewrite_attempted',
+    level: 'info',
+    message: qualityGate.reasons.join('; '),
+    payload: {
+      contentType,
+      score: engagement.engagementScore,
+      reasons: qualityGate.reasons,
+      rewriteInstructions: qualityGate.rewriteInstructions
+    }
+  });
+
+  const rewrite = await getJson(
+    rewritePostQualityPrompt({ body, topic, products, account, engagement, qualityGate }),
+    () => buildRewriteFallback(topic, account),
+    {
+      schemaName: 'rewrite_post_quality',
+      validate: validatePostRewriteResponse,
+      logContext
+    }
+  );
+  const rewriteContentType = rewrite.contentType || contentType || getFallbackContentType(account);
+  const { risk: rewriteRisk, prepared: rewritePrepared } = preparePostBodyCandidate(rewrite.body, account);
+  const rewriteGuardrail = validatePostCandidate(rewritePrepared.body, account, topic);
+  const rewriteStyleFit = validatePostStyleFit(rewritePrepared.body, account);
+  const rewriteEngagement = scorePostEngagement(rewritePrepared.body, { products });
+  const rewriteQualityGate = evaluatePostQualityGate(rewriteEngagement);
+  const rewriteRejectedReasons = [
+    rewriteRisk.riskLevel === 'high' || rewrite.riskLevel === 'high' ? 'high_risk' : '',
+    !rewriteGuardrail.allowed ? 'guardrail_blocked' : '',
+    !rewriteStyleFit.allowed ? 'style_blocked' : '',
+    !rewriteQualityGate.passed ? 'quality_gate_failed_after_rewrite' : ''
+  ].filter(Boolean);
+
+  if (rewriteRejectedReasons.length) {
+    await logActivity({
+      ...logContext,
+      action: 'post_quality_rewrite_rejected',
+      level: 'warn',
+      message: rewriteRejectedReasons.join(', '),
+      payload: {
+        originalScore: engagement.engagementScore,
+        rewriteScore: rewriteEngagement.engagementScore,
+        originalReasons: qualityGate.reasons,
+        rewriteReasons: rewriteQualityGate.reasons,
+        guardrailReasons: rewriteGuardrail.reasons,
+        styleReasons: rewriteStyleFit.reasons,
+        changeSummary: rewrite.changeSummary || ''
+      }
+    });
+    return {
+      rewritten: false,
+      rewriteAttempted: true,
+      rewriteRejected: true,
+      rewriteRejectedReasons,
+      rewriteQualityGate,
+      body,
+      contentType,
+      riskLevel,
+      engagement,
+      qualityGate
+    };
+  }
+
+  await logActivity({
+    ...logContext,
+    action: 'post_quality_rewrite_used',
+    level: 'info',
+    message: rewrite.changeSummary || '품질 기준에 맞게 후보를 재작성했습니다.',
+    payload: {
+      originalScore: engagement.engagementScore,
+      rewriteScore: rewriteEngagement.engagementScore,
+      originalReasons: qualityGate.reasons,
+      rewriteReasons: rewriteQualityGate.reasons,
+      changeSummary: rewrite.changeSummary || ''
+    }
+  });
+
+  return {
+    rewritten: true,
+    rewriteAttempted: true,
+    body: rewritePrepared.body,
+    contentType: rewriteContentType,
+    riskLevel: rewrite.riskLevel || rewriteRisk.riskLevel,
+    engagement: rewriteEngagement,
+    qualityGate: rewriteQualityGate,
+    rewriteSummary: rewrite.changeSummary || ''
+  };
 }
 
 export async function generatePosts(topicId) {
@@ -219,13 +347,35 @@ export async function generatePosts(topicId) {
       continue;
     }
     const engagement = scorePostEngagement(prepared.body, { products: selected });
-    candidates.push({
-      item,
+    const qualityGate = evaluatePostQualityGate(engagement);
+    const rewriteResult = await tryRewriteCandidateForQuality({
       body: prepared.body,
       contentType: contentTypeToSave,
       riskLevel: item.riskLevel || risk.riskLevel,
-      status: 'draft',
       engagement,
+      qualityGate,
+      topic,
+      account,
+      products: selected,
+      logContext: {
+        account_id: topic.account_id,
+        project_id: topic.project_id,
+        topic_id: topic.id
+      }
+    });
+    candidates.push({
+      item,
+      body: rewriteResult.body,
+      contentType: rewriteResult.contentType,
+      riskLevel: rewriteResult.riskLevel,
+      status: 'draft',
+      engagement: rewriteResult.engagement,
+      qualityGate: rewriteResult.qualityGate,
+      qualityRewriteAttempted: Boolean(rewriteResult.rewriteAttempted),
+      qualityRewriteUsed: Boolean(rewriteResult.rewritten),
+      qualityRewriteSummary: rewriteResult.rewriteSummary || '',
+      qualityRewriteRejected: Boolean(rewriteResult.rewriteRejected),
+      qualityRewriteRejectedReasons: rewriteResult.rewriteRejectedReasons || [],
       rejected: false,
       rejectionReasons: []
     });
@@ -244,6 +394,7 @@ export async function generatePosts(topicId) {
         riskLevel: fallbackRisk.riskLevel,
         status: 'draft',
         engagement: fallbackEngagement,
+        qualityGate: evaluatePostQualityGate(fallbackEngagement),
         rejected: false,
         rejectionReasons: [],
         fallbackUsed: true
@@ -284,6 +435,11 @@ export async function generatePosts(topicId) {
     engagementPattern: best.engagement.engagementPattern,
     selectionReasons: best.engagement.selectionReasons,
     rubric: best.engagement.rubric,
+    qualityGate: best.qualityGate || evaluatePostQualityGate(best.engagement),
+    qualityRewriteUsed: Boolean(best.qualityRewriteUsed),
+    qualityRewriteAttempted: Boolean(best.qualityRewriteAttempted),
+    qualityRewriteReasons: best.qualityGate?.reasons || [],
+    qualityRewriteSummary: best.qualityRewriteSummary || '',
     rejectedCandidateCount: rejectedCandidates.length + candidates.filter((candidate) => candidate !== best).length,
     candidateScores,
     fallbackUsed: Boolean(best.fallbackUsed),

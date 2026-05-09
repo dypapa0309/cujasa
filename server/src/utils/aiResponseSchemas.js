@@ -54,6 +54,15 @@ export function validatePostsResponse(value) {
   return result(true);
 }
 
+export function validatePostRewriteResponse(value) {
+  if (!isObject(value)) return result(false, 'post rewrite response must be an object');
+  if (!isNonEmptyString(value.body)) return result(false, 'body is required');
+  if (!isNonEmptyString(value.contentType)) return result(false, 'contentType is required');
+  if (value.changeSummary != null && typeof value.changeSummary !== 'string') return result(false, 'changeSummary must be a string');
+  if (value.riskLevel != null && !['low', 'medium', 'high'].includes(value.riskLevel)) return result(false, 'riskLevel is invalid');
+  return result(true);
+}
+
 export function validateCtasResponse(value) {
   if (!isObject(value)) return result(false, 'ctas response must be an object');
   if (!Array.isArray(value.ctas) || value.ctas.length === 0) return result(false, 'ctas must be a non-empty array');

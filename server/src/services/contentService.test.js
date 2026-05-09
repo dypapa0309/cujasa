@@ -20,7 +20,14 @@ test('generatePosts stores one selected post with engagement metadata', async ()
   assert.equal(saved.metadata.engagementPattern, 'choice_tension');
   assert.ok(Array.isArray(saved.metadata.selectionReasons));
   assert.ok(Array.isArray(saved.metadata.candidateScores));
+  assert.equal(typeof saved.metadata.candidateScores[0].qualityRewriteUsed, 'boolean');
+  assert.ok(saved.metadata.candidateScores[0].qualityGate);
   assert.ok(saved.metadata.rubric);
+  assert.ok(saved.metadata.qualityGate);
+  assert.equal(saved.metadata.qualityGate.passed, true);
+  assert.equal(typeof saved.metadata.qualityRewriteUsed, 'boolean');
+  assert.equal(typeof saved.metadata.qualityRewriteAttempted, 'boolean');
+  assert.ok(Array.isArray(saved.metadata.qualityRewriteReasons));
   assert.equal(typeof saved.metadata.rubric.hookScore, 'number');
   assert.equal(typeof saved.metadata.rubric.commentEaseScore, 'number');
   assert.equal(typeof saved.metadata.rubric.choiceTensionScore, 'number');
