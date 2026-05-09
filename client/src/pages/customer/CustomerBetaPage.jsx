@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, CreditCard, Download, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, RefreshCw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, X } from 'lucide-react';
 import { api, postEvent } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
@@ -16,6 +17,7 @@ import {
 
 const MAX_DAILY_POSTS = 5;
 const spreadMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_SPREAD_BETA !== 'true';
+const infludexMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_INFLUDEX_BETA !== 'true';
 
 const cujasaActions = [
   { key: 'run', label: '자동화 실행', icon: PlayCircle, hint: '오늘 예약을 만들고 실행 상태를 확인해요.' },
@@ -73,7 +75,9 @@ const actions = [...cujasaActions, ...workspaceActions, ...productPreviewActions
 const pendingSubscriptionKey = 'cujasa_pending_subscription';
 
 function isProductInMaintenance(product = {}) {
-  return product?.id === 'spread' && spreadMaintenanceEnabled;
+  if (product?.id === 'spread') return spreadMaintenanceEnabled;
+  if (product?.id === 'infludex') return infludexMaintenanceEnabled;
+  return false;
 }
 
 const inputClass = 'w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-700 outline-none focus:border-white/25';
@@ -1079,17 +1083,27 @@ function AccountSummaryMenu({
   onLogout
 }) {
   const [activeSubmenu, setActiveSubmenu] = useState(null);
+  const [menuPosition, setMenuPosition] = useState(null);
+  const [submenuPosition, setSubmenuPosition] = useState(null);
+  const cardRef = useRef(null);
+  const menuRef = useRef(null);
+  const submenuRef = useRef(null);
+  const rowRefs = useRef({});
   const displayName = currentUser?.username || currentUser?.email || 'JASAIN 계정';
   const plan = accountPlanLabel(currentUser, product);
-  const menuItems = [
+  const menuItems = useMemo(() => [
     { key: 'account', icon: UserCircle, label: '계정 정보', sub: account?.name || currentUser?.email || '', actions: [{ label: '계정 정보 열기', onClick: onOpenAccount }] },
     { key: 'billing', icon: CreditCard, label: '결제', sub: plan, actions: [{ label: '결제 관리 열기', onClick: onOpenBilling }] },
     { key: 'support', icon: Bot, label: '고객센터', sub: '문의와 도움말', actions: [{ label: '고객센터 열기', onClick: onOpenSupport }] },
     { key: 'privacy', icon: ShieldCheck, label: '개인정보처리방침', sub: '처리 기준', onClick: onOpenPrivacy },
     { key: 'business', icon: Landmark, label: '사업자정보', sub: '회사 정보', actions: [{ label: '사업자정보 열기', onClick: onOpenBusiness }] },
     { key: 'logout', icon: LogOut, label: '로그아웃', sub: '현재 세션 종료', onClick: onLogout }
-  ];
+  ], [account?.name, currentUser?.email, onOpenAccount, onOpenBilling, onOpenBusiness, onOpenPrivacy, onOpenSupport, onLogout, plan]);
   const activeItem = menuItems.find((item) => item.key === activeSubmenu && item.actions?.length);
+  const setRowRef = (key) => (node) => {
+    if (node) rowRefs.current[key] = node;
+    else delete rowRefs.current[key];
+  };
   const closeMenuAction = (handler) => {
     handler?.();
     setActiveSubmenu(null);
@@ -1100,43 +1114,172 @@ function AccountSummaryMenu({
     if (!open) setActiveSubmenu(null);
   }, [open]);
 
-  return (
-    <div className="relative">
-      {open && (
-        <div className="absolute bottom-[74px] left-0 right-0 z-30 rounded-3xl border border-white/10 bg-zinc-950/95 p-2 shadow-2xl shadow-black/50 backdrop-blur">
+  const updateMenuPosition = useCallback(() => {
+    if (!open || !cardRef.current || typeof window === 'undefined') return;
+    const margin = 12;
+    const cardRect = cardRef.current.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const width = Math.min(Math.max(cardRect.width, 260), viewportWidth - (margin * 2));
+    const left = Math.min(Math.max(cardRect.left, margin), viewportWidth - width - margin);
+    const measuredHeight = menuRef.current?.offsetHeight || 432;
+    const availableAbove = Math.max(120, cardRect.top - (margin * 2));
+    const maxHeight = Math.min(measuredHeight, availableAbove, viewportHeight - (margin * 2));
+    const top = Math.max(margin, cardRect.top - maxHeight - 12);
+    setMenuPosition((current) => {
+      const next = { left, top, width, maxHeight };
+      return current
+        && Math.abs(current.left - next.left) < 1
+        && Math.abs(current.top - next.top) < 1
+        && Math.abs(current.width - next.width) < 1
+        && Math.abs(current.maxHeight - next.maxHeight) < 1
+        ? current
+        : next;
+    });
+  }, [open]);
+
+  const updateSubmenuPosition = useCallback(() => {
+    if (!open || !activeItem || !menuPosition || typeof window === 'undefined') {
+      setSubmenuPosition(null);
+      return;
+    }
+    const row = rowRefs.current[activeItem.key];
+    const menu = menuRef.current;
+    if (!row || !menu) return;
+    const margin = 12;
+    const rowRect = row.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const submenuWidth = 212;
+    const measuredHeight = submenuRef.current?.offsetHeight || 104;
+    const canOpenRight = menuRect.right + margin + submenuWidth <= viewportWidth - margin;
+    const canOpenLeft = menuRect.left - margin - submenuWidth >= margin;
+
+    if (!canOpenRight && !canOpenLeft) {
+      setSubmenuPosition((current) => current?.mode === 'inline' ? current : { mode: 'inline' });
+      return;
+    }
+
+    const left = canOpenRight
+      ? menuRect.right + margin
+      : menuRect.left - margin - submenuWidth;
+    const top = Math.min(
+      Math.max(rowRect.top, margin),
+      viewportHeight - measuredHeight - margin
+    );
+    setSubmenuPosition((current) => {
+      const next = { mode: 'floating', left, top, width: submenuWidth };
+      return current?.mode === next.mode
+        && Math.abs(current.left - next.left) < 1
+        && Math.abs(current.top - next.top) < 1
+        && Math.abs(current.width - next.width) < 1
+        ? current
+        : next;
+    });
+  }, [activeItem, menuPosition, open]);
+
+  useLayoutEffect(() => {
+    updateMenuPosition();
+  }, [updateMenuPosition]);
+
+  useLayoutEffect(() => {
+    updateSubmenuPosition();
+  }, [updateSubmenuPosition]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handleViewportChange = () => {
+      updateMenuPosition();
+      updateSubmenuPosition();
+    };
+    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('scroll', handleViewportChange, true);
+    return () => {
+      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('scroll', handleViewportChange, true);
+    };
+  }, [open, updateMenuPosition, updateSubmenuPosition]);
+
+  const menuPortal = open && menuPosition && typeof document !== 'undefined'
+    ? createPortal(
+      <>
+        <div
+          ref={menuRef}
+          onMouseDown={(event) => event.stopPropagation()}
+          className="fixed z-[35] overflow-y-auto rounded-3xl border border-white/10 bg-zinc-950/95 p-2 shadow-2xl shadow-black/50 backdrop-blur"
+          style={{
+            left: `${menuPosition.left}px`,
+            top: `${menuPosition.top}px`,
+            width: `${menuPosition.width}px`,
+            maxHeight: `${menuPosition.maxHeight}px`
+          }}
+        >
           <div className="grid gap-1">
             {menuItems.map((item) => (
-              <SidebarFooterButton
-                key={item.key}
-                icon={item.icon}
-                label={item.label}
-                sub={item.sub}
-                onClick={item.actions?.length ? () => setActiveSubmenu((current) => current === item.key ? null : item.key) : () => closeMenuAction(item.onClick)}
-                onChevronClick={item.actions?.length ? () => setActiveSubmenu((current) => current === item.key ? null : item.key) : null}
-                active={activeSubmenu === item.key}
-                chevron={Boolean(item.actions?.length)}
-              />
+              <div key={item.key}>
+                <SidebarFooterButton
+                  itemRef={setRowRef(item.key)}
+                  icon={item.icon}
+                  label={item.label}
+                  sub={item.sub}
+                  onClick={item.actions?.length ? () => setActiveSubmenu((current) => current === item.key ? null : item.key) : () => closeMenuAction(item.onClick)}
+                  onChevronClick={item.actions?.length ? () => setActiveSubmenu((current) => current === item.key ? null : item.key) : null}
+                  active={activeSubmenu === item.key}
+                  chevron={Boolean(item.actions?.length)}
+                />
+                {activeSubmenu === item.key && activeItem && submenuPosition?.mode === 'inline' && (
+                  <div className="mx-2 mb-1 mt-1 rounded-2xl border border-white/10 bg-white/[0.04] p-1">
+                    {activeItem.actions.map((action) => (
+                      <button
+                        key={action.label}
+                        type="button"
+                        onClick={() => closeMenuAction(action.onClick)}
+                        className="w-full rounded-xl px-3 py-2 text-left text-sm font-black text-zinc-300 transition hover:bg-white/10 hover:text-white"
+                      >
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
-      )}
-      {open && activeItem && (
-        <div className="absolute bottom-[calc(74px+12rem)] left-[calc(100%+0.5rem)] z-40 w-52 rounded-3xl border border-white/10 bg-zinc-950/95 p-2 shadow-2xl shadow-black/50 backdrop-blur max-sm:left-0 max-sm:right-0 max-sm:bottom-[calc(74px+13.5rem)] max-sm:w-auto">
-          <div className="mb-1 px-3 py-2 text-xs font-black text-zinc-500">{activeItem.label}</div>
-          <div className="grid gap-1">
-            {activeItem.actions.map((action) => (
-              <button
-                key={action.label}
-                type="button"
-                onClick={() => closeMenuAction(action.onClick)}
-                className="rounded-2xl px-3 py-2 text-left text-sm font-black text-zinc-300 transition hover:bg-white/10 hover:text-white"
-              >
-                {action.label}
-              </button>
-            ))}
+        {activeItem && submenuPosition?.mode === 'floating' && (
+          <div
+            ref={submenuRef}
+            onMouseDown={(event) => event.stopPropagation()}
+            className="fixed z-[36] rounded-3xl border border-white/10 bg-zinc-950/95 p-2 shadow-2xl shadow-black/50 backdrop-blur"
+            style={{
+              left: `${submenuPosition.left}px`,
+              top: `${submenuPosition.top}px`,
+              width: `${submenuPosition.width}px`
+            }}
+          >
+            <div className="mb-1 px-3 py-2 text-xs font-black text-zinc-500">{activeItem.label}</div>
+            <div className="grid gap-1">
+              {activeItem.actions.map((action) => (
+                <button
+                  key={action.label}
+                  type="button"
+                  onClick={() => closeMenuAction(action.onClick)}
+                  className="rounded-2xl px-3 py-2 text-left text-sm font-black text-zinc-300 transition hover:bg-white/10 hover:text-white"
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </>,
+      document.body
+    )
+    : null;
+
+  return (
+    <div ref={cardRef} className="relative">
+      {menuPortal}
       <div>
         <button
           type="button"
@@ -1165,16 +1308,17 @@ function AccountSummaryMenu({
           aria-label="계정 메뉴 열기"
           aria-expanded={open}
         >
-          <ChevronRight size={17} className={`transition ${open ? 'rotate-90 text-zinc-200' : ''}`} />
+          <ChevronRight size={17} className={`transition ${open ? '-rotate-90 text-zinc-200' : ''}`} />
         </button>
       </div>
     </div>
   );
 }
 
-function SidebarFooterButton({ icon: Icon, label, sub = '', onClick, onChevronClick, chevron = false, active = false }) {
+function SidebarFooterButton({ itemRef, icon: Icon, label, sub = '', onClick, onChevronClick, chevron = false, active = false }) {
   return (
     <div
+      ref={itemRef}
       className={`grid min-h-11 w-full grid-cols-[28px_minmax(0,1fr)_28px] items-center rounded-2xl px-3 py-2 text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100 ${active ? 'bg-white/10 text-zinc-100' : ''}`}
     >
       <span className="grid h-7 w-7 place-items-center">
@@ -4703,7 +4847,7 @@ const productPreviewContent = {
 function ProductPreview({ action, onStartProduct, starting }) {
   const product = productPreviewContent[action.key] || productPreviewContent.dexor;
   const configuredProduct = productById(action.key);
-  const preparing = configuredProduct?.status === 'preparing';
+  const preparing = configuredProduct?.status === 'preparing' || isProductInMaintenance(configuredProduct || { id: action.key });
   return (
     <PanelCard className="self-start">
       <div className="text-xs font-black uppercase tracking-wide text-zinc-500">{product.subtitle}</div>

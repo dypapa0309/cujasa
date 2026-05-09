@@ -85,6 +85,9 @@ router.post('/products/:productId/start', async (req, res, next) => {
     if (product.id === 'spread' && process.env.NODE_ENV === 'production' && process.env.SPREAD_SERVICE_OPEN !== 'true') {
       return res.status(503).json({ error: 'SPREAD_SERVICE_MAINTENANCE', message: 'SPREAD는 현재 서비스 점검 중입니다.' });
     }
+    if (product.id === 'infludex' && process.env.NODE_ENV === 'production' && process.env.INFLUDEX_SERVICE_OPEN !== 'true') {
+      return res.status(503).json({ error: 'INFLUDEX_SERVICE_MAINTENANCE', message: 'INFLUDEX는 현재 서비스 점검 중입니다.' });
+    }
     if (product.status === 'preparing') {
       return res.status(409).json({ error: '아직 준비 중인 제품입니다.' });
     }

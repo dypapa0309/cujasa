@@ -20,8 +20,11 @@ import {
 
 const router = Router();
 
-function spreadServiceClosedInProduction() {
-  return process.env.NODE_ENV === 'production' && process.env.SPREAD_SERVICE_OPEN !== 'true';
+function workspaceServiceClosedInProduction(productId) {
+  if (process.env.NODE_ENV !== 'production') return false;
+  if (productId === 'spread') return process.env.SPREAD_SERVICE_OPEN !== 'true';
+  if (productId === 'infludex') return process.env.INFLUDEX_SERVICE_OPEN !== 'true';
+  return false;
 }
 
 function requireUser(req, res) {
@@ -32,11 +35,12 @@ function requireUser(req, res) {
   return req.user;
 }
 
-function requireSpreadOpen(req, res) {
-  if (!spreadServiceClosedInProduction()) return true;
+function requireWorkspaceServiceOpen(req, res, productId) {
+  if (!workspaceServiceClosedInProduction(productId)) return true;
+  const productName = productId === 'infludex' ? 'INFLUDEX' : 'SPREAD';
   res.status(503).json({
-    error: 'SPREAD_SERVICE_MAINTENANCE',
-    message: 'SPREAD는 현재 서비스 점검 중입니다.'
+    error: `${productName}_SERVICE_MAINTENANCE`,
+    message: `${productName}는 현재 서비스 점검 중입니다.`
   });
   return false;
 }
@@ -83,6 +87,7 @@ router.post('/dexor/reset', async (req, res, next) => {
 
 router.post('/infludex/candidates', async (req, res, next) => {
   try {
+    if (!requireWorkspaceServiceOpen(req, res, 'infludex')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await saveInfludexCandidates(user.userId, req.body || {}));
@@ -93,6 +98,7 @@ router.post('/infludex/candidates', async (req, res, next) => {
 
 router.post('/infludex/analyze', async (req, res, next) => {
   try {
+    if (!requireWorkspaceServiceOpen(req, res, 'infludex')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await analyzeInfludexCandidates(user.userId));
@@ -103,6 +109,7 @@ router.post('/infludex/analyze', async (req, res, next) => {
 
 router.post('/infludex/reset', async (req, res, next) => {
   try {
+    if (!requireWorkspaceServiceOpen(req, res, 'infludex')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await resetInfludexWorkspace(user.userId));
@@ -166,7 +173,7 @@ router.post('/polibot/customers', async (req, res, next) => {
 
 router.post('/spread/campaign', async (req, res, next) => {
   try {
-    if (!requireSpreadOpen(req, res)) return;
+    if (!requireWorkspaceServiceOpen(req, res, 'spread')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await saveSpreadCampaign(user.userId, req.body || {}));
@@ -177,7 +184,7 @@ router.post('/spread/campaign', async (req, res, next) => {
 
 router.post('/spread/campaign/status', async (req, res, next) => {
   try {
-    if (!requireSpreadOpen(req, res)) return;
+    if (!requireWorkspaceServiceOpen(req, res, 'spread')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await updateSpreadCampaignStatus(user.userId, req.body || {}));
@@ -188,7 +195,7 @@ router.post('/spread/campaign/status', async (req, res, next) => {
 
 router.post('/spread/applicants', async (req, res, next) => {
   try {
-    if (!requireSpreadOpen(req, res)) return;
+    if (!requireWorkspaceServiceOpen(req, res, 'spread')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await saveSpreadApplicants(user.userId, req.body || {}));
@@ -199,7 +206,7 @@ router.post('/spread/applicants', async (req, res, next) => {
 
 router.post('/spread/review', async (req, res, next) => {
   try {
-    if (!requireSpreadOpen(req, res)) return;
+    if (!requireWorkspaceServiceOpen(req, res, 'spread')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await reviewSpreadSubmission(user.userId, req.body || {}));
