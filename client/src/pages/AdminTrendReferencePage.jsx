@@ -397,6 +397,18 @@ export default function AdminTrendReferencePage() {
             placeholder={'반응 좋은 글 본문을 붙여넣어 주세요.\n\n여러 개는 빈 줄 또는 --- 로 구분합니다.\n좋아요 1200 / 댓글 80 / 조회 20000 같은 수치도 같이 넣을 수 있습니다.'}
           />
         </label>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <div className="text-xs font-bold leading-relaxed text-slate-500">
+            입력한 참고 콘텐츠를 분석해 패턴, 품질 점수, 미리보기까지 저장합니다.
+          </div>
+          <button
+            type="submit"
+            disabled={analyzing || uploadingFiles || (studioForm.text.trim().length < 20 && uploadedSamples.length === 0)}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
+          >
+            <Upload size={15} /> {analyzing ? '등록 중...' : '참고콘텐츠 등록'}
+          </button>
+        </div>
         {studioResult && (
           <div className="mt-4 grid gap-2 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600 sm:grid-cols-5">
             <div>입력 콘텐츠 {studioResult.samples?.length || 0}개</div>
