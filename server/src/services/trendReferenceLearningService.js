@@ -172,6 +172,121 @@ export async function saveAnonymousTrendPatternAssets(patterns = [], context = {
   return rows;
 }
 
+function splitReferenceBlocks(text = '') {
+  return String(text || '')
+    .split(/\n\s*---+\s*\n|\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+}
+
+function metricNumber(text = '', patterns = []) {
+  const source = String(text || '').replace(/,/g, '');
+  for (const pattern of patterns) {
+    const match = source.match(pattern);
+    if (match) return Number(match[1] || 0);
+  }
+  return 0;
+}
+
+function normalizeAdminSamples({ text = '', samples = [], category = '' } = {}) {
+  const fromText = splitReferenceBlocks(text).map((block, index) => {
+    const sourceText = block
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .filter((line) => !/^(@|작성자|계정|url|https?:\/\/)/i.test(line))
+      .join('\n')
+      .trim();
+    return {
+      id: `admin-seed-${Date.now()}-${index}`,
+      sourceText,
+      topicKeyword: category,
+      likes: metricNumber(block, [/좋아요\s*([0-9]+)/i, /likes?\s*([0-9]+)/i]),
+      replies: metricNumber(block, [/댓글\s*([0-9]+)/i, /답글\s*([0-9]+)/i, /comments?\s*([0-9]+)/i]),
+      reposts: metricNumber(block, [/공유\s*([0-9]+)/i, /reposts?\s*([0-9]+)/i]),
+      views: metricNumber(block, [/조회\s*([0-9]+)/i, /views?\s*([0-9]+)/i]),
+      sourceType: 'admin_seed'
+    };
+  });
+  const normalized = [...fromText, ...(Array.isArray(samples) ? samples : [])]
+    .map((sample, index) => ({
+      id: sample.id || `admin-sample-${index}`,
+      sourceText: normalizeText(sample.sourceText || sample.text || ''),
+      topicKeyword: normalizeText(sample.topicKeyword || category || ''),
+      likes: Number(sample.likes || 0),
+      replies: Number(sample.replies || sample.comments || 0),
+      reposts: Number(sample.reposts || 0),
+      views: Number(sample.views || 0),
+      sourceType: 'admin_seed'
+    }))
+    .filter((sample) => sample.sourceText.length >= 20);
+  const seen = new Set();
+  return normalized.filter((sample) => {
+    const key = sourceFingerprint(sample);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function applyAdminDirection(pattern = {}, direction = '') {
+  const cleanDirection = shortText(direction, 260);
+  if (!cleanDirection) return pattern;
+  return {
+    ...pattern,
+    reusableStructure: shortText([pattern.reusableStructure, `운영 방향: ${cleanDirection}`].filter(Boolean).join(' / '), 400),
+    voicePattern: shortText([pattern.voicePattern, `방향: ${cleanDirection}`].filter(Boolean).join(' / '), 220)
+  };
+}
+
+export async function createAdminTrendPatternAssets({
+  text = '',
+  samples = [],
+  category = '',
+  targetAudienceHint = '',
+  direction = '',
+  qualityStatus = 'candidate',
+  useAi = true
+} = {}) {
+  const normalizedSamples = normalizeAdminSamples({ text, samples, category });
+  if (normalizedSamples.length === 0) {
+    const error = new Error('분석할 콘텐츠를 입력해 주세요.');
+    error.status = 400;
+    throw error;
+  }
+  const rankedSamples = rankTrendSamples(normalizedSamples, { query: category, limit: 20 });
+  const patterns = (await extractTrendPatterns(rankedSamples, { query: category, limit: 8, useAi }))
+    .filter(isSafePattern)
+    .map((pattern) => applyAdminDirection(pattern, direction));
+  const rows = await saveAnonymousTrendPatternAssets(patterns, {
+    category,
+    targetAudienceHint,
+    sourceType: 'admin_seed',
+    qualityStatus: QUALITY_STATUSES.has(qualityStatus) ? qualityStatus : 'candidate'
+  });
+  await logActivity({
+    action: 'admin_trend_patterns_created',
+    level: 'info',
+    message: `관리자 콘텐츠 ${normalizedSamples.length}개에서 공용 패턴 ${rows.length}개를 저장했습니다.`,
+    payload: {
+      category,
+      targetAudienceHint,
+      direction: shortText(direction, 260),
+      qualityStatus,
+      sampleCount: normalizedSamples.length,
+      patternCount: patterns.length,
+      savedCount: rows.length
+    }
+  });
+  return {
+    samples: rankedSamples,
+    patterns,
+    rows,
+    savedCount: rows.length,
+    rejectedUnsafeCount: Math.max(0, normalizedSamples.length - patterns.length)
+  };
+}
+
 export async function ingestTrendReferencesForAccount(accountId, {
   samples = [],
   sourceType = 'text_paste',

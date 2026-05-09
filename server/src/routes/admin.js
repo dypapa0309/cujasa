@@ -30,7 +30,7 @@ import {
   updatePolibotKnowledgeSourceReview
 } from '../services/polibotKnowledgeDbService.js';
 import { redactAccount, redactAccounts, redactBillingSettings, redactPayment } from '../services/redactionService.js';
-import { listTrendPatternAssets, updateTrendPatternQualityStatus } from '../services/trendReferenceLearningService.js';
+import { createAdminTrendPatternAssets, listTrendPatternAssets, updateTrendPatternQualityStatus } from '../services/trendReferenceLearningService.js';
 import { ensureAccountBlog } from '../services/blogService.js';
 
 const router = Router();
@@ -270,6 +270,14 @@ router.get('/trend-reference-patterns', async (req, res, next) => {
       status: req.query.status || 'candidate',
       limit: req.query.limit || 100
     }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/trend-reference-patterns/analyze', async (req, res, next) => {
+  try {
+    res.status(201).json(await createAdminTrendPatternAssets(req.body || {}));
   } catch (error) {
     next(error);
   }

@@ -9,6 +9,7 @@ import {
 } from './trendPatternService.js';
 import {
   buildReferencePatternContext,
+  createAdminTrendPatternAssets,
   ingestTrendReferencesForAccount,
   saveAnonymousTrendPatternAssets,
   updateTrendPatternQualityStatus
@@ -170,4 +171,29 @@ test('approved anonymous patterns can enrich accounts without personal reference
   assert.equal(context.mix.publicAnonymousPatterns, 0.6);
   assert.ok(context.patterns.some((pattern) => pattern.hookPattern === '후회 방지 기준으로 시작'));
   assert.ok(context.patterns.every((pattern) => !pattern.sourceText));
+});
+
+test('admin can create public content patterns with direction guidance', async () => {
+  const result = await createAdminTrendPatternAssets({
+    category: '자취 집기',
+    targetAudienceHint: '2030 자취생',
+    direction: '기계적인 설명 없이 실제 생활 기준과 쉬운 댓글 질문으로 마무리',
+    qualityStatus: 'approved',
+    useAi: false,
+    text: [
+      '자취 시작할 때 큰 가구보다 매일 손 가는 집기가 더 오래 남더라.',
+      '저라면 설거지 후 둘 곳, 빨래 잠깐 모아둘 곳, 바닥 물기 덜 밟는 곳부터 볼 것 같아요.',
+      '좋아요 850 / 댓글 92 / 조회 14000'
+    ].join('\n')
+  });
+  assert.equal(result.savedCount, 1);
+  assert.equal(result.rows[0].quality_status, 'approved');
+  assert.match(result.rows[0].reusable_structure, /운영 방향/);
+  assert.match(result.rows[0].voice_pattern, /기계적인 설명 없이/);
+  const context = await buildReferencePatternContext({
+    content_scope: '자취 집기',
+    target_audience: '2030 자취생',
+    personal_reference_patterns: []
+  }, { limit: 5 });
+  assert.ok(context.patterns.some((pattern) => /기계적인 설명 없이/.test(pattern.voicePattern)));
 });

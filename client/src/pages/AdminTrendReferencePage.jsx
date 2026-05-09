@@ -88,6 +88,15 @@ export default function AdminTrendReferencePage() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState('');
+  const [studioForm, setStudioForm] = useState({
+    category: '자취/살림 꿀템',
+    targetAudienceHint: '2030 자취생, 생활용품 관심 사용자',
+    direction: '기계적인 설명 대신 생활 속 기준, 실제 써본 듯한 판단, 쉽게 댓글 달 수 있는 질문으로 끝내기',
+    qualityStatus: 'candidate',
+    text: ''
+  });
+  const [analyzing, setAnalyzing] = useState(false);
+  const [studioResult, setStudioResult] = useState(null);
 
   const load = async () => {
     const query = new URLSearchParams({ status, limit: '120' });
@@ -117,6 +126,28 @@ export default function AdminTrendReferencePage() {
     }
   };
 
+  const updateStudioForm = (key, value) => {
+    setStudioForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const analyzeStudioContent = async (event) => {
+    event.preventDefault();
+    setAnalyzing(true);
+    try {
+      const result = await api.post('/api/admin/trend-reference-patterns/analyze', {
+        ...studioForm,
+        useAi: true
+      });
+      setStudioResult(result);
+      toast(`${result.savedCount || 0}개 공용 패턴을 저장했습니다.`, 'success');
+      await load();
+    } catch (err) {
+      toast(err.message || '콘텐츠 패턴 분석에 실패했습니다.', 'error');
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -127,7 +158,7 @@ export default function AdminTrendReferencePage() {
             </div>
             <h1 className="mt-2 text-2xl font-black text-slate-950">공용 콘텐츠 패턴 검수</h1>
             <p className="mt-2 text-sm leading-relaxed text-slate-500">
-              고객 레퍼런스에서 원문 없이 추출된 패턴만 검수합니다. 승인된 패턴은 레퍼런스를 넣지 못한 계정의 콘텐츠 품질 개선에 사용됩니다.
+              운영자가 참고 콘텐츠를 넣고, 패턴을 분석하고, 방향을 정해 CUJASA 생성 품질에 반영합니다.
             </p>
           </div>
           <button type="button" onClick={load} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600">
@@ -147,6 +178,64 @@ export default function AdminTrendReferencePage() {
           ))}
         </div>
       </div>
+
+      <form onSubmit={analyzeStudioContent} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-sm font-black text-slate-500">Content Learning Studio</div>
+            <h2 className="mt-1 text-xl font-black text-slate-950">콘텐츠 업로드와 방향 지정</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-500">
+              반응 좋은 글을 붙여넣으면 원문은 저장하지 않고 재사용 가능한 구조, 말투, 질문 패턴만 저장합니다.
+            </p>
+          </div>
+          <button
+            type="submit"
+            disabled={analyzing || studioForm.text.trim().length < 20}
+            className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
+          >
+            {analyzing ? '분석 중...' : '패턴 분석 저장'}
+          </button>
+        </div>
+        <div className="mt-5 grid gap-3 lg:grid-cols-2">
+          <label className="grid gap-2 text-sm font-bold text-slate-700">
+            적용 주제
+            <input className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-400" value={studioForm.category} onChange={(event) => updateStudioForm('category', event.target.value)} />
+          </label>
+          <label className="grid gap-2 text-sm font-bold text-slate-700">
+            대상 독자
+            <input className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-400" value={studioForm.targetAudienceHint} onChange={(event) => updateStudioForm('targetAudienceHint', event.target.value)} />
+          </label>
+        </div>
+        <div className="mt-3 grid gap-3 lg:grid-cols-[1fr_220px]">
+          <label className="grid gap-2 text-sm font-bold text-slate-700">
+            운영 방향
+            <textarea className="min-h-24 rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-400" value={studioForm.direction} onChange={(event) => updateStudioForm('direction', event.target.value)} />
+          </label>
+          <label className="grid content-start gap-2 text-sm font-bold text-slate-700">
+            저장 상태
+            <select className="rounded-xl border border-slate-200 px-3 py-2 outline-none focus:border-slate-400" value={studioForm.qualityStatus} onChange={(event) => updateStudioForm('qualityStatus', event.target.value)}>
+              <option value="candidate">검토 대기</option>
+              <option value="approved">바로 승인</option>
+            </select>
+          </label>
+        </div>
+        <label className="mt-3 grid gap-2 text-sm font-bold text-slate-700">
+          참고 콘텐츠
+          <textarea
+            className="min-h-48 rounded-xl border border-slate-200 px-3 py-2 text-sm leading-relaxed outline-none focus:border-slate-400"
+            value={studioForm.text}
+            onChange={(event) => updateStudioForm('text', event.target.value)}
+            placeholder={'반응 좋은 글 본문을 붙여넣어 주세요.\n\n여러 개는 빈 줄 또는 --- 로 구분합니다.\n좋아요 1200 / 댓글 80 / 조회 20000 같은 수치도 같이 넣을 수 있습니다.'}
+          />
+        </label>
+        {studioResult && (
+          <div className="mt-4 grid gap-2 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600 sm:grid-cols-3">
+            <div>입력 콘텐츠 {studioResult.samples?.length || 0}개</div>
+            <div>추출 패턴 {studioResult.patterns?.length || 0}개</div>
+            <div>저장 {studioResult.savedCount || 0}개</div>
+          </div>
+        )}
+      </form>
 
       {loading ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm font-bold text-slate-500">불러오는 중...</div>
