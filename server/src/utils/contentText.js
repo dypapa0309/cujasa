@@ -11,6 +11,13 @@ function isLikelyHandle(value) {
   return /^[a-z][a-z0-9._-]{2,30}$/i.test(text) && /\d/.test(text);
 }
 
+function stripLeadingHandleLikeToken(value) {
+  const text = String(value || '');
+  const match = text.match(/^\s*@?([a-z][a-z0-9._-]{2,30})(?=\s|$)/i);
+  if (!match || !isLikelyHandle(match[1])) return text.trim();
+  return text.slice(match[0].length).trim();
+}
+
 export function sanitizeContentTitle(value, account = {}) {
   let title = clean(value);
   const blocked = [
@@ -24,9 +31,9 @@ export function sanitizeContentTitle(value, account = {}) {
   }
 
   title = title
-    .replace(/^\s*@?[a-z][a-z0-9._-]{2,30}\s+/i, '')
     .replace(/\s+/g, ' ')
     .trim();
+  title = stripLeadingHandleLikeToken(title);
 
   return title || clean(account.content_scope) || '생활용품 고르는 기준';
 }
@@ -41,7 +48,7 @@ export function sanitizePostBody(value, account = {}) {
     const pattern = new RegExp(`(^|\\s)@?${escapeRegex(token).replace(/^@/, '')}(?=\\s|$)`, 'ig');
     body = body.replace(pattern, '$1');
   }
-  return body.replace(/^\s*@?[a-z][a-z0-9._-]{2,30}\s+/i, '').trim();
+  return stripLeadingHandleLikeToken(body);
 }
 
 export function hasAccountTokenLeak(value, account = {}) {
