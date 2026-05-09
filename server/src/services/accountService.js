@@ -181,7 +181,11 @@ export const updateAccount = async (id, payload) => {
     error.status = 404;
     throw error;
   }
-  const [updated] = await dbUpdate('accounts', { id }, normalizeAccount({ ...current, ...sanitizeAccountPayload(payload) }));
+  const sanitized = sanitizeAccountPayload(payload);
+  const normalized = normalizeAccount({ ...current, ...sanitized });
+  const patch = Object.fromEntries(Object.keys(sanitized).map((key) => [key, normalized[key]]));
+  if (Object.keys(patch).length === 0) return current;
+  const [updated] = await dbUpdate('accounts', { id }, patch);
   return updated;
 };
 export async function archiveAccount(id) {

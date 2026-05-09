@@ -246,14 +246,20 @@ router.patch('/:accountId', async (req, res, next) => {
              link_post_ratio, no_link_post_ratio,
              name, account_handle, target_audience, content_scope, tone, cta_style,
              content_mode, content_intensity, seasonality_enabled, comment_induction_style,
-             product_mention_style, emoji_level, safe_debate_enabled, content_style_note,
+             product_mention_style, emoji_level, safe_debate_enabled, anonymous_learning_enabled,
+             blog_auto_publish_enabled, blog_publish_mode, blog_base_url,
+             toss_share_link_enabled, toss_share_link_url, toss_share_link_label, toss_share_link_memo,
+             content_style_note,
              forbidden_topics, forbidden_words,
              coupang_access_key, coupang_secret_key, coupang_partner_id, coupang_tracking_code }) =>
           ({ daily_post_min, daily_post_max, active_time_windows, min_interval_minutes,
              link_post_ratio, no_link_post_ratio,
              name, account_handle, target_audience, content_scope, tone, cta_style,
              content_mode, content_intensity, seasonality_enabled, comment_induction_style,
-             product_mention_style, emoji_level, safe_debate_enabled, content_style_note,
+             product_mention_style, emoji_level, safe_debate_enabled, anonymous_learning_enabled,
+             blog_auto_publish_enabled, blog_publish_mode, blog_base_url,
+             toss_share_link_enabled, toss_share_link_url, toss_share_link_label, toss_share_link_memo,
+             content_style_note,
              forbidden_topics, forbidden_words,
              coupang_access_key, coupang_secret_key, coupang_partner_id, coupang_tracking_code })
         )(req.body)
