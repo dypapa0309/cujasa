@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { generateBlogPost, getBlogPost, listBlogPosts } from '../services/blogService.js';
+import { generateBlogPost, getAccountBlogPost, getBlogPost, listAccountBlogPosts, listBlogPosts } from '../services/blogService.js';
 
 const router = Router();
 
@@ -43,7 +43,7 @@ function cujasaBanner() {
   </div>`;
 }
 
-function blogLayout({ title, metaDescription, canonical, body, ogType = 'article', publishedAt, modifiedAt, structuredData }) {
+function blogLayout({ title, metaDescription, canonical, body, ogType = 'article', publishedAt, modifiedAt, structuredData, siteName = 'CUJASA 블로그', homeHref = `${APP_BASE_URL}/blog`, navCta = '자동화 프로그램 →' }) {
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(metaDescription);
   const safeCanonical = escapeHtml(canonical);
@@ -65,7 +65,7 @@ function blogLayout({ title, metaDescription, canonical, body, ogType = 'article
   <meta property="og:image" content="${safeImage}">
   <meta property="og:image:alt" content="CUJASA 쿠팡 파트너스 자동화">
   <meta property="og:locale" content="ko_KR">
-  <meta property="og:site_name" content="CUJASA 블로그">
+  <meta property="og:site_name" content="${escapeHtml(siteName)}">
   ${publishedAt ? `<meta property="article:published_time" content="${escapeHtml(new Date(publishedAt).toISOString())}">` : ''}
   ${modifiedAt ? `<meta property="article:modified_time" content="${escapeHtml(new Date(modifiedAt).toISOString())}">` : ''}
   <meta name="twitter:card" content="summary_large_image">
@@ -109,14 +109,18 @@ function blogLayout({ title, metaDescription, canonical, body, ogType = 'article
 </head>
 <body>
   <nav class="nav">
-    <a href="${APP_BASE_URL}/blog" class="nav-logo">CUJASA 블로그</a>
-    <a href="${LANDING_URL}" class="nav-link" target="_blank">자동화 프로그램 →</a>
+    <a href="${escapeHtml(homeHref)}" class="nav-logo">${escapeHtml(siteName)}</a>
+    <a href="${LANDING_URL}" class="nav-link" target="_blank">${escapeHtml(navCta)}</a>
   </nav>
   <div class="container">
     ${body}
   </div>
 </body>
 </html>`;
+}
+
+function accountBlogTitle(account) {
+  return account?.blog_title || `${account?.name || 'JASAIN'} 블로그`;
 }
 
 // 블로그 목록
@@ -157,6 +161,114 @@ router.get('/', async (req, res, next) => {
           '@type': 'Organization',
           name: BLOG_AUTHOR,
           url: LANDING_URL
+        }
+      },
+      body
+    }));
+  } catch (e) { next(e); }
+});
+
+// 계정별 블로그 목록
+router.get('/a/:blogSlug', async (req, res, next) => {
+  try {
+    const { account, posts } = await listAccountBlogPosts(req.params.blogSlug, { limit: 20 });
+    if (!account) return res.status(404).type('html').send('<h1>블로그를 찾을 수 없습니다</h1>');
+
+    const blogTitle = accountBlogTitle(account);
+    const homeHref = `${APP_BASE_URL}/blog/a/${escapeHtml(account.blog_slug)}`;
+    const cards = posts.map((p) => `
+      <a href="${homeHref}/${escapeHtml(p.slug)}" style="text-decoration:none">
+        <div class="post-card">
+          <div class="post-card-date">${formatDate(p.published_at)}</div>
+          <div class="post-card-title">${escapeHtml(p.title)}</div>
+          <div class="post-card-desc">${escapeHtml(p.meta_description || '')}</div>
+        </div>
+      </a>`).join('');
+
+    const body = `
+      <div style="margin-bottom:32px">
+        <h1 style="font-size:26px;font-weight:900;margin-bottom:8px">${escapeHtml(blogTitle)}</h1>
+        <p style="color:#666;font-size:15px">${escapeHtml(account.content_scope || '자동으로 정리되는 추천 콘텐츠')}</p>
+      </div>
+      ${posts.length ? `<div class="card-grid">${cards}</div>` : '<p style="color:#aaa">아직 게시된 글이 없습니다.</p>'}
+      ${cujasaBanner()}`;
+
+    const canonical = `${APP_BASE_URL}/blog/a/${encodeURIComponent(account.blog_slug)}`;
+    res.type('html').send(blogLayout({
+      title: `${blogTitle} — JASAIN`,
+      metaDescription: `${blogTitle}에 게시된 추천 콘텐츠를 확인하세요.`,
+      canonical,
+      ogType: 'website',
+      siteName: blogTitle,
+      homeHref,
+      structuredData: {
+        '@context': 'https://schema.org',
+        '@type': 'Blog',
+        name: blogTitle,
+        description: `${blogTitle}에 게시된 추천 콘텐츠입니다.`,
+        url: canonical,
+        image: BLOG_IMAGE_URL,
+        publisher: {
+          '@type': 'Organization',
+          name: BLOG_AUTHOR,
+          url: LANDING_URL
+        }
+      },
+      body
+    }));
+  } catch (e) { next(e); }
+});
+
+// 계정별 블로그 글 상세
+router.get('/a/:blogSlug/:postSlug', async (req, res, next) => {
+  try {
+    const { account, post } = await getAccountBlogPost(req.params.blogSlug, req.params.postSlug);
+    if (!account || !post) return res.status(404).type('html').send('<h1>글을 찾을 수 없습니다</h1>');
+
+    const blogTitle = accountBlogTitle(account);
+    const homeHref = `${APP_BASE_URL}/blog/a/${escapeHtml(account.blog_slug)}`;
+    const canonical = `${APP_BASE_URL}/blog/a/${encodeURIComponent(account.blog_slug)}/${encodeURIComponent(post.slug)}`;
+    const title = `${post.title} | ${blogTitle}`;
+    const metaDescription = post.meta_description || stripHtml(post.content).slice(0, 150);
+    const body = `
+      <div class="breadcrumb"><a href="${homeHref}">블로그</a> / ${escapeHtml(post.title)}</div>
+      <div class="post-header">
+        <div class="tag">추천 콘텐츠</div>
+        <h1 class="post-title">${escapeHtml(post.title)}</h1>
+        <div class="post-meta">${formatDate(post.published_at)}</div>
+      </div>
+      <div class="post-body">${post.content}</div>
+      ${cujasaBanner()}`;
+
+    res.type('html').send(blogLayout({
+      title,
+      metaDescription,
+      canonical,
+      siteName: blogTitle,
+      homeHref,
+      publishedAt: post.published_at,
+      modifiedAt: post.updated_at || post.published_at,
+      structuredData: {
+        '@context': 'https://schema.org',
+        '@type': 'BlogPosting',
+        headline: post.title,
+        description: metaDescription,
+        image: BLOG_IMAGE_URL,
+        datePublished: new Date(post.published_at).toISOString(),
+        dateModified: new Date(post.updated_at || post.published_at).toISOString(),
+        author: {
+          '@type': 'Organization',
+          name: blogTitle,
+          url: homeHref
+        },
+        publisher: {
+          '@type': 'Organization',
+          name: BLOG_AUTHOR,
+          url: LANDING_URL
+        },
+        mainEntityOfPage: {
+          '@type': 'WebPage',
+          '@id': canonical
         }
       },
       body

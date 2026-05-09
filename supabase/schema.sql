@@ -22,7 +22,7 @@ create table if not exists accounts (
   forbidden_words jsonb not null default '[]',
   tone text,
   cta_style text,
-  content_mode text not null default 'empathy' check (content_mode in ('daily', 'empathy', 'problem_solution', 'checklist', 'question', 'safe_debate')),
+  content_mode text not null default 'auto' check (content_mode in ('auto', 'daily', 'empathy', 'problem_solution', 'checklist', 'question', 'safe_debate')),
   content_intensity text not null default 'normal' check (content_intensity in ('soft', 'normal', 'strong')),
   seasonality_enabled boolean not null default true,
   comment_induction_style text not null default 'soft_question' check (comment_induction_style in ('none', 'soft_question', 'experience_question', 'choice_question')),
@@ -31,6 +31,11 @@ create table if not exists accounts (
   safe_debate_enabled boolean not null default false,
   anonymous_learning_enabled boolean not null default false,
   personal_reference_patterns jsonb not null default '[]',
+  blog_enabled boolean not null default false,
+  blog_slug text,
+  blog_title text,
+  blog_public_url text,
+  blog_created_at timestamptz,
   blog_auto_publish_enabled boolean not null default false,
   blog_publish_mode text not null default 'test_only',
   blog_base_url text,
@@ -82,7 +87,13 @@ alter table accounts add column if not exists coupang_partner_id text;
 alter table accounts add column if not exists coupang_tracking_code text;
 alter table accounts add column if not exists coupang_search_cooldown_until timestamptz;
 alter table accounts add column if not exists coupang_search_status text default 'ok';
-alter table accounts add column if not exists content_mode text not null default 'empathy';
+alter table accounts add column if not exists content_mode text not null default 'auto';
+alter table accounts alter column content_mode set default 'auto';
+alter table accounts
+  drop constraint if exists accounts_content_mode_check;
+alter table accounts
+  add constraint accounts_content_mode_check
+  check (content_mode in ('auto', 'daily', 'empathy', 'problem_solution', 'checklist', 'question', 'safe_debate'));
 alter table accounts add column if not exists content_intensity text not null default 'normal';
 alter table accounts add column if not exists seasonality_enabled boolean not null default true;
 alter table accounts add column if not exists comment_induction_style text not null default 'soft_question';
@@ -91,6 +102,11 @@ alter table accounts add column if not exists emoji_level text not null default 
 alter table accounts add column if not exists safe_debate_enabled boolean not null default false;
 alter table accounts add column if not exists anonymous_learning_enabled boolean not null default false;
 alter table accounts add column if not exists personal_reference_patterns jsonb not null default '[]';
+alter table accounts add column if not exists blog_enabled boolean not null default false;
+alter table accounts add column if not exists blog_slug text;
+alter table accounts add column if not exists blog_title text;
+alter table accounts add column if not exists blog_public_url text;
+alter table accounts add column if not exists blog_created_at timestamptz;
 alter table accounts add column if not exists blog_auto_publish_enabled boolean not null default false;
 alter table accounts add column if not exists blog_publish_mode text not null default 'test_only';
 alter table accounts add column if not exists blog_base_url text;
@@ -105,6 +121,9 @@ alter table accounts alter column active_time_windows set default '[{"start":"09
 alter table accounts alter column min_interval_minutes set default 90;
 alter table accounts alter column link_post_ratio set default 0.67;
 alter table accounts alter column no_link_post_ratio set default 0.33;
+create unique index if not exists idx_accounts_blog_slug
+  on accounts(blog_slug)
+  where blog_slug is not null;
 update accounts
 set
   daily_post_min = 0,

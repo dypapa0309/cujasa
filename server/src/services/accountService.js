@@ -1,7 +1,7 @@
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { normalizeAutomationStatus } from './accountAutomationService.js';
 
-const CONTENT_MODES = new Set(['daily', 'empathy', 'problem_solution', 'checklist', 'question', 'safe_debate']);
+const CONTENT_MODES = new Set(['auto', 'daily', 'empathy', 'problem_solution', 'checklist', 'question', 'safe_debate']);
 const CONTENT_INTENSITIES = new Set(['soft', 'normal', 'strong']);
 const COMMENT_STYLES = new Set(['none', 'soft_question', 'experience_question', 'choice_question']);
 const PRODUCT_MENTION_STYLES = new Set(['none', 'natural', 'direct']);
@@ -35,6 +35,11 @@ const ACCOUNT_COLUMNS = new Set([
   'emoji_level',
   'safe_debate_enabled',
   'anonymous_learning_enabled',
+  'blog_enabled',
+  'blog_slug',
+  'blog_title',
+  'blog_public_url',
+  'blog_created_at',
   'blog_auto_publish_enabled',
   'blog_publish_mode',
   'blog_base_url',
@@ -112,7 +117,7 @@ function normalizeAccount(payload) {
   next.link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.link_post_ratio, BALANCED_LINK_RATIO)));
   next.no_link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.no_link_post_ratio, BALANCED_NO_LINK_RATIO)));
   next.rest_days_per_week = Math.min(7, Math.max(0, toFiniteNumber(next.rest_days_per_week, 1)));
-  if (!CONTENT_MODES.has(next.content_mode)) next.content_mode = 'empathy';
+  if (!CONTENT_MODES.has(next.content_mode)) next.content_mode = 'auto';
   if (!CONTENT_INTENSITIES.has(next.content_intensity)) next.content_intensity = 'normal';
   if (!COMMENT_STYLES.has(next.comment_induction_style)) next.comment_induction_style = 'soft_question';
   if (!PRODUCT_MENTION_STYLES.has(next.product_mention_style)) next.product_mention_style = 'natural';
@@ -120,6 +125,10 @@ function normalizeAccount(payload) {
   next.seasonality_enabled = next.seasonality_enabled !== false;
   next.safe_debate_enabled = Boolean(next.safe_debate_enabled);
   next.anonymous_learning_enabled = Boolean(next.anonymous_learning_enabled);
+  next.blog_enabled = Boolean(next.blog_enabled);
+  next.blog_slug = next.blog_slug == null ? '' : String(next.blog_slug).trim().slice(0, 120);
+  next.blog_title = next.blog_title == null ? '' : String(next.blog_title).trim().slice(0, 120);
+  next.blog_public_url = next.blog_public_url == null ? '' : String(next.blog_public_url).trim().slice(0, 300);
   next.blog_auto_publish_enabled = Boolean(next.blog_auto_publish_enabled);
   next.blog_publish_mode = ['test_only', 'manual', 'auto'].includes(next.blog_publish_mode) ? next.blog_publish_mode : 'test_only';
   next.blog_base_url = next.blog_base_url == null ? '' : String(next.blog_base_url).trim().slice(0, 300);
@@ -155,7 +164,7 @@ export const createAccount = (payload) => dbInsert('accounts', normalizeAccount(
   automation_status: 'paused',
   forbidden_topics: [],
   forbidden_words: ['100%', '무조건', '완벽', '보장', '치료', '예방', '다이어트 약', '보조제', '가르시니아', '효과 보장', '체중감량 보장'],
-  content_mode: 'empathy',
+  content_mode: 'auto',
   content_intensity: 'normal',
   seasonality_enabled: true,
   comment_induction_style: 'soft_question',
@@ -164,6 +173,11 @@ export const createAccount = (payload) => dbInsert('accounts', normalizeAccount(
   safe_debate_enabled: false,
   anonymous_learning_enabled: false,
   personal_reference_patterns: [],
+  blog_enabled: false,
+  blog_slug: '',
+  blog_title: '',
+  blog_public_url: '',
+  blog_created_at: null,
   blog_auto_publish_enabled: false,
   blog_publish_mode: 'test_only',
   blog_base_url: '',

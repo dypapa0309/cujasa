@@ -3,6 +3,16 @@ import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { generateBlogPrompt } from '../prompts/generateBlogPrompt.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 
+const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3000';
+
+function isMissingSchemaError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return ['42703', '42P01'].includes(error?.code)
+    || message.includes('does not exist')
+    || message.includes('schema cache')
+    || message.includes('could not find');
+}
+
 function sanitizeHtml(html = '') {
   return html
     .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -24,6 +34,76 @@ function toSlug(title) {
     .toLowerCase()
     .slice(0, 80)
     + '-' + Date.now().toString(36);
+}
+
+function toBlogSlug(value) {
+  const base = String(value || '')
+    .replace(/^@/, '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48);
+  return base || `blog-${Date.now().toString(36)}`;
+}
+
+async function uniqueBlogSlug(account) {
+  const seed = account?.account_handle || account?.name || account?.id || 'blog';
+  const base = toBlogSlug(seed);
+  const candidates = [
+    base,
+    `${base}-${String(account?.id || '').slice(0, 6)}`,
+    `${base}-${Date.now().toString(36)}`
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    const existing = (await dbList('accounts', { blog_slug: candidate }).catch(() => []))[0];
+    if (!existing || existing.id === account.id) return candidate;
+  }
+  return `${base}-${Date.now().toString(36)}`;
+}
+
+function publicBlogUrl(slug) {
+  return `${APP_BASE_URL}/blog/a/${encodeURIComponent(slug)}`;
+}
+
+export async function ensureAccountBlog(accountId) {
+  const account = await dbGet('accounts', { id: accountId });
+  if (!account) {
+    const error = new Error('Account not found');
+    error.status = 404;
+    throw error;
+  }
+  if (account.status !== 'active') {
+    const error = new Error('활성 계정만 자체 블로그를 생성할 수 있습니다.');
+    error.status = 409;
+    throw error;
+  }
+  if (account.blog_enabled && account.blog_slug && account.blog_public_url) return account;
+
+  const blogSlug = account.blog_slug || await uniqueBlogSlug(account);
+  const blogTitle = account.blog_title || `${account.name || account.account_handle || 'JASAIN'} 블로그`;
+  const now = new Date().toISOString();
+  try {
+    const [updated] = await dbUpdate('accounts', { id: account.id }, {
+      blog_enabled: true,
+      blog_slug: blogSlug,
+      blog_title: blogTitle,
+      blog_public_url: publicBlogUrl(blogSlug),
+      blog_created_at: account.blog_created_at || now,
+      blog_base_url: account.blog_base_url || publicBlogUrl(blogSlug),
+      updated_at: now
+    });
+    return updated;
+  } catch (error) {
+    if (isMissingSchemaError(error)) {
+      const nextError = new Error('자체 블로그 DB 설정이 아직 적용되지 않았습니다. 마이그레이션 적용 후 다시 시도해 주세요.');
+      nextError.status = 503;
+      nextError.code = 'BLOG_SCHEMA_NOT_READY';
+      throw nextError;
+    }
+    throw error;
+  }
 }
 
 export async function generateBlogPost(topicId) {
@@ -73,8 +153,9 @@ export async function generateBlogPostForTopic(topicId, { queueId = null, postId
 }
 
 export async function maybeGenerateBlogPostForQueue({ account, post, queue } = {}) {
-  if (!account?.blog_auto_publish_enabled) return null;
-  if (process.env.NODE_ENV === 'production') return null;
+  if (!account?.blog_enabled || !account?.blog_auto_publish_enabled) return null;
+  const productionAllowed = account.blog_publish_mode === 'auto' || process.env.BLOG_AUTO_PUBLISH_IN_PRODUCTION === 'true';
+  if (process.env.NODE_ENV === 'production' && !productionAllowed) return null;
   if (!post?.topic_id || !queue?.id) return null;
   return generateBlogPostForTopic(post.topic_id, {
     queueId: queue.id,
@@ -91,4 +172,23 @@ export async function listBlogPosts({ limit = 20, offset = 0 } = {}) {
 export async function getBlogPost(slug) {
   const all = await dbList('blog_posts', { slug });
   return all[0] || null;
+}
+
+export async function getAccountBlog(blogSlug) {
+  const all = await dbList('accounts', { blog_slug: blogSlug });
+  return all.find((account) => account.blog_enabled && account.status === 'active') || null;
+}
+
+export async function listAccountBlogPosts(blogSlug, { limit = 20, offset = 0 } = {}) {
+  const account = await getAccountBlog(blogSlug);
+  if (!account) return { account: null, posts: [] };
+  const all = await dbList('blog_posts', { account_id: account.id, status: 'published' }, { order: 'published_at', ascending: false });
+  return { account, posts: all.slice(offset, offset + limit) };
+}
+
+export async function getAccountBlogPost(blogSlug, postSlug) {
+  const account = await getAccountBlog(blogSlug);
+  if (!account) return { account: null, post: null };
+  const all = await dbList('blog_posts', { account_id: account.id, slug: postSlug });
+  return { account, post: all.find((post) => post.status === 'published') || null };
 }

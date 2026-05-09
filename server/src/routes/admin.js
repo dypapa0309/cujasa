@@ -31,6 +31,7 @@ import {
 } from '../services/polibotKnowledgeDbService.js';
 import { redactAccount, redactAccounts, redactBillingSettings, redactPayment } from '../services/redactionService.js';
 import { listTrendPatternAssets, updateTrendPatternQualityStatus } from '../services/trendReferenceLearningService.js';
+import { ensureAccountBlog } from '../services/blogService.js';
 
 const router = Router();
 
@@ -405,6 +406,13 @@ router.post('/accounts/:accountId/disconnect-threads', async (req, res, next) =>
     });
     if (!updated) return res.status(404).json({ error: 'Account not found' });
     res.json(redactAccount(updated));
+  } catch (e) { next(e); }
+});
+
+router.post('/accounts/:accountId/blog', async (req, res, next) => {
+  try {
+    const account = await ensureAccountBlog(req.params.accountId);
+    res.json(redactAccount(account));
   } catch (e) { next(e); }
 });
 

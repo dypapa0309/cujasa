@@ -22,6 +22,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [planBusyUserId, setPlanBusyUserId] = useState('');
   const [showArchivedUsers, setShowArchivedUsers] = useState(false);
   const [archiveBusyUserId, setArchiveBusyUserId] = useState('');
+  const [blogBusyAccountId, setBlogBusyAccountId] = useState('');
 
   const load = async () => {
     const [nextUsers, nextProducts, nextConflicts, nextMisassignments, nextSetupTasks] = await Promise.all([
@@ -199,6 +200,29 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
       toast('Threads 연결을 해제했습니다.', 'success');
     } catch (err) {
       toast(err.message || 'Threads 연결 해제에 실패했습니다.', 'error');
+    }
+  };
+
+  const createAccountBlog = async (account) => {
+    setBlogBusyAccountId(account.id);
+    try {
+      const updated = await api.post(`/api/admin/accounts/${account.id}/blog`, {});
+      await load();
+      toast(updated.blog_public_url ? '자체 블로그를 준비했습니다.' : '자체 블로그 설정을 저장했습니다.', 'success');
+    } catch (err) {
+      toast(err.message || '자체 블로그 생성에 실패했습니다.', 'error');
+    } finally {
+      setBlogBusyAccountId('');
+    }
+  };
+
+  const copyBlogUrl = async (url) => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('블로그 URL을 복사했습니다.', 'success');
+    } catch {
+      toast('복사하지 못했습니다. URL을 직접 선택해 주세요.', 'error');
     }
   };
 
@@ -579,7 +603,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                   {user.accounts?.length === 0 && <div className="text-xs text-slate-400">할당된 계정 없음</div>}
                   <div className="grid gap-2">
                     {user.accounts?.map((a) => (
-                      <div key={a.id} className="grid gap-2 rounded border border-line bg-gray-50 p-3 md:grid-cols-[1.4fr_1fr_auto_auto_auto] md:items-center">
+                      <div key={a.id} className="grid gap-2 rounded border border-line bg-gray-50 p-3 md:grid-cols-[1.4fr_1fr_auto_auto_auto_auto] md:items-center">
                         <div>
                           <div className="text-sm font-semibold">{a.name}</div>
                           <div className="text-xs text-slate-400">{a.account_handle || '핸들 미입력'} · Threads {connectionText(a)}</div>
@@ -588,6 +612,17 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                             {a.threads_connected_at ? ` · 연결 ${formatDateTime(a.threads_connected_at)}` : ''}
                             {a.threads_token_expires_at ? ` · 만료 ${formatDateTime(a.threads_token_expires_at)}` : ''}
                           </div>
+                          {a.blog_enabled && a.blog_public_url && (
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-emerald-700">
+                              <span className="font-semibold">자체 블로그</span>
+                              <a href={a.blog_public_url} target="_blank" rel="noreferrer" className="max-w-[260px] truncate underline">
+                                {a.blog_public_url}
+                              </a>
+                              <button type="button" onClick={() => copyBlogUrl(a.blog_public_url)} className="font-semibold text-slate-500 hover:text-slate-900">
+                                복사
+                              </button>
+                            </div>
+                          )}
                           <div className="mt-1 text-[11px] leading-relaxed text-amber-600">
                             Threads 연결은 고객 브라우저 Chrome/Safari에서 해당 계정으로 threads.net에 로그인한 상태로 진행해야 합니다.
                           </div>
@@ -599,6 +634,15 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                         <button onClick={() => openAccountSettings?.(a.id)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-coupang hover:text-coupang">
                           설정 열기
                         </button>
+                        {a.blog_enabled && a.blog_public_url ? (
+                          <a href={a.blog_public_url} target="_blank" rel="noreferrer" className="rounded border border-line bg-white px-3 py-2 text-center text-xs font-semibold text-slate-600 hover:border-emerald-400 hover:text-emerald-700">
+                            블로그 열기
+                          </a>
+                        ) : (
+                          <button onClick={() => createAccountBlog(a)} disabled={blogBusyAccountId === a.id} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-emerald-400 hover:text-emerald-700 disabled:opacity-50">
+                            {blogBusyAccountId === a.id ? '생성 중...' : '자체 블로그 생성'}
+                          </button>
+                        )}
                         <button onClick={() => connectThreads(a)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-gray-900 hover:text-gray-900">
                           {a.has_threads_access_token ? '재연결' : 'Threads 연결'}
                         </button>

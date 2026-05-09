@@ -67,6 +67,9 @@ export function generatePostsPrompt(topic, products, account) {
             : 'Avoid long explanations.',
           'Every post should make the reader able to answer in under 5 seconds.',
           'When returning multiple posts, distribute contentType across the allowed contentTypes instead of using one type repeatedly.',
+          accountProfile.strategy.effectiveMode === 'auto'
+            ? 'Because content mode is AUTO, choose the best content type per candidate from the allowed contentTypes. Do not force one format for all candidates.'
+            : 'Respect the selected structured content mode.',
           'Use varied angles: one can be empathy, one checklist, one problem-solution, one question, or one mistake-prevention when allowed.',
           'Optimize the body for saves, replies, and shares: concrete inconvenience, quick recognition, or a useful tiny insight should lead.',
           'Use stronger hook frames while staying safe: 나만 불편한 줄 알았던 상황, 은근 갈리는 선택, 사고 나서 후회하는 기준, or a house/life question people can answer immediately.',

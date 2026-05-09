@@ -8,6 +8,15 @@ function includesAny(value, terms) {
 }
 
 const modeProfiles = {
+  auto: {
+    label: '자동 맞춤',
+    contentTypes: ['일상형', '공감형', '문제 해결형', '체크리스트형', '질문형'],
+    rules: [
+      'Content mode is AUTO: choose the content type that best fits the topic, selected products, and referencePatterns.',
+      'When referencePatterns are available, prioritize their structure, pacing, and voice over rigid mode templates.',
+      'Mix daily, empathy, problem-solution, checklist, and question formats naturally across candidates.'
+    ]
+  },
   daily: {
     label: '일상형',
     contentTypes: ['일상형'],
@@ -79,7 +88,7 @@ const emojiRules = {
 };
 
 export function normalizeContentStrategy(account = {}) {
-  const contentMode = modeProfiles[account.content_mode] ? account.content_mode : 'empathy';
+  const contentMode = modeProfiles[account.content_mode] ? account.content_mode : 'auto';
   const safeDebateEnabled = Boolean(account.safe_debate_enabled);
   const effectiveMode = contentMode === 'safe_debate' && !safeDebateEnabled ? 'question' : contentMode;
   const contentIntensity = ['soft', 'normal', 'strong'].includes(account.content_intensity) ? account.content_intensity : 'normal';
@@ -241,6 +250,7 @@ export function strengthenPostHook(body = '', topic = {}, account = {}) {
   const angle = clean(topic?.angle, '고를 때 놓치기 쉬운 기준');
   const mode = profile.strategy.effectiveMode;
   const hooks = {
+    auto: `${title}, 이건 상황마다 기준이 은근 갈리는 포인트예요.`,
     empathy: `${title}, 이거 은근 나만 불편한 줄 알았는데 생각보다 많이 겪는 상황이에요.`,
     daily: `${title}, 평소에는 별거 아닌데 막상 필요할 때마다 은근 신경 쓰이죠.`,
     problem_solution: `${title}, 사고 나서 후회하는 포인트는 보통 ${angle}에서 갈립니다.`,

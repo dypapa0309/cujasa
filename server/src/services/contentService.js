@@ -16,6 +16,7 @@ const MIN_ENGAGEMENT_SCORE = 60;
 function getFallbackContentType(account = {}) {
   const mode = account.content_mode || 'empathy';
   const typeMap = {
+    auto: '공감형',
     daily: '일상형',
     empathy: '공감형',
     problem_solution: '문제 해결형',

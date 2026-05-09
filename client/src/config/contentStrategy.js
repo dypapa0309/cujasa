@@ -1,4 +1,5 @@
 export const contentModeOptions = [
+  { value: 'auto', label: '자동 맞춤', description: '계정 설정과 학습한 인기글 패턴을 보고 글 형식을 자동으로 섞어요.' },
   { value: 'daily', label: '일상형', description: '생활 속 장면에서 자연스럽게 시작' },
   { value: 'empathy', label: '공감형', description: '불편함이나 마음을 먼저 짚는 방식' },
   { value: 'problem_solution', label: '문제 해결형', description: '문제와 선택 기준을 분명히 제시' },

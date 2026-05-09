@@ -1632,6 +1632,9 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
   const [connectingThreads, setConnectingThreads] = useState(false);
   const [requestingSetup, setRequestingSetup] = useState(false);
   const [appliedDraftId, setAppliedDraftId] = useState(null);
+  const [contentAdvancedOpen, setContentAdvancedOpen] = useState(false);
+  const [blogDetailsOpen, setBlogDetailsOpen] = useState(false);
+  const [tossDetailsOpen, setTossDetailsOpen] = useState(false);
 
   useEffect(() => {
     if (!account) {
@@ -1644,7 +1647,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
       target_audience: account.target_audience || '',
       content_scope: account.content_scope || '',
       tone: account.tone || '',
-      content_mode: account.content_mode || 'empathy',
+      content_mode: account.content_mode || 'auto',
       content_intensity: account.content_intensity || 'normal',
       seasonality_enabled: account.seasonality_enabled !== false,
       comment_induction_style: account.comment_induction_style || 'soft_question',
@@ -1698,6 +1701,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
     try {
       await api.patch(`/api/accounts/${account.id}`, {
         ...form,
+        blog_auto_publish_enabled: Boolean(account.blog_enabled && form.blog_auto_publish_enabled),
         daily_post_min: 0,
         daily_post_max: clampDailyPostCount(form.daily_post_max, 3),
         active_time_windows: [{ start: form.first_upload_time || '09:00', end: form.first_upload_time || '09:00' }],
@@ -1724,6 +1728,16 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
     } catch (err) {
       toast(err.message || 'Threads 연결을 시작하지 못했어요.', 'error');
       setConnectingThreads(false);
+    }
+  };
+
+  const copyBlogUrl = async () => {
+    if (!account?.blog_public_url) return;
+    try {
+      await navigator.clipboard.writeText(account.blog_public_url);
+      toast('블로그 주소를 복사했어요.', 'success');
+    } catch {
+      toast('주소를 복사하지 못했어요.', 'error');
     }
   };
 
@@ -1800,7 +1814,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
         </div>
       </CollapsiblePanel>
 
-      <CollapsiblePanel title="쿠팡 API">
+      <CollapsiblePanel title="쿠팡 파트너스 연결">
         <div className="grid gap-3">
           <label className={labelClass}>Access Key<input className={inputClass} value={form.coupang_access_key} onChange={(e) => update('coupang_access_key', e.target.value)} placeholder={account?.has_coupang_access_key ? '저장됨 - 변경 시에만 입력' : 'Access Key'} /></label>
           <label className={labelClass}>Secret Key<input type="password" className={inputClass} value={form.coupang_secret_key} onChange={(e) => update('coupang_secret_key', e.target.value)} placeholder={account?.has_coupang_secret_key ? '저장됨 - 변경 시에만 입력' : 'Secret Key'} /></label>
@@ -1811,18 +1825,38 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
 
       <CollapsiblePanel title="콘텐츠 설정">
         <div className="grid gap-4">
-          <div className="grid gap-2">
-            {contentModeOptions.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => updateContentMode(option.value)}
-                className={`rounded-2xl border px-4 py-3 text-left text-sm ${form.content_mode === option.value ? 'border-white/40 bg-white/10 text-white' : 'border-white/10 bg-black/25 text-zinc-300 hover:bg-white/5'}`}
-              >
-                <div className="font-black">{option.label}</div>
-                <div className="mt-1 text-xs text-zinc-500">{option.description}</div>
-              </button>
-            ))}
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-3">
+            <button
+              type="button"
+              onClick={() => updateContentMode('auto')}
+              className={`w-full rounded-2xl border px-4 py-3 text-left text-sm ${form.content_mode === 'auto' ? 'border-white/40 bg-white/10 text-white' : 'border-white/10 bg-black/20 text-zinc-300 hover:bg-white/5'}`}
+            >
+              <div className="font-black">자동 맞춤</div>
+              <div className="mt-1 text-xs leading-relaxed text-zinc-500">계정 설정과 학습한 인기글 패턴을 보고 글 형식을 자동으로 섞어요.</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setContentAdvancedOpen((prev) => !prev)}
+              className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 px-4 py-2 text-sm font-black text-zinc-300 hover:bg-white/5"
+            >
+              <span>{contentAdvancedOpen ? '고급 설정 접기' : '고급 설정'}</span>
+              <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-200">beta</span>
+            </button>
+            {contentAdvancedOpen && (
+              <div className="mt-3 grid gap-2">
+                {contentModeOptions.filter((option) => option.value !== 'auto').map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => updateContentMode(option.value)}
+                    className={`rounded-2xl border px-4 py-3 text-left text-sm ${form.content_mode === option.value ? 'border-white/40 bg-white/10 text-white' : 'border-white/10 bg-black/20 text-zinc-300 hover:bg-white/5'}`}
+                  >
+                    <div className="font-black">{option.label}</div>
+                    <div className="mt-1 text-xs text-zinc-500">{option.description}</div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <DarkSelect label="강도" value={form.content_intensity} onChange={(value) => update('content_intensity', value)} options={contentIntensityOptions} />
@@ -1859,44 +1893,102 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
         </div>
       </CollapsiblePanel>
 
-      <CollapsiblePanel title="테스트 연결 설정">
+      <CollapsiblePanel title="외부 연결">
         <div className="grid gap-4">
-          <label className="flex items-center justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3 text-sm font-bold text-zinc-300">
-            <span>
-              <span className="block">자체 블로그 자동 발행</span>
-              <span className="mt-1 block text-xs font-medium leading-relaxed text-zinc-500">
-                테스트 환경에서 Threads 업로드 성공 시 내부 블로그 글을 1회 생성해요.
-              </span>
-            </span>
-            <input type="checkbox" checked={form.blog_auto_publish_enabled} onChange={(e) => update('blog_auto_publish_enabled', e.target.checked)} />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <DarkSelect
-              label="블로그 발행 방식"
-              value={form.blog_publish_mode}
-              onChange={(value) => update('blog_publish_mode', value)}
-              options={[
-                { value: 'test_only', label: '테스트 환경만' },
-                { value: 'manual', label: '수동 확인' },
-                { value: 'auto', label: '자동' }
-              ]}
-            />
-            <label className={labelClass}>블로그 기준 URL<input className={inputClass} value={form.blog_base_url} onChange={(e) => update('blog_base_url', e.target.value)} placeholder="https://api.jasain.kr/blog" /></label>
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-black text-zinc-100">내 블로그</div>
+                {account?.blog_enabled && account?.blog_public_url ? (
+                  <p className="mt-1 truncate text-xs leading-relaxed text-zinc-500">{account.blog_public_url}</p>
+                ) : (
+                  <p className="mt-1 text-xs leading-relaxed text-zinc-500">관리자가 블로그를 생성하면 여기에 표시됩니다.</p>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {account?.blog_enabled && account?.blog_public_url && (
+                  <>
+                    <a href={account.blog_public_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-2xl border border-white/10 px-4 py-2 text-sm font-black text-zinc-100 hover:bg-white/10">
+                      <Link2 size={15} />
+                      내 블로그 열기
+                    </a>
+                    <button type="button" onClick={copyBlogUrl} className="rounded-2xl border border-white/10 px-4 py-2 text-sm font-black text-zinc-300 hover:bg-white/10">
+                      주소 복사
+                    </button>
+                  </>
+                )}
+                <button type="button" onClick={() => setBlogDetailsOpen((prev) => !prev)} className="rounded-2xl border border-white/10 px-4 py-2 text-sm font-black text-zinc-300 hover:bg-white/10">
+                  {blogDetailsOpen ? '접기' : '상세 설정'}
+                </button>
+              </div>
+            </div>
+            {blogDetailsOpen && (
+              <div className="mt-4 grid gap-3 border-t border-white/5 pt-4">
+                <label className={`flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-bold ${account?.blog_enabled ? 'bg-black/25 text-zinc-300' : 'bg-black/10 text-zinc-600'}`}>
+                  <span>
+                    <span className="block">자동 발행 사용</span>
+                    <span className="mt-1 block text-xs font-medium leading-relaxed text-zinc-500">
+                      Threads 업로드 성공 후 블로그 글을 1회 생성해요.
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    disabled={!account?.blog_enabled}
+                    checked={Boolean(account?.blog_enabled && form.blog_auto_publish_enabled)}
+                    onChange={(e) => update('blog_auto_publish_enabled', e.target.checked)}
+                  />
+                </label>
+                {!account?.blog_enabled && <Notice>자체 블로그는 관리자 생성 후 사용할 수 있어요.</Notice>}
+                {account?.blog_enabled && (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <DarkSelect
+                      label="블로그 발행 방식"
+                      value={form.blog_publish_mode}
+                      onChange={(value) => update('blog_publish_mode', value)}
+                      options={[
+                        { value: 'test_only', label: '테스트 환경만' },
+                        { value: 'manual', label: '수동 확인' },
+                        { value: 'auto', label: '자동' }
+                      ]}
+                    />
+                    <label className={labelClass}>블로그 기준 URL<input className={inputClass} value={form.blog_base_url} onChange={(e) => update('blog_base_url', e.target.value)} placeholder={account.blog_public_url || 'https://api.jasain.kr/blog'} /></label>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <label className="flex items-center justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3 text-sm font-bold text-zinc-300">
-            <span>
-              <span className="block">토스 쉐어링크 사용</span>
-              <span className="mt-1 block text-xs font-medium leading-relaxed text-zinc-500">
-                v1에서는 계정별 저장만 하고 포스팅 본문에는 자동 삽입하지 않아요.
-              </span>
-            </span>
-            <input type="checkbox" checked={form.toss_share_link_enabled} onChange={(e) => update('toss_share_link_enabled', e.target.checked)} />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className={labelClass}>토스 쉐어링크 URL<input className={inputClass} value={form.toss_share_link_url} onChange={(e) => update('toss_share_link_url', e.target.value)} placeholder="https://toss.me/..." /></label>
-            <label className={labelClass}>표시 라벨<input className={inputClass} value={form.toss_share_link_label} onChange={(e) => update('toss_share_link_label', e.target.value)} placeholder="결제/상담 링크" /></label>
+
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-black text-zinc-100">토스 쉐어링크</div>
+                <p className="mt-1 text-xs leading-relaxed text-zinc-500">상담/결제 안내에 사용할 링크를 저장해둘 수 있어요.</p>
+              </div>
+              <label className="flex items-center gap-3 text-sm font-black text-zinc-300">
+                사용하기
+                <input
+                  type="checkbox"
+                  checked={form.toss_share_link_enabled}
+                  onChange={(e) => {
+                    update('toss_share_link_enabled', e.target.checked);
+                    if (e.target.checked) setTossDetailsOpen(true);
+                  }}
+                />
+              </label>
+            </div>
+            <button type="button" onClick={() => setTossDetailsOpen((prev) => !prev)} className="mt-3 w-full rounded-2xl border border-white/10 px-4 py-2 text-sm font-black text-zinc-300 hover:bg-white/10">
+              {tossDetailsOpen ? '접기' : '상세 설정'}
+            </button>
+            {(form.toss_share_link_enabled || tossDetailsOpen) && (
+              <div className="mt-4 grid gap-3 border-t border-white/5 pt-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className={labelClass}>토스 쉐어링크 URL<input className={inputClass} value={form.toss_share_link_url} onChange={(e) => update('toss_share_link_url', e.target.value)} placeholder="https://toss.me/..." /></label>
+                  <label className={labelClass}>표시 라벨<input className={inputClass} value={form.toss_share_link_label} onChange={(e) => update('toss_share_link_label', e.target.value)} placeholder="결제/상담 링크" /></label>
+                </div>
+                <label className={labelClass}>관리 메모<textarea className={inputClass} rows="2" value={form.toss_share_link_memo} onChange={(e) => update('toss_share_link_memo', e.target.value)} placeholder="사용처, 고객별 안내 문구 등" /></label>
+              </div>
+            )}
           </div>
-          <label className={labelClass}>관리 메모<textarea className={inputClass} rows="2" value={form.toss_share_link_memo} onChange={(e) => update('toss_share_link_memo', e.target.value)} placeholder="사용처, 고객별 안내 문구 등" /></label>
         </div>
       </CollapsiblePanel>
 
@@ -5485,9 +5577,17 @@ function SupportInfoModal({ onClose }) {
           </button>
         </div>
         <div className="mt-5 grid gap-3 text-sm text-zinc-400">
-          <p className="leading-relaxed text-zinc-500">워크스페이스 안에서 해결되지 않는 내용은 문자나 카카오톡으로 남겨주세요.</p>
-          <a href="sms:01040941666?body=%5BJASAIN%20%EC%83%81%EB%8B%B4%5D%20" className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-black text-zinc-950">
-            문자상담 010-4094-1666
+          <p className="leading-relaxed text-zinc-500">워크스페이스 안에서 해결되지 않는 내용은 전화, 문자, 카카오톡으로 남겨주세요.</p>
+          <div className="grid grid-cols-2 gap-2">
+            <a href="tel:01040941666" className="rounded-2xl bg-white px-4 py-3 text-center text-sm font-black text-zinc-950">
+              전화하기
+            </a>
+            <a href="sms:01040941666?body=%5BJASAIN%20%EC%83%81%EB%8B%B4%5D%20" className="rounded-2xl border border-white/10 px-4 py-3 text-center text-sm font-black text-zinc-200 hover:bg-white/10">
+              문자하기
+            </a>
+          </div>
+          <a href="mailto:dypapa0309@gmail.com?subject=%5BJASAIN%20%EB%AC%B8%EC%9D%98%5D" className="rounded-2xl border border-white/10 px-4 py-3 text-center text-sm font-black text-zinc-200 hover:bg-white/10">
+            문의 남기기
           </a>
           <a href="https://open.kakao.com/o/sOtaVlsi" target="_blank" rel="noreferrer" className="rounded-2xl border border-white/10 px-4 py-3 text-center text-sm font-black text-zinc-200 hover:bg-white/10">
             카카오톡 오픈채팅

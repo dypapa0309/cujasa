@@ -1,5 +1,5 @@
 alter table accounts
-  add column if not exists content_mode text not null default 'empathy',
+  add column if not exists content_mode text not null default 'auto',
   add column if not exists content_intensity text not null default 'normal',
   add column if not exists seasonality_enabled boolean not null default true,
   add column if not exists comment_induction_style text not null default 'soft_question',
@@ -40,7 +40,7 @@ alter table accounts
 
 alter table accounts
   add constraint accounts_content_mode_check
-    check (content_mode in ('daily', 'empathy', 'problem_solution', 'checklist', 'question', 'safe_debate')),
+    check (content_mode in ('auto', 'daily', 'empathy', 'problem_solution', 'checklist', 'question', 'safe_debate')),
   add constraint accounts_content_intensity_check
     check (content_intensity in ('soft', 'normal', 'strong')),
   add constraint accounts_comment_induction_style_check

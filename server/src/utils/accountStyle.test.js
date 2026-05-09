@@ -2,6 +2,24 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getAccountStyleProfile, scorePostHook, strengthenPostHook, validatePostStyleFit } from './accountStyle.js';
 
+test('auto content mode allows mixed content types without mode-specific blocking', () => {
+  const profile = getAccountStyleProfile({
+    content_mode: 'auto',
+    target_audience: '2030 자취생',
+    content_scope: '생활용품'
+  });
+
+  const result = validatePostStyleFit('자취 꿀템, 이건 상황마다 기준이 은근 갈리는 포인트예요.\n\n여러분은 편한 사용감 쪽이에요, 오래 쓰는 쪽이에요?', {
+    content_mode: 'auto',
+    target_audience: '2030 자취생',
+    content_scope: '생활용품'
+  });
+
+  assert.equal(profile.strategy.effectiveMode, 'auto');
+  assert.deepEqual(profile.strategy.allowedContentTypes, ['일상형', '공감형', '문제 해결형', '체크리스트형', '질문형']);
+  assert.equal(result.allowed, true);
+});
+
 test('scores strong hook signals in the first sentence', () => {
   const score = scorePostHook('이거 은근 나만 불편한 줄 알았는데 생각보다 많이 겪는 상황이에요.\n\n기준만 잡으면 쉬워요.');
 
