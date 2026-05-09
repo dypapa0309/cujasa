@@ -76,6 +76,7 @@ const actions = [...cujasaActions, ...workspaceActions, ...productPreviewActions
 const pendingSubscriptionKey = 'cujasa_pending_subscription';
 
 function isProductInMaintenance(product = {}) {
+  if (!product) return false;
   if (product?.id === 'spread') return spreadMaintenanceEnabled;
   if (product?.id === 'infludex') return infludexMaintenanceEnabled;
   return false;
@@ -465,22 +466,23 @@ export default function CustomerBetaPage({
 
   const userProducts = Array.isArray(currentUser?.products) ? currentUser.products : [];
   const activeProducts = useMemo(() => userProducts
-    .filter((grant) => grant.status !== 'suspended')
-    .map((grant) => productById(grant.productId) || {
-      id: grant.productId,
-      name: grant.name || grant.productId,
-      description: grant.description || ''
+    .filter((grant) => grant?.status !== 'suspended')
+    .map((grant) => productById(grant?.productId) || {
+      id: grant?.productId,
+      name: grant?.name || grant?.productId,
+      description: grant?.description || ''
     })
     .filter((product) => product?.id), [userProducts]);
   const grantedProductIds = new Set(activeProducts.map((product) => product.id));
-  const visibleProducts = activeProducts.length ? activeProducts : [CURRENT_PRODUCT];
-  const otherProducts = PRODUCTS.filter((product) => !grantedProductIds.has(product.id));
-  const selectedProduct = visibleProducts.find((product) => product.id === selectedProductId)
-    || (activeActionKey === selectedProductId ? otherProducts.find((product) => product.id === selectedProductId) : null)
+  const fallbackProduct = CURRENT_PRODUCT || PRODUCTS.find(Boolean) || { id: 'cujasa', name: 'CUJASA', description: '쿠팡 파트너스 자동화 콘솔' };
+  const visibleProducts = activeProducts.length ? activeProducts : [fallbackProduct];
+  const otherProducts = PRODUCTS.filter((product) => product?.id && !grantedProductIds.has(product.id));
+  const selectedProduct = visibleProducts.find((product) => product?.id === selectedProductId)
+    || (activeActionKey === selectedProductId ? otherProducts.find((product) => product?.id === selectedProductId) : null)
     || visibleProducts[0]
     || productById(selectedProductId)
-    || CURRENT_PRODUCT;
-  const productGrantById = useMemo(() => Object.fromEntries(userProducts.map((grant) => [grant.productId, grant])), [userProducts]);
+    || fallbackProduct;
+  const productGrantById = useMemo(() => Object.fromEntries(userProducts.filter(Boolean).map((grant) => [grant.productId, grant])), [userProducts]);
   const selectedProductGrant = productGrantById[selectedProduct.id];
   const selectedProductGranted = grantedProductIds.has(selectedProduct.id);
   const selectedProductUsage = getGrantUsage(selectedProductGrant, selectedProduct.id);
@@ -5514,24 +5516,27 @@ function healthClass(health = '') {
 }
 
 function JasainHome({ summary, loading, selectedProduct, needsThreadsReconnect, selectedProductPreparing, startingProductId, onOpenAction, onStartProduct }) {
-  const products = Array.isArray(summary?.products) ? summary.products : [];
+  const products = Array.isArray(summary?.products) ? summary.products.filter((product) => product?.productId || product?.id) : [];
   const overview = summary?.overview || {};
-  const primary = summary?.primaryAction || products[0] || null;
-  const visibleProducts = products.length ? products : PRODUCTS.map((product) => ({
+  const rawPrimary = summary?.primaryAction && (summary.primaryAction.productId || summary.primaryAction.id) ? summary.primaryAction : null;
+  const primary = rawPrimary || products[0] || null;
+  const configuredProducts = PRODUCTS.filter((product) => product?.id);
+  const visibleProducts = products.length ? products : configuredProducts.map((product) => ({
     productId: product.id,
     name: product.name,
     description: product.description,
-    granted: product.id === CURRENT_PRODUCT.id,
-    health: product.id === CURRENT_PRODUCT.id ? 'empty' : 'locked',
-    summary: product.id === CURRENT_PRODUCT.id ? '운영 데이터를 불러오는 중이에요.' : '시작하면 이 제품의 작업 메뉴가 열려요.',
-    nextAction: product.id === CURRENT_PRODUCT.id ? '자동화 실행' : `${product.name} 시작하기`,
-    actionKey: product.id === CURRENT_PRODUCT.id ? 'run' : product.id
+    granted: product.id === CURRENT_PRODUCT?.id,
+    health: product.id === CURRENT_PRODUCT?.id ? 'empty' : 'locked',
+    summary: product.id === CURRENT_PRODUCT?.id ? '운영 데이터를 불러오는 중이에요.' : '시작하면 이 제품의 작업 메뉴가 열려요.',
+    nextAction: product.id === CURRENT_PRODUCT?.id ? '자동화 실행' : `${product.name} 시작하기`,
+    actionKey: product.id === CURRENT_PRODUCT?.id ? 'run' : product.id
   }));
 
   const runProductAction = (product) => {
     if (!product) return;
+    const productId = product.productId || product.id;
     if (!product.granted && product.health !== 'maintenance') {
-      onStartProduct?.(product.productId);
+      onStartProduct?.(productId);
       return;
     }
     if (product.actionKey) onOpenAction?.(product.actionKey);
@@ -5556,10 +5561,10 @@ function JasainHome({ summary, loading, selectedProduct, needsThreadsReconnect, 
               <button
                 type="button"
                 onClick={() => runProductAction(primary)}
-                disabled={primary.health === 'maintenance' || startingProductId === primary.productId}
+                disabled={primary.health === 'maintenance' || startingProductId === (primary.productId || primary.id)}
                 className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-950 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {startingProductId === primary.productId ? '시작하는 중...' : primary.nextAction || '다음 액션'}
+                {startingProductId === (primary.productId || primary.id) ? '시작하는 중...' : primary.nextAction || '다음 액션'}
                 <ChevronRight size={17} />
               </button>
             )}
@@ -5597,23 +5602,24 @@ function JasainHome({ summary, loading, selectedProduct, needsThreadsReconnect, 
             )}
             {selectedProductPreparing && (
               <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-zinc-400">
-                <span className="font-black text-zinc-200">{selectedProduct.name}</span>는 서비스 점검 중이에요.
+                <span className="font-black text-zinc-200">{selectedProduct?.name || '선택한 제품'}</span>는 서비스 점검 중이에요.
               </div>
             )}
           </div>
         )}
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {visibleProducts.map((product) => {
-            const configured = productById(product.productId);
-            const Icon = product.productId === 'cujasa' ? PlayCircle
-              : product.productId === 'dexor' ? Search
-                : product.productId === 'spread' ? Sparkles
-                  : product.productId === 'polibot' ? ShieldCheck
+          {visibleProducts.filter((product) => product?.productId || product?.id).map((product) => {
+            const productId = product.productId || product.id;
+            const configured = productById(productId);
+            const Icon = productId === 'cujasa' ? PlayCircle
+              : productId === 'dexor' ? Search
+                : productId === 'spread' ? Sparkles
+                  : productId === 'polibot' ? ShieldCheck
                     : BarChart3;
-            const disabled = product.health === 'maintenance' || startingProductId === product.productId;
+            const disabled = product.health === 'maintenance' || startingProductId === productId;
             return (
-              <article key={product.productId} className="flex min-h-[218px] flex-col rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <article key={productId} className="flex min-h-[218px] flex-col rounded-3xl border border-white/10 bg-white/[0.03] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-center gap-3">
                     <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/10 text-zinc-100">
@@ -5641,7 +5647,7 @@ function JasainHome({ summary, loading, selectedProduct, needsThreadsReconnect, 
                   disabled={disabled}
                   className="mt-auto inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-black text-zinc-100 hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {startingProductId === product.productId ? '시작하는 중...' : product.nextAction}
+                  {startingProductId === productId ? '시작하는 중...' : product.nextAction}
                   {!disabled && <ChevronRight size={16} />}
                 </button>
               </article>
