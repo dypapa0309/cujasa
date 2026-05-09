@@ -5,6 +5,7 @@ export function generatePostsPrompt(topic, products, account) {
   const contentContext = getContentGuardrailContext();
   const accountProfile = getAccountStyleProfile(account);
   const referencePatterns = Array.isArray(account.referencePatterns) ? account.referencePatterns : [];
+  const performanceSignals = account.performanceSignals || null;
   return [
     { role: 'system', content: 'You write short, natural Korean Threads posts. Return strict JSON only. Account tone is a style guide, not a keyword checklist. Natural readability comes first.' },
     {
@@ -23,6 +24,12 @@ export function generatePostsPrompt(topic, products, account) {
           contentStrategy: accountProfile.strategy,
           referencePatternMix: account.referencePatternMix || null
         },
+        performanceSignals: performanceSignals ? {
+          topTopics: performanceSignals.topTopics || [],
+          topProducts: performanceSignals.topProducts || [],
+          topProductGroups: performanceSignals.topProductGroups || [],
+          topPosts: performanceSignals.topPosts || []
+        } : null,
         referencePatterns: referencePatterns.map((pattern) => ({
           hookPattern: pattern.hookPattern,
           commentQuestion: pattern.commentQuestion,
@@ -59,6 +66,12 @@ export function generatePostsPrompt(topic, products, account) {
           referencePatterns.length
             ? 'Use referencePatterns as strong structural and voice inspiration. Never copy exact source wording, but mirror the pacing, line breaks, list shape, punctuation habits, tone register, hook pattern, question pattern, and tension type.'
             : 'No referencePatterns are available, so rely on the safe default engagement frames.',
+          performanceSignals?.topPosts?.length
+            ? 'Use performanceSignals.topPosts as lightweight evidence of what earned clicks before. Borrow the broad hook/choice structure only; never copy body text.'
+            : 'No reliable click-winning post patterns are available yet.',
+          performanceSignals?.topProducts?.length
+            ? 'When selectedProducts overlap with high-click product groups, make the use situation clearer without sounding more ad-like.'
+            : 'Do not claim historical performance without signals.',
           referencePatterns.length
             ? 'If a reference pattern uses raw list-style observations, keep that raw Threads feel. Avoid formal explanatory phrases such as "경향이 있습니다", "영향을 미칩니다", or "특징이 있습니다".'
             : 'Keep the tone conversational and not essay-like.',

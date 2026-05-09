@@ -63,7 +63,7 @@ export default function AnalyticsPage({ selectedAccount }) {
 
       {!loading && (data?.recommendations || []).length > 0 && (
         <div className="rounded border border-line bg-white p-5">
-          <h3 className="mb-3 font-semibold">다음 추천 방향</h3>
+          <h3 className="mb-3 font-semibold">다음 생성에 반영되는 성과 힌트</h3>
           <ul className="grid gap-2">
             {data.recommendations.map((r, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-slate-600">

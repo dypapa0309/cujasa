@@ -1,6 +1,6 @@
 import { Component, useEffect, useState } from 'react';
 import { ToastProvider } from './lib/toast.jsx';
-import { LayoutDashboard, Settings, Users, Wand2, Boxes, ListChecks, BarChart3, ShieldCheck, Megaphone, ClipboardCheck, DatabaseZap, Sparkles } from 'lucide-react';
+import { LayoutDashboard, Settings, Users, Wand2, Boxes, ListChecks, BarChart3, ShieldCheck, Megaphone, ClipboardCheck, DatabaseZap, Sparkles, Bot } from 'lucide-react';
 import DashboardPage from './pages/DashboardPage.jsx';
 import AccountListPage from './pages/AccountListPage.jsx';
 import AccountSettingsPage from './pages/AccountSettingsPage.jsx';
@@ -15,6 +15,7 @@ import AdminAnnouncementsPage from './pages/AdminAnnouncementsPage.jsx';
 import AdminSetupPage from './pages/AdminSetupPage.jsx';
 import AdminPolibotKnowledgePage from './pages/AdminPolibotKnowledgePage.jsx';
 import AdminTrendReferencePage from './pages/AdminTrendReferencePage.jsx';
+import AutomationStudioPage from './pages/AutomationStudioPage.jsx';
 import CustomerApp from './pages/customer/CustomerApp.jsx';
 import { api, getAuthToken, setAuthToken } from './lib/api.js';
 import { CURRENT_PRODUCT, JASAIN_BRAND } from './config/products.js';
@@ -27,6 +28,7 @@ const adminTabs = [
   ['queue', '업로드 큐', ListChecks],
   ['analytics', '애널리틱스', BarChart3],
   ['settings', '설정', Settings],
+  ['automation-studio', '오토메이션 스튜디오', Bot],
   ['admin-users', '고객/권한 관리', ShieldCheck],
   ['admin-trend-references', '콘텐츠 패턴', Sparkles],
   ['admin-polibot-knowledge', 'POLIBOT 자료', DatabaseZap],
@@ -52,6 +54,7 @@ const pages = {
   queue: QueuePage,
   analytics: AnalyticsPage,
   settings: SettingsPage,
+  'automation-studio': AutomationStudioPage,
   'admin-users': AdminUsersPage,
   'admin-trend-references': AdminTrendReferencePage,
   'admin-polibot-knowledge': AdminPolibotKnowledgePage,

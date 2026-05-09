@@ -28,7 +28,12 @@ function groupByDate(rows) {
     else if (d >= tomorrow && d < dayAfter) groups['내일'].push(r);
     else groups['이후'].push(r);
   });
+  groups['완료/기타'].sort((a, b) => queueCompletedTime(b) - queueCompletedTime(a));
   return groups;
+}
+
+function queueCompletedTime(row = {}) {
+  return new Date(row.posted_at || row.updated_at || row.created_at || row.scheduled_at || 0).getTime() || 0;
 }
 
 export default function QueuePage({ selectedAccount }) {
@@ -88,7 +93,9 @@ export default function QueuePage({ selectedAccount }) {
   };
 
   const selectedFilter = FILTERS.find((item) => item.key === filter) || FILTERS[0];
-  const filteredRows = rows.filter(selectedFilter.match);
+  const filteredRows = rows
+    .filter(selectedFilter.match)
+    .sort((a, b) => filter === 'posted' ? queueCompletedTime(b) - queueCompletedTime(a) : 0);
   const groups = groupByDate(filteredRows);
   const counts = Object.fromEntries(FILTERS.map((item) => [item.key, rows.filter(item.match).length]));
 

@@ -5,6 +5,7 @@ import { generateTopicsPrompt } from '../prompts/generateTopicsPrompt.js';
 import { isDuplicateTopic } from './similarityService.js';
 import { validateTopicCandidate } from '../utils/contentGuardrails.js';
 import { validateTopicsResponse } from '../utils/aiResponseSchemas.js';
+import { buildAccountPerformanceSignals } from './analyticsService.js';
 
 const sampleTopics = (account) => ({
   topics: [
@@ -31,7 +32,8 @@ export async function generateTopics(accountId) {
   const account = await getAccount(accountId);
   assertAccountActive(account, 'generate topics');
   const recent = await dbList('topics', { account_id: accountId }, { order: 'created_at', limit: 100 });
-  const generated = await getJson(generateTopicsPrompt(account, recent), () => sampleTopics(account), {
+  const performanceSignals = await buildAccountPerformanceSignals(accountId);
+  const generated = await getJson(generateTopicsPrompt(account, recent, performanceSignals), () => sampleTopics(account), {
     schemaName: 'generate_topics',
     validate: validateTopicsResponse,
     logContext: {

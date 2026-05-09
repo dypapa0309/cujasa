@@ -60,10 +60,14 @@ router.post('/:accountId/create-daily-queue', requireAccountAccessParam(), async
 router.get('/:accountId/queue', requireAccountAccessParam(), async (req, res, next) => {
   try {
     const rows = await dbList('post_queue', { account_id: req.params.accountId }, { order: 'scheduled_at', ascending: true });
+    const automationLinks = req.query.includeAutomationStudio === '1'
+      ? []
+      : await dbList('automation_studio_queue_links').catch(() => []);
+    const automationQueueIds = new Set(automationLinks.map((link) => link.queue_id).filter(Boolean));
     const visibleRows = req.user?.type === 'user' || req.query.includeHidden !== '1'
       ? rows.filter(isCustomerVisibleQueue)
       : rows;
-    res.json(decorateQueueRows(visibleRows));
+    res.json(decorateQueueRows(visibleRows.filter((row) => !automationQueueIds.has(row.id))));
   } catch (e) { next(e); }
 });
 router.post('/:accountId/dismiss-past-issues', requireAccountAccessParam(), async (req, res, next) => {

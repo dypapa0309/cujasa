@@ -28,6 +28,10 @@ function queueUpdatedTime(row = {}) {
   return new Date(row.updated_at || row.created_at || row.scheduled_at || 0).getTime() || 0;
 }
 
+function queueCompletedTime(row = {}) {
+  return new Date(row.posted_at || row.updated_at || row.created_at || row.scheduled_at || 0).getTime() || 0;
+}
+
 function ModeBadge({ mode, linkStatus }) {
   const isLink = mode === 'link';
   const missing = linkStatus === 'missing';
@@ -151,7 +155,7 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
   };
 
   const scheduled = queue.filter((r) => r.status === 'scheduled').sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
-  const posted = queue.filter((r) => r.status === 'posted').sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at));
+  const posted = queue.filter((r) => r.status === 'posted').sort((a, b) => queueCompletedTime(b) - queueCompletedTime(a));
   const needsAttention = queue
     .filter((r) => ['failed', 'retry', 'manual_required'].includes(r.status))
     .sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));

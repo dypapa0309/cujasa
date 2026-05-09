@@ -1,7 +1,7 @@
 import { getContentGuardrailContext } from '../utils/contentGuardrails.js';
 import { getAccountStyleProfile } from '../utils/accountStyle.js';
 
-export function selectProductsPrompt(topic, products, account = null) {
+export function selectProductsPrompt(topic, products, account = null, performanceSignals = null) {
   const contentContext = getContentGuardrailContext();
   const accountProfile = account ? getAccountStyleProfile(account) : null;
   return [
@@ -19,6 +19,11 @@ export function selectProductsPrompt(topic, products, account = null) {
           forbiddenWords: account.forbidden_words
         } : null,
         topic,
+        performanceSignals: performanceSignals ? {
+          topProducts: performanceSignals.topProducts || [],
+          topProductGroups: performanceSignals.topProductGroups || [],
+          topTopics: performanceSignals.topTopics || []
+        } : null,
         products: products.map((p) => ({
           productId: p.product_id,
           productName: p.product_name,
@@ -39,6 +44,10 @@ export function selectProductsPrompt(topic, products, account = null) {
           'account target audience fit',
           'account content scope fit',
           'account tone fit',
+          performanceSignals?.topProducts?.length
+            ? 'When candidates are otherwise equally relevant, prefer products or product groups similar to historically high-click products.'
+            : 'No reliable product click history is available yet, so judge fit from the current topic and account only.',
+          'Do not select a high-click product group if it feels random for the current topic.',
           'only select products whose name, category, or keyword naturally matches the topic title, angle, search keyword, and account content scope',
           'reason must mention the concrete product type, the exact use situation in the post, and why it does not feel random for this topic',
           'recommendedUse must describe the role in content using a specific situation, not a generic label like 메인 추천 only',

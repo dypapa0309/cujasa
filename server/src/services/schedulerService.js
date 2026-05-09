@@ -617,7 +617,7 @@ export async function processDueQueue() {
     dbList('post_queue', { status: 'scheduled' }),
     dbList('post_queue', { status: 'retry' })
   ]);
-  const rows = [...scheduled, ...retrying];
+  const rows = [...scheduled, ...retrying].filter((row) => (row.platform || 'threads') === 'threads');
   const activeAccounts = await dbList('accounts', { status: 'active' });
   const activeAccountIds = new Set(activeAccounts.filter(isAutomationRunning).map((account) => account.id));
   const due = rows.filter((row) => activeAccountIds.has(row.account_id) && new Date(row.scheduled_at) <= new Date());
@@ -775,6 +775,12 @@ export async function uploadQueueItem(queueId) {
     error.status = 404;
     throw error;
   }
+  if ((queue.platform || 'threads') !== 'threads') {
+    const error = new Error('Only Threads queue items can be uploaded automatically. Instagram preview queue is manual only.');
+    error.status = 409;
+    error.code = 'AUTOMATION_STUDIO_PREVIEW_ONLY';
+    throw error;
+  }
   const account = await dbGet('accounts', { id: queue.account_id });
   const post = await dbGet('posts', { id: queue.post_id });
   if (canRepairReplyFailureQueue(queue)) {
@@ -844,7 +850,7 @@ export async function uploadQueueItem(queueId) {
       product_id: product.id,
       destination_url: product.partner_url || product.product_url,
       link_type: 'coupang'
-    }) : null)) : null;
+    }) : null)) : existingLink;
     trackingLinkForFailure = trackingLink?.id || trackingLinkForFailure;
     if (requiresLink && !trackingLink) {
       const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글의 트래킹 링크를 만들 수 없습니다.');
@@ -860,7 +866,7 @@ export async function uploadQueueItem(queueId) {
         posted_at: new Date().toISOString(),
         post_url: uploaded.postUrl,
         selected_cta_id: cta?.id,
-        tracking_link_id: trackingLink?.id,
+        tracking_link_id: trackingLink?.id || queue.tracking_link_id || null,
         error_message: null,
         error_category: null
       });
@@ -871,7 +877,7 @@ export async function uploadQueueItem(queueId) {
         posted_at: new Date().toISOString(),
         post_url: uploaded.postUrl,
         selected_cta_id: cta?.id,
-        tracking_link_id: trackingLink?.id,
+        tracking_link_id: trackingLink?.id || queue.tracking_link_id || null,
         error_message: null
       });
     }

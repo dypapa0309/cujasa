@@ -1,7 +1,7 @@
 import { getContentGuardrailContext } from '../utils/contentGuardrails.js';
 import { getAccountStyleProfile } from '../utils/accountStyle.js';
 
-export function generateTopicsPrompt(account, recentTopics = []) {
+export function generateTopicsPrompt(account, recentTopics = [], performanceSignals = null) {
   const contentContext = getContentGuardrailContext();
   const accountProfile = getAccountStyleProfile(account);
   const recentTopicMemory = recentTopics.slice(0, 30).map((topic) => ({
@@ -26,8 +26,20 @@ export function generateTopicsPrompt(account, recentTopics = []) {
           tone: account.tone,
           contentStrategy: accountProfile.strategy
         },
+        performanceSignals: performanceSignals ? {
+          topTopics: performanceSignals.topTopics || [],
+          topProducts: performanceSignals.topProducts || [],
+          topProductGroups: performanceSignals.topProductGroups || [],
+          guidance: performanceSignals.guidance || []
+        } : null,
         recentTopicMemory,
         guardrails: [
+          performanceSignals?.topTopics?.length
+            ? 'Use performanceSignals to expand proven problem/product clusters, but do not repeat the same title or angle verbatim.'
+            : 'No reliable click performance signals are available yet.',
+          performanceSignals?.topProductGroups?.length
+            ? 'Prefer adjacent purchasable product keywords near high-click product groups when they still fit contentScope.'
+            : 'Do not invent performance claims without click signals.',
           'Avoid repeating recentTopicMemory titles, angles, hooks, and product keyword clusters.',
           'Distribute topic angles across problem-solving, checklist, comparison, mistake-prevention, small-space/occasion use, and relatable question frames when they fit contentScope.',
           'Do not generate eight topics with the same sentence pattern or the same purchase trigger.',

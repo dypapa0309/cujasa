@@ -11,6 +11,7 @@ import {
 } from '../utils/productDiversity.js';
 import { isRealCoupangProduct, realProductIssues } from '../utils/productQuality.js';
 import { validateProductSelectionResponse } from '../utils/aiResponseSchemas.js';
+import { buildAccountPerformanceSignals } from './analyticsService.js';
 
 function isSelectableProduct(product, topic, account, item = {}) {
   if (!isRealCoupangProduct(product)) return false;
@@ -65,6 +66,7 @@ export async function selectProducts(topicId, postId = null) {
     return [];
   }
   const diverseProducts = enrichProductsWithDiversity(products);
+  const performanceSignals = await buildAccountPerformanceSignals(topic.account_id);
   const fallback = () => ({
     selectedProducts: buildDiverseProductSelection([], diverseProducts, topic, 3, account).selected.map(({ product, item }) => ({
       ...item,
@@ -72,7 +74,7 @@ export async function selectProducts(topicId, postId = null) {
       productGroup: getProductGroup(product)
     }))
   });
-  const result = await getJson(selectProductsPrompt(topic, diverseProducts, account), fallback, {
+  const result = await getJson(selectProductsPrompt(topic, diverseProducts, account, performanceSignals), fallback, {
     schemaName: 'select_products',
     validate: validateProductSelectionResponse,
     logContext: {

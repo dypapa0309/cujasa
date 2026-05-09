@@ -10,6 +10,7 @@ import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { validatePostsResponse } from '../utils/aiResponseSchemas.js';
 import { buildChoiceTensionFallback, scorePostEngagement } from '../utils/postEngagementScoring.js';
 import { buildReferencePatternContext } from './trendReferenceLearningService.js';
+import { buildAccountPerformanceSignals } from './analyticsService.js';
 
 const MIN_ENGAGEMENT_SCORE = 60;
 
@@ -44,10 +45,12 @@ export async function generatePosts(topicId) {
   const topic = await dbGet('topics', { id: topicId });
   const account = await getAccount(topic.account_id);
   const referenceContext = await buildReferencePatternContext(account, { limit: 5 });
+  const performanceSignals = await buildAccountPerformanceSignals(account.id);
   const accountForPrompt = {
     ...account,
     referencePatterns: referenceContext.patterns,
-    referencePatternMix: referenceContext.mix
+    referencePatternMix: referenceContext.mix,
+    performanceSignals
   };
   const selectedRows = await dbList('post_products', { topic_id: topicId });
   const selected = (await Promise.all(selectedRows.map(async (row) => {
