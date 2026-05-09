@@ -13,7 +13,7 @@ import { buildReferencePatternContext } from './trendReferenceLearningService.js
 import { buildAccountPerformanceSignals } from './analyticsService.js';
 import { sanitizePostBody } from '../utils/contentText.js';
 
-const MIN_ENGAGEMENT_SCORE = 60;
+const STABLE_HUMANLIKE_SCORE = 82;
 
 function preparePostBodyCandidate(rawBody, account) {
   const initialRisk = checkAndRewriteRisk(rawBody);
@@ -54,6 +54,16 @@ function candidateScoreSummary(candidate, index, selected) {
     rejected: Boolean(candidate.rejected),
     rejectionReasons: candidate.rejectionReasons || []
   };
+}
+
+function isStableHumanlikeCandidate(candidate) {
+  const engagement = candidate?.engagement;
+  return engagement?.engagementScore >= STABLE_HUMANLIKE_SCORE
+    && engagement?.checks?.livedInStructure
+    && engagement?.checks?.concreteCriteria
+    && !engagement?.checks?.genericTemplate
+    && !engagement?.checks?.aiLikeTone
+    && !engagement?.checks?.accountTokenLeak;
 }
 
 export async function generatePosts(topicId) {
@@ -218,18 +228,19 @@ export async function generatePosts(topicId) {
     });
   }
 
-  if (!candidates.length || Math.max(...candidates.map((candidate) => candidate.engagement.engagementScore)) < MIN_ENGAGEMENT_SCORE) {
+  if (!candidates.some(isStableHumanlikeCandidate)) {
     const { risk: fallbackRisk, prepared: fallbackPrepared } = preparePostBodyCandidate(buildChoiceTensionFallback(topic, account), account);
     const fallbackGuardrail = validatePostCandidate(fallbackPrepared.body, account, topic);
     const fallbackStyleFit = validatePostStyleFit(fallbackPrepared.body, account);
     if (fallbackGuardrail.allowed && fallbackStyleFit.allowed && fallbackRisk.riskLevel !== 'high') {
+      const fallbackEngagement = scorePostEngagement(fallbackPrepared.body, { products: selected });
       const fallbackCandidate = {
         item: { contentType: getFallbackContentType(account), riskLevel: fallbackRisk.riskLevel },
         body: fallbackPrepared.body,
         contentType: getFallbackContentType(account),
         riskLevel: fallbackRisk.riskLevel,
         status: 'draft',
-        engagement: scorePostEngagement(fallbackPrepared.body, { products: selected }),
+        engagement: fallbackEngagement,
         rejected: false,
         rejectionReasons: [],
         fallbackUsed: true
@@ -241,16 +252,20 @@ export async function generatePosts(topicId) {
         topic_id: topic.id,
         action: 'post_engagement_fallback_used',
         level: 'info',
-        message: '후보 점수가 기준 미달이라 선택 갈림형 fallback을 사용했습니다.',
+        message: '후보가 안정형 생활 장면 기준에 못 미쳐 사람 말투 fallback을 추가했습니다.',
         payload: {
-          threshold: MIN_ENGAGEMENT_SCORE,
+          threshold: STABLE_HUMANLIKE_SCORE,
+          fallbackScore: fallbackEngagement.engagementScore,
           candidateScores: candidates.map((candidate, index) => candidateScoreSummary(candidate, index, false))
         }
       });
     }
   }
 
-  const ranked = candidates
+  const selectableCandidates = candidates.some(isStableHumanlikeCandidate)
+    ? candidates.filter(isStableHumanlikeCandidate)
+    : candidates;
+  const ranked = selectableCandidates
     .slice()
     .sort((a, b) => b.engagement.engagementScore - a.engagement.engagementScore);
   const best = ranked[0];

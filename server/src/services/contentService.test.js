@@ -27,4 +27,8 @@ test('generatePosts stores one selected post with engagement metadata', async ()
   assert.equal(typeof saved.metadata.rubric.adTonePenalty, 'number');
   assert.ok(saved.metadata.referencePatternMix);
   assert.equal(typeof saved.metadata.referencePatternCount, 'number');
+  assert.equal(saved.metadata.rubric.livedInStructureScore > 0, true);
+  assert.equal(saved.metadata.rubric.concreteCriteriaScore > 0, true);
+  assert.match(saved.body, /1\./);
+  assert.match(saved.body, /여러분|뭐였어요|보세요/);
 });

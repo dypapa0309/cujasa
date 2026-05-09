@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildChoiceTensionFallback, scorePostEngagement } from './postEngagementScoring.js';
+import { buildChoiceTensionFallback, buildHumanStyleFallback, scorePostEngagement } from './postEngagementScoring.js';
 
 test('scores safe choice questions higher than generic ad copy', () => {
   const choicePost = '좁은 주방 정리할 때 이건 은근 갈리더라고요.\n\n꺼내기 쉬운 쪽이 좋아요, 아니면 보기 깔끔한 쪽이 좋아요?';
@@ -37,9 +37,12 @@ test('choice tension fallback is comment-oriented', () => {
   );
   const score = scorePostEngagement(body);
 
-  assert.match(body, /쪽을 보세요/);
+  assert.match(body, /1\./);
+  assert.match(body, /제일 먼저/);
   assert.equal(score.engagementPattern, 'choice_tension');
-  assert.ok(score.engagementScore >= 60);
+  assert.equal(score.checks.livedInStructure, true);
+  assert.equal(score.checks.concreteCriteria, true);
+  assert.ok(score.engagementScore >= 82);
 });
 
 test('choice tension fallback removes account login ids from topic titles', () => {
@@ -50,7 +53,7 @@ test('choice tension fallback removes account login ids from topic titles', () =
 
   assert.doesNotMatch(body, /lovehyun45/i);
   assert.match(body, /냄새 줄이는 법/);
-  assert.match(body, /관리하기 쉬운 쪽/);
+  assert.match(body, /1\./);
 });
 
 test('penalizes leaked account ids and generic template questions', () => {
@@ -79,4 +82,20 @@ test('does not treat product model numbers as account id leaks', () => {
 
   assert.equal(score.checks.accountTokenLeak, false);
   assert.ok(score.engagementScore >= 60);
+});
+
+test('human style fallback matches the target lived-in post shape', () => {
+  const body = buildHumanStyleFallback(
+    { title: '자취생을 위한 집기 추천', angle: '처음 살 때 체감되는 기준' },
+    { content_scope: '자취 생활 집기', target_audience: '자취생' }
+  );
+  const score = scorePostEngagement(body);
+
+  assert.match(body, /작은데 자주 쓰는 것/);
+  assert.match(body, /1\. 설거지 후 바로 둘 곳/);
+  assert.match(body, /자취 시작할 때/);
+  assert.equal(score.checks.livedInStructure, true);
+  assert.equal(score.checks.concreteCriteria, true);
+  assert.equal(score.checks.safe, true);
+  assert.ok(score.engagementScore >= 82);
 });

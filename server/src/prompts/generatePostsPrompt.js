@@ -65,6 +65,8 @@ export function generatePostsPrompt(topic, products, account) {
           'Write like a specific person noticing a small real situation, not like an AI summarizing pros and cons.',
           'Avoid template openings such as "이건 은근 기준이 갈리는 선택", "사람마다 다르더라고요", and generic "실용성 vs 사용감" questions unless the words are tied to a concrete scene.',
           'Every candidate needs at least one concrete daily detail: where it happens, what is annoying, when it gets noticed, or what changes after choosing.',
+          'Prefer the stable CUJASA shape when it fits: one lived-in opening, one short "막상 써보면/살아보면" observation, 2-3 concrete criteria, then one easy experience question.',
+          'For 자취/원룸/살림 topics, concrete criteria should sound like actual spots or chores: 설거지 후 둘 곳, 빨래 모아둘 곳, 욕실 물기, 조리대 위 자리, 꺼내기 쉬운 구조.',
           'Default to safe choice-tension frames: A/B choice, criteria that split opinions, "people who tried this" questions, and situation-based preferences.',
           referencePatterns.length
             ? 'Use referencePatterns as strong structural and voice inspiration. Never copy exact source wording, but mirror the pacing, line breaks, list shape, punctuation habits, tone register, hook pattern, question pattern, and tension type.'

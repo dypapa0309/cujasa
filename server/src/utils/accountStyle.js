@@ -231,7 +231,7 @@ function firstSentenceOf(body = '') {
 export function scorePostHook(body = '') {
   const first = firstSentenceOf(body);
   const checks = {
-    concreteInconvenience: /귀찮|불편|신경|피곤|번거|막상|은근|자꾸|놓치|고민|헷갈/.test(first),
+    concreteInconvenience: /귀찮|불편|신경|피곤|번거|막상|은근|자꾸|놓치|고민|헷갈|애매/.test(first),
     choiceTension: /갈리|취향|습관|상황|공간|예산|빈도|기준|먼저|차이|쪽/.test(first),
     regretPrevention: /후회|실수|사고 나서|사기 전|고르기 전|놓치기 쉬운|체크/.test(first),
     replyPrompt: /여러분|다들|혹시|어때|뭐가|어느 쪽|고르/.test(first)
@@ -272,9 +272,9 @@ export function validatePostStyleFit(body, account = {}) {
   const profile = getAccountStyleProfile(account);
   const text = String(body || '');
   const reasons = [];
-  const hostileTerms = ['한심', '극혐', '노답', '틀딱', '맘충', '남혐', '여혐', '거지', '무식', '병신', '바보', '편가르', '갈라치기', '정치', '남자들은', '여자들은'];
+  const hostileTerms = ['한심', '극혐', '노답', '틀딱', '맘충', '남혐', '여혐', '무식', '병신', '바보', '편가르', '갈라치기', '정치', '남자들은', '여자들은'];
 
-  if (includesAny(text, hostileTerms)) {
+  if (includesAny(text, hostileTerms) || /(^|[\s.,!?])거지(?=$|[\s.,!?])/.test(text)) {
     reasons.push('후킹 안전장치 위반: 비하/혐오/조롱/위험 갈등 표현 포함');
   }
 
