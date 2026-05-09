@@ -1,3 +1,5 @@
+import { productServiceClosedInProduction } from '../utils/productAvailability.js';
+
 export const SUPPORT_QA_VERSION = '2026-05-07';
 
 export const supportQaTree = {
@@ -140,9 +142,19 @@ export const supportQaTree = {
 };
 
 export function publicSupportConfig() {
+  const tree = JSON.parse(JSON.stringify(supportQaTree));
+  if (productServiceClosedInProduction('spread')) {
+    const spread = tree.nodes.spread;
+    if (spread) {
+      spread.body = 'SPREAD는 캠페인 추천, 신청자 선정, 제출물 검수를 한 흐름으로 운영하는 자동화 서비스입니다. 현재는 도입 상담 후 순차적으로 열어드리고 있습니다.';
+      spread.options = [
+        { label: 'SPREAD 도입 상담', action: 'inquiry', topic: 'spread' }
+      ];
+    }
+  }
   return {
     version: SUPPORT_QA_VERSION,
-    ...supportQaTree,
+    ...tree,
     phone: {
       display: process.env.SUPPORT_PHONE_DISPLAY || '문자 상담 010-4094-1666',
       tel: process.env.SUPPORT_PHONE_TEL || '01040941666'

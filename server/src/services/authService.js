@@ -4,6 +4,7 @@ import { DEFAULT_PRODUCT_ID, PRODUCTS } from '../config/products.js';
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { redactBillingSettings } from './redactionService.js';
 import { createAccount } from './accountService.js';
+import { throwIfProductServiceClosed } from '../utils/productAvailability.js';
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
 const REGISTER_USERNAME_RE = /^[a-zA-Z0-9._-]{3,30}$/;
@@ -379,6 +380,7 @@ export async function registerFreeUser({ username, password, passwordConfirm, bu
     error.status = 400;
     throw error;
   }
+  throwIfProductServiceClosed(selectedProductId);
   if (!REGISTER_PHONE_RE.test(normalizedPhone)) {
     const error = new Error('연락 가능한 전화번호를 입력해주세요.');
     error.status = 400;

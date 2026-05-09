@@ -20,14 +20,12 @@ import {
 import { buildReferencePatternContext, ingestTrendReferencesForAccount } from '../services/trendReferenceLearningService.js';
 import { getAccount } from '../services/accountService.js';
 import { extractTrendReferenceFromImage } from '../services/trendReferenceOcrService.js';
+import { productMaintenancePayload, productServiceClosedInProduction } from '../utils/productAvailability.js';
 
 const router = Router();
 
 function workspaceServiceClosedInProduction(productId) {
-  if (process.env.NODE_ENV !== 'production') return false;
-  if (productId === 'spread') return process.env.SPREAD_SERVICE_OPEN !== 'true';
-  if (productId === 'infludex') return process.env.INFLUDEX_SERVICE_OPEN !== 'true';
-  return false;
+  return productServiceClosedInProduction(productId);
 }
 
 function requireUser(req, res) {
@@ -40,16 +38,13 @@ function requireUser(req, res) {
 
 function requireWorkspaceServiceOpen(req, res, productId) {
   if (!workspaceServiceClosedInProduction(productId)) return true;
-  const productName = productId === 'infludex' ? 'INFLUDEX' : 'SPREAD';
-  res.status(503).json({
-    error: `${productName}_SERVICE_MAINTENANCE`,
-    message: `${productName}는 현재 서비스 점검 중입니다.`
-  });
+  res.status(503).json(productMaintenancePayload(productId));
   return false;
 }
 
 router.get('/:productId', async (req, res, next) => {
   try {
+    if (!requireWorkspaceServiceOpen(req, res, req.params.productId)) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await getProductWorkspace(user.userId, req.params.productId));

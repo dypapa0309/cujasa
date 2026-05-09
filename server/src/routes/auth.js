@@ -5,6 +5,7 @@ import { createRateLimit } from '../middleware/rateLimit.js';
 import { clearAuthContextCache } from '../middleware/auth.js';
 import { completeThreadsOAuth, createThreadsAuthUrl } from '../services/threadsOAuthService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
+import { productMaintenancePayload, productServiceClosedInProduction } from '../utils/productAvailability.js';
 
 const loginRateLimit = createRateLimit({ scope: 'login', windowMs: 10 * 60 * 1000, maxRequests: 10 });
 
@@ -82,11 +83,8 @@ router.post('/products/:productId/start', async (req, res, next) => {
       status: dbProduct.status
     } : configuredProduct;
     if (!product || product.status === 'inactive') return res.status(404).json({ error: 'Product not found' });
-    if (product.id === 'spread' && process.env.NODE_ENV === 'production' && process.env.SPREAD_SERVICE_OPEN !== 'true') {
-      return res.status(503).json({ error: 'SPREAD_SERVICE_MAINTENANCE', message: 'SPREAD는 현재 서비스 점검 중입니다.' });
-    }
-    if (product.id === 'infludex' && process.env.NODE_ENV === 'production' && process.env.INFLUDEX_SERVICE_OPEN !== 'true') {
-      return res.status(503).json({ error: 'INFLUDEX_SERVICE_MAINTENANCE', message: 'INFLUDEX는 현재 서비스 점검 중입니다.' });
+    if (productServiceClosedInProduction(product.id)) {
+      return res.status(503).json(productMaintenancePayload(product.id));
     }
     if (product.status === 'preparing') {
       return res.status(409).json({ error: '아직 준비 중인 제품입니다.' });

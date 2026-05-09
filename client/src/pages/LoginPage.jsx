@@ -5,11 +5,24 @@ import { CURRENT_PRODUCT, PRODUCTS, productById } from '../config/products.js';
 
 const inputClass = 'w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-700 outline-none focus:border-white/30';
 const labelClass = 'grid gap-2 text-sm font-bold text-zinc-300';
+const spreadMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_SPREAD_BETA !== 'true';
+const infludexMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_INFLUDEX_BETA !== 'true';
+
+function isProductRegistrationOpen(product = {}) {
+  if (product?.status === 'preparing' || product?.status === 'inactive') return false;
+  if (product?.id === 'spread') return !spreadMaintenanceEnabled;
+  if (product?.id === 'infludex') return !infludexMaintenanceEnabled;
+  return true;
+}
 
 export default function LoginPage({ onLogin }) {
   const params = new URLSearchParams(window.location.search);
   const requestedMode = params.get('mode') === 'register' ? 'register' : 'login';
-  const requestedProduct = productById(params.get('product'))?.id || CURRENT_PRODUCT.id;
+  const registrationProducts = PRODUCTS.filter(isProductRegistrationOpen);
+  const requestedProductConfig = productById(params.get('product'));
+  const requestedProduct = isProductRegistrationOpen(requestedProductConfig)
+    ? requestedProductConfig.id
+    : (registrationProducts[0]?.id || CURRENT_PRODUCT.id);
   const [form, setForm] = useState({ email: '', password: '' });
   const [registerForm, setRegisterForm] = useState({
     buyerName: '',
@@ -88,16 +101,21 @@ export default function LoginPage({ onLogin }) {
             </div>
             <div className="mt-10 grid gap-2 px-2">
               <div className="text-xs font-black uppercase tracking-wide text-zinc-500">Solutions</div>
-              {PRODUCTS.map((product) => (
-                <button
-                  key={product.id}
-                  type="button"
-                  onClick={() => selectPreviewProduct(product.id)}
-                  className={`rounded-xl px-3 py-2 text-left text-sm font-bold outline-none transition ${previewProduct.id === product.id ? 'bg-white/10 text-white' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300 focus:bg-white/5 focus:text-zinc-300'}`}
-                >
-                  {product.name}
-                </button>
-              ))}
+              {PRODUCTS.map((product) => {
+                const unavailable = !isProductRegistrationOpen(product);
+                return (
+                  <button
+                    key={product.id}
+                    type="button"
+                    disabled={unavailable}
+                    onClick={() => selectPreviewProduct(product.id)}
+                    className={`rounded-xl px-3 py-2 text-left text-sm font-bold outline-none transition ${unavailable ? 'cursor-not-allowed text-zinc-700' : previewProduct.id === product.id ? 'bg-white/10 text-white' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300 focus:bg-white/5 focus:text-zinc-300'}`}
+                  >
+                    {product.name}
+                    {unavailable ? <span className="ml-2 text-[10px] text-zinc-600">준비중</span> : null}
+                  </button>
+                );
+              })}
               <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-3">
                 <div className="text-sm font-black text-zinc-100">{previewProduct.name}</div>
                 <div className="mt-1 text-xs font-bold text-zinc-500">{previewProduct.supportLabel}</div>
@@ -143,7 +161,7 @@ export default function LoginPage({ onLogin }) {
                       <label className={labelClass}>고객명<input className={inputClass} type="text" autoComplete="name" value={registerForm.buyerName} placeholder="예: 홍길동" onChange={(e) => setRegisterForm((prev) => ({ ...prev, buyerName: e.target.value }))} /></label>
                       <label className={labelClass}>연락처<input className={inputClass} type="tel" autoComplete="tel" value={registerForm.phone} placeholder="01012345678" onChange={(e) => setRegisterForm((prev) => ({ ...prev, phone: e.target.value }))} /></label>
                     </div>
-                    <label className={labelClass}>사용할 솔루션<select className={inputClass} value={registerForm.productId} onChange={(e) => { setRegisterForm((prev) => ({ ...prev, productId: e.target.value })); setPreviewProductId(e.target.value); }}>{PRODUCTS.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.supportLabel}</option>)}</select></label>
+                    <label className={labelClass}>사용할 솔루션<select className={inputClass} value={registerForm.productId} onChange={(e) => { setRegisterForm((prev) => ({ ...prev, productId: e.target.value })); setPreviewProductId(e.target.value); }}>{registrationProducts.map((product) => <option key={product.id} value={product.id}>{product.name} · {product.supportLabel}</option>)}</select></label>
                     <label className={labelClass}>아이디<input className={inputClass} type="text" autoComplete="username" value={registerForm.username} placeholder="영문/숫자 3자 이상" onChange={(e) => setRegisterForm((prev) => ({ ...prev, username: e.target.value }))} /></label>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className={labelClass}>비밀번호<input className={inputClass} type="password" autoComplete="new-password" value={registerForm.password} placeholder="8자 이상" onChange={(e) => setRegisterForm((prev) => ({ ...prev, password: e.target.value }))} /></label>
