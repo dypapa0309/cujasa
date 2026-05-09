@@ -8,6 +8,14 @@ export function classifyQueueError(message = '') {
       message: '댓글 링크 모드 설정 누락으로 막힌 예약입니다. 복구 후 다시 업로드할 수 있습니다.'
     };
   }
+  if (/REPLY_LINK_FAILURE_UNRESOLVED/i.test(value)) {
+    return {
+      category: 'reply_warning',
+      severity: 'warn',
+      title: '댓글 링크 복구 대기',
+      message: '본문은 올라갔고 쿠팡 링크 댓글만 복구하면 됩니다.'
+    };
+  }
   if (/COUPANG_PRODUCT_MISSING|상품 매칭 누락|링크 글.*상품|tracking link.*missing|트래킹 링크/i.test(value)) {
     return {
       category: 'coupang_link_missing',
@@ -187,6 +195,8 @@ export function postModeLabel(postMode = 'auto') {
 export function adminActivityLabel(action, message = '') {
   if (action === 'upload_failed') return classifyQueueError(message).title;
   if (action === 'upload_reply_failed') return '댓글/링크 답글 실패';
+  if (action === 'reply_link_failure_repaired') return '댓글 링크 복구 완료';
+  if (action === 'reply_link_failure_repair_failed') return '댓글 링크 복구 실패';
   if (action === 'reply_link_mode_queue_recovered') return '댓글 링크 모드 큐 복구';
   if (action === 'post_style_blocked' || action === 'queue_guardrail_skipped') return '콘텐츠 후보 제외';
   if (action === 'operations_safety_pause') return '운영 안전 점검으로 일시중지';
@@ -205,6 +215,8 @@ export function adminActivityLabel(action, message = '') {
 export function adminActivityMessage(action, message = '') {
   if (action === 'upload_failed') return classifyQueueError(message).message;
   if (action === 'upload_reply_failed') return '본문 업로드는 완료됐고, 댓글/링크 답글만 재시도하면 됩니다.';
+  if (action === 'reply_link_failure_repaired') return message || '기존 Threads 게시글에 쿠팡 링크 댓글을 다시 등록했습니다.';
+  if (action === 'reply_link_failure_repair_failed') return message || '댓글 링크 복구에 실패했습니다. 반복되면 수동 확인이 필요합니다.';
   if (action === 'reply_link_mode_queue_recovered') return message || '댓글 링크 모드 설정 누락으로 막힌 큐를 재시도 가능 상태로 복구했습니다.';
   if (action === 'post_style_blocked' || action === 'queue_guardrail_skipped') return message || '계정 규칙에 맞지 않아 제외되었습니다.';
   if (action === 'operations_safety_pause') return message || '운영 안전 점검으로 자동화를 일시중지했습니다.';

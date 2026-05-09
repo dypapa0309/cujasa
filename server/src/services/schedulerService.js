@@ -1,6 +1,6 @@
 import { dbGet, dbInsert, dbList, dbUpdate, logActivity } from './supabaseService.js';
 import { createDailySchedulePlan } from '../utils/randomSchedule.js';
-import { uploadPost as uploadThreads } from '../platformAdapters/threadsAdapter.js';
+import { buildReplyText, uploadPost as uploadThreads, uploadReplyOnly } from '../platformAdapters/threadsAdapter.js';
 import { createMetricJobs } from './metricsJobService.js';
 import { listCtas } from './ctaService.js';
 import { createTrackingLink } from './trackingService.js';
@@ -18,6 +18,7 @@ import { isReplyLinkModeEnabled } from '../utils/replyLinkMode.js';
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const REPLY_REPAIR_MAX_ATTEMPTS = 3;
 
 function kstDayRange(date = new Date()) {
   const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -70,6 +71,13 @@ function isReplyFailureQueue(row = {}) {
   return classifyQueueError(row.error_message || '').category === 'reply_warning';
 }
 
+function canRepairReplyFailureQueue(row = {}) {
+  return isReplyFailureQueue(row)
+    && (row.post_mode || 'auto') === 'link'
+    && Boolean(row.post_url)
+    && Number(row.retry_count || 0) < REPLY_REPAIR_MAX_ATTEMPTS;
+}
+
 async function replyLinkReadiness(account) {
   if (!isReplyLinkModeEnabled() || account?.threads_link_delivery_mode !== 'reply') {
     return {
@@ -80,11 +88,20 @@ async function replyLinkReadiness(account) {
   }
   const queues = await dbList('post_queue', { account_id: account.id });
   const unresolved = queues.filter(isReplyFailureQueue);
-  if (unresolved.length > 0) {
+  const blocked = unresolved.filter((row) => !canRepairReplyFailureQueue(row));
+  if (blocked.length > 0) {
     return {
       ok: false,
       code: 'REPLY_LINK_FAILURE_UNRESOLVED',
-      message: '이전 댓글 링크 실패 항목을 정리하기 전까지 새 링크 글을 예약하지 않습니다.',
+      message: '댓글 링크 실패 항목이 복구 불가 상태입니다. 수동 확인 후 다시 실행해주세요.',
+      unresolvedCount: blocked.length
+    };
+  }
+  if (unresolved.length > 0) {
+    return {
+      ok: true,
+      code: 'REPLY_LINK_REPAIR_PENDING',
+      message: '이전 댓글 링크 실패 항목은 자동 복구 대상입니다.',
       unresolvedCount: unresolved.length
     };
   }
@@ -106,6 +123,33 @@ async function getFirstLinkableProductForTopic(topicId) {
     if (isLinkableCoupangProduct(product)) return { postProduct: row, product };
   }
   return { postProduct: null, product: null };
+}
+
+function extractThreadsPostId(postUrl = '') {
+  const value = String(postUrl || '');
+  const match = value.match(/\/post\/([^/?#]+)/i) || value.match(/threads\/([^/?#]+)/i);
+  return match?.[1] || '';
+}
+
+async function resolveTrackingLinkForQueue(queue, post, product) {
+  if (queue.tracking_link_id) {
+    const existing = await dbGet('tracking_links', { id: queue.tracking_link_id }).catch(() => null);
+    if (existing) return existing;
+  }
+  if (post?.id) {
+    const existingRows = await dbList('tracking_links', { post_id: post.id }, { order: 'created_at', ascending: false, limit: 1 }).catch(() => []);
+    if (existingRows[0]) return existingRows[0];
+  }
+  if (!product || !post) return null;
+  return createTrackingLink({
+    project_id: post.project_id,
+    account_id: post.account_id,
+    topic_id: post.topic_id,
+    post_id: post.id,
+    product_id: product.id,
+    destination_url: product.partner_url || product.product_url,
+    link_type: 'coupang'
+  });
 }
 
 async function assertRealLinkCandidateForPost(post, account, action = 'queue link post') {
@@ -420,9 +464,131 @@ export async function recoverStalePostingQueue() {
   return recovered;
 }
 
+export async function repairReplyLinkFailures({ accountId = null } = {}) {
+  const [queues, accounts] = await Promise.all([
+    dbList('post_queue'),
+    dbList('accounts')
+  ]);
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const targets = queues.filter((queue) => {
+    if (accountId && queue.account_id !== accountId) return false;
+    return canRepairReplyFailureQueue(queue);
+  });
+  const repaired = [];
+  const failed = [];
+  const skipped = [];
+
+  for (const queue of targets) {
+    const account = accountsById.get(queue.account_id);
+    const post = queue.post_id ? await dbGet('posts', { id: queue.post_id }) : null;
+    const threadsPostId = extractThreadsPostId(queue.post_url);
+
+    if (!account || account.status !== 'active' || !isAutomationRunning(account)) {
+      skipped.push({ queueId: queue.id, reason: 'account_not_active_or_automation_paused' });
+      continue;
+    }
+    if (!post || !threadsPostId) {
+      skipped.push({ queueId: queue.id, reason: !post ? 'post_missing' : 'threads_post_id_missing' });
+      continue;
+    }
+
+    try {
+      assertPreflightCanPublish(await preflightAccount(account.id, { includeQueue: false }));
+      const { product } = await getFirstLinkableProductForTopic(post.topic_id);
+      if (!isLinkableCoupangProduct(product)) {
+        skipped.push({ queueId: queue.id, reason: 'linkable_product_missing' });
+        continue;
+      }
+      const trackingLink = await resolveTrackingLinkForQueue(queue, post, product);
+      if (!trackingLink) {
+        skipped.push({ queueId: queue.id, reason: 'tracking_link_missing' });
+        continue;
+      }
+      const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+      const linkMode = String(process.env.THREADS_COUPANG_LINK_MODE || 'tracking').toLowerCase();
+      const linkUrl = linkMode === 'tracking' ? `${baseUrl}/r/${trackingLink.code}` : trackingLink.destination_url;
+      await uploadReplyOnly({ account, postId: threadsPostId, text: buildReplyText(linkUrl) });
+      let updatedRows;
+      try {
+        updatedRows = await dbUpdate('post_queue', { id: queue.id }, {
+          status: 'posted',
+          tracking_link_id: trackingLink.id,
+          error_message: null,
+          error_category: null
+        });
+      } catch (updateError) {
+        if (!/error_category|schema cache|column/i.test(updateError.message || '')) throw updateError;
+        updatedRows = await dbUpdate('post_queue', { id: queue.id }, {
+          status: 'posted',
+          tracking_link_id: trackingLink.id,
+          error_message: null
+        });
+      }
+      const [updated] = updatedRows;
+      repaired.push(updated);
+      await logActivity({
+        account_id: queue.account_id,
+        project_id: queue.project_id,
+        topic_id: queue.topic_id,
+        post_id: queue.post_id,
+        queue_id: queue.id,
+        action: 'reply_link_failure_repaired',
+        level: 'info',
+        message: '기존 Threads 게시글에 쿠팡 링크 댓글을 다시 등록했습니다.',
+        payload: { postUrl: queue.post_url, threadsPostId, trackingLinkId: trackingLink.id, linkMode }
+      }).catch(() => null);
+    } catch (error) {
+      const retry = Number(queue.retry_count || 0) + 1;
+      const status = retry >= REPLY_REPAIR_MAX_ATTEMPTS ? 'manual_required' : 'retry';
+      const classified = classifyQueueError(error.message || 'THREADS_REPLY_FAILED');
+      try {
+        await dbUpdate('post_queue', { id: queue.id }, {
+          status,
+          retry_count: retry,
+          error_message: error.message,
+          error_category: classified.category,
+          post_url: queue.post_url || error.postUrl || null
+        });
+      } catch (updateError) {
+        if (!/error_category|schema cache|column/i.test(updateError.message || '')) throw updateError;
+        await dbUpdate('post_queue', { id: queue.id }, {
+          status,
+          retry_count: retry,
+          error_message: error.message,
+          post_url: queue.post_url || error.postUrl || null
+        });
+      }
+      failed.push({ queueId: queue.id, status, retryCount: retry, error: error.message });
+      await logActivity({
+        account_id: queue.account_id,
+        project_id: queue.project_id,
+        topic_id: queue.topic_id,
+        post_id: queue.post_id,
+        queue_id: queue.id,
+        action: 'reply_link_failure_repair_failed',
+        level: retry >= REPLY_REPAIR_MAX_ATTEMPTS ? 'error' : 'warn',
+        message: error.message,
+        payload: { retryCount: retry, nextStatus: status, maxAttempts: REPLY_REPAIR_MAX_ATTEMPTS }
+      }).catch(() => null);
+    }
+  }
+
+  return {
+    ok: failed.length === 0,
+    targetCount: targets.length,
+    repairedCount: repaired.length,
+    failedCount: failed.length,
+    skippedCount: skipped.length,
+    repaired,
+    failed,
+    skipped
+  };
+}
+
 export async function processDueQueue() {
   await recoverStalePostingQueue();
   await recoverReplyLinkModeRequiredQueues();
+  await repairReplyLinkFailures();
   const [scheduled, retrying] = await Promise.all([
     dbList('post_queue', { status: 'scheduled' }),
     dbList('post_queue', { status: 'retry' })
@@ -587,6 +753,10 @@ export async function uploadQueueItem(queueId) {
   }
   const account = await dbGet('accounts', { id: queue.account_id });
   const post = await dbGet('posts', { id: queue.post_id });
+  if (canRepairReplyFailureQueue(queue)) {
+    await repairReplyLinkFailures({ accountId: queue.account_id });
+    return dbGet('post_queue', { id: queueId });
+  }
   if (!isAutomationRunning(account)) {
     const error = new Error('자동화가 중지되어 업로드를 보류했습니다.');
     error.status = 409;
@@ -605,6 +775,7 @@ export async function uploadQueueItem(queueId) {
   if (!claimed) {
     throw createQueueAlreadyClaimedError(queueId, queue.status);
   }
+  let trackingLinkForFailure = queue.tracking_link_id || null;
   try {
     await assertAccountOwnerCanOperate(queue.account_id);
     await assertAccountCanUpload(queue.account_id);
@@ -650,6 +821,7 @@ export async function uploadQueueItem(queueId) {
       destination_url: product.partner_url || product.product_url,
       link_type: 'coupang'
     }) : null)) : null;
+    trackingLinkForFailure = trackingLink?.id || trackingLinkForFailure;
     if (requiresLink && !trackingLink) {
       const error = new Error('COUPANG_PRODUCT_MISSING: 링크 글의 트래킹 링크를 만들 수 없습니다.');
       error.status = 422;
@@ -710,7 +882,8 @@ export async function uploadQueueItem(queueId) {
         retry_count: retry,
         error_message: error.message,
         error_category: classified.category,
-        post_url: error.postUrl || queue.post_url || null
+        post_url: error.postUrl || queue.post_url || null,
+        tracking_link_id: trackingLinkForFailure
       });
     } catch (updateError) {
       if (!/error_category|schema cache|column/i.test(updateError.message || '')) throw updateError;

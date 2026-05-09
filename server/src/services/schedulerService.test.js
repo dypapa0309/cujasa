@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { dbGet, dbInsert } from './supabaseService.js';
-import { recoverReplyLinkModeRequiredQueues, uploadQueueItem } from './schedulerService.js';
+import { dbGet, dbInsert, dbUpdate } from './supabaseService.js';
+import { recoverReplyLinkModeRequiredQueues, repairReplyLinkFailures, uploadQueueItem } from './schedulerService.js';
 
 function restoreEnv(key, value) {
   if (value === undefined) delete process.env[key];
@@ -89,6 +89,22 @@ async function createRecoverableReplyQueue() {
   return { account, queue };
 }
 
+async function createReplyFailureQueue() {
+  const { account, queue } = await createRecoverableReplyQueue();
+  const [updated] = await dbUpdateQueue(queue.id, {
+    status: 'manual_required',
+    retry_count: 1,
+    post_url: 'https://www.threads.net/@replytest/post/1234567890',
+    error_message: 'Threads reply publish failed: temporary error',
+    error_category: 'reply_warning'
+  });
+  return { account, queue: updated };
+}
+
+async function dbUpdateQueue(queueId, patch) {
+  return dbUpdate('post_queue', { id: queueId }, patch);
+}
+
 test('uploadQueueItem allows recoverable REPLY_LINK_MODE_REQUIRED queues when env is unset', async () => {
   const previousMock = process.env.MOCK_UPLOAD;
   const previousReply = process.env.THREADS_REPLY_LINK_MODE_ENABLED;
@@ -131,6 +147,35 @@ test('recoverReplyLinkModeRequiredQueues turns matching failures back into retry
     assert.equal(saved.error_message, null);
     assert.equal(saved.error_category, null);
   } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('repairReplyLinkFailures posts only the missing reply and marks queue posted', async () => {
+  const previousMock = process.env.MOCK_UPLOAD;
+  const previousBaseUrl = process.env.APP_BASE_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.MOCK_UPLOAD = 'true';
+  process.env.APP_BASE_URL = 'https://app.example.test';
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'replytest' })
+  });
+
+  try {
+    const { account, queue } = await createReplyFailureQueue();
+    const result = await repairReplyLinkFailures({ accountId: account.id });
+    const saved = await dbGet('post_queue', { id: queue.id });
+
+    assert.equal(result.repairedCount, 1);
+    assert.equal(saved.status, 'posted');
+    assert.equal(saved.error_message, null);
+    assert.equal(saved.error_category, null);
+    assert.ok(saved.tracking_link_id);
+    assert.equal(saved.post_url, 'https://www.threads.net/@replytest/post/1234567890');
+  } finally {
+    restoreEnv('MOCK_UPLOAD', previousMock);
+    restoreEnv('APP_BASE_URL', previousBaseUrl);
     globalThis.fetch = previousFetch;
   }
 });

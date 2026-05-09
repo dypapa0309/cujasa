@@ -6,6 +6,8 @@ import { redactSensitivePayload } from '../services/redactionService.js';
 
 const router = Router();
 const BASIC_MAX_ACCOUNTS = 2;
+const AGREEMENT_VERSION = 'jasain-payment-terms-v1';
+const AGREEMENT_TITLE = 'JASAIN 서비스 이용 및 결제 계약';
 
 const addMonths = (date, months) => {
   const next = new Date(date);
@@ -45,6 +47,56 @@ function requireCustomer(req, res) {
     return null;
   }
   return req.user;
+}
+
+export function assertAgreementPayload(body = {}) {
+  if (body.agreementAccepted !== true) {
+    const error = new Error('결제 전 이용조건 및 계약 내용에 동의해야 합니다.');
+    error.status = 400;
+    error.code = 'BILLING_AGREEMENT_REQUIRED';
+    throw error;
+  }
+  if (body.agreementVersion !== AGREEMENT_VERSION) {
+    const error = new Error('최신 이용조건을 다시 확인해주세요.');
+    error.status = 400;
+    error.code = 'BILLING_AGREEMENT_VERSION_MISMATCH';
+    throw error;
+  }
+  const snapshot = body.agreementSnapshot && typeof body.agreementSnapshot === 'object'
+    ? body.agreementSnapshot
+    : {};
+  const checked = snapshot.checked && typeof snapshot.checked === 'object' ? snapshot.checked : {};
+  if (!checked.terms || !checked.service || !checked.platformRisk) {
+    const error = new Error('필수 동의 항목을 모두 체크해주세요.');
+    error.status = 400;
+    error.code = 'BILLING_AGREEMENT_CHECKS_REQUIRED';
+    throw error;
+  }
+  return snapshot;
+}
+
+async function createBillingAgreement(req, user, product) {
+  const snapshot = assertAgreementPayload(req.body || {});
+  return dbInsert('billing_agreements', {
+    user_id: user.userId,
+    product_id: product.id,
+    app_product_id: product.app_product_id || 'cujasa',
+    agreement_version: AGREEMENT_VERSION,
+    agreement_title: AGREEMENT_TITLE,
+    agreement_snapshot: {
+      ...snapshot,
+      product: {
+        id: product.id,
+        appProductId: product.app_product_id || 'cujasa',
+        name: product.name,
+        amount: product.amount,
+        billingCycle: product.billing_cycle
+      }
+    },
+    accepted_at: new Date().toISOString(),
+    ip_address: req.ip || req.headers['x-forwarded-for'] || null,
+    user_agent: req.headers['user-agent'] || null
+  });
 }
 
 function tossAuth(secret = tossSecretKey()) {
@@ -127,6 +179,7 @@ export function mapPayment(row) {
     method: row.method,
     amount: row.amount,
     status: row.status,
+    agreementId: row.agreement_id || null,
     hasPaymentKey: Boolean(row.payment_key),
     maskedPaymentKey: row.payment_key ? `••••••${String(row.payment_key).slice(-4)}` : '',
     virtualAccount: virtualAccount || null,
@@ -146,6 +199,7 @@ function mapSubscription(row) {
     currentPeriodEnd: row.current_period_end,
     nextBillingAt: row.next_billing_at,
     lastPaymentId: row.last_payment_id,
+    agreementId: row.agreement_id || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
@@ -214,6 +268,7 @@ router.post('/checkout/virtual-account', async (req, res, next) => {
     const product = await getProduct(req.body.productId || 'onetime_590000');
     if (product.billing_cycle !== 'once') return res.status(400).json({ error: '일시불 상품만 가상계좌 결제가 가능합니다.' });
     assertTossConfigured();
+    const agreement = await createBillingAgreement(req, user, product);
 
     const appProductId = product.app_product_id || 'cujasa';
     const orderId = makeOrderId(appProductId === 'dexor' ? 'DEXOR-CREDIT' : 'CUJASA-ONETIME');
@@ -225,7 +280,8 @@ router.post('/checkout/virtual-account', async (req, res, next) => {
       provider: 'toss',
       method: 'VIRTUAL_ACCOUNT',
       amount: product.amount,
-      status: 'created'
+      status: 'created',
+      agreement_id: agreement.id
     });
 
     res.status(201).json({
@@ -289,12 +345,14 @@ router.post('/billing-auth', async (req, res, next) => {
     const customerKey = req.body.customerKey || customerKeyFor(user.userId);
 
     if (!req.body.authKey) {
+      const agreement = await createBillingAgreement(req, user, product);
       const subscription = await dbInsert('billing_subscriptions', {
         user_id: user.userId,
         app_product_id: product.app_product_id || 'cujasa',
         product_id: product.id,
         customer_key: customerKey,
-        status: 'pending'
+        status: 'pending',
+        agreement_id: agreement.id
       });
       return res.status(201).json({
         subscription: mapSubscription(subscription),
@@ -339,6 +397,7 @@ router.post('/billing-auth', async (req, res, next) => {
       payment_key: charged.paymentKey || null,
       raw_data: redactSensitivePayload(charged),
       failed_reason: charged.status === 'DONE' ? null : '자동결제 승인 실패',
+      agreement_id: subscription.agreement_id || null,
       paid_at: charged.status === 'DONE' ? now.toISOString() : null
     });
 
@@ -393,6 +452,7 @@ router.post('/subscriptions/:id/charge', async (req, res, next) => {
       payment_key: charged.paymentKey || null,
       raw_data: redactSensitivePayload(charged),
       failed_reason: charged.status === 'DONE' ? null : '자동결제 승인 실패',
+      agreement_id: subscription.agreement_id || null,
       paid_at: charged.status === 'DONE' ? now.toISOString() : null
     });
     await dbUpdate('billing_subscriptions', { id: subscription.id }, {

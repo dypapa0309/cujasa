@@ -150,6 +150,7 @@ create table if not exists posts (
   body text not null,
   risk_level text not null default 'low',
   status text not null default 'draft',
+  metadata jsonb not null default '{}',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -334,6 +335,9 @@ create table if not exists users (
   free_post_limit integer not null default 5,
   free_post_used integer not null default 0,
   trial_blocked_at timestamptz,
+  archived_at timestamptz,
+  archived_reason text,
+  archived_by text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -351,6 +355,9 @@ alter table users add column if not exists free_post_limit integer not null defa
 alter table users alter column free_post_limit set default 5;
 alter table users add column if not exists free_post_used integer not null default 0;
 alter table users add column if not exists trial_blocked_at timestamptz;
+alter table users add column if not exists archived_at timestamptz;
+alter table users add column if not exists archived_reason text;
+alter table users add column if not exists archived_by text;
 update users
 set
   free_post_limit = greatest(coalesce(free_post_limit, 5), 5),
@@ -471,12 +478,14 @@ create table if not exists billing_payments (
   virtual_account_json jsonb,
   raw_data jsonb not null default '{}',
   failed_reason text,
+  agreement_id uuid,
   paid_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table billing_payments add column if not exists app_product_id text not null default 'cujasa';
+alter table billing_payments add column if not exists agreement_id uuid;
 
 create table if not exists billing_subscriptions (
   id uuid primary key default gen_random_uuid(),
@@ -489,11 +498,27 @@ create table if not exists billing_subscriptions (
   current_period_end timestamptz,
   next_billing_at timestamptz,
   last_payment_id uuid references billing_payments(id) on delete set null,
+  agreement_id uuid,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table billing_subscriptions add column if not exists app_product_id text not null default 'cujasa';
+alter table billing_subscriptions add column if not exists agreement_id uuid;
+
+create table if not exists billing_agreements (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  product_id text not null references billing_products(id),
+  app_product_id text not null default 'cujasa',
+  agreement_version text not null,
+  agreement_title text not null,
+  agreement_snapshot jsonb not null default '{}',
+  accepted_at timestamptz not null default now(),
+  ip_address text,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
 
 create index if not exists idx_accounts_project on accounts(project_id);
 create index if not exists idx_accounts_automation_status on accounts(status, automation_status);
@@ -512,6 +537,8 @@ create index if not exists idx_user_products_product on user_products(product_id
 create index if not exists idx_billing_payments_user on billing_payments(user_id, created_at desc);
 create index if not exists idx_billing_payments_order on billing_payments(order_id);
 create index if not exists idx_billing_subscriptions_user on billing_subscriptions(user_id, status);
+create index if not exists idx_users_archived_at on users(archived_at, created_at desc);
+create index if not exists idx_billing_agreements_user on billing_agreements(user_id, accepted_at desc);
 
 create table if not exists setup_tasks (
   id uuid primary key default gen_random_uuid(),

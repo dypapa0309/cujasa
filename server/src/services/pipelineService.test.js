@@ -30,6 +30,8 @@ test('post generation prompt includes strong but safe hook guidance', () => {
 
   assert.match(body, /강한|stronger hook|나만 불편한 줄/);
   assert.match(body, /hostile polarization|identity attacks/);
+  assert.match(body, /exactly 5 candidate posts/);
+  assert.match(body, /choice-tension|A\/B choice/);
 });
 
 test('expires stale pipeline runs and does not block next execution', async () => {

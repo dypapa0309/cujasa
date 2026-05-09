@@ -180,6 +180,54 @@ function QueueRow({ row, onDetail, onCancel, onRun, cancelling, running, active 
   );
 }
 
+const ENGAGEMENT_PATTERN_LABELS = {
+  choice_tension: '선택 갈림형',
+  experience_question: '경험 질문형',
+  regret_prevention: '후회 방지형',
+  empathy_prompt: '공감 질문형'
+};
+
+function QualityMeta({ post }) {
+  const metadata = post?.metadata || {};
+  if (!metadata.engagementScore) return null;
+  const patternLabel = ENGAGEMENT_PATTERN_LABELS[metadata.engagementPattern] || metadata.engagementPattern || '패턴 미분류';
+  const reasons = Array.isArray(metadata.selectionReasons) ? metadata.selectionReasons.slice(0, 3) : [];
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+      <span className="rounded border border-emerald-100 bg-emerald-50 px-2 py-1 font-semibold text-emerald-700">
+        댓글 유도 {metadata.engagementScore}점
+      </span>
+      <span className="rounded border border-line bg-white px-2 py-1">{patternLabel}</span>
+      {reasons.map((reason) => (
+        <span key={reason} className="rounded border border-line bg-white px-2 py-1">{reason}</span>
+      ))}
+    </div>
+  );
+}
+
+function CandidateScores({ post }) {
+  const scores = Array.isArray(post?.metadata?.candidateScores) ? post.metadata.candidateScores : [];
+  if (scores.length <= 1) return null;
+  return (
+    <details className="rounded border border-line bg-gray-50 px-3 py-2 text-xs text-slate-500">
+      <summary className="cursor-pointer font-semibold text-slate-600">후보 점수/탈락 이유</summary>
+      <div className="mt-2 grid gap-1">
+        {scores.map((candidate) => (
+          <div key={`${candidate.index}-${candidate.engagementScore}`} className="flex items-center justify-between gap-3 rounded bg-white px-2 py-1.5">
+            <span className="min-w-0 truncate">
+              #{Number(candidate.index) + 1} · {ENGAGEMENT_PATTERN_LABELS[candidate.engagementPattern] || candidate.engagementPattern || '패턴 미분류'}
+              {candidate.rejectionReasons?.length ? ` · ${candidate.rejectionReasons.join(', ')}` : ''}
+            </span>
+            <span className={`shrink-0 font-semibold ${candidate.selected ? 'text-emerald-600' : 'text-slate-500'}`}>
+              {candidate.selected ? '선택 ' : ''}{candidate.engagementScore}점
+            </span>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function DetailPanel({ detail, onClose }) {
   const { post, products, trackingLink, queue, postMode, postModeLabel, linkStatus } = detail;
   const baseUrl = import.meta.env.VITE_API_BASE_URL || '';
@@ -220,8 +268,14 @@ function DetailPanel({ detail, onClose }) {
       {/* 글 내용 */}
       {post ? (
         <div>
-          <div className="text-xs font-semibold text-slate-500 mb-1.5">글 내용 ({post.content_type})</div>
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold text-slate-500">글 내용 ({post.content_type})</div>
+            <QualityMeta post={post} />
+          </div>
           <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-6 text-slate-700 bg-gray-50 rounded p-3 border border-line">{post.body}</pre>
+          <div className="mt-2">
+            <CandidateScores post={post} />
+          </div>
         </div>
       ) : (
         <div className="text-slate-400 text-xs">글 정보 없음</div>

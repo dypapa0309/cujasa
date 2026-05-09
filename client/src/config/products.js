@@ -45,7 +45,7 @@ export const PRODUCTS = [
     supportLabel: '인스타그램 분석 자동화',
     appUrl: 'https://app.jasain.kr',
     landingUrl: 'https://jasain.kr/infludex',
-    status: 'preparing'
+    status: 'active'
   }
 ];
 

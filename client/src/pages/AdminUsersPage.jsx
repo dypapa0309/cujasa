@@ -20,10 +20,12 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [customerSegment, setCustomerSegment] = useState('all');
   const [setupTasks, setSetupTasks] = useState([]);
   const [planBusyUserId, setPlanBusyUserId] = useState('');
+  const [showArchivedUsers, setShowArchivedUsers] = useState(false);
+  const [archiveBusyUserId, setArchiveBusyUserId] = useState('');
 
   const load = async () => {
     const [nextUsers, nextProducts, nextConflicts, nextMisassignments, nextSetupTasks] = await Promise.all([
-      api.get('/api/admin/users'),
+      api.get(`/api/admin/users${showArchivedUsers ? '?includeArchived=1' : ''}`),
       api.get('/api/admin/products'),
       api.get('/api/admin/account-conflicts'),
       api.get('/api/admin/account-misassignments'),
@@ -39,7 +41,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
 
   useEffect(() => {
     load().catch(() => toast('구매자 목록을 불러오지 못했습니다.', 'error')).finally(() => setLoading(false));
-  }, []);
+  }, [showArchivedUsers]);
 
   const createUser = async (e) => {
     e.preventDefault();
@@ -270,6 +272,23 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     }
   };
 
+  const archiveCustomer = async (user) => {
+    const label = user.username || user.email;
+    const buyer = user.buyer_name || user.buyerName || label;
+    if (!confirm(`${buyer} (${label}) 고객을 보관 삭제할까요?\n\n로그인은 차단되고, 제품 권한/계정 할당은 해제됩니다. 결제와 로그 기록은 보존됩니다.`)) return;
+    if (!confirm(`정말 보관 삭제합니다: ${label}`)) return;
+    setArchiveBusyUserId(user.id);
+    try {
+      await api.delete(`/api/admin/users/${user.id}?reason=admin_archive_duplicate_or_requested`);
+      await load();
+      toast('고객을 보관 삭제했습니다.', 'success');
+    } catch (err) {
+      toast(err.message || '고객 보관 삭제에 실패했습니다.', 'error');
+    } finally {
+      setArchiveBusyUserId('');
+    }
+  };
+
   const updateMaxAccounts = async (user, maxAccounts) => {
     try {
       await api.patch(`/api/admin/users/${user.id}`, { maxAccounts: Number(maxAccounts) });
@@ -378,6 +397,14 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
             placeholder="구매자명, 아이디, 이메일, Threads 계정명/핸들 검색"
           />
         </label>
+        <label className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-slate-500">
+          <input
+            type="checkbox"
+            checked={showArchivedUsers}
+            onChange={(e) => setShowArchivedUsers(e.target.checked)}
+          />
+          보관 고객 보기
+        </label>
       </div>
 
       {showCreate && (
@@ -467,8 +494,13 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                     </span>
                   )}
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                    {user.status === 'active' ? '활성' : '정지'}
+                    {user.archived_at ? '보관됨' : user.status === 'active' ? '활성' : '정지'}
                   </span>
+                  {user.archived_at && (
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-500">
+                      {formatDateTime(user.archived_at)}
+                    </span>
+                  )}
                   <div className="text-xs text-slate-400">
                     계정 {user.accounts?.length ?? 0} /
                     <input
@@ -635,6 +667,19 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                       </div>
                     </div>
                   )}
+                </div>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-rose-100 pt-4">
+                  <div className="text-xs leading-relaxed text-slate-400">
+                    보관 삭제는 로그인 차단, 제품 권한 정지, Threads 계정 할당 해제만 수행하고 결제/로그 기록은 보존합니다.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => archiveCustomer(user)}
+                    disabled={Boolean(user.archived_at) || archiveBusyUserId === user.id}
+                    className="rounded border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {archiveBusyUserId === user.id ? '보관 중...' : user.archived_at ? '보관 완료' : '고객 보관 삭제'}
+                  </button>
                 </div>
               </div>
             );

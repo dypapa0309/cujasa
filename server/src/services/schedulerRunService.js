@@ -3,6 +3,8 @@ import { runFullPipeline } from './pipelineService.js';
 import { cleanupOldQueueIssues } from './queueVisibilityService.js';
 import { cleanupUnusedPipelineArtifacts } from './unusedArtifactCleanupService.js';
 import { sendOpsAlert } from './notificationService.js';
+import { expireStalePipelineRuns } from './pipelineRunService.js';
+import { repairReplyLinkFailures } from './schedulerService.js';
 
 export const DAILY_PIPELINE_JOB = 'daily-pipeline';
 
@@ -144,11 +146,15 @@ export async function runDailyPipelineOnce({ triggeredBy = 'scheduler', runDateK
   }).catch(() => {});
 
   try {
+    const expiredPipelines = await expireStalePipelineRuns();
+    const replyRepair = await repairReplyLinkFailures();
     const pipeline = await runFullPipeline({ requestedBy: triggeredBy });
     const cleanup = await cleanupUnusedPipelineArtifacts({ mode: 'apply' });
     const oldIssues = await cleanupOldQueueIssues({ mode: 'apply' });
     const summary = {
       ...summarizePipelineResults(pipeline),
+      expiredPipelines: expiredPipelines.length,
+      replyRepair,
       cleanup,
       oldIssues,
       completedAt: now().toISOString()

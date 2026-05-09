@@ -328,7 +328,7 @@ export async function loginUser(email, password) {
     throw error;
   }
   if (user.status === 'suspended') {
-    const error = new Error('Account suspended');
+    const error = new Error(user.archived_at ? 'Account archived' : 'Account suspended');
     error.status = 403;
     throw error;
   }
@@ -449,5 +449,40 @@ export async function registerFreeUser({ username, password, passwordConfirm, bu
   };
 }
 
-export const listUsers = () => dbList('users', {}, { order: 'created_at', ascending: false });
+export async function listUsers({ includeArchived = false } = {}) {
+  const users = await dbList('users', {}, { order: 'created_at', ascending: false });
+  return includeArchived ? users : users.filter((user) => !user.archived_at);
+}
+
 export const updateUser = (id, patch) => dbUpdate('users', { id }, patch);
+
+export async function archiveUser(userId, { reason = '', archivedBy = '' } = {}) {
+  const user = await dbGet('users', { id: userId });
+  if (!user) {
+    const error = new Error('User not found');
+    error.status = 404;
+    throw error;
+  }
+  const archivedAt = new Date().toISOString();
+  const [updated] = await dbUpdate('users', { id: userId }, {
+    status: 'suspended',
+    archived_at: archivedAt,
+    archived_reason: String(reason || '').trim() || 'admin_archive',
+    archived_by: String(archivedBy || '').trim() || 'admin'
+  });
+  await dbDelete('user_accounts', { user_id: userId });
+  const grants = await dbList('user_products', { user_id: userId });
+  for (const grant of grants) {
+    await dbUpdate('user_products', { id: grant.id }, { status: 'suspended' });
+  }
+  const tasks = await dbList('setup_tasks', { user_id: userId });
+  for (const task of tasks) {
+    if (['pending', 'in_progress'].includes(task.status)) {
+      await dbUpdate('setup_tasks', { id: task.id }, {
+        status: 'canceled',
+        notes: [task.notes, `관리자 보관 삭제: ${reason || 'admin_archive'}`].filter(Boolean).join('\n')
+      });
+    }
+  }
+  return { ...updated, password_hash: undefined };
+}

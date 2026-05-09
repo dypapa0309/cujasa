@@ -215,6 +215,7 @@ const tables = {
   ],
   billing_payments: [],
   billing_subscriptions: [],
+  billing_agreements: [],
   setup_tasks: [],
   purchase_inquiries: []
 };
@@ -249,6 +250,7 @@ const updatedAtTables = new Set([
   'scheduler_runs',
   'billing_payments',
   'billing_subscriptions',
+  'billing_agreements',
   'setup_tasks'
 ]);
 

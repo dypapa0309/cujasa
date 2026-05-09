@@ -52,7 +52,7 @@ export function buildReplyText(linkUrl) {
   return `${COUPANG_DISCLOSURE}\n\n${linkUrl}`;
 }
 
-async function postReply(token, postId, text) {
+export async function postReply(token, postId, text) {
   const replyContainerRes = await fetch(`${THREADS_API}/me/threads`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -75,6 +75,28 @@ async function postReply(token, postId, text) {
     const err = await replyPublishRes.text();
     throw new Error(`Threads reply publish failed: ${err}`);
   }
+}
+
+export async function uploadReplyOnly({ account, postId, text }) {
+  const token = account?.threads_access_token;
+  if (process.env.MOCK_UPLOAD === 'true') {
+    console.log('[MOCK THREADS REPLY]', { account: account?.name, postId, comment: text || null });
+    return { ok: true, raw: { mock: true, postId } };
+  }
+  if (!token) {
+    const error = new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');
+    error.code = 'THREADS_TOKEN_MISSING';
+    error.permanent = true;
+    throw error;
+  }
+  if (!postId || !text) {
+    const error = new Error('THREADS_REPLY_REPAIR_MISSING_DATA: 댓글 복구에 필요한 게시글 ID 또는 댓글 본문이 없습니다.');
+    error.code = 'THREADS_REPLY_REPAIR_MISSING_DATA';
+    error.permanent = true;
+    throw error;
+  }
+  await postReply(token, postId, text);
+  return { ok: true, raw: { postId } };
 }
 
 function threadsError(label, body) {

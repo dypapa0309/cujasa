@@ -47,6 +47,31 @@ function ModeBadge({ mode, linkStatus }) {
   );
 }
 
+const ENGAGEMENT_PATTERN_LABELS = {
+  choice_tension: '선택 갈림형',
+  experience_question: '경험 질문형',
+  regret_prevention: '후회 방지형',
+  empathy_prompt: '공감 질문형'
+};
+
+function QualityMeta({ post }) {
+  const metadata = post?.metadata || {};
+  if (!metadata.engagementScore) return null;
+  const patternLabel = ENGAGEMENT_PATTERN_LABELS[metadata.engagementPattern] || metadata.engagementPattern || '패턴 미분류';
+  const reasons = Array.isArray(metadata.selectionReasons) ? metadata.selectionReasons.slice(0, 2) : [];
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+      <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-black text-emerald-600">
+        댓글 유도 {metadata.engagementScore}점
+      </span>
+      <span className="rounded-full bg-gray-100 px-2.5 py-1 font-bold text-gray-500">{patternLabel}</span>
+      {reasons.map((reason) => (
+        <span key={reason} className="rounded-full bg-gray-100 px-2.5 py-1 font-bold text-gray-500">{reason}</span>
+      ))}
+    </div>
+  );
+}
+
 export default function CustomerPostsPage({ account, currentUser, pipelineResult, trialStatus, setTab }) {
   const [queue, setQueue] = useState([]);
   const [posts, setPosts] = useState([]);
@@ -269,7 +294,10 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
                           return (
                         <>
                           {d.post?.body && (
-                            <pre className="whitespace-pre-wrap break-words font-sans text-sm text-gray-700 leading-relaxed">{d.post.body}</pre>
+                            <div className="grid gap-2">
+                              <QualityMeta post={d.post} />
+                              <pre className="whitespace-pre-wrap break-words font-sans text-sm text-gray-700 leading-relaxed">{d.post.body}</pre>
+                            </div>
                           )}
                           <div>
                             <ModeBadge mode={d.postMode || r.post_mode} linkStatus={d.linkStatus} />
@@ -351,7 +379,10 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
                       ) : d ? (
                         <>
                           {d.post?.body && (
-                            <pre className="whitespace-pre-wrap break-words font-sans text-sm text-gray-700 leading-relaxed">{d.post.body}</pre>
+                            <div className="grid gap-2">
+                              <QualityMeta post={d.post} />
+                              <pre className="whitespace-pre-wrap break-words font-sans text-sm text-gray-700 leading-relaxed">{d.post.body}</pre>
+                            </div>
                           )}
                           <div>
                             <ModeBadge mode={d.postMode || r.post_mode} linkStatus={d.linkStatus} />
@@ -417,7 +448,10 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
                       ) : d ? (
                         <>
                           {d.post?.body && (
-                            <pre className="whitespace-pre-wrap break-words font-sans text-sm text-gray-700 leading-relaxed">{d.post.body}</pre>
+                            <div className="grid gap-2">
+                              <QualityMeta post={d.post} />
+                              <pre className="whitespace-pre-wrap break-words font-sans text-sm text-gray-700 leading-relaxed">{d.post.body}</pre>
+                            </div>
                           )}
                           <div className="flex flex-wrap items-center gap-2">
                             <ModeBadge mode={d.postMode || r.post_mode} linkStatus={d.linkStatus} />

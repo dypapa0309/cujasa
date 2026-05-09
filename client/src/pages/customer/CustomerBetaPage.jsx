@@ -5,6 +5,7 @@ import { dateTime } from '../../lib/format.js';
 import { useToast } from '../../lib/toast.jsx';
 import { PRODUCTS, CURRENT_PRODUCT, productById } from '../../config/products.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
+import BillingAgreementModal, { BILLING_AGREEMENT_VERSION } from '../../components/BillingAgreementModal.jsx';
 import {
   commentStyleOptions,
   contentIntensityOptions,
@@ -64,7 +65,7 @@ const productTaskActions = {
   dexor: dexorActions,
   spread: spreadActions,
   polibot: polibotActions,
-  infludex: []
+  infludex: infludexActions
 };
 
 const actions = [...cujasaActions, ...workspaceActions, ...productPreviewActions, ...dexorActions, ...spreadActions, ...polibotActions, ...infludexActions];
@@ -324,7 +325,10 @@ export default function CustomerBetaPage({
   const [businessInfoOpen, setBusinessInfoOpen] = useState(false);
   const [supportInfoOpen, setSupportInfoOpen] = useState(false);
   const [startingProductId, setStartingProductId] = useState('');
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [agreementIntent, setAgreementIntent] = useState(null);
   const chatEndRef = useRef(null);
+  const accountMenuRef = useRef(null);
   const lastPromptRef = useRef({ value: '', at: 0 });
   const isTestAssistantUser = String(currentUser?.email || '').trim().toLowerCase() === 'test1@test.com';
 
@@ -356,6 +360,15 @@ export default function CustomerBetaPage({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ block: 'end' });
   }, [messages]);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return undefined;
+    const handlePointerDown = (event) => {
+      if (!accountMenuRef.current?.contains(event.target)) setAccountMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [accountMenuOpen]);
 
   const summary = useMemo(() => {
     const scheduled = queue.filter((row) => row.status === 'scheduled').length;
@@ -389,7 +402,7 @@ export default function CustomerBetaPage({
   const selectedProductGrant = productGrantById[selectedProduct.id];
   const selectedProductGranted = grantedProductIds.has(selectedProduct.id);
   const selectedProductUsage = getGrantUsage(selectedProductGrant, selectedProduct.id);
-  const selectedProductPreparing = selectedProduct.status === 'preparing' || selectedProduct.id === 'infludex';
+  const selectedProductPreparing = selectedProduct.status === 'preparing';
   const productActions = selectedProductGranted && !selectedProductPreparing ? (productTaskActions[selectedProduct.id] || []) : [];
   const activeAction = actions.find((action) => action.key === activeActionKey) || null;
   const needsThreadsReconnect = selectedProduct.id === CURRENT_PRODUCT.id
@@ -432,12 +445,6 @@ export default function CustomerBetaPage({
 
     const previewProductIds = ['dexor', 'spread', 'polibot', 'infludex'];
     const productId = action.productId || (previewProductIds.includes(action.key) ? action.key : '');
-    if (productId === 'infludex') {
-      setSelectedProductId('infludex');
-      setShowOtherProducts(true);
-      openOtherProduct(productById('infludex'));
-      return;
-    }
     if (action.productId && !grantedProductIds.has(action.productId)) {
       const product = productById(action.productId);
       if (product) {
@@ -731,16 +738,39 @@ export default function CustomerBetaPage({
               )}
             </div>
 
-            <div className="border-t border-white/10 pt-3">
-              <div className="grid gap-1 text-xs font-bold leading-none text-zinc-500">
-                <SidebarFooterButton icon={UserCircle} label={currentUser?.email || currentUser?.username || '계정'} onClick={() => openWorkspaceAction('account-settings')} chevron />
-                <SidebarFooterButton icon={CreditCard} label="결제" onClick={() => openWorkspaceAction('billing')} chevron />
-                <SidebarFooterButton icon={Bot} label="고객센터" onClick={() => setSupportInfoOpen((prev) => !prev)} chevron />
-                <SidebarFooterButton icon={ShieldCheck} label="개인정보처리방침" onClick={() => setPrivacyOpen((prev) => !prev)} />
-                <SidebarFooterButton icon={Landmark} label="사업자정보" onClick={() => setBusinessInfoOpen((prev) => !prev)} chevron />
-                <SidebarFooterButton icon={LogOut} label="로그아웃" onClick={onLogout} />
-                <div className="px-2 pt-3 text-[11px] font-bold leading-none text-zinc-700">© 2026 JASAIN</div>
-              </div>
+            <div ref={accountMenuRef} className="relative border-t border-white/10 pt-3">
+              <AccountSummaryMenu
+                currentUser={currentUser}
+                product={selectedProduct}
+                account={account}
+                open={accountMenuOpen}
+                onOpenAccount={() => {
+                  setAccountMenuOpen(false);
+                  openWorkspaceAction('account-settings');
+                }}
+                onToggleMenu={() => setAccountMenuOpen((prev) => !prev)}
+                onOpenBilling={() => {
+                  setAccountMenuOpen(false);
+                  openWorkspaceAction('billing');
+                }}
+                onOpenSupport={() => {
+                  setAccountMenuOpen(false);
+                  setSupportInfoOpen(true);
+                }}
+                onOpenPrivacy={() => {
+                  setAccountMenuOpen(false);
+                  setPrivacyOpen(true);
+                }}
+                onOpenBusiness={() => {
+                  setAccountMenuOpen(false);
+                  setBusinessInfoOpen(true);
+                }}
+                onLogout={() => {
+                  setAccountMenuOpen(false);
+                  onLogout?.();
+                }}
+              />
+              <div className="px-2 pt-3 text-[11px] font-bold leading-none text-zinc-700">© 2026 JASAIN</div>
             </div>
           </div>
         </aside>
@@ -933,6 +963,7 @@ export default function CustomerBetaPage({
               onOpenPrivacy={() => setPrivacyOpen((prev) => !prev)}
               onStartProduct={startProduct}
               onOpenAction={openWorkspaceAction}
+              onRequestBillingAgreement={setAgreementIntent}
               startingProductId={startingProductId}
               closing={drawerClosing}
               onClose={closeDrawer}
@@ -941,6 +972,15 @@ export default function CustomerBetaPage({
           {privacyOpen && <PrivacyModal onClose={() => setPrivacyOpen(false)} />}
           {businessInfoOpen && <BusinessInfoModal onClose={() => setBusinessInfoOpen(false)} />}
           {supportInfoOpen && <SupportInfoModal onClose={() => setSupportInfoOpen(false)} />}
+          {agreementIntent && (
+            <BillingAgreementModal
+              product={agreementIntent.product}
+              flow={agreementIntent.flow}
+              busy={agreementIntent.busy}
+              onCancel={() => setAgreementIntent(null)}
+              onConfirm={agreementIntent.onConfirm}
+            />
+          )}
         </main>
       </div>
     </div>
@@ -956,17 +996,112 @@ function SidebarGroup({ label, children }) {
   );
 }
 
-function SidebarFooterButton({ icon: Icon, label, onClick, chevron = false }) {
+function accountInitials(currentUser = {}) {
+  const label = String(currentUser?.username || currentUser?.email || 'JASAIN').trim();
+  const parts = label.split(/[\s@._-]+/).filter(Boolean);
+  return (parts.length >= 2 ? `${parts[0][0]}${parts[1][0]}` : label.slice(0, 2)).toUpperCase();
+}
+
+function accountPlanLabel(currentUser = {}, product = {}) {
+  const products = Array.isArray(currentUser?.products) ? currentUser.products : [];
+  const currentGrant = products.find((grant) => grant.productId === product?.id && grant.status !== 'suspended');
+  if (currentGrant?.status === 'trial') return 'Trial';
+  if (currentGrant?.status === 'active') return 'Active';
+  if (currentGrant?.status) return currentGrant.status;
+  if (products.some((grant) => grant.status !== 'suspended')) return 'Active';
+  return product?.name || 'JASAIN';
+}
+
+function AccountSummaryMenu({
+  currentUser,
+  product,
+  account,
+  open,
+  onOpenAccount,
+  onToggleMenu,
+  onOpenBilling,
+  onOpenSupport,
+  onOpenPrivacy,
+  onOpenBusiness,
+  onLogout
+}) {
+  const displayName = currentUser?.username || currentUser?.email || 'JASAIN 계정';
+  const plan = accountPlanLabel(currentUser, product);
+  const menuItems = [
+    { key: 'account', icon: UserCircle, label: '계정 정보', sub: account?.name || currentUser?.email || '', onClick: onOpenAccount, chevron: true },
+    { key: 'billing', icon: CreditCard, label: '결제', sub: plan, onClick: onOpenBilling, chevron: true },
+    { key: 'support', icon: Bot, label: '고객센터', sub: '문의와 도움말', onClick: onOpenSupport, chevron: true },
+    { key: 'privacy', icon: ShieldCheck, label: '개인정보처리방침', sub: '처리 기준', onClick: onOpenPrivacy },
+    { key: 'business', icon: Landmark, label: '사업자정보', sub: '회사 정보', onClick: onOpenBusiness, chevron: true },
+    { key: 'logout', icon: LogOut, label: '로그아웃', sub: '현재 세션 종료', onClick: onLogout }
+  ];
+
+  return (
+    <>
+      {open && (
+        <div className="absolute bottom-[74px] left-0 z-30 w-full rounded-3xl border border-white/10 bg-zinc-950/95 p-2 shadow-2xl shadow-black/50 backdrop-blur md:left-[calc(100%+12px)] md:bottom-0 md:w-72">
+          <div className="grid gap-1">
+            {menuItems.map((item) => (
+              <SidebarFooterButton
+                key={item.key}
+                icon={item.icon}
+                label={item.label}
+                sub={item.sub}
+                onClick={item.onClick}
+                chevron={item.chevron}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={onOpenAccount}
+          className="grid w-full grid-cols-[42px_minmax(0,1fr)_42px] items-center gap-3 rounded-3xl bg-white/5 px-3 py-3 text-left transition hover:bg-white/10"
+          aria-label="계정 정보 열기"
+        >
+          <span className="grid h-10 w-10 place-items-center rounded-full bg-zinc-700 text-sm font-black text-zinc-100">
+            {accountInitials(currentUser)}
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-black text-zinc-100">{displayName}</span>
+            <span className="mt-0.5 block truncate text-xs font-bold text-zinc-500">{plan}</span>
+          </span>
+          <span aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onToggleMenu?.();
+          }}
+          className="absolute right-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/5 text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
+          aria-label="계정 메뉴 열기"
+          aria-expanded={open}
+        >
+          <ChevronRight size={17} className={`transition ${open ? 'rotate-90 text-zinc-200' : ''}`} />
+        </button>
+      </div>
+    </>
+  );
+}
+
+function SidebarFooterButton({ icon: Icon, label, sub = '', onClick, chevron = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="grid h-9 w-full grid-cols-[24px_minmax(0,1fr)_16px] items-center rounded-xl px-2 text-left text-zinc-500 transition hover:bg-white/5 hover:text-zinc-300"
+      className="grid min-h-11 w-full grid-cols-[28px_minmax(0,1fr)_16px] items-center rounded-2xl px-3 py-2 text-left text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
     >
-      <span className="grid h-6 w-6 place-items-center">
+      <span className="grid h-7 w-7 place-items-center">
         <Icon size={16} strokeWidth={2.2} />
       </span>
-      <span className="min-w-0 truncate">{label}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-sm font-bold">{label}</span>
+        {sub && <span className="mt-0.5 block truncate text-[11px] font-bold text-zinc-600">{sub}</span>}
+      </span>
       {chevron && <ChevronRight size={14} className="justify-self-end" />}
     </button>
   );
@@ -1561,7 +1696,7 @@ function BetaAccountSettingsPanel({ currentUser, account, accounts, onLogout, on
   );
 }
 
-function BetaBillingPanel({ currentUser, reloadCurrentUser }) {
+function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgreement }) {
   const toast = useToast();
   const [products, setProducts] = useState([]);
   const [billing, setBilling] = useState(null);
@@ -1639,10 +1774,15 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser }) {
     finish();
   }, [redirectHandled, load, toast]);
 
-  const startOnetime = async () => {
+  const startOnetime = async (agreementSnapshot) => {
     setBusy('onetime');
     try {
-      const payload = await api.post('/api/billing/checkout/virtual-account', { productId: 'onetime_590000' });
+      const payload = await api.post('/api/billing/checkout/virtual-account', {
+        productId: 'onetime_590000',
+        agreementAccepted: true,
+        agreementVersion: BILLING_AGREEMENT_VERSION,
+        agreementSnapshot
+      });
       await requestTossPayment(payload.toss);
     } catch (err) {
       toast(err.message || '결제를 시작하지 못했어요.', 'error');
@@ -1652,10 +1792,15 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser }) {
     }
   };
 
-  const startMonthly = async () => {
+  const startMonthly = async (agreementSnapshot) => {
     setBusy('monthly');
     try {
-      const payload = await api.post('/api/billing/billing-auth', { productId: 'monthly_59000' });
+      const payload = await api.post('/api/billing/billing-auth', {
+        productId: 'monthly_59000',
+        agreementAccepted: true,
+        agreementVersion: BILLING_AGREEMENT_VERSION,
+        agreementSnapshot
+      });
       localStorage.setItem(pendingSubscriptionKey, JSON.stringify({
         subscriptionId: payload.subscription.id,
         customerKey: payload.toss.customerKey
@@ -1669,10 +1814,15 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser }) {
     }
   };
 
-  const startDexorCredit = async (productId) => {
+  const startDexorCredit = async (productId, agreementSnapshot) => {
     setBusy(productId);
     try {
-      const payload = await api.post('/api/billing/checkout/virtual-account', { productId });
+      const payload = await api.post('/api/billing/checkout/virtual-account', {
+        productId,
+        agreementAccepted: true,
+        agreementVersion: BILLING_AGREEMENT_VERSION,
+        agreementSnapshot
+      });
       await requestTossPayment(payload.toss);
     } catch (err) {
       toast(err.message || '크레딧 충전을 시작하지 못했어요.', 'error');
@@ -1680,6 +1830,18 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser }) {
     } finally {
       setBusy('');
     }
+  };
+
+  const requestAgreement = (flow, product, run) => {
+    onRequestBillingAgreement?.({
+      flow,
+      product,
+      busy: Boolean(busy),
+      onConfirm: async (snapshot) => {
+        onRequestBillingAgreement?.(null);
+        await run(snapshot);
+      }
+    });
   };
 
   return (
@@ -1732,7 +1894,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser }) {
           caption="가상계좌 결제"
           product={productsById.onetime_590000}
           busy={busy === 'onetime'}
-          onClick={startOnetime}
+          onClick={() => requestAgreement('onetime', productsById.onetime_590000, startOnetime)}
         />
         <BetaPlanCard
           icon={CreditCard}
@@ -1741,7 +1903,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser }) {
           caption={activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '자동결제 준비 중'}
           product={productsById.monthly_59000}
           busy={busy === 'monthly'}
-          onClick={startMonthly}
+          onClick={() => requestAgreement('monthly', productsById.monthly_59000, startMonthly)}
         />
       </div>
 
@@ -1752,7 +1914,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser }) {
             <button
               key={product.id}
               type="button"
-              onClick={() => startDexorCredit(product.id)}
+              onClick={() => requestAgreement('dexor_credit', product, (snapshot) => startDexorCredit(product.id, snapshot))}
               disabled={busy === product.id}
               className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-left hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -4015,7 +4177,8 @@ const productPreviewContent = {
 
 function ProductPreview({ action, onStartProduct, starting }) {
   const product = productPreviewContent[action.key] || productPreviewContent.dexor;
-  const preparing = action.key === 'infludex';
+  const configuredProduct = productById(action.key);
+  const preparing = configuredProduct?.status === 'preparing';
   return (
     <PanelCard className="self-start">
       <div className="text-xs font-black uppercase tracking-wide text-zinc-500">{product.subtitle}</div>
@@ -4056,6 +4219,54 @@ function PreflightSummary({ check }) {
   );
 }
 
+const ENGAGEMENT_PATTERN_LABELS = {
+  choice_tension: '선택 갈림형',
+  experience_question: '경험 질문형',
+  regret_prevention: '후회 방지형',
+  empathy_prompt: '공감 질문형'
+};
+
+function EngagementQualityMeta({ post, compact = false }) {
+  const metadata = post?.metadata || {};
+  if (!metadata.engagementScore) return null;
+  const patternLabel = ENGAGEMENT_PATTERN_LABELS[metadata.engagementPattern] || metadata.engagementPattern || '패턴 미분류';
+  const reasons = Array.isArray(metadata.selectionReasons) ? metadata.selectionReasons.slice(0, compact ? 2 : 3) : [];
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[11px] text-zinc-500">
+      <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 font-black text-emerald-300">
+        댓글 유도 {metadata.engagementScore}점
+      </span>
+      <span className="rounded-full bg-white/5 px-2.5 py-1 font-bold text-zinc-400">{patternLabel}</span>
+      {reasons.map((reason) => (
+        <span key={reason} className="rounded-full bg-white/5 px-2.5 py-1 font-bold text-zinc-500">{reason}</span>
+      ))}
+    </div>
+  );
+}
+
+function CandidateScoreSummary({ post }) {
+  const scores = Array.isArray(post?.metadata?.candidateScores) ? post.metadata.candidateScores : [];
+  if (scores.length <= 1) return null;
+  return (
+    <details className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-zinc-500">
+      <summary className="cursor-pointer font-black text-zinc-400">후보 점수/탈락 이유 보기</summary>
+      <div className="mt-2 grid gap-1">
+        {scores.map((candidate) => (
+          <div key={`${candidate.index}-${candidate.engagementScore}`} className="flex items-center justify-between gap-3 rounded-xl bg-black/20 px-3 py-2">
+            <span className="min-w-0 truncate">
+              #{Number(candidate.index) + 1} · {ENGAGEMENT_PATTERN_LABELS[candidate.engagementPattern] || candidate.engagementPattern || '패턴 미분류'}
+              {candidate.rejectionReasons?.length ? ` · ${candidate.rejectionReasons.join(', ')}` : ''}
+            </span>
+            <span className={`shrink-0 font-black ${candidate.selected ? 'text-emerald-300' : 'text-zinc-500'}`}>
+              {candidate.selected ? '선택 ' : ''}{candidate.engagementScore}점
+            </span>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function QueueSection({ title, rows, posts, expandedId, detail, loadingDetailId, dismissingId, onToggle, onDismiss }) {
   if (rows.length === 0) return null;
   return (
@@ -4081,7 +4292,13 @@ function QueueSection({ title, rows, posts, expandedId, detail, loadingDetailId,
                     <div className="text-xs text-zinc-500">불러오는 중...</div>
                   ) : (
                     <>
-                      {(rowDetail?.post?.body || post?.body) && <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-zinc-300">{rowDetail?.post?.body || post?.body}</pre>}
+                      {(rowDetail?.post?.body || post?.body) && (
+                        <div className="grid gap-2">
+                          <EngagementQualityMeta post={rowDetail?.post || post} />
+                          <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-zinc-300">{rowDetail?.post?.body || post?.body}</pre>
+                          <CandidateScoreSummary post={rowDetail?.post || post} />
+                        </div>
+                      )}
                       {(row.friendly_message || row.error_message) && <Notice tone="error">{row.friendly_message || row.error_message}</Notice>}
                       {row.post_url && <a href={row.post_url} target="_blank" rel="noreferrer" className="text-sm font-bold text-zinc-100 hover:text-white">게시글 보기</a>}
                       {onDismiss && (

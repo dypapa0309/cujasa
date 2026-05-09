@@ -29,13 +29,24 @@ export function generatePostsPrompt(topic, products, account) {
           keyword: p.keyword,
           reason: p.recommendation_reason
         })),
+        generationGoal: {
+          primaryMetric: 'comments_and_replies',
+          candidateCount: 5,
+          defaultEngagementPattern: 'safe choice-tension',
+          priority: 'Make readers want to answer with their own preference or experience.'
+        },
         rules: [
+          'Generate exactly 5 candidate posts for this topic. The service will score them and save only the best one.',
+          'Prioritize comments/replies over pure information density.',
+          'Default to safe choice-tension frames: A/B choice, criteria that split opinions, "people who tried this" questions, and situation-based preferences.',
+          'Every post should make the reader able to answer in under 5 seconds.',
           'When returning multiple posts, distribute contentType across the allowed contentTypes instead of using one type repeatedly.',
           'Use varied angles: one can be empathy, one checklist, one problem-solution, one question, or one mistake-prevention when allowed.',
           'Optimize the body for saves, replies, and shares: concrete inconvenience, quick recognition, or a useful tiny insight should lead.',
           'Use stronger hook frames while staying safe: 나만 불편한 줄 알았던 상황, 은근 갈리는 선택, 사고 나서 후회하는 기준, or a house/life question people can answer immediately.',
           'The first sentence must contain at least one of: a concrete inconvenience, a safe choice tension, a regret-prevention cue, or an easy experience question.',
           'Safe tension is allowed only around taste, habit, space, budget, frequency, and use-case differences.',
+          'Never use gender, generation, job, region, politics, body, family status, or identity as the source of tension.',
           'Never create hostile polarization: no insults, contempt, gender/age/job/region conflict, politics, or identity attacks.',
           'Do not make every post a product recommendation. The body should feel like useful Threads content first.',
           accountProfile.strategy.seasonalityEnabled
@@ -56,7 +67,7 @@ export function generatePostsPrompt(topic, products, account) {
           'Use natural Korean spacing and line breaks. Avoid awkward machine-translated phrasing.',
           'Use zero or one emoji at most. Never decorate every sentence with emoji.',
           'Do not use bland generic phrases if preferredExpressions are provided.',
-          'Do not mention links, comments, profile links, prices, cheapest price, or where to buy in the post body.',
+          'Do not mention links, profile links, prices, cheapest price, or where to buy in the post body. You may ask a natural experience or choice question.',
           'The post body must read like a normal standalone Threads post. CTA, link, and ad disclosure are attached later during upload.',
           'Never write phrases like "아래 링크 확인", "자세한 건 링크", "댓글 확인", "최저가", or "할인 정보".',
           'For kitchen, cleaning, home, or homemaking accounts, write like a short natural Threads post, not a blog article.',

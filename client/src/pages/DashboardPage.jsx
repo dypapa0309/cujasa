@@ -25,6 +25,8 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
   const [preflightModal, setPreflightModal] = useState(null);
   const [runSummaryModal, setRunSummaryModal] = useState(null);
   const [cleaningQueue, setCleaningQueue] = useState(false);
+  const [normalizingOps, setNormalizingOps] = useState(false);
+  const [normalizingAccountId, setNormalizingAccountId] = useState('');
   const [catchingUpDaily, setCatchingUpDaily] = useState(false);
   const [reschedulingToday, setReschedulingToday] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -150,6 +152,26 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
     }
   };
 
+  const normalizeOperations = async (accountId = null) => {
+    if (accountId) setNormalizingAccountId(accountId);
+    else setNormalizingOps(true);
+    try {
+      const result = await api.post('/api/admin/operations/normalize-operations', accountId ? { accountId } : {});
+      toast([
+        accountId ? '계정 정상화 완료' : '운영 정상화 완료',
+        `댓글 복구 ${result.repairedReplyCount || 0}건`,
+        `파이프라인 정리 ${result.expiredPipelineCount || 0}건`,
+        `처리 예약 ${result.processedQueue || 0}건`
+      ].join(' · '), result.failedReplyRepairCount ? 'info' : 'success');
+      await load();
+    } catch (err) {
+      toast(err.message || '운영 정상화에 실패했습니다.', 'error');
+    } finally {
+      setNormalizingOps(false);
+      setNormalizingAccountId('');
+    }
+  };
+
   const catchUpDailyPipeline = async () => {
     setCatchingUpDaily(true);
     try {
@@ -260,6 +282,14 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
           >
             {cleaningQueue ? <Spinner /> : <Wrench size={16} />}
             실패 큐 정리
+          </button>
+          <button
+            onClick={() => normalizeOperations()}
+            disabled={normalizingOps}
+            className="inline-flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800 disabled:opacity-50"
+          >
+            {normalizingOps ? <Spinner /> : <Wrench size={16} />}
+            운영 정상화
           </button>
           <button
             onClick={rescheduleTodayQueue}
@@ -438,6 +468,14 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
                       <IconButton title="설정 열기" onClick={() => openAccountSettings?.(row.accountId)}><Settings size={15} /></IconButton>
                       <IconButton title="큐 보기" onClick={() => openAccountQueue?.(row.accountId)}><ListChecks size={15} /></IconButton>
                       <IconButton title="고객 계정 보기" onClick={() => setPage?.('admin-users')}><Users size={15} /></IconButton>
+                      <button
+                        onClick={() => normalizeOperations(row.accountId)}
+                        disabled={normalizingAccountId === row.accountId || isPipelineRunActive(row)}
+                        className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                      >
+                        {normalizingAccountId === row.accountId ? <Spinner /> : <Wrench size={13} />}
+                        정상화
+                      </button>
                       <button
                         onClick={() => runAccount(row)}
                         disabled={runningAccountId === row.accountId || isPipelineRunActive(row)}

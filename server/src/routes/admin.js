@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   createUser,
+  archiveUser,
   grantUserProduct,
   listAvailableProducts,
   listUserProducts,
@@ -11,12 +12,12 @@ import {
 } from '../services/authService.js';
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
 import { hashPassword } from '../utils/password.js';
-import { cleanupQueueErrors, operationAccountRows, operationDashboard, operationEvents, operationSummary } from '../services/operationsService.js';
+import { cleanupQueueErrors, normalizeOperations, operationAccountRows, operationDashboard, operationEvents, operationSummary } from '../services/operationsService.js';
 import { runDailyPipelineOnce } from '../services/schedulerRunService.js';
 import { buildOpsHealthSummary, runDailyOpsHealthCheck } from '../services/opsHealthService.js';
 import { cleanupUnusedPipelineArtifacts } from '../services/unusedArtifactCleanupService.js';
 import { cleanupOldQueueIssues, dismissPastQueueIssuesForAccount } from '../services/queueVisibilityService.js';
-import { recoverReplyLinkModeRequiredQueues, rescheduleTodayQueue } from '../services/schedulerService.js';
+import { recoverReplyLinkModeRequiredQueues, repairReplyLinkFailures, rescheduleTodayQueue } from '../services/schedulerService.js';
 import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js';
 import { buildMisassignmentReport } from '../services/accountOwnershipService.js';
 import { createManualPayment, expireDueEntitlements } from '../services/billingEntitlementService.js';
@@ -164,6 +165,18 @@ router.post('/operations/reschedule-today-queue', async (req, res, next) => {
 router.post('/operations/recover-reply-link-mode-queues', async (req, res, next) => {
   try {
     res.json(await recoverReplyLinkModeRequiredQueues({ accountId: req.body?.accountId || null }));
+  } catch (e) { next(e); }
+});
+
+router.post('/operations/repair-reply-link-failures', async (req, res, next) => {
+  try {
+    res.json(await repairReplyLinkFailures({ accountId: req.body?.accountId || null }));
+  } catch (e) { next(e); }
+});
+
+router.post('/operations/normalize-operations', async (req, res, next) => {
+  try {
+    res.json(await normalizeOperations({ accountId: req.body?.accountId || null }));
   } catch (e) { next(e); }
 });
 
@@ -381,7 +394,7 @@ router.patch('/setup-tasks/:id', async (req, res, next) => {
 // 구매자 목록
 router.get('/users', async (req, res, next) => {
   try {
-    const users = await listUsers();
+    const users = await listUsers({ includeArchived: req.query?.includeArchived === '1' || req.query?.includeArchived === 'true' });
     const result = await Promise.all(users.map(async (u) => {
       const [ua, products] = await Promise.all([
         dbList('user_accounts', { user_id: u.id }),
@@ -397,6 +410,16 @@ router.get('/users', async (req, res, next) => {
       };
     }));
     res.json(result);
+  } catch (e) { next(e); }
+});
+
+router.delete('/users/:id', async (req, res, next) => {
+  try {
+    const archived = await archiveUser(req.params.id, {
+      reason: req.body?.reason || req.query?.reason || 'admin_archive',
+      archivedBy: req.user?.email || req.user?.adminId || 'admin'
+    });
+    res.json(archived);
   } catch (e) { next(e); }
 });
 

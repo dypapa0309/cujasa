@@ -1,8 +1,10 @@
 import { dbGet, dbList, dbUpdate } from './supabaseService.js';
-import { latestPipelineRunReadOnly, pipelineStaleReason } from './pipelineRunService.js';
+import { expireStalePipelineRuns, latestPipelineRunReadOnly, pipelineStaleReason } from './pipelineRunService.js';
 import { resolveCoupangCredentialsForAccount } from './coupangService.js';
 import { adminActivityLabel, adminActivityMessage, normalizeQueueClassification } from './queueErrorService.js';
 import { dailyPipelineStatus } from './schedulerRunService.js';
+import { processDueQueue, repairReplyLinkFailures } from './schedulerService.js';
+import { cleanupOldQueueIssues } from './queueVisibilityService.js';
 
 const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -570,6 +572,32 @@ export async function cleanupQueueErrors({ mode = 'dry-run' } = {}) {
       title: row.classification.title,
       message: row.classification.message
     }))
+  };
+}
+
+export async function normalizeOperations({ accountId = null } = {}) {
+  const expired = await expireStalePipelineRuns(accountId || null);
+  const repairedReplies = await repairReplyLinkFailures({ accountId });
+  const oldIssues = await cleanupOldQueueIssues({
+    mode: 'apply',
+    accountId,
+    hideAfterDays: 7,
+    deleteAfterHiddenDays: 3
+  });
+  const processedQueue = await processDueQueue();
+  const dashboard = await operationDashboard();
+  return {
+    ok: true,
+    accountId,
+    expiredPipelineCount: expired.length,
+    repairedReplyCount: repairedReplies.repairedCount || 0,
+    failedReplyRepairCount: repairedReplies.failedCount || 0,
+    skippedReplyRepairCount: repairedReplies.skippedCount || 0,
+    oldIssues,
+    processedQueue,
+    remainingQueueProblems: dashboard.summary?.cards?.queueProblems ?? 0,
+    remainingPipelineStuck: dashboard.summary?.issueBreakdown?.pipelineStuck ?? 0,
+    replyRepair: repairedReplies
   };
 }
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, CreditCard, Landmark, RefreshCw, ShieldCheck } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
+import BillingAgreementModal, { BILLING_AGREEMENT_VERSION } from '../../components/BillingAgreementModal.jsx';
 
 const pendingSubscriptionKey = 'cujasa_pending_subscription';
 
@@ -81,6 +82,7 @@ export default function CustomerBillingPage({ currentUser }) {
   const [subscriptions, setSubscriptions] = useState([]);
   const [busy, setBusy] = useState('');
   const [redirectHandled, setRedirectHandled] = useState(false);
+  const [agreementIntent, setAgreementIntent] = useState(null);
   const latestWaiting = payments.find((payment) => payment.status === 'waiting_for_deposit');
   const activeSubscription = subscriptions.find((subscription) => subscription.status === 'active');
 
@@ -147,10 +149,15 @@ export default function CustomerBillingPage({ currentUser }) {
     finish();
   }, [redirectHandled]);
 
-  const startOnetime = async () => {
+  const startOnetime = async (agreementSnapshot) => {
     setBusy('onetime');
     try {
-      const payload = await api.post('/api/billing/checkout/virtual-account', { productId: 'onetime_590000' });
+      const payload = await api.post('/api/billing/checkout/virtual-account', {
+        productId: 'onetime_590000',
+        agreementAccepted: true,
+        agreementVersion: BILLING_AGREEMENT_VERSION,
+        agreementSnapshot
+      });
       await requestTossPayment(payload.toss);
     } catch (err) {
       toast(err.message || '결제를 시작하지 못했습니다.', 'error');
@@ -160,10 +167,15 @@ export default function CustomerBillingPage({ currentUser }) {
     }
   };
 
-  const startMonthly = async () => {
+  const startMonthly = async (agreementSnapshot) => {
     setBusy('monthly');
     try {
-      const payload = await api.post('/api/billing/billing-auth', { productId: 'monthly_59000' });
+      const payload = await api.post('/api/billing/billing-auth', {
+        productId: 'monthly_59000',
+        agreementAccepted: true,
+        agreementVersion: BILLING_AGREEMENT_VERSION,
+        agreementSnapshot
+      });
       localStorage.setItem(pendingSubscriptionKey, JSON.stringify({
         subscriptionId: payload.subscription.id,
         customerKey: payload.toss.customerKey
@@ -175,6 +187,15 @@ export default function CustomerBillingPage({ currentUser }) {
     } finally {
       setBusy('');
     }
+  };
+
+  const openAgreement = (type, productId) => setAgreementIntent({ type, product: productsById[productId] });
+
+  const confirmAgreement = async (snapshot) => {
+    const intent = agreementIntent;
+    setAgreementIntent(null);
+    if (intent?.type === 'onetime') await startOnetime(snapshot);
+    if (intent?.type === 'monthly') await startMonthly(snapshot);
   };
 
   return (
@@ -230,7 +251,7 @@ export default function CustomerBillingPage({ currentUser }) {
           caption="가상계좌 결제"
           product={productsById.onetime_590000}
           busy={busy === 'onetime'}
-          onClick={startOnetime}
+          onClick={() => openAgreement('onetime', 'onetime_590000')}
         />
         <PlanCard
           icon={CreditCard}
@@ -239,9 +260,19 @@ export default function CustomerBillingPage({ currentUser }) {
           caption={activeSubscription ? `활성 · 다음 결제 ${formatDate(activeSubscription.nextBillingAt)}` : '카드 자동결제'}
           product={productsById.monthly_59000}
           busy={busy === 'monthly'}
-          onClick={startMonthly}
+          onClick={() => openAgreement('monthly', 'monthly_59000')}
         />
       </div>
+
+      {agreementIntent && (
+        <BillingAgreementModal
+          product={agreementIntent.product}
+          flow={agreementIntent.type}
+          busy={Boolean(busy)}
+          onCancel={() => setAgreementIntent(null)}
+          onConfirm={confirmAgreement}
+        />
+      )}
 
       {payments.length > 0 && (
         <div className="rounded-2xl border border-gray-200 bg-white p-5">
