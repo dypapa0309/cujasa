@@ -7,6 +7,14 @@ const SOURCE_TYPES = new Set(['text_paste', 'screenshot_ocr', 'admin_seed']);
 const QUALITY_STATUSES = new Set(['candidate', 'approved', 'rejected']);
 const UNSAFE_FLAGS = new Set(['unsafe_conflict_frame', 'empty_text', 'source_similarity_high']);
 
+function isMissingSchemaError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return ['42703', '42P01'].includes(error?.code)
+    || message.includes('does not exist')
+    || message.includes('schema cache')
+    || message.includes('could not find');
+}
+
 function normalizeText(value = '') {
   return String(value || '').replace(/\s+/g, ' ').trim();
 }
@@ -128,7 +136,17 @@ async function savePersonalReferencePatterns(account, patterns = [], context = {
     seen.add(key);
     return true;
   }).slice(0, 30);
-  await dbUpdate('accounts', { id: account.id }, { personal_reference_patterns: deduped });
+  try {
+    await dbUpdate('accounts', { id: account.id }, { personal_reference_patterns: deduped });
+  } catch (error) {
+    if (isMissingSchemaError(error)) {
+      const nextError = new Error('인기글 학습 저장 준비가 아직 완료되지 않았습니다. 잠시 후 다시 시도해 주세요.');
+      nextError.status = 503;
+      nextError.code = 'TREND_REFERENCE_SCHEMA_NOT_READY';
+      throw nextError;
+    }
+    throw error;
+  }
   return deduped;
 }
 
@@ -141,7 +159,15 @@ export async function saveAnonymousTrendPatternAssets(patterns = [], context = {
       const existing = await dbGet('trend_reference_patterns', { source_fingerprint: row.source_fingerprint }).catch(() => null);
       if (existing) continue;
     }
-    rows.push(await dbInsert('trend_reference_patterns', row));
+    try {
+      rows.push(await dbInsert('trend_reference_patterns', row));
+    } catch (error) {
+      if (isMissingSchemaError(error)) {
+        console.warn('[trend_reference_patterns_unavailable]', error.message);
+        return rows;
+      }
+      throw error;
+    }
   }
   return rows;
 }

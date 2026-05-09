@@ -69,6 +69,14 @@ const ACCOUNT_COLUMNS = new Set([
   'status'
 ]);
 
+function isMissingSchemaError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return ['42703', '42P01'].includes(error?.code)
+    || message.includes('does not exist')
+    || message.includes('schema cache')
+    || message.includes('could not find');
+}
+
 function toFiniteNumber(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -185,7 +193,19 @@ export const updateAccount = async (id, payload) => {
   const normalized = normalizeAccount({ ...current, ...sanitized });
   const patch = Object.fromEntries(Object.keys(sanitized).map((key) => [key, normalized[key]]));
   if (Object.keys(patch).length === 0) return current;
-  const [updated] = await dbUpdate('accounts', { id }, patch);
+  let updatedRows;
+  try {
+    updatedRows = await dbUpdate('accounts', { id }, patch);
+  } catch (error) {
+    if (isMissingSchemaError(error)) {
+      const nextError = new Error('계정 설정 저장 준비가 아직 완료되지 않았습니다. 잠시 후 다시 시도해 주세요.');
+      nextError.status = 503;
+      nextError.code = 'ACCOUNT_SCHEMA_NOT_READY';
+      throw nextError;
+    }
+    throw error;
+  }
+  const [updated] = updatedRows;
   return updated;
 };
 export async function archiveAccount(id) {

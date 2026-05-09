@@ -1,4 +1,5 @@
 alter table accounts
+  add column if not exists anonymous_learning_enabled boolean not null default false,
   add column if not exists personal_reference_patterns jsonb not null default '[]',
   add column if not exists blog_auto_publish_enabled boolean not null default false,
   add column if not exists blog_publish_mode text not null default 'test_only',
