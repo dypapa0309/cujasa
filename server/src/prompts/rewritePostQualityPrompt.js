@@ -40,6 +40,8 @@ export function rewritePostQualityPrompt({ body = '', topic = {}, products = [],
           punctuationStyle: pattern.punctuationStyle,
           toneRegister: pattern.toneRegister,
           performanceScore: pattern.performanceScore,
+          qualityScore: pattern.qualityScore,
+          analysisProfile: pattern.analysisProfile,
           sourceType: pattern.sourceType || 'anonymous_pattern'
         })),
         quality: {
@@ -54,7 +56,7 @@ export function rewritePostQualityPrompt({ body = '', topic = {}, products = [],
           'Never mention links, profile links, comments with links, cheapest price, discount, special deal, or where to buy.',
           'Do not sound like an AI, blog article, balanced essay, or shopping recommendation.',
           referencePatterns.length
-            ? 'Use approved referencePatterns as strong inspiration for pacing, line breaks, list shape, punctuation habits, tone register, hook pattern, and safe question style. Do not copy source wording.'
+            ? 'Use approved referencePatterns as strong inspiration for pacing, line breaks, list shape, punctuation habits, tone register, hook pattern, and safe question style. Prioritize high qualityScore patterns that solve the failed qualityGate reasons. Do not copy source wording.'
             : 'No approved referencePatterns are available, so use the safe default CUJASA lived-in shape.',
           'Use at least two small lived-in physical details or chores.',
           'Include one save-worthy tiny standard that helps the reader avoid regret.',

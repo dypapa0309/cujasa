@@ -42,6 +42,8 @@ export function generatePostsPrompt(topic, products, account) {
           punctuationStyle: pattern.punctuationStyle,
           toneRegister: pattern.toneRegister,
           performanceScore: pattern.performanceScore,
+          qualityScore: pattern.qualityScore,
+          analysisProfile: pattern.analysisProfile,
           sourceType: pattern.sourceType || 'anonymous_pattern'
         })),
         topic,
@@ -74,7 +76,7 @@ export function generatePostsPrompt(topic, products, account) {
           'For 자취/원룸/살림 topics, concrete criteria should sound like actual spots or chores: 설거지 후 둘 곳, 빨래 모아둘 곳, 욕실 물기, 조리대 위 자리, 꺼내기 쉬운 구조.',
           'Default to safe choice-tension frames: A/B choice, criteria that split opinions, "people who tried this" questions, and situation-based preferences.',
           referencePatterns.length
-            ? 'Use referencePatterns as strong structural and voice inspiration. Never copy exact source wording, but mirror the pacing, line breaks, list shape, punctuation habits, tone register, hook pattern, question pattern, and tension type.'
+            ? 'Use referencePatterns as strong structural and voice inspiration. Prioritize patterns with high qualityScore and low analysisProfile.templateRisk/aiToneRisk. Never copy exact source wording, but mirror the pacing, line breaks, list shape, punctuation habits, tone register, hook pattern, question pattern, and tension type.'
             : 'No referencePatterns are available, so rely on the safe default engagement frames.',
           performanceSignals?.topPosts?.length
             ? 'Use performanceSignals.topPosts as lightweight evidence of what earned clicks before. Borrow the broad hook/choice structure only; never copy body text.'
@@ -90,6 +92,9 @@ export function generatePostsPrompt(topic, products, account) {
           referencePatterns.length
             ? 'When mirroring a list pattern, write short subjective one-line observations with new labels and new details. End with one light comment prompt only.'
             : 'Avoid long explanations.',
+          referencePatterns.length
+            ? 'Use analysisProfile.bestFor to match the topic and selectedProducts. Avoid any pattern whose analysisProfile.avoidFor conflicts with the topic, account, or product category.'
+            : 'Do not invent external trend evidence.',
           'Every post should make the reader able to answer in under 5 seconds.',
           'When returning multiple posts, distribute contentType across the allowed contentTypes instead of using one type repeatedly.',
           accountProfile.strategy.effectiveMode === 'auto'

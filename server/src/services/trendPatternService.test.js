@@ -189,6 +189,12 @@ test('admin can create public content patterns with direction guidance', async (
   });
   assert.equal(result.savedCount, 1);
   assert.equal(result.rows[0].quality_status, 'approved');
+  assert.equal(typeof result.rows[0].quality_score, 'number');
+  assert.ok(result.rows[0].quality_score > 0);
+  assert.ok(result.rows[0].analysis_profile);
+  assert.ok(Array.isArray(result.rows[0].preview_posts));
+  assert.ok(result.rows[0].preview_posts.length > 0);
+  assert.equal(typeof result.analysisSummary.highQualityCount, 'number');
   assert.match(result.rows[0].reusable_structure, /운영 방향/);
   assert.match(result.rows[0].voice_pattern, /기계적인 설명 없이/);
   const context = await buildReferencePatternContext({
@@ -227,6 +233,8 @@ test('admin file samples are sanitized, deduped, and keep OCR source type', asyn
   assert.equal(result.samples.length, 1);
   assert.equal(result.savedCount, 1);
   assert.equal(result.rows[0].source_type, 'screenshot_ocr');
+  assert.equal(typeof result.rows[0].quality_score, 'number');
+  assert.ok(result.rows[0].analysis_profile.bestFor.length > 0);
   assert.doesNotMatch(JSON.stringify(result.rows[0]), /lovehyun45|threads\.net/);
 });
 

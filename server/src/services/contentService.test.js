@@ -40,6 +40,8 @@ test('generatePosts stores one selected post with engagement metadata', async ()
   assert.ok(saved.metadata.referencePatternMix);
   assert.ok(Array.isArray(saved.metadata.referencePatternIds));
   assert.ok(Array.isArray(saved.metadata.publicReferencePatternIds));
+  assert.ok(Array.isArray(saved.metadata.referencePatternQuality));
+  assert.ok(Array.isArray(saved.metadata.referencePatternMatchedReasons));
   assert.equal(typeof saved.metadata.referencePatternCount, 'number');
   assert.equal(saved.metadata.rubric.livedInStructureScore > 0, true);
   assert.equal(saved.metadata.rubric.concreteCriteriaScore > 0, true);
@@ -67,6 +69,8 @@ test('rewritePostQualityPrompt includes approved pattern fields without raw sour
         emotionSignal: '생활 공감',
         reusableStructure: '짧은 생활 기준 뒤 질문',
         voicePattern: '담백한 관찰체',
+        qualityScore: 88,
+        analysisProfile: { bestFor: ['자취 집기'], templateRisk: 10 },
         sourceText: '@raw_account 원문은 절대 들어가면 안 됨'
       }]
     },
@@ -76,5 +80,7 @@ test('rewritePostQualityPrompt includes approved pattern fields without raw sour
   const payload = JSON.parse(prompt[1].content);
   assert.equal(payload.referencePatterns.length, 1);
   assert.equal(payload.referencePatterns[0].hookPattern, '생활 속 은근한 불편으로 시작');
+  assert.equal(payload.referencePatterns[0].qualityScore, 88);
+  assert.equal(payload.referencePatterns[0].analysisProfile.bestFor[0], '자취 집기');
   assert.doesNotMatch(JSON.stringify(payload), /raw_account|원문은 절대/);
 });

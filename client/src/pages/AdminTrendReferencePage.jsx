@@ -16,6 +16,13 @@ const sourceLabels = {
   admin_seed: '관리자 seed'
 };
 
+const qualityFilterLabels = {
+  all: '전체 품질',
+  high: '고점수',
+  risky: '위험 있음',
+  preview_failed: '미리보기 실패'
+};
+
 function readFileAsText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -36,6 +43,10 @@ function readFileAsBase64(file) {
 
 function PatternCard({ pattern, saving, onStatus }) {
   const flags = Array.isArray(pattern.safety_flags) ? pattern.safety_flags : [];
+  const profile = pattern.analysis_profile && typeof pattern.analysis_profile === 'object' ? pattern.analysis_profile : {};
+  const previews = Array.isArray(pattern.preview_posts) ? pattern.preview_posts : [];
+  const qualityScore = Number(pattern.quality_score || 0);
+  const riskHigh = Number(profile.templateRisk || 0) >= 60 || Number(profile.aiToneRisk || 0) >= 60 || profile.riskLevel === 'high';
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -48,6 +59,10 @@ function PatternCard({ pattern, saving, onStatus }) {
               {sourceLabels[pattern.source_type] || pattern.source_type}
             </span>
             <span className="text-xs font-semibold text-slate-400">점수 {pattern.performance_score || 0}</span>
+            <span className={`rounded-full px-2 py-0.5 text-xs font-black ${qualityScore >= 70 ? 'bg-emerald-50 text-emerald-700' : qualityScore >= 50 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`}>
+              품질 {qualityScore}
+            </span>
+            {riskHigh && <span className="rounded-full bg-rose-50 px-2 py-0.5 text-xs font-black text-rose-700">위험 확인</span>}
             <span className="text-xs font-semibold text-slate-400">사용 {pattern.usage_count || 0}</span>
           </div>
           <h3 className="mt-3 text-base font-black text-slate-900">{pattern.hook_pattern}</h3>
@@ -93,6 +108,37 @@ function PatternCard({ pattern, saving, onStatus }) {
           {pattern.tone_register && <div>톤: <span className="font-bold text-slate-700">{pattern.tone_register}</span></div>}
         </div>
       )}
+      {Object.keys(profile).length > 0 && (
+        <div className="mt-3 grid gap-2 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs leading-relaxed text-slate-600 sm:grid-cols-3">
+          <div>저장가치 <span className="font-black text-slate-800">{profile.saveWorthiness || 0}</span></div>
+          <div>생활디테일 <span className="font-black text-slate-800">{profile.livedInDetailLevel || 0}</span></div>
+          <div>사람말투 <span className="font-black text-slate-800">{profile.voiceHumanity || 0}</span></div>
+          <div>댓글쉬움 <span className="font-black text-slate-800">{profile.commentEase || 0}</span></div>
+          <div>템플릿위험 <span className={Number(profile.templateRisk || 0) >= 60 ? 'font-black text-rose-700' : 'font-black text-slate-800'}>{profile.templateRisk || 0}</span></div>
+          <div>AI위험 <span className={Number(profile.aiToneRisk || 0) >= 60 ? 'font-black text-rose-700' : 'font-black text-slate-800'}>{profile.aiToneRisk || 0}</span></div>
+        </div>
+      )}
+      {(profile.bestFor?.length || profile.avoidFor?.length || profile.qualityReasons?.length) && (
+        <div className="mt-3 grid gap-2 text-xs text-slate-500 sm:grid-cols-3">
+          <div><span className="font-black text-slate-700">적합</span> {(profile.bestFor || []).join(', ') || '미분류'}</div>
+          <div><span className="font-black text-slate-700">주의</span> {(profile.avoidFor || []).join(', ') || '없음'}</div>
+          <div><span className="font-black text-slate-700">근거</span> {(profile.qualityReasons || []).join(', ') || '없음'}</div>
+        </div>
+      )}
+      {previews.length > 0 && (
+        <div className="mt-3 grid gap-2">
+          {previews.map((preview, index) => (
+            <div key={`${pattern.id}-preview-${index}`} className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
+              <div className="mb-2 flex flex-wrap items-center gap-2 font-black">
+                <span>{preview.contentType || '미리보기'}</span>
+                <span className={preview.qualityGatePassed ? 'text-emerald-700' : 'text-rose-700'}>{preview.qualityGatePassed ? '품질 통과' : '품질 미달'}</span>
+                <span className="text-slate-400">점수 {preview.engagementScore || 0}</span>
+              </div>
+              <div className="whitespace-pre-line leading-relaxed">{preview.body}</div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-400">
         <span>{dateTime(pattern.created_at)}</span>
         {flags.map((flag) => <span key={flag} className="rounded-full bg-slate-100 px-2 py-0.5">{flag}</span>)}
@@ -104,6 +150,7 @@ function PatternCard({ pattern, saving, onStatus }) {
 export default function AdminTrendReferencePage() {
   const toast = useToast();
   const [status, setStatus] = useState('candidate');
+  const [qualityFilter, setQualityFilter] = useState('all');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState('');
@@ -134,6 +181,15 @@ export default function AdminTrendReferencePage() {
     acc[row.quality_status] = (acc[row.quality_status] || 0) + 1;
     return acc;
   }, {}), [rows]);
+
+  const filteredRows = useMemo(() => rows.filter((row) => {
+    const profile = row.analysis_profile && typeof row.analysis_profile === 'object' ? row.analysis_profile : {};
+    const previews = Array.isArray(row.preview_posts) ? row.preview_posts : [];
+    if (qualityFilter === 'high') return Number(row.quality_score || 0) >= 70;
+    if (qualityFilter === 'risky') return Number(profile.templateRisk || 0) >= 60 || Number(profile.aiToneRisk || 0) >= 60 || profile.riskLevel === 'high';
+    if (qualityFilter === 'preview_failed') return previews.length > 0 && previews.some((preview) => !preview.qualityGatePassed || preview.allowed === false);
+    return true;
+  }), [qualityFilter, rows]);
 
   const updateStatus = async (pattern, nextStatus) => {
     setSavingId(pattern.id);
@@ -253,6 +309,18 @@ export default function AdminTrendReferencePage() {
             </button>
           ))}
         </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {Object.keys(qualityFilterLabels).map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setQualityFilter(key)}
+              className={`rounded-full border px-3 py-1.5 text-xs font-black ${qualityFilter === key ? 'border-blue-700 bg-blue-700 text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}
+            >
+              {qualityFilterLabels[key]}
+            </button>
+          ))}
+        </div>
       </div>
 
       <form onSubmit={analyzeStudioContent} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -330,21 +398,23 @@ export default function AdminTrendReferencePage() {
           />
         </label>
         {studioResult && (
-          <div className="mt-4 grid gap-2 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600 sm:grid-cols-3">
+          <div className="mt-4 grid gap-2 rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-600 sm:grid-cols-5">
             <div>입력 콘텐츠 {studioResult.samples?.length || 0}개</div>
             <div>추출 패턴 {studioResult.patterns?.length || 0}개</div>
             <div>저장 {studioResult.savedCount || 0}개</div>
+            <div>고품질 {studioResult.analysisSummary?.highQualityCount || 0}개</div>
+            <div>위험 {studioResult.analysisSummary?.riskCount || 0}개</div>
           </div>
         )}
       </form>
 
       {loading ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm font-bold text-slate-500">불러오는 중...</div>
-      ) : rows.length === 0 ? (
+      ) : filteredRows.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm font-bold text-slate-500">검수할 패턴이 없습니다.</div>
       ) : (
         <div className="grid gap-4">
-          {rows.map((pattern) => (
+          {filteredRows.map((pattern) => (
             <PatternCard key={pattern.id} pattern={pattern} saving={savingId === pattern.id} onStatus={updateStatus} />
           ))}
         </div>

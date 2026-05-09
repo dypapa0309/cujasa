@@ -32,6 +32,9 @@ create table if not exists trend_reference_patterns (
   punctuation_style text,
   tone_register text,
   performance_score int not null default 0,
+  quality_score int not null default 0,
+  analysis_profile jsonb not null default '{}',
+  preview_posts jsonb not null default '[]',
   safety_flags jsonb not null default '[]',
   source_type text not null default 'text_paste'
     check (source_type in ('text_paste', 'screenshot_ocr', 'admin_seed')),
@@ -45,6 +48,9 @@ create table if not exists trend_reference_patterns (
 
 create index if not exists idx_trend_reference_patterns_status_category
   on trend_reference_patterns(quality_status, category, performance_score desc);
+
+create index if not exists idx_trend_reference_patterns_quality
+  on trend_reference_patterns(quality_status, quality_score desc, performance_score desc);
 
 create unique index if not exists idx_trend_reference_patterns_source_fingerprint
   on trend_reference_patterns(source_fingerprint)

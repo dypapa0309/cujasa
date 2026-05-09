@@ -446,6 +446,14 @@ export async function generatePosts(topicId) {
     referencePatternMix: referenceContext.mix,
     referencePatternIds,
     publicReferencePatternIds,
+    referencePatternQuality: referenceContext.patterns.map((pattern) => ({
+      sourceId: pattern.sourceId,
+      qualityScore: Number(pattern.qualityScore || 0),
+      matchedReasons: pattern.analysisProfile?.qualityReasons || [],
+      bestFor: pattern.analysisProfile?.bestFor || [],
+      previewDerived: Array.isArray(pattern.previewPosts) && pattern.previewPosts.length > 0
+    })),
+    referencePatternMatchedReasons: referenceContext.matchedReasons || [],
     referencePatternCount: referenceContext.patterns.length,
     publicReferencePatternCount: referenceContext.publicPatternCount,
     personalReferencePatternCount: referenceContext.personalPatternCount
