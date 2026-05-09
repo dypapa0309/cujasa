@@ -193,15 +193,28 @@ function metricNumber(text = '', patterns = []) {
   return 0;
 }
 
+function sanitizeReferenceSourceText(value = '') {
+  return String(value || '')
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !/^(작성자|계정|url|프로필|댓글\s*작성자|user(name)?)\s*[:：]/i.test(line))
+    .map((line) => line.replace(/(^|\s)@[\w._-]+/g, '$1[redacted]').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function adminSourceTypeForSamples(samples = []) {
+  const types = [...new Set(samples.map((sample) => sample.sourceType).filter(Boolean))];
+  if (types.length === 1 && SOURCE_TYPES.has(types[0])) return types[0];
+  return 'admin_seed';
+}
+
 function normalizeAdminSamples({ text = '', samples = [], category = '' } = {}) {
   const fromText = splitReferenceBlocks(text).map((block, index) => {
-    const sourceText = block
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .filter((line) => !/^(@|작성자|계정|url|https?:\/\/)/i.test(line))
-      .join('\n')
-      .trim();
+    const sourceText = sanitizeReferenceSourceText(block);
     return {
       id: `admin-seed-${Date.now()}-${index}`,
       sourceText,
@@ -216,13 +229,13 @@ function normalizeAdminSamples({ text = '', samples = [], category = '' } = {}) 
   const normalized = [...fromText, ...(Array.isArray(samples) ? samples : [])]
     .map((sample, index) => ({
       id: sample.id || `admin-sample-${index}`,
-      sourceText: normalizeText(sample.sourceText || sample.text || ''),
+      sourceText: sanitizeReferenceSourceText(sample.sourceText || sample.text || ''),
       topicKeyword: normalizeText(sample.topicKeyword || category || ''),
       likes: Number(sample.likes || 0),
       replies: Number(sample.replies || sample.comments || 0),
       reposts: Number(sample.reposts || 0),
       views: Number(sample.views || 0),
-      sourceType: 'admin_seed'
+      sourceType: SOURCE_TYPES.has(sample.sourceType) ? sample.sourceType : 'admin_seed'
     }))
     .filter((sample) => sample.sourceText.length >= 20);
   const seen = new Set();
@@ -266,7 +279,7 @@ export async function createAdminTrendPatternAssets({
   const rows = await saveAnonymousTrendPatternAssets(patterns, {
     category,
     targetAudienceHint,
-    sourceType: 'admin_seed',
+    sourceType: adminSourceTypeForSamples(normalizedSamples),
     qualityStatus: QUALITY_STATUSES.has(qualityStatus) ? qualityStatus : 'candidate'
   });
   await logActivity({

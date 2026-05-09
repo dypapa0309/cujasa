@@ -31,6 +31,7 @@ import {
 } from '../services/polibotKnowledgeDbService.js';
 import { redactAccount, redactAccounts, redactBillingSettings, redactPayment } from '../services/redactionService.js';
 import { createAdminTrendPatternAssets, listTrendPatternAssets, updateTrendPatternQualityStatus } from '../services/trendReferenceLearningService.js';
+import { extractTrendReferenceFromImage } from '../services/trendReferenceOcrService.js';
 import { ensureAccountBlog } from '../services/blogService.js';
 
 const router = Router();
@@ -278,6 +279,19 @@ router.get('/trend-reference-patterns', async (req, res, next) => {
 router.post('/trend-reference-patterns/analyze', async (req, res, next) => {
   try {
     res.status(201).json(await createAdminTrendPatternAssets(req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/trend-reference-patterns/ocr', async (req, res, next) => {
+  try {
+    res.json(await extractTrendReferenceFromImage({
+      fileName: req.body?.fileName || '',
+      mimeType: req.body?.mimeType || req.body?.type || 'image/png',
+      base64: req.body?.base64 || '',
+      topicKeyword: req.body?.topicKeyword || req.body?.category || ''
+    }));
   } catch (error) {
     next(error);
   }

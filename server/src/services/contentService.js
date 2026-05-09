@@ -355,7 +355,7 @@ export async function generatePosts(topicId) {
       engagement,
       qualityGate,
       topic,
-      account,
+      account: accountForPrompt,
       products: selected,
       logContext: {
         account_id: topic.account_id,

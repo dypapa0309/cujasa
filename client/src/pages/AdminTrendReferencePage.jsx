@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
+import { CheckCircle2, FileText, ImageUp, RefreshCw, ShieldCheck, Upload, XCircle } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import { dateTime } from '../lib/format.js';
@@ -15,6 +15,24 @@ const sourceLabels = {
   screenshot_ocr: '캡처 OCR',
   admin_seed: '관리자 seed'
 };
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('파일을 읽지 못했습니다.'));
+    reader.readAsText(file, 'utf-8');
+  });
+}
+
+function readFileAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',').pop() || '');
+    reader.onerror = () => reject(new Error('파일을 읽지 못했습니다.'));
+    reader.readAsDataURL(file);
+  });
+}
 
 function PatternCard({ pattern, saving, onStatus }) {
   const flags = Array.isArray(pattern.safety_flags) ? pattern.safety_flags : [];
@@ -98,6 +116,9 @@ export default function AdminTrendReferencePage() {
   });
   const [analyzing, setAnalyzing] = useState(false);
   const [studioResult, setStudioResult] = useState(null);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [uploadedSamples, setUploadedSamples] = useState([]);
+  const [uploadedFileNames, setUploadedFileNames] = useState([]);
 
   const load = async () => {
     const query = new URLSearchParams({ status, limit: '120' });
@@ -137,6 +158,7 @@ export default function AdminTrendReferencePage() {
     try {
       const result = await api.post('/api/admin/trend-reference-patterns/analyze', {
         ...studioForm,
+        samples: uploadedSamples,
         useAi: true
       });
       setStudioResult(result);
@@ -146,6 +168,59 @@ export default function AdminTrendReferencePage() {
       toast(err.message || '콘텐츠 패턴 분석에 실패했습니다.', 'error');
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const handleReferenceFiles = async (fileList) => {
+    const selected = Array.from(fileList || []).slice(0, 12);
+    if (!selected.length) return;
+    setUploadingFiles(true);
+    try {
+      const nextTexts = [];
+      const nextSamples = [];
+      const nextNames = [];
+      for (const file of selected) {
+        const lowerName = file.name.toLowerCase();
+        if (file.size > 12 * 1024 * 1024) {
+          toast(`${file.name}은 12MB 이하로 올려주세요.`, 'error');
+          continue;
+        }
+        if (/\.(txt|csv)$/i.test(lowerName) || /^text\/|\/csv$/i.test(file.type || '')) {
+          nextTexts.push(await readFileAsText(file));
+          nextNames.push(file.name);
+          continue;
+        }
+        if (/^image\/(png|jpe?g|webp)$/i.test(file.type || '')) {
+          const base64 = await readFileAsBase64(file);
+          const sample = await api.post('/api/admin/trend-reference-patterns/ocr', {
+            fileName: file.name,
+            mimeType: file.type || 'image/png',
+            base64,
+            category: studioForm.category,
+            topicKeyword: studioForm.category
+          });
+          if (sample?.sourceText) {
+            nextSamples.push(sample);
+            nextNames.push(file.name);
+          }
+          continue;
+        }
+        toast(`${file.name}은 지원하지 않는 형식입니다. TXT/CSV/이미지만 올려주세요.`, 'error');
+      }
+      if (nextTexts.length) {
+        updateStudioForm('text', [studioForm.text, ...nextTexts].filter(Boolean).join('\n\n---\n\n'));
+      }
+      if (nextSamples.length) {
+        setUploadedSamples((prev) => [...prev, ...nextSamples]);
+      }
+      if (nextNames.length) {
+        setUploadedFileNames((prev) => [...prev, ...nextNames]);
+        toast(`파일 ${nextNames.length}개를 학습 입력으로 준비했습니다.`, 'success');
+      }
+    } catch (err) {
+      toast(err.message || '파일 업로드 처리에 실패했습니다.', 'error');
+    } finally {
+      setUploadingFiles(false);
     }
   };
 
@@ -191,7 +266,7 @@ export default function AdminTrendReferencePage() {
           </div>
           <button
             type="submit"
-            disabled={analyzing || studioForm.text.trim().length < 20}
+            disabled={analyzing || uploadingFiles || (studioForm.text.trim().length < 20 && uploadedSamples.length === 0)}
             className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
           >
             {analyzing ? '분석 중...' : '패턴 분석 저장'}
@@ -220,6 +295,31 @@ export default function AdminTrendReferencePage() {
             </select>
           </label>
         </div>
+        <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+          <label className="grid gap-2 text-sm font-bold text-slate-700">
+            파일 업로드
+            <span className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-600 hover:bg-slate-100">
+              <span className="min-w-0 truncate">{uploadedFileNames.length ? `${uploadedFileNames.length}개 파일 준비됨` : 'TXT/CSV/캡처 이미지 업로드'}</span>
+              <Upload size={16} />
+              <input
+                type="file"
+                multiple
+                accept=".txt,.csv,.png,.jpg,.jpeg,.webp"
+                className="hidden"
+                onChange={(event) => handleReferenceFiles(event.target.files)}
+              />
+            </span>
+          </label>
+          <div className="grid content-end gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500">
+            <div className="flex items-center gap-2"><FileText size={14} /> 텍스트는 붙여넣기 입력에 합쳐집니다.</div>
+            <div className="flex items-center gap-2"><ImageUp size={14} /> 이미지는 OCR 후 샘플로 저장됩니다.</div>
+          </div>
+        </div>
+        {(uploadingFiles || uploadedFileNames.length > 0 || uploadedSamples.length > 0) && (
+          <div className="mt-3 rounded-2xl bg-slate-50 p-3 text-xs font-bold text-slate-600">
+            {uploadingFiles ? '파일 처리 중...' : `준비된 파일 ${uploadedFileNames.length}개 · OCR 샘플 ${uploadedSamples.length}개`}
+          </div>
+        )}
         <label className="mt-3 grid gap-2 text-sm font-bold text-slate-700">
           참고 콘텐츠
           <textarea

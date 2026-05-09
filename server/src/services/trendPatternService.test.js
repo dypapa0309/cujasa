@@ -199,6 +199,37 @@ test('admin can create public content patterns with direction guidance', async (
   assert.ok(context.patterns.some((pattern) => /기계적인 설명 없이/.test(pattern.voicePattern)));
 });
 
+test('admin file samples are sanitized, deduped, and keep OCR source type', async () => {
+  const result = await createAdminTrendPatternAssets({
+    category: '원룸 정리',
+    targetAudienceHint: '2030 자취생',
+    qualityStatus: 'candidate',
+    useAi: false,
+    samples: [
+      {
+        id: 'ocr-admin-1',
+        sourceType: 'screenshot_ocr',
+        sourceText: '@lovehyun45 원룸 정리는 큰 수납함보다 설거지 후 내려둘 자리랑 빨래 전 바구니 자리가 먼저 티 나더라. https://threads.net/@lovehyun45/post/1',
+        likes: 700,
+        replies: 88,
+        views: 10000
+      },
+      {
+        id: 'ocr-admin-duplicate',
+        sourceType: 'screenshot_ocr',
+        sourceText: '@lovehyun45 원룸 정리는 큰 수납함보다 설거지 후 내려둘 자리랑 빨래 전 바구니 자리가 먼저 티 나더라. https://threads.net/@lovehyun45/post/1',
+        likes: 700,
+        replies: 88,
+        views: 10000
+      }
+    ]
+  });
+  assert.equal(result.samples.length, 1);
+  assert.equal(result.savedCount, 1);
+  assert.equal(result.rows[0].source_type, 'screenshot_ocr');
+  assert.doesNotMatch(JSON.stringify(result.rows[0]), /lovehyun45|threads\.net/);
+});
+
 test('post metrics update public pattern performance and can auto approve strong patterns', async () => {
   const [asset] = await saveAnonymousTrendPatternAssets([{
     hookPattern: '실생활 선택 기준으로 시작',
