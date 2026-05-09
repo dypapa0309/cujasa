@@ -9,7 +9,7 @@ import { prepareGeneratedPostBody } from '../utils/koreanContentQuality.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { validatePostsResponse } from '../utils/aiResponseSchemas.js';
 import { buildChoiceTensionFallback, scorePostEngagement } from '../utils/postEngagementScoring.js';
-import { buildReferencePatternContext } from './trendReferenceLearningService.js';
+import { buildReferencePatternContext, publicPatternIdFromSourceId } from './trendReferenceLearningService.js';
 import { buildAccountPerformanceSignals } from './analyticsService.js';
 import { sanitizePostBody } from '../utils/contentText.js';
 
@@ -274,6 +274,8 @@ export async function generatePosts(topicId) {
   const allCandidates = [...candidates, ...rejectedCandidates];
   const selectedIndex = allCandidates.indexOf(best);
   const candidateScores = allCandidates.map((candidate, index) => candidateScoreSummary(candidate, index, index === selectedIndex));
+  const referencePatternIds = referenceContext.patterns.map((pattern) => pattern.sourceId).filter(Boolean);
+  const publicReferencePatternIds = referencePatternIds.map(publicPatternIdFromSourceId).filter(Boolean);
   const metadata = {
     engagementScore: best.engagement.engagementScore,
     engagementPattern: best.engagement.engagementPattern,
@@ -283,6 +285,8 @@ export async function generatePosts(topicId) {
     candidateScores,
     fallbackUsed: Boolean(best.fallbackUsed),
     referencePatternMix: referenceContext.mix,
+    referencePatternIds,
+    publicReferencePatternIds,
     referencePatternCount: referenceContext.patterns.length,
     publicReferencePatternCount: referenceContext.publicPatternCount,
     personalReferencePatternCount: referenceContext.personalPatternCount

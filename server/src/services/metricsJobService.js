@@ -1,5 +1,6 @@
 import { dbGet, dbInsert, dbList, dbUpdate, supabase } from './supabaseService.js';
 import { addHours, iso } from '../utils/date.js';
+import { recordPatternPerformanceForPost } from './trendReferenceLearningService.js';
 
 export async function createMetricJobs(queue) {
   const snapshots = [{ type: '24h', hours: 24 }, { type: '72h', hours: 72 }, { type: '7d', hours: 168 }];
@@ -36,7 +37,7 @@ export async function runMetricJob(jobId) {
     ? (await supabase.from('click_events').select('id', { count: 'exact', head: true }).eq('post_id', job.post_id)).count || 0
     : (await dbList('click_events', { post_id: job.post_id })).length;
   const hours = job.snapshot_type === '24h' ? 24 : job.snapshot_type === '72h' ? 72 : 168;
-  await dbInsert('post_metrics', {
+  const metric = await dbInsert('post_metrics', {
     project_id: job.project_id,
     account_id: job.account_id,
     topic_id: queue?.topic_id,
@@ -52,6 +53,8 @@ export async function runMetricJob(jobId) {
     revenue: null,
     source: 'tracking'
   });
+  const post = await dbGet('posts', { id: job.post_id });
+  if (post) await recordPatternPerformanceForPost(post, metric);
   const [updated] = await dbUpdate('post_metrics_jobs', { id: jobId }, { status: 'completed', executed_at: iso() });
   return updated;
 }

@@ -100,6 +100,11 @@ export function publicAssetToPromptPattern(asset = {}) {
   };
 }
 
+export function publicPatternIdFromSourceId(sourceId = '') {
+  const match = String(sourceId || '').match(/^public-(.+)$/);
+  return match?.[1] || '';
+}
+
 function sanitizePersonalPattern(pattern = {}, context = {}) {
   return {
     sourceId: `personal-${pattern.sourceId || patternFingerprint(pattern, context.sourceType).slice(0, 12)}`,
@@ -400,6 +405,51 @@ export async function buildReferencePatternContext(account = {}, { personalPatte
     publicPatternCount: publicPatterns.length,
     personalPatternCount: personal.length
   };
+}
+
+export async function recordPatternPerformanceForPost(post = {}, metric = {}) {
+  const metadata = post?.metadata && typeof post.metadata === 'object' ? post.metadata : {};
+  const publicPatternIds = Array.isArray(metadata.publicReferencePatternIds)
+    ? metadata.publicReferencePatternIds
+    : [];
+  if (publicPatternIds.length === 0) return [];
+  const clicks = Number(metric.clicks || 0);
+  const engagementScore = Number(metadata.engagementScore || 0);
+  const signal = Math.max(0, Math.min(1000, Math.round((clicks * 50) + engagementScore)));
+  const updated = [];
+  for (const patternId of publicPatternIds) {
+    const current = await dbGet('trend_reference_patterns', { id: patternId }).catch(() => null);
+    if (!current) continue;
+    const usageCount = Math.max(0, Number(current.usage_count || 0)) + 1;
+    const currentScore = Math.max(0, Number(current.performance_score || 0));
+    const nextScore = Math.round((currentScore * 0.72) + (signal * 0.28));
+    let nextStatus = current.quality_status || 'candidate';
+    if (nextStatus === 'candidate' && usageCount >= 2 && nextScore >= 120) nextStatus = 'approved';
+    if (nextStatus === 'approved' && usageCount >= 5 && nextScore < 35) nextStatus = 'candidate';
+    const [row] = await dbUpdate('trend_reference_patterns', { id: patternId }, {
+      usage_count: usageCount,
+      performance_score: nextScore,
+      quality_status: nextStatus
+    });
+    if (row) updated.push(row);
+  }
+  if (updated.length) {
+    await logActivity({
+      account_id: post.account_id,
+      project_id: post.project_id,
+      post_id: post.id,
+      action: 'trend_pattern_performance_updated',
+      level: 'info',
+      message: `공용 콘텐츠 패턴 ${updated.length}개의 성과 점수를 갱신했습니다.`,
+      payload: {
+        clicks,
+        engagementScore,
+        signal,
+        patternIds: updated.map((row) => row.id)
+      }
+    });
+  }
+  return updated;
 }
 
 export async function updateTrendPatternQualityStatus(id, status) {

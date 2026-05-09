@@ -30,6 +30,7 @@ function PatternCard({ pattern, saving, onStatus }) {
               {sourceLabels[pattern.source_type] || pattern.source_type}
             </span>
             <span className="text-xs font-semibold text-slate-400">점수 {pattern.performance_score || 0}</span>
+            <span className="text-xs font-semibold text-slate-400">사용 {pattern.usage_count || 0}</span>
           </div>
           <h3 className="mt-3 text-base font-black text-slate-900">{pattern.hook_pattern}</h3>
           <p className="mt-1 text-sm leading-relaxed text-slate-600">{pattern.comment_question_pattern}</p>

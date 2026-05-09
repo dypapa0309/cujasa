@@ -11,6 +11,7 @@ import {
   buildReferencePatternContext,
   createAdminTrendPatternAssets,
   ingestTrendReferencesForAccount,
+  recordPatternPerformanceForPost,
   saveAnonymousTrendPatternAssets,
   updateTrendPatternQualityStatus
 } from './trendReferenceLearningService.js';
@@ -196,4 +197,39 @@ test('admin can create public content patterns with direction guidance', async (
     personal_reference_patterns: []
   }, { limit: 5 });
   assert.ok(context.patterns.some((pattern) => /기계적인 설명 없이/.test(pattern.voicePattern)));
+});
+
+test('post metrics update public pattern performance and can auto approve strong patterns', async () => {
+  const [asset] = await saveAnonymousTrendPatternAssets([{
+    hookPattern: '실생활 선택 기준으로 시작',
+    commentQuestion: '내 기준을 가볍게 묻기',
+    tensionType: 'choice',
+    emotionSignal: '생활 공감',
+    reusableStructure: '짧은 생활 기준 뒤 질문',
+    voicePattern: '담백한 관찰체',
+    performanceScore: 20,
+    safetyFlags: []
+  }], {
+    category: '자취',
+    targetAudienceHint: '2030',
+    sourceType: 'admin_seed',
+    qualityStatus: 'candidate'
+  });
+  const post = await dbGet('posts', { id: 'missing' }) || {
+    id: 'metric-pattern-post',
+    project_id: 'metric-pattern-project',
+    account_id: 'metric-pattern-account',
+    metadata: {
+      engagementScore: 90,
+      publicReferencePatternIds: [asset.id]
+    }
+  };
+  const first = await recordPatternPerformanceForPost(post, { clicks: 4 });
+  const firstUsage = first[0].usage_count;
+  const firstScore = first[0].performance_score;
+  const second = await recordPatternPerformanceForPost(post, { clicks: 4 });
+  assert.equal(firstUsage, 1);
+  assert.equal(second[0].usage_count, 2);
+  assert.equal(second[0].quality_status, 'approved');
+  assert.ok(second[0].performance_score > firstScore);
 });

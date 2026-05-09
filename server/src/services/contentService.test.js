@@ -26,6 +26,8 @@ test('generatePosts stores one selected post with engagement metadata', async ()
   assert.equal(typeof saved.metadata.rubric.choiceTensionScore, 'number');
   assert.equal(typeof saved.metadata.rubric.adTonePenalty, 'number');
   assert.ok(saved.metadata.referencePatternMix);
+  assert.ok(Array.isArray(saved.metadata.referencePatternIds));
+  assert.ok(Array.isArray(saved.metadata.publicReferencePatternIds));
   assert.equal(typeof saved.metadata.referencePatternCount, 'number');
   assert.equal(saved.metadata.rubric.livedInStructureScore > 0, true);
   assert.equal(saved.metadata.rubric.concreteCriteriaScore > 0, true);
