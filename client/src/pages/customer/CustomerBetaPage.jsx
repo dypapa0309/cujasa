@@ -15,6 +15,7 @@ import {
 } from '../../config/contentStrategy.js';
 
 const MAX_DAILY_POSTS = 5;
+const spreadMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_SPREAD_BETA !== 'true';
 
 const cujasaActions = [
   { key: 'run', label: '자동화 실행', icon: PlayCircle, hint: '오늘 예약을 만들고 실행 상태를 확인해요.' },
@@ -51,7 +52,7 @@ const polibotActions = [
 
 const infludexActions = [
   { key: 'infludex-upload', productId: 'infludex', label: '후보 업로드', icon: Upload, hint: '인스타그램 계정 URL, 카테고리, 반응 지표를 넣어요.' },
-  { key: 'infludex-grade', productId: 'infludex', label: '씨랭 분석', icon: Search, hint: 'DIAMOND/S/A/B/C/D 등급과 카테고리를 확인해요.' },
+  { key: 'infludex-grade', productId: 'infludex', label: '링크 분석', icon: Search, hint: 'S/A/B/C/D 등급과 캠페인 선정 기준을 확인해요.' },
   { key: 'infludex-download', productId: 'infludex', label: '결과 다운로드', icon: Download, hint: '분석 결과를 CSV로 내려받아요.' }
 ];
 
@@ -70,6 +71,10 @@ const productTaskActions = {
 
 const actions = [...cujasaActions, ...workspaceActions, ...productPreviewActions, ...dexorActions, ...spreadActions, ...polibotActions, ...infludexActions];
 const pendingSubscriptionKey = 'cujasa_pending_subscription';
+
+function isProductInMaintenance(product = {}) {
+  return product?.id === 'spread' && spreadMaintenanceEnabled;
+}
 
 const inputClass = 'w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-700 outline-none focus:border-white/25';
 const invalidFieldClass = 'ring-1 ring-red-400/45 bg-red-950/10';
@@ -276,14 +281,33 @@ function dexorScoreComment(score) {
 }
 
 function sortInfludexResults(results = []) {
-  const order = { DIAMOND: 0, S: 1, A: 2, B: 3, C: 4, D: 5 };
+  const order = { S: 0, A: 1, B: 2, C: 3, D: 4 };
   return [...results].sort((a, b) => {
+    const aMissing = a.analysisStatus === 'data_missing' || !a.grade;
+    const bMissing = b.analysisStatus === 'data_missing' || !b.grade;
+    if (aMissing !== bMissing) return aMissing ? 1 : -1;
     const gradeDelta = (order[a.grade] ?? 99) - (order[b.grade] ?? 99);
     if (gradeDelta) return gradeDelta;
     const scoreDelta = Number(b.score || 0) - Number(a.score || 0);
     if (scoreDelta) return scoreDelta;
     return String(a.handle || a.url || '').localeCompare(String(b.handle || b.url || ''));
   });
+}
+
+function infludexRiskLabel(flag = '') {
+  const labels = {
+    category_missing: '카테고리 필요',
+    followers_missing: '팔로워 수 필요',
+    engagement_missing: '좋아요/댓글 평균 필요',
+    recent_post_missing: '최근 게시일 필요',
+    inactive_over_60d: '최근 활동 확인 필요',
+    ad_memo_present: '광고/협찬 메모 있음'
+  };
+  return labels[flag] || flag;
+}
+
+function infludexCandidateLabel(item = {}) {
+  return item.handle ? `@${item.handle}` : item.url || item.displayName || '미입력 후보';
 }
 
 export default function CustomerBetaPage({
@@ -366,9 +390,20 @@ export default function CustomerBetaPage({
     const handlePointerDown = (event) => {
       if (!accountMenuRef.current?.contains(event.target)) setAccountMenuOpen(false);
     };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') setAccountMenuOpen(false);
+    };
     document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
   }, [accountMenuOpen]);
+
+  useEffect(() => {
+    setAccountMenuOpen(false);
+  }, [activeActionKey, selectedProductId]);
 
   const summary = useMemo(() => {
     const scheduled = queue.filter((row) => row.status === 'scheduled').length;
@@ -382,14 +417,15 @@ export default function CustomerBetaPage({
     };
   }, [queue, analytics]);
 
-  const activeProducts = useMemo(() => (currentUser?.products || [])
+  const userProducts = Array.isArray(currentUser?.products) ? currentUser.products : [];
+  const activeProducts = useMemo(() => userProducts
     .filter((grant) => grant.status !== 'suspended')
     .map((grant) => productById(grant.productId) || {
       id: grant.productId,
       name: grant.name || grant.productId,
       description: grant.description || ''
     })
-    .filter((product) => product?.id), [currentUser?.products]);
+    .filter((product) => product?.id), [userProducts]);
   const grantedProductIds = new Set(activeProducts.map((product) => product.id));
   const visibleProducts = activeProducts.length ? activeProducts : [CURRENT_PRODUCT];
   const otherProducts = PRODUCTS.filter((product) => !grantedProductIds.has(product.id));
@@ -398,11 +434,11 @@ export default function CustomerBetaPage({
     || visibleProducts[0]
     || productById(selectedProductId)
     || CURRENT_PRODUCT;
-  const productGrantById = useMemo(() => Object.fromEntries((currentUser?.products || []).map((grant) => [grant.productId, grant])), [currentUser?.products]);
+  const productGrantById = useMemo(() => Object.fromEntries(userProducts.map((grant) => [grant.productId, grant])), [userProducts]);
   const selectedProductGrant = productGrantById[selectedProduct.id];
   const selectedProductGranted = grantedProductIds.has(selectedProduct.id);
   const selectedProductUsage = getGrantUsage(selectedProductGrant, selectedProduct.id);
-  const selectedProductPreparing = selectedProduct.status === 'preparing';
+  const selectedProductPreparing = selectedProduct.status === 'preparing' || isProductInMaintenance(selectedProduct);
   const productActions = selectedProductGranted && !selectedProductPreparing ? (productTaskActions[selectedProduct.id] || []) : [];
   const activeAction = actions.find((action) => action.key === activeActionKey) || null;
   const needsThreadsReconnect = selectedProduct.id === CURRENT_PRODUCT.id
@@ -445,6 +481,13 @@ export default function CustomerBetaPage({
 
     const previewProductIds = ['dexor', 'spread', 'polibot', 'infludex'];
     const productId = action.productId || (previewProductIds.includes(action.key) ? action.key : '');
+    const actionProduct = productById(productId);
+    if (isProductInMaintenance(actionProduct)) {
+      setSelectedProductId(productId);
+      setActiveActionKey('');
+      setShowOtherProducts(false);
+      return;
+    }
     if (action.productId && !grantedProductIds.has(action.productId)) {
       const product = productById(action.productId);
       if (product) {
@@ -530,7 +573,7 @@ export default function CustomerBetaPage({
 
   const openOtherProduct = (product) => {
     setSelectedProductId(product.id);
-    setActiveActionKey(product.id);
+    setActiveActionKey(isProductInMaintenance(product) ? '' : product.id);
   };
 
   const startProduct = async (productId) => {
@@ -703,7 +746,7 @@ export default function CustomerBetaPage({
               {selectedProductPreparing && (
                 <SidebarGroup label="Tasks">
                   <div className="rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-xs leading-relaxed text-zinc-500">
-                    {selectedProduct.name}는 서비스 준비중이에요. 목록에는 표시하지만 기능 사용은 검수 후 열어둘게요.
+                    {selectedProduct.name}는 서비스 점검 중이에요. 목록에는 표시하지만 배포 환경 기능은 안정화 후 다시 열어둘게요.
                   </div>
                 </SidebarGroup>
               )}
@@ -744,6 +787,7 @@ export default function CustomerBetaPage({
                 product={selectedProduct}
                 account={account}
                 open={accountMenuOpen}
+                active={activeActionKey === 'account-settings'}
                 onOpenAccount={() => {
                   setAccountMenuOpen(false);
                   openWorkspaceAction('account-settings');
@@ -866,6 +910,14 @@ export default function CustomerBetaPage({
                     </span>
                     <ChevronRight size={18} className="shrink-0 text-zinc-500" />
                   </button>
+                )}
+                {selectedProductPreparing && (
+                  <div className="mx-auto mt-5 max-w-xl rounded-3xl border border-amber-300/20 bg-amber-400/10 px-5 py-4 text-left">
+                    <div className="text-sm font-black text-amber-100">{selectedProduct.name} 서비스 점검 중</div>
+                    <p className="mt-2 text-xs leading-relaxed text-amber-100/70">
+                      테스트 환경에서는 계속 확인할 수 있고, 배포 환경에서는 안정화가 끝날 때까지 잠시 닫아둘게요.
+                    </p>
+                  </div>
                 )}
               </div>
               )}
@@ -1017,6 +1069,7 @@ function AccountSummaryMenu({
   product,
   account,
   open,
+  active = false,
   onOpenAccount,
   onToggleMenu,
   onOpenBilling,
@@ -1025,21 +1078,32 @@ function AccountSummaryMenu({
   onOpenBusiness,
   onLogout
 }) {
+  const [activeSubmenu, setActiveSubmenu] = useState(null);
   const displayName = currentUser?.username || currentUser?.email || 'JASAIN 계정';
   const plan = accountPlanLabel(currentUser, product);
   const menuItems = [
-    { key: 'account', icon: UserCircle, label: '계정 정보', sub: account?.name || currentUser?.email || '', onClick: onOpenAccount, chevron: true },
-    { key: 'billing', icon: CreditCard, label: '결제', sub: plan, onClick: onOpenBilling, chevron: true },
-    { key: 'support', icon: Bot, label: '고객센터', sub: '문의와 도움말', onClick: onOpenSupport, chevron: true },
+    { key: 'account', icon: UserCircle, label: '계정 정보', sub: account?.name || currentUser?.email || '', actions: [{ label: '계정 정보 열기', onClick: onOpenAccount }] },
+    { key: 'billing', icon: CreditCard, label: '결제', sub: plan, actions: [{ label: '결제 관리 열기', onClick: onOpenBilling }] },
+    { key: 'support', icon: Bot, label: '고객센터', sub: '문의와 도움말', actions: [{ label: '고객센터 열기', onClick: onOpenSupport }] },
     { key: 'privacy', icon: ShieldCheck, label: '개인정보처리방침', sub: '처리 기준', onClick: onOpenPrivacy },
-    { key: 'business', icon: Landmark, label: '사업자정보', sub: '회사 정보', onClick: onOpenBusiness, chevron: true },
+    { key: 'business', icon: Landmark, label: '사업자정보', sub: '회사 정보', actions: [{ label: '사업자정보 열기', onClick: onOpenBusiness }] },
     { key: 'logout', icon: LogOut, label: '로그아웃', sub: '현재 세션 종료', onClick: onLogout }
   ];
+  const activeItem = menuItems.find((item) => item.key === activeSubmenu && item.actions?.length);
+  const closeMenuAction = (handler) => {
+    handler?.();
+    setActiveSubmenu(null);
+    if (open) onToggleMenu?.();
+  };
+
+  useEffect(() => {
+    if (!open) setActiveSubmenu(null);
+  }, [open]);
 
   return (
-    <>
+    <div className="relative">
       {open && (
-        <div className="absolute bottom-[74px] left-0 z-30 w-full rounded-3xl border border-white/10 bg-zinc-950/95 p-2 shadow-2xl shadow-black/50 backdrop-blur md:left-[calc(100%+12px)] md:bottom-0 md:w-72">
+        <div className="absolute bottom-[74px] left-0 right-0 z-30 rounded-3xl border border-white/10 bg-zinc-950/95 p-2 shadow-2xl shadow-black/50 backdrop-blur">
           <div className="grid gap-1">
             {menuItems.map((item) => (
               <SidebarFooterButton
@@ -1047,21 +1111,41 @@ function AccountSummaryMenu({
                 icon={item.icon}
                 label={item.label}
                 sub={item.sub}
-                onClick={item.onClick}
-                chevron={item.chevron}
+                onClick={item.actions?.length ? () => setActiveSubmenu((current) => current === item.key ? null : item.key) : () => closeMenuAction(item.onClick)}
+                onChevronClick={item.actions?.length ? () => setActiveSubmenu((current) => current === item.key ? null : item.key) : null}
+                active={activeSubmenu === item.key}
+                chevron={Boolean(item.actions?.length)}
               />
             ))}
           </div>
         </div>
       )}
-      <div className="relative">
+      {open && activeItem && (
+        <div className="absolute bottom-[calc(74px+12rem)] left-[calc(100%+0.5rem)] z-40 w-52 rounded-3xl border border-white/10 bg-zinc-950/95 p-2 shadow-2xl shadow-black/50 backdrop-blur max-sm:left-0 max-sm:right-0 max-sm:bottom-[calc(74px+13.5rem)] max-sm:w-auto">
+          <div className="mb-1 px-3 py-2 text-xs font-black text-zinc-500">{activeItem.label}</div>
+          <div className="grid gap-1">
+            {activeItem.actions.map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                onClick={() => closeMenuAction(action.onClick)}
+                className="rounded-2xl px-3 py-2 text-left text-sm font-black text-zinc-300 transition hover:bg-white/10 hover:text-white"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div>
         <button
           type="button"
-          onClick={onOpenAccount}
-          className="grid w-full grid-cols-[42px_minmax(0,1fr)_42px] items-center gap-3 rounded-3xl bg-white/5 px-3 py-3 text-left transition hover:bg-white/10"
-          aria-label="계정 정보 열기"
+          onClick={onToggleMenu}
+          className={`grid w-full grid-cols-[42px_minmax(0,1fr)_42px] items-center gap-3 rounded-3xl px-3 py-3 text-left transition hover:bg-white/10 ${active ? 'bg-white/15 ring-1 ring-white/15' : 'bg-white/5'}`}
+          aria-label="계정 메뉴 열기"
+          aria-expanded={open}
         >
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-zinc-700 text-sm font-black text-zinc-100">
+          <span className={`grid h-10 w-10 place-items-center rounded-full text-sm font-black ${active ? 'bg-zinc-100 text-zinc-950' : 'bg-zinc-700 text-zinc-100'}`}>
             {accountInitials(currentUser)}
           </span>
           <span className="min-w-0">
@@ -1077,33 +1161,44 @@ function AccountSummaryMenu({
             event.stopPropagation();
             onToggleMenu?.();
           }}
-          className="absolute right-3 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/5 text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
+          className={`absolute right-3 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full transition hover:bg-white/10 hover:text-zinc-100 ${open ? 'bg-white/10 text-zinc-100' : 'bg-white/5 text-zinc-400'}`}
           aria-label="계정 메뉴 열기"
           aria-expanded={open}
         >
           <ChevronRight size={17} className={`transition ${open ? 'rotate-90 text-zinc-200' : ''}`} />
         </button>
       </div>
-    </>
+    </div>
   );
 }
 
-function SidebarFooterButton({ icon: Icon, label, sub = '', onClick, chevron = false }) {
+function SidebarFooterButton({ icon: Icon, label, sub = '', onClick, onChevronClick, chevron = false, active = false }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="grid min-h-11 w-full grid-cols-[28px_minmax(0,1fr)_16px] items-center rounded-2xl px-3 py-2 text-left text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100"
+    <div
+      className={`grid min-h-11 w-full grid-cols-[28px_minmax(0,1fr)_28px] items-center rounded-2xl px-3 py-2 text-zinc-400 transition hover:bg-white/10 hover:text-zinc-100 ${active ? 'bg-white/10 text-zinc-100' : ''}`}
     >
       <span className="grid h-7 w-7 place-items-center">
         <Icon size={16} strokeWidth={2.2} />
       </span>
-      <span className="min-w-0">
+      <button type="button" onClick={onClick} className="min-w-0 text-left">
         <span className="block truncate text-sm font-bold">{label}</span>
         {sub && <span className="mt-0.5 block truncate text-[11px] font-bold text-zinc-600">{sub}</span>}
-      </span>
-      {chevron && <ChevronRight size={14} className="justify-self-end" />}
-    </button>
+      </button>
+      {chevron ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onChevronClick?.();
+          }}
+          className="grid h-7 w-7 place-items-center rounded-full hover:bg-white/10"
+          aria-label={`${label} 하위 메뉴 열기`}
+        >
+          <ChevronRight size={14} className={`transition ${active ? 'text-zinc-100' : ''}`} />
+        </button>
+      ) : <span aria-hidden="true" />}
+    </div>
   );
 }
 
@@ -1406,7 +1501,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
       content_style_note: account.content_style_note || '',
       forbidden_topics: Array.isArray(account.forbidden_topics) ? account.forbidden_topics.join('\n') : '',
       forbidden_words: Array.isArray(account.forbidden_words) ? account.forbidden_words.join('\n') : '',
-      daily_post_max: clampDailyPostCount(account.daily_post_max, 5),
+      daily_post_max: clampDailyPostCount(account.daily_post_max, 3),
       first_upload_time: Array.isArray(account.active_time_windows) && account.active_time_windows[0]?.start ? account.active_time_windows[0].start : '09:00',
       coupang_access_key: '',
       coupang_secret_key: '',
@@ -1443,7 +1538,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
       await api.patch(`/api/accounts/${account.id}`, {
         ...form,
         daily_post_min: 0,
-        daily_post_max: clampDailyPostCount(form.daily_post_max, 5),
+        daily_post_max: clampDailyPostCount(form.daily_post_max, 3),
         active_time_windows: [{ start: form.first_upload_time || '09:00', end: form.first_upload_time || '09:00' }],
         forbidden_topics: form.forbidden_topics.split('\n').map((item) => item.trim()).filter(Boolean),
         forbidden_words: form.forbidden_words.split('\n').map((item) => item.trim()).filter(Boolean)
@@ -2445,18 +2540,200 @@ function DexorDownloadPanel({ onOpenUpload }) {
   );
 }
 
+function normalizeSpreadCampaigns(workspace = {}) {
+  const campaigns = Array.isArray(workspace.campaigns) ? workspace.campaigns : [];
+  if (campaigns.length > 0) return campaigns;
+  if (!workspace.campaignDraft) return [];
+  return [{
+    id: workspace.campaignDraft.id || 'legacy-spread-campaign',
+    title: workspace.campaignDraft.title || workspace.campaignDraft.headline || `${workspace.campaignDraft.product || '제품'} 체험단`,
+    status: workspace.campaignDraft.status || 'draft',
+    applicants: Array.isArray(workspace.applicants) ? workspace.applicants : [],
+    submissionReview: workspace.submissionReview || null,
+    ...workspace.campaignDraft
+  }];
+}
+
+function spreadStatusLabel(status = 'draft') {
+  const labels = {
+    draft: '초안',
+    recruiting: '모집 중',
+    selecting: '선정 중',
+    reviewing: '검수 중',
+    completed: '완료'
+  };
+  return labels[status] || status;
+}
+
+function SpreadCampaignOperationsCard({ campaign, workspace, setWorkspace, reloadCurrentUser, toast, usage }) {
+  const [applicantForm, setApplicantForm] = useState({
+    applicants: (campaign.applicants || []).map((item) => item.name).join('\n'),
+    criteria: (campaign.applicantCriteria || workspace.applicantCriteria || []).join('\n')
+  });
+  const [reviewForm, setReviewForm] = useState({
+    url: campaign.submissionReview?.url || '',
+    required: (campaign.submissionReview?.required || []).join('\n'),
+    forbidden: (campaign.submissionReview?.forbidden || []).join('\n')
+  });
+  const [savingApplicants, setSavingApplicants] = useState(false);
+  const [savingReview, setSavingReview] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
+
+  useEffect(() => {
+    setApplicantForm({
+      applicants: (campaign.applicants || []).map((item) => item.name).join('\n'),
+      criteria: (campaign.applicantCriteria || workspace.applicantCriteria || []).join('\n')
+    });
+    setReviewForm({
+      url: campaign.submissionReview?.url || '',
+      required: (campaign.submissionReview?.required || []).join('\n'),
+      forbidden: (campaign.submissionReview?.forbidden || []).join('\n')
+    });
+  }, [campaign, workspace.applicantCriteria]);
+
+  const saveApplicants = async () => {
+    setSavingApplicants(true);
+    try {
+      const next = await api.post('/api/product-workspace/spread/applicants', { ...applicantForm, campaignId: campaign.id });
+      setWorkspace(next);
+      await reloadCurrentUser?.();
+      toast('참여자 선정 초안을 저장했어요.', 'success');
+    } catch (err) {
+      toast(err.message || '참여자 선정에 실패했어요.', 'error');
+    } finally {
+      setSavingApplicants(false);
+    }
+  };
+
+  const saveReview = async () => {
+    setSavingReview(true);
+    try {
+      const next = await api.post('/api/product-workspace/spread/review', { ...reviewForm, campaignId: campaign.id });
+      setWorkspace(next);
+      await reloadCurrentUser?.();
+      toast('제출물 검수 초안을 만들었어요.', 'success');
+    } catch (err) {
+      toast(err.message || '제출물 검수에 실패했어요.', 'error');
+    } finally {
+      setSavingReview(false);
+    }
+  };
+
+  const updateStatus = async (status) => {
+    setSavingStatus(true);
+    try {
+      const next = await api.post('/api/product-workspace/spread/campaign/status', { campaignId: campaign.id, status });
+      setWorkspace(next);
+      await reloadCurrentUser?.();
+      toast('캠페인 상태를 변경했어요.', 'success');
+    } catch (err) {
+      toast(err.message || '캠페인 상태 변경에 실패했어요.', 'error');
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
+  return (
+    <PanelCard title="캠페인 운영 카드">
+      <div className="max-h-[70vh] overflow-y-auto pr-1">
+        <div className="rounded-3xl bg-black/25 px-4 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-lg font-black text-zinc-100">{campaign.title || campaign.headline}</div>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-500">{campaign.mission}</p>
+            </div>
+            <label className="shrink-0 text-[11px] font-black uppercase tracking-[0.2em] text-zinc-600">
+              상태
+              <select
+                className="mt-1 block rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-xs font-black text-zinc-200 outline-none"
+                value={campaign.status || 'draft'}
+                onChange={(event) => updateStatus(event.target.value)}
+                disabled={savingStatus}
+              >
+                <option value="draft">초안</option>
+                <option value="recruiting">모집 중</option>
+                <option value="selecting">선정 중</option>
+                <option value="reviewing">검수 중</option>
+                <option value="completed">완료</option>
+              </select>
+            </label>
+          </div>
+          <div className="mt-4 grid gap-2">
+            {(campaign.checklist || []).map((item) => (
+              <div key={item} className="rounded-2xl bg-black/25 px-4 py-3 text-sm font-bold text-zinc-300">{item}</div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4">
+          <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
+            <div className="text-sm font-black text-zinc-200">신청자 선정</div>
+            <div className="mt-3 grid gap-3">
+              <label className={labelClass}>신청자 목록<textarea className={inputClass} rows="4" value={applicantForm.applicants} onChange={(event) => setApplicantForm((prev) => ({ ...prev, applicants: event.target.value }))} placeholder={'신청자 A\n신청자 B\n신청자 C'} /></label>
+              <label className={labelClass}>선정 기준<textarea className={inputClass} rows="3" value={applicantForm.criteria} onChange={(event) => setApplicantForm((prev) => ({ ...prev, criteria: event.target.value }))} placeholder={'최근 활동성\n카테고리 적합도\n제출 가능 일정'} /></label>
+              <DarkButton onClick={saveApplicants} disabled={savingApplicants || usage.remaining <= 0}>{savingApplicants ? '정리 중...' : '참여자 선정 정리'}</DarkButton>
+            </div>
+            {(campaign.applicants || []).length > 0 && (
+              <div className="mt-3 grid gap-2">
+                {campaign.applicants.map((row) => (
+                  <div key={row.id} className="flex items-center justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3">
+                    <div>
+                      <div className="text-sm font-black text-zinc-200">{row.name}</div>
+                      <div className="mt-0.5 text-xs text-zinc-600">{row.reason}</div>
+                    </div>
+                    <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-black text-zinc-500">{row.status} · {row.score}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-black/20 p-4">
+            <div className="text-sm font-black text-zinc-200">제출물 검수</div>
+            <div className="mt-3 grid gap-3">
+              <label className={labelClass}>제출 URL<input className={inputClass} value={reviewForm.url} onChange={(event) => setReviewForm((prev) => ({ ...prev, url: event.target.value }))} placeholder="https://..." /></label>
+              <label className={labelClass}>필수 키워드<textarea className={inputClass} rows="3" value={reviewForm.required} onChange={(event) => setReviewForm((prev) => ({ ...prev, required: event.target.value }))} placeholder={'브랜드명\n제품명\n필수 해시태그'} /></label>
+              <label className={labelClass}>금지 표현<textarea className={inputClass} rows="3" value={reviewForm.forbidden} onChange={(event) => setReviewForm((prev) => ({ ...prev, forbidden: event.target.value }))} placeholder={'100% 보장\n치료\n과장 표현'} /></label>
+              <DarkButton onClick={saveReview} disabled={savingReview || usage.remaining <= 0}>{savingReview ? '검수 중...' : '제출물 검수'}</DarkButton>
+            </div>
+            {campaign.submissionReview?.checks?.length > 0 && (
+              <div className="mt-3 grid gap-2">
+                {campaign.submissionReview.checks.map((check) => (
+                  <div key={`${check.label}-${check.detail}`} className="flex items-center justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3">
+                    <div>
+                      <div className="text-sm font-black text-zinc-200">{check.label}</div>
+                      <div className="mt-0.5 text-xs text-zinc-600">{check.detail}</div>
+                    </div>
+                    <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-black text-zinc-500">{check.passed ? '통과' : '확인'}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </PanelCard>
+  );
+}
+
 function SpreadCampaignPanel({ assistantDraft, reloadCurrentUser }) {
   const toast = useToast();
   const [draft, setDraft] = useState({ goal: '', channel: '', product: '' });
   const [workspace, setWorkspace] = useState({});
   const [saving, setSaving] = useState(false);
+  const [openForm, setOpenForm] = useState(false);
+  const [selectedCampaignId, setSelectedCampaignId] = useState('');
   const usage = workspaceUsage(workspace);
+  const campaigns = normalizeSpreadCampaigns(workspace);
+  const selectedCampaign = campaigns.find((campaign) => campaign.id === selectedCampaignId) || campaigns[0] || null;
   const update = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
 
   useEffect(() => {
     api.get('/api/product-workspace/spread')
       .then((data) => {
         setWorkspace(data || {});
+        const nextCampaigns = normalizeSpreadCampaigns(data || {});
+        setSelectedCampaignId((current) => current || data?.selectedCampaignId || nextCampaigns[0]?.id || '');
         if (data?.campaignDraft) {
           setDraft({
             goal: data.campaignDraft.goal || '',
@@ -2482,10 +2759,13 @@ function SpreadCampaignPanel({ assistantDraft, reloadCurrentUser }) {
     try {
       const next = await api.post('/api/product-workspace/spread/campaign', draft);
       setWorkspace(next);
+      const nextCampaigns = normalizeSpreadCampaigns(next || {});
+      setSelectedCampaignId(next.selectedCampaignId || nextCampaigns[0]?.id || '');
+      setOpenForm(false);
       await reloadCurrentUser?.();
-      toast('캠페인 초안을 만들었어요.', 'success');
+      toast('체험단/캠페인을 등록했어요.', 'success');
     } catch (err) {
-      toast(err.message || '캠페인 초안 생성에 실패했어요.', 'error');
+      toast(err.message || '캠페인 등록에 실패했어요.', 'error');
     } finally {
       setSaving(false);
     }
@@ -2493,26 +2773,55 @@ function SpreadCampaignPanel({ assistantDraft, reloadCurrentUser }) {
 
   return (
     <>
-      <PanelCard title="캠페인 추천 초안">
+      <PanelCard title="등록된 체험단/캠페인">
         <ProductUsageStrip usage={usage} />
-        <div className="grid gap-3">
-          <label className={labelClass}>목표<input className={inputClass} value={draft.goal} onChange={(event) => update('goal', event.target.value)} placeholder="예: 신제품 체험단 모집" /></label>
-          <label className={labelClass}>채널<input className={inputClass} value={draft.channel} onChange={(event) => update('channel', event.target.value)} placeholder="예: 블로그, Threads, 인스타그램" /></label>
-          <label className={labelClass}>상품 유형<input className={inputClass} value={draft.product} onChange={(event) => update('product', event.target.value)} placeholder="예: 주방용품, 뷰티, 생활가전" /></label>
-          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '생성 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}</DarkButton>
-          {usage.remaining <= 0 && <Notice>무료 사용 횟수를 모두 사용했어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
+        <div className="grid gap-2">
+          {campaigns.length === 0 && <Notice>등록된 체험단/캠페인이 없어요. 아래에서 새 캠페인을 먼저 등록해 주세요.</Notice>}
+          {campaigns.map((campaign) => (
+            <button
+              key={campaign.id}
+              type="button"
+              onClick={() => setSelectedCampaignId(campaign.id)}
+              className={`rounded-3xl border px-4 py-4 text-left transition ${selectedCampaign?.id === campaign.id ? 'border-white/20 bg-white/10' : 'border-white/10 bg-black/25 hover:bg-white/5'}`}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-base font-black text-zinc-100">{campaign.title || campaign.headline}</div>
+                  <div className="mt-1 truncate text-xs font-bold text-zinc-500">{[campaign.product, campaign.channel, campaign.goal].filter(Boolean).join(' · ') || campaign.mission}</div>
+                </div>
+                <span className="shrink-0 rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-black text-zinc-300">{spreadStatusLabel(campaign.status)}</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-[11px] font-bold text-zinc-500">
+                <span>신청자 {(campaign.applicants || []).length}명</span>
+                <span>{campaign.submissionReview ? '검수 기록 있음' : '검수 전'}</span>
+              </div>
+            </button>
+          ))}
+          <DarkButton variant="ghost" onClick={() => setOpenForm((prev) => !prev)}>
+            {openForm ? '등록 폼 닫기' : '새 체험단/캠페인 등록'}
+          </DarkButton>
         </div>
       </PanelCard>
-      {workspace.campaignDraft && (
-        <PanelCard title="추천 결과">
-          <div className="text-lg font-black text-zinc-100">{workspace.campaignDraft.headline}</div>
-          <p className="mt-3 text-sm leading-relaxed text-zinc-500">{workspace.campaignDraft.mission}</p>
-          <div className="mt-3 grid gap-2">
-            {workspace.campaignDraft.checklist?.map((item) => (
-              <div key={item} className="rounded-2xl bg-black/25 px-4 py-3 text-sm font-bold text-zinc-300">{item}</div>
-            ))}
+      {openForm && (
+        <PanelCard title="체험단/캠페인 등록">
+          <div className="grid gap-3">
+            <label className={labelClass}>목표<input className={inputClass} value={draft.goal} onChange={(event) => update('goal', event.target.value)} placeholder="예: 신제품 체험단 모집" /></label>
+            <label className={labelClass}>채널<input className={inputClass} value={draft.channel} onChange={(event) => update('channel', event.target.value)} placeholder="예: 블로그, Threads, 인스타그램" /></label>
+            <label className={labelClass}>상품 유형<input className={inputClass} value={draft.product} onChange={(event) => update('product', event.target.value)} placeholder="예: 주방용품, 뷰티, 생활가전" /></label>
+            <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '등록 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '캠페인 등록'}</DarkButton>
+            {usage.remaining <= 0 && <Notice>무료 사용 횟수를 모두 사용했어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
           </div>
         </PanelCard>
+      )}
+      {selectedCampaign && (
+        <SpreadCampaignOperationsCard
+          campaign={selectedCampaign}
+          workspace={workspace}
+          setWorkspace={setWorkspace}
+          reloadCurrentUser={reloadCurrentUser}
+          toast={toast}
+          usage={usage}
+        />
       )}
     </>
   );
@@ -2524,6 +2833,8 @@ function SpreadApplicantsPanel({ reloadCurrentUser }) {
   const [workspace, setWorkspace] = useState({});
   const [saving, setSaving] = useState(false);
   const usage = workspaceUsage(workspace);
+  const campaigns = normalizeSpreadCampaigns(workspace);
+  const selectedCampaign = campaigns.find((campaign) => campaign.id === workspace.selectedCampaignId) || campaigns[0] || null;
 
   useEffect(() => {
     api.get('/api/product-workspace/spread')
@@ -2534,7 +2845,7 @@ function SpreadApplicantsPanel({ reloadCurrentUser }) {
   const save = async () => {
     setSaving(true);
     try {
-      const next = await api.post('/api/product-workspace/spread/applicants', form);
+      const next = await api.post('/api/product-workspace/spread/applicants', { ...form, campaignId: selectedCampaign?.id || '' });
       setWorkspace(next);
       await reloadCurrentUser?.();
       toast('참여자 선정 초안을 저장했어요.', 'success');
@@ -2545,16 +2856,17 @@ function SpreadApplicantsPanel({ reloadCurrentUser }) {
     }
   };
 
-  const rows = Array.isArray(workspace.applicants) ? workspace.applicants : [];
+  const rows = Array.isArray(selectedCampaign?.applicants) ? selectedCampaign.applicants : Array.isArray(workspace.applicants) ? workspace.applicants : [];
 
   return (
     <>
+      {selectedCampaign ? <Notice>현재 캠페인: {selectedCampaign.title || selectedCampaign.headline}</Notice> : <Notice>먼저 캠페인을 등록해 주세요.</Notice>}
       <PanelCard title="참여자 입력">
         <ProductUsageStrip usage={usage} />
         <div className="grid gap-3">
           <label className={labelClass}>신청자 목록<textarea className={inputClass} rows="4" value={form.applicants} onChange={(event) => setForm((prev) => ({ ...prev, applicants: event.target.value }))} placeholder={'신청자 A\n신청자 B\n신청자 C'} /></label>
           <label className={labelClass}>선정 기준<textarea className={inputClass} rows="3" value={form.criteria} onChange={(event) => setForm((prev) => ({ ...prev, criteria: event.target.value }))} placeholder={'최근 활동성\n카테고리 적합도\n제출 가능 일정'} /></label>
-          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '정리 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '참여자 선정 정리'}</DarkButton>
+          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0 || !selectedCampaign}>{saving ? '정리 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '참여자 선정 정리'}</DarkButton>
           {usage.remaining <= 0 && <Notice>무료 사용 횟수를 모두 사용했어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
@@ -2582,6 +2894,8 @@ function SpreadReviewPanel({ reloadCurrentUser }) {
   const [workspace, setWorkspace] = useState({});
   const [saving, setSaving] = useState(false);
   const usage = workspaceUsage(workspace);
+  const campaigns = normalizeSpreadCampaigns(workspace);
+  const selectedCampaign = campaigns.find((campaign) => campaign.id === workspace.selectedCampaignId) || campaigns[0] || null;
 
   useEffect(() => {
     api.get('/api/product-workspace/spread')
@@ -2592,7 +2906,7 @@ function SpreadReviewPanel({ reloadCurrentUser }) {
   const save = async () => {
     setSaving(true);
     try {
-      const next = await api.post('/api/product-workspace/spread/review', form);
+      const next = await api.post('/api/product-workspace/spread/review', { ...form, campaignId: selectedCampaign?.id || '' });
       setWorkspace(next);
       await reloadCurrentUser?.();
       toast('제출물 검수 초안을 만들었어요.', 'success');
@@ -2603,17 +2917,18 @@ function SpreadReviewPanel({ reloadCurrentUser }) {
     }
   };
 
-  const review = workspace.submissionReview;
+  const review = selectedCampaign?.submissionReview || workspace.submissionReview;
 
   return (
     <>
+      {selectedCampaign ? <Notice>현재 캠페인: {selectedCampaign.title || selectedCampaign.headline}</Notice> : <Notice>먼저 캠페인을 등록해 주세요.</Notice>}
       <PanelCard title="제출물 입력">
         <ProductUsageStrip usage={usage} />
         <div className="grid gap-3">
           <label className={labelClass}>제출 URL<input className={inputClass} value={form.url} onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))} placeholder="https://..." /></label>
           <label className={labelClass}>필수 키워드<textarea className={inputClass} rows="3" value={form.required} onChange={(event) => setForm((prev) => ({ ...prev, required: event.target.value }))} placeholder={'브랜드명\n제품명\n필수 해시태그'} /></label>
           <label className={labelClass}>금지 표현<textarea className={inputClass} rows="3" value={form.forbidden} onChange={(event) => setForm((prev) => ({ ...prev, forbidden: event.target.value }))} placeholder={'100% 보장\n치료\n과장 표현'} /></label>
-          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '검수 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '제출물 검수'}</DarkButton>
+          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0 || !selectedCampaign}>{saving ? '검수 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '제출물 검수'}</DarkButton>
           {usage.remaining <= 0 && <Notice>무료 사용 횟수를 모두 사용했어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
@@ -3976,25 +4291,120 @@ function InfludexUploadPanel({ onOpenGrade }) {
   const toast = useToast();
   const [rows, setRows] = useState('');
   const [fileName, setFileName] = useState('');
+  const [candidateFiles, setCandidateFiles] = useState([]);
   const [workspace, setWorkspace] = useState({});
   const [saving, setSaving] = useState(false);
+  const [parsing, setParsing] = useState(false);
   const usage = workspaceUsage(workspace);
+  const savedCandidates = Array.isArray(workspace.candidates) ? workspace.candidates : [];
+  const candidateCount = savedCandidates.length || rows.split(/\n|\r/).map((line) => line.trim()).filter(Boolean).filter((line, index) => !(index === 0 && /url|handle|category|followers|팔로워|카테고리/i.test(line))).length;
+
+  const persistCandidates = async ({ nextRows = rows, nextFileName = fileName, nextFiles = candidateFiles, silent = false } = {}) => {
+    const next = await api.post('/api/product-workspace/infludex/candidates', { rows: nextRows, fileName: nextFileName, files: nextFiles });
+    setWorkspace(next || {});
+    setRows(next?.candidateRows || nextRows || '');
+    setFileName(next?.fileName || nextFileName || '');
+    setCandidateFiles([]);
+    if (!silent) toast('인스타그램 후보를 저장했어요.', 'success');
+    return next;
+  };
+
+  const loadCandidateFile = (file) => {
+    if (!file) return;
+    if (!/\.(csv|txt|docx)$/i.test(file.name)) {
+      toast('CSV, TXT, DOCX 파일만 업로드할 수 있어요.', 'error');
+      return;
+    }
+    setFileName(file.name);
+    setParsing(true);
+    if (/\.docx$/i.test(file.name)) {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const result = String(reader.result || '');
+        const nextFiles = [{
+          fileName: file.name,
+          name: file.name,
+          size: file.size,
+          type: file.type || '',
+          base64: result.includes(',') ? result.split(',').pop() : result
+        }];
+        setCandidateFiles(nextFiles);
+        try {
+          await persistCandidates({ nextRows: '', nextFileName: file.name, nextFiles, silent: true });
+          toast('DOCX 후보 파일을 분석해 저장했어요.', 'success');
+        } catch (err) {
+          toast(err.message || 'DOCX 후보 파일 분석에 실패했어요.', 'error');
+        } finally {
+          setParsing(false);
+        }
+      };
+      reader.onerror = () => {
+        setParsing(false);
+        toast('파일을 읽지 못했어요.', 'error');
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+    setCandidateFiles([]);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const text = String(reader.result || '').trim();
+      if (!text) {
+        setParsing(false);
+        toast('파일 내용이 비어 있어요.', 'error');
+        return;
+      }
+      const nextRows = [rows.trim(), text].filter(Boolean).join('\n');
+      setRows(nextRows);
+      try {
+        await persistCandidates({ nextRows, nextFileName: file.name, nextFiles: [], silent: true });
+        toast('후보 파일 내용을 분석해 저장했어요.', 'success');
+      } catch (err) {
+        toast(err.message || '후보 파일 분석에 실패했어요.', 'error');
+      } finally {
+        setParsing(false);
+      }
+    };
+    reader.onerror = () => {
+      setParsing(false);
+      toast('파일을 읽지 못했어요.', 'error');
+    };
+    reader.readAsText(file, 'utf-8');
+  };
 
   useEffect(() => {
     api.get('/api/product-workspace/infludex')
-      .then((data) => setWorkspace(data || {}))
+      .then((data) => {
+        setWorkspace(data || {});
+        setRows(data?.candidateRows || '');
+        setFileName(data?.fileName || '');
+      })
       .catch((err) => toast(err.message || 'INFLUDEX 데이터를 불러오지 못했어요.', 'error'));
   }, [toast]);
 
   const save = async () => {
     setSaving(true);
     try {
-      const next = await api.post('/api/product-workspace/infludex/candidates', { rows, fileName });
-      setWorkspace(next);
-      toast('인스타그램 후보를 저장했어요.', 'success');
+      await persistCandidates();
       onOpenGrade?.();
     } catch (err) {
       toast(err.message || '후보 저장에 실패했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reset = async () => {
+    setSaving(true);
+    try {
+      const next = await api.post('/api/product-workspace/infludex/reset', {});
+      setWorkspace(next || {});
+      setRows('');
+      setFileName('');
+      setCandidateFiles([]);
+      toast('새 후보를 올릴 준비가 됐어요.', 'success');
+    } catch (err) {
+      toast(err.message || '초기화에 실패했어요.', 'error');
     } finally {
       setSaving(false);
     }
@@ -4004,6 +4414,22 @@ function InfludexUploadPanel({ onOpenGrade }) {
     <>
       <PanelCard title="후보 입력">
         <ProductUsageStrip usage={usage} />
+        <div className="mb-3 grid gap-2">
+          <div className="text-sm font-black text-zinc-300">파일 업로드</div>
+          <label className="flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 bg-black/25 px-4 py-5 text-sm font-bold text-zinc-300 hover:bg-white/5">
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <Upload size={17} />
+              <span className="min-w-0 truncate">{fileName || 'CSV/TXT/DOCX 업로드'}</span>
+            </span>
+            <input
+              type="file"
+              accept=".csv,.txt,.docx"
+              className="hidden"
+              onChange={(event) => loadCandidateFile(event.target.files?.[0])}
+            />
+          </label>
+          <p className="mt-3 text-xs leading-relaxed text-zinc-600">CSV, TXT, DOCX 지원</p>
+        </div>
         <label className={labelClass}>
           후보 목록
           <textarea
@@ -4011,15 +4437,32 @@ function InfludexUploadPanel({ onOpenGrade }) {
             rows="7"
             value={rows}
             onChange={(event) => setRows(event.target.value)}
-            placeholder={'url 또는 @handle, 카테고리, 팔로워, 평균 좋아요, 평균 댓글, 최근 게시일, 광고성 메모\nhttps://instagram.com/example, 뷰티, 35000, 1200, 45, 2026-05-01'}
           />
         </label>
+        <div className="mt-3 rounded-2xl bg-black/25 px-4 py-3 text-sm text-zinc-500">
+          {parsing ? '파일 분석 중...' : `현재 후보 ${candidateCount}개 · 캠페인 선정 기준으로 S/A/B/C/D 링크 분석을 실행해요.`}
+        </div>
         <label className={`${labelClass} mt-3`}>파일명<input className={inputClass} value={fileName} onChange={(event) => setFileName(event.target.value)} placeholder="infludex_candidates.csv" /></label>
-        <DarkButton className="mt-3 w-full" onClick={save} disabled={saving || !rows.trim()}>{saving ? '저장 중...' : '후보 저장'}</DarkButton>
+        <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+          <DarkButton onClick={save} disabled={saving || parsing || (!rows.trim() && candidateFiles.length === 0 && savedCandidates.length === 0)}>{saving ? '저장 중...' : '후보 저장'}</DarkButton>
+          <DarkButton variant="ghost" onClick={reset} disabled={saving || parsing || (savedCandidates.length === 0 && !rows.trim() && !fileName)}>새로 올리기</DarkButton>
+        </div>
       </PanelCard>
-      {workspace.candidates?.length > 0 && (
+      {savedCandidates.length > 0 && (
         <PanelCard title="저장된 후보">
-          <SimpleInfoList items={workspace.candidates.slice(0, 8).map((item) => item.handle ? `@${item.handle}` : item.url)} />
+          <div className="grid gap-2">
+            {savedCandidates.slice(0, 8).map((item) => {
+              const followers = Number(item.followerCount || 0);
+              const reactions = Number(item.avgLikes || 0) + Number(item.avgComments || 0);
+              const engagement = followers > 0 && reactions > 0 ? `반응률 ${((reactions / followers) * 100).toFixed(2)}%` : '지표 보강 필요';
+              return (
+                <div key={item.id || item.handle || item.url} className="rounded-2xl bg-black/25 px-4 py-3">
+                  <div className="text-sm font-black text-zinc-200">{infludexCandidateLabel(item)}</div>
+                  <div className="mt-1 text-xs font-bold text-zinc-500">{[item.displayName || item.description, item.category, followers ? `팔로워 ${followers.toLocaleString('ko-KR')}` : '', engagement].filter(Boolean).join(' · ')}</div>
+                </div>
+              );
+            })}
+          </div>
         </PanelCard>
       )}
     </>
@@ -4030,9 +4473,13 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
   const toast = useToast();
   const [workspace, setWorkspace] = useState({});
   const [analyzing, setAnalyzing] = useState(false);
+  const [scoreHelpOpen, setScoreHelpOpen] = useState(false);
   const usage = workspaceUsage(workspace);
   const candidates = Array.isArray(workspace.candidates) ? workspace.candidates : [];
   const results = sortInfludexResults(Array.isArray(workspace.infludexResults) ? workspace.infludexResults : []);
+  const scoredResults = results.filter((item) => item.analysisStatus !== 'data_missing' && item.grade);
+  const missingResults = results.filter((item) => item.analysisStatus === 'data_missing' || !item.grade);
+  const gradeRows = ['S', 'A', 'B', 'C', 'D'].map((grade) => [grade, scoredResults.filter((item) => item.grade === grade).length]);
 
   useEffect(() => {
     api.get('/api/product-workspace/infludex')
@@ -4046,9 +4493,9 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
       const next = await api.post('/api/product-workspace/infludex/analyze');
       setWorkspace(next);
       await reloadCurrentUser?.();
-      toast('씨랭 분석을 완료했어요.', 'success');
+      toast('링크 분석을 완료했어요.', 'success');
     } catch (err) {
-      toast(err.message || '씨랭 분석에 실패했어요.', 'error');
+      toast(err.message || '링크 분석에 실패했어요.', 'error');
     } finally {
       setAnalyzing(false);
     }
@@ -4070,8 +4517,51 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
 
   return (
     <>
-      <PanelCard title="씨랭 분석">
+      <PanelCard title="링크 분석">
         <ProductUsageStrip usage={usage} />
+        <div className="mb-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs leading-relaxed text-zinc-500">
+          캠페인 선정 기준으로 카테고리 적합도, 반응률, 댓글 비중, 팔로워 규모, 최근 활동성, 광고/협찬 리스크를 합산해 S/A/B/C/D 등급을 매겨요.
+        </div>
+        {results.length > 0 && (
+          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-2xl bg-black/25 px-3 py-4 text-center">
+              <div className="text-xs font-black text-zinc-600">전체</div>
+              <div className="mt-1 text-xl font-black text-zinc-100">{results.length}</div>
+            </div>
+            <div className="rounded-2xl bg-black/25 px-3 py-4 text-center">
+              <div className="text-xs font-black text-zinc-600">분석 가능</div>
+              <div className="mt-1 text-xl font-black text-emerald-300">{scoredResults.length}</div>
+            </div>
+            <div className="rounded-2xl bg-black/25 px-3 py-4 text-center">
+              <div className="text-xs font-black text-zinc-600">데이터 부족</div>
+              <div className="mt-1 text-xl font-black text-amber-300">{missingResults.length}</div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setScoreHelpOpen((prev) => !prev)}
+              className="rounded-2xl bg-black/25 px-3 py-4 text-center transition hover:bg-white/5"
+            >
+              <div className="text-xs font-black text-zinc-600">기준</div>
+              <div className="mt-1 text-sm font-black text-zinc-200">보기</div>
+            </button>
+          </div>
+        )}
+        {scoreHelpOpen && (
+          <div className="mb-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs leading-relaxed text-zinc-500">
+            <div className="font-black text-zinc-300">S/A/B/C/D는 팔로워와 반응 지표가 있을 때만 매겨요.</div>
+            <div className="mt-1">지표가 없는 후보는 낮은 점수로 처리하지 않고 “데이터 부족”으로 분리합니다.</div>
+          </div>
+        )}
+        {results.length > 0 && (
+          <div className="mb-3 grid grid-cols-5 gap-2">
+            {gradeRows.map(([grade, count]) => (
+              <div key={grade} className="rounded-2xl bg-black/25 px-3 py-3 text-center">
+                <div className="text-sm font-black text-zinc-100">{grade}</div>
+                <div className="mt-1 text-lg font-black text-zinc-300">{count}</div>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <DarkButton onClick={analyze} disabled={analyzing || candidates.length === 0 || usage.remaining <= 0}>
             {analyzing ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : `후보 ${candidates.length}개 분석`}
@@ -4081,21 +4571,48 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
       </PanelCard>
       <PanelCard title="분석 결과">
         {results.length === 0 ? (
-          <Notice>후보를 저장하고 씨랭 분석을 실행하면 결과가 표시돼요.</Notice>
+          <Notice>후보를 저장하고 링크 분석을 실행하면 결과가 표시돼요.</Notice>
         ) : (
           <div className="grid gap-2">
-            {results.map((item) => (
+            {scoredResults.map((item) => (
               <div key={item.id} className="rounded-2xl bg-black/25 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-sm font-black text-zinc-200">{item.handle ? `@${item.handle}` : item.url}</div>
-                    <div className="mt-0.5 text-xs text-zinc-500">{item.category}</div>
+                    <div className="text-sm font-black text-zinc-200">{infludexCandidateLabel(item)}</div>
+                    <div className="mt-0.5 text-xs text-zinc-500">{[item.displayName || item.description, item.category].filter(Boolean).join(' · ') || '카테고리 미입력'}</div>
                   </div>
                   <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-black text-zinc-200">{item.grade} · {item.score}</span>
                 </div>
-                <div className="mt-2 text-xs leading-relaxed text-zinc-600">{item.reasons?.join(' · ')}</div>
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-zinc-500">
+                  <span>반응률 {item.engagementRate ?? 0}%</span>
+                  <span>댓글 비중 {item.commentShare ?? 0}%</span>
+                  {item.recentPostAt && <span>최근 {item.recentPostAt}</span>}
+                  {item.adMemo && <span className="text-amber-400">광고 메모 있음</span>}
+                </div>
+                <div className="mt-2 text-xs leading-relaxed text-zinc-600">{(item.gradeReason || item.reasons || []).join(' · ')}</div>
+                {item.riskFlags?.length > 0 && <div className="mt-2 text-[11px] font-bold text-amber-400">{item.riskFlags.map(infludexRiskLabel).join(' · ')}</div>}
               </div>
             ))}
+            {missingResults.length > 0 && (
+              <div className="mt-2 rounded-3xl border border-amber-400/20 bg-amber-400/5 p-3">
+                <div className="mb-2 text-sm font-black text-amber-200">데이터 부족 후보 {missingResults.length}개</div>
+                <div className="grid gap-2">
+                  {missingResults.map((item) => (
+                    <div key={item.id} className="rounded-2xl bg-black/25 px-4 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-black text-zinc-200">{infludexCandidateLabel(item)}</div>
+                          <div className="mt-0.5 truncate text-xs text-zinc-500">{[item.displayName || item.description, item.category].filter(Boolean).join(' · ') || '설명 보강 필요'}</div>
+                        </div>
+                        <span className="shrink-0 rounded-full border border-amber-400/20 px-2.5 py-1 text-[11px] font-black text-amber-200">데이터 부족</span>
+                      </div>
+                      {item.contactMemo && <div className="mt-2 text-xs font-bold text-zinc-500">문의 {item.contactMemo}</div>}
+                      <div className="mt-2 text-[11px] font-bold text-amber-300">{(item.riskFlags || []).map(infludexRiskLabel).join(' · ') || '팔로워/반응 지표 보강 필요'}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </PanelCard>
@@ -4115,10 +4632,12 @@ function InfludexDownloadPanel({ onOpenUpload }) {
   }, [toast]);
 
   const downloadCsv = () => {
-    const header = ['url', 'handle', 'category', 'grade', 'score', 'followers', 'avgLikes', 'avgComments', 'engagementRate', 'reasons'];
+    const header = ['analysisStatus', 'url', 'handle', 'displayName', 'category', 'grade', 'score', 'followers', 'avgLikes', 'avgComments', 'engagementRate', 'commentShare', 'recentPostAt', 'contactMemo', 'adMemo', 'scoreBreakdown', 'riskFlags', 'reasons'];
     const rows = results.map((item) => [
+      item.analysisStatus || 'scored',
       item.url,
       item.handle,
+      item.displayName || item.description,
       item.category,
       item.grade,
       item.score,
@@ -4126,7 +4645,13 @@ function InfludexDownloadPanel({ onOpenUpload }) {
       item.avgLikes,
       item.avgComments,
       item.engagementRate,
-      item.reasons?.join(' | ')
+      item.commentShare,
+      item.recentPostAt,
+      item.contactMemo,
+      item.adMemo,
+      item.scoreBreakdown ? Object.entries(item.scoreBreakdown).map(([key, value]) => `${key}:${value}`).join(' | ') : '',
+      item.riskFlags?.map(infludexRiskLabel).join(' | '),
+      (item.gradeReason || item.reasons)?.join(' | ')
     ].map(csvEscape).join(','));
     downloadTextFile('infludex-results.csv', `\uFEFF${[header.join(','), ...rows].join('\r\n')}`, 'text/csv;charset=utf-8');
   };
@@ -4170,7 +4695,7 @@ const productPreviewContent = {
     title: 'INFLUDEX',
     subtitle: '인스타그램 인플루언서 분석',
     motto: '카테고리와 반응 지표로 후보를 먼저 걸러요.',
-    description: '인스타그램 계정 후보를 DIAMOND/S/A/B/C/D 등급으로 정리하고 결과를 다운로드해요.',
+    description: '인스타그램 계정 후보를 S/A/B/C/D 등급으로 정리하고 결과를 다운로드해요.',
     cta: 'INFLUDEX 시작하기'
   }
 };

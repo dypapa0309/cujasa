@@ -59,6 +59,9 @@ test('uploadPost mock uses reply delivery when reply link mode is enabled', asyn
     });
 
     assert.equal(uploaded.raw.linkDeliveryMode, 'reply');
+    assert.equal(uploaded.raw.linkMode, 'direct');
+    assert.match(uploaded.raw.replyText, /https:\/\/link\.coupang\.com\/example/);
+    assert.doesNotMatch(uploaded.raw.replyText, /\/r\/abc/);
   } finally {
     restoreEnv('MOCK_UPLOAD', previousMock);
     restoreEnv('THREADS_REPLY_LINK_MODE_ENABLED', previousReply);
@@ -79,6 +82,7 @@ test('uploadPost treats missing reply link env as enabled by default', async () 
     });
 
     assert.equal(uploaded.raw.linkDeliveryMode, 'reply');
+    assert.equal(uploaded.raw.linkMode, 'direct');
   } finally {
     restoreEnv('MOCK_UPLOAD', previousMock);
     restoreEnv('THREADS_REPLY_LINK_MODE_ENABLED', previousReply);

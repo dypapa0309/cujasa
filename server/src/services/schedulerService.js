@@ -59,6 +59,22 @@ function createReplyLinkRequiredError(code, message) {
   return error;
 }
 
+function calculateQueueModeCounts(total, account = {}, { allowLink = true } = {}) {
+  if (total <= 0) return { linkCount: 0, noLinkCount: 0 };
+  const rawLink = Number(account.link_post_ratio ?? 0.67);
+  const rawNoLink = Number(account.no_link_post_ratio ?? 0.33);
+  const linkRatio = Number.isFinite(rawLink) && rawLink > 0 ? rawLink : 0;
+  const noLinkRatio = Number.isFinite(rawNoLink) && rawNoLink > 0 ? rawNoLink : 0;
+  if (!allowLink) return { linkCount: 0, noLinkCount: total };
+  const ratioTotal = linkRatio + noLinkRatio;
+  if (ratioTotal <= 0) return { linkCount: total, noLinkCount: 0 };
+  let linkCount = Math.round((total * linkRatio) / ratioTotal);
+  if (linkRatio > 0 && linkCount === 0) linkCount = 1;
+  if (noLinkRatio > 0 && total > 1 && linkCount >= total) linkCount = total - 1;
+  linkCount = Math.max(0, Math.min(total, linkCount));
+  return { linkCount, noLinkCount: total - linkCount };
+}
+
 function isReplyLinkModeRequiredQueue(row = {}) {
   const value = `${row.error_category || ''} ${row.error_message || ''}`;
   return /REPLY_LINK_MODE_REQUIRED/i.test(value);
@@ -308,27 +324,18 @@ export async function createDailyQueue(accountId, options = {}) {
   }
   const reply = await replyLinkReadiness(account);
   if (!reply.ok) {
-    const diagnostics = {
-      scheduleCount: 0,
-      requiredLinkCount: 0,
-      requiredNoLinkCount: 0,
-      availableDraftPosts: 0,
-      availableLinkPosts: 0,
-      selectedLinkPosts: 0,
-      queuedCount: 0,
-      reasonCode: reply.code,
-      message: reply.message,
-      unresolvedReplyFailures: reply.unresolvedCount || 0
-    };
     await logActivity({
       account_id: account.id,
       project_id: account.project_id,
-      action: 'daily_queue_blocked_reply_link_mode',
+      action: 'daily_queue_link_posts_blocked_reply_link_mode',
       level: 'warn',
       message: reply.message,
-      payload: diagnostics
+      payload: {
+        reasonCode: reply.code,
+        message: reply.message,
+        unresolvedReplyFailures: reply.unresolvedCount || 0
+      }
     }).catch(() => null);
-    return attachQueueDiagnostics([], diagnostics);
   }
   const allDrafts = [];
   for (const post of (await dbList('posts', { account_id: accountId })).filter((p) => ['draft', 'ready'].includes(p.status))) {
@@ -364,23 +371,36 @@ export async function createDailyQueue(accountId, options = {}) {
     trialCapped: times.length < scheduleTimes.length
   };
   const total = times.length;
-  const linkCount = total;
+  const { linkCount, noLinkCount } = calculateQueueModeCounts(total, account, { allowLink: reply.ok });
   const repairOutcomes = [];
   const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
+  const withoutLink = allDrafts.filter((p) => !productsPerTopic.has(p.topic_id));
 
-  const primaryWithLink = withLink.slice(0, total);
+  const primaryWithLink = withLink.slice(0, linkCount);
+  const selectedIds = new Set(primaryWithLink.map((post) => post.id));
+  const primaryNoLink = withoutLink
+    .concat(allDrafts.filter((post) => !selectedIds.has(post.id)))
+    .filter((post, index, list) => list.findIndex((row) => row.id === post.id) === index)
+    .slice(0, noLinkCount);
   const linkShortage = Math.max(0, linkCount - primaryWithLink.length);
-  const drafts = primaryWithLink.map((post) => ({ post, postMode: 'link' }));
+  const noLinkShortage = Math.max(0, noLinkCount - primaryNoLink.length);
+  const drafts = primaryWithLink.map((post) => ({ post, postMode: 'link' }))
+    .concat(primaryNoLink.map((post) => ({ post, postMode: 'no_link' })));
   const diagnostics = {
     scheduleCount: total,
     requiredLinkCount: linkCount,
-    requiredNoLinkCount: 0,
+    requiredNoLinkCount: noLinkCount,
     availableDraftPosts: allDrafts.length,
     availableLinkPosts: withLink.length,
     availableNoLinkPosts: allDrafts.length - withLink.length,
     selectedLinkPosts: primaryWithLink.length,
-    selectedNoLinkPosts: 0,
+    selectedNoLinkPosts: primaryNoLink.length,
     linkShortage,
+    noLinkShortage,
+    linkPostsBlocked: !reply.ok,
+    replyLinkReadinessCode: reply.code,
+    replyLinkReadinessMessage: reply.message,
+    unresolvedReplyFailures: reply.unresolvedCount || 0,
     trialPlan: trialStatus?.plan || null,
     trialRemaining: trialStatus?.remaining ?? null,
     uncappedScheduleCount: scheduleTimes.length,
@@ -402,8 +422,11 @@ export async function createDailyQueue(accountId, options = {}) {
   else if (allDrafts.length === 0) diagnostics.reasonCode = 'NO_DRAFT_POSTS';
   else if (repairOutcomes.some((row) => row.reasonCode === 'COUPANG_RATE_LIMIT')) diagnostics.reasonCode = 'COUPANG_RATE_LIMIT';
   else if (diagnostics.productRepairFallbacks > 0) diagnostics.reasonCode = 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
-  else if (drafts.length === 0) diagnostics.reasonCode = 'NO_REAL_COUPANG_LINKS';
+  else if (!reply.ok && primaryNoLink.length > 0) diagnostics.reasonCode = 'LINK_POSTS_BLOCKED_NO_LINK_QUEUED';
+  else if (drafts.length === 0 && linkCount > 0) diagnostics.reasonCode = 'NO_REAL_COUPANG_LINKS';
+  else if (drafts.length === 0) diagnostics.reasonCode = 'NO_QUEUEABLE_DRAFTS';
   else if (linkShortage > 0) diagnostics.reasonCode = 'PARTIAL_LINK_CANDIDATES';
+  else if (noLinkShortage > 0) diagnostics.reasonCode = 'PARTIAL_NO_LINK_CANDIDATES';
 
   if (total === 0 || allDrafts.length === 0 || drafts.length === 0) {
     diagnostics.queuedCount = 0;
@@ -505,7 +528,7 @@ export async function repairReplyLinkFailures({ accountId = null } = {}) {
         continue;
       }
       const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
-      const linkMode = String(process.env.THREADS_COUPANG_LINK_MODE || 'tracking').toLowerCase();
+      const linkMode = String(process.env.THREADS_COUPANG_LINK_MODE || 'direct').toLowerCase();
       const linkUrl = linkMode === 'tracking' ? `${baseUrl}/r/${trackingLink.code}` : trackingLink.destination_url;
       await uploadReplyOnly({ account, postId: threadsPostId, text: buildReplyText(linkUrl) });
       let updatedRows;

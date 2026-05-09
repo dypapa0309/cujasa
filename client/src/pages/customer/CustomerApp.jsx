@@ -51,7 +51,8 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
   const requestedTab = hashParams.get('tab');
   const shouldUseBetaWorkspace = true;
-  const activeProducts = (currentUser.products || [])
+  const userProducts = Array.isArray(currentUser?.products) ? currentUser.products : [];
+  const activeProducts = userProducts
     .filter((product) => product.status !== 'suspended')
     .map((grant) => productById(grant.productId) || {
       id: grant.productId,
@@ -116,7 +117,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
     if (!activeProducts.some((product) => product.id === selectedProductId)) {
       setSelectedProductId(activeProducts[0].id);
     }
-  }, [currentUser?.products, useWorkspaceShell, hasCujasa, selectedProductId, shouldUseBetaWorkspace]);
+  }, [userProducts, useWorkspaceShell, hasCujasa, selectedProductId, shouldUseBetaWorkspace]);
 
   useEffect(() => {
     if (!shouldUseBetaWorkspace) return;

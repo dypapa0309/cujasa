@@ -1,4 +1,5 @@
 import { productById } from '../config/products.js';
+import AdmZip from 'adm-zip';
 import { dbGet, dbInsert, dbUpdate } from './supabaseService.js';
 import {
   buildPolibotCatalog,
@@ -19,7 +20,7 @@ const DEFAULT_USAGE_LIMIT = 5;
 const UNLIMITED_TEST_EMAILS = new Set(['test1@test.com']);
 const UNLIMITED_USAGE_LIMIT = 999999;
 const DEXOR_SCORE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
-const INFLUDEX_GRADE_ORDER = { DIAMOND: 0, S: 1, A: 2, B: 3, C: 4, D: 5 };
+const INFLUDEX_GRADE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
 const DEXOR_CATEGORIES = ['맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
 
 function now() {
@@ -52,12 +53,99 @@ function dexorScoreComment(score) {
 }
 
 function infludexGradeFromScore(score) {
-  if (score >= 94) return 'DIAMOND';
-  if (score >= 86) return 'S';
-  if (score >= 74) return 'A';
-  if (score >= 60) return 'B';
-  if (score >= 45) return 'C';
+  if (score >= 85) return 'S';
+  if (score >= 72) return 'A';
+  if (score >= 58) return 'B';
+  if (score >= 42) return 'C';
   return 'D';
+}
+
+function scoreRange(value, ranges = []) {
+  for (const [threshold, score] of ranges) {
+    if (value >= threshold) return score;
+  }
+  return 0;
+}
+
+function analyzeInfludexCandidate(candidate = {}) {
+  const followers = Math.max(0, Number(candidate.followerCount || 0));
+  const likes = Math.max(0, Number(candidate.avgLikes || 0));
+  const comments = Math.max(0, Number(candidate.avgComments || 0));
+  const hasScoringData = followers > 0 && (likes > 0 || comments > 0);
+  const engagementRate = followers > 0 ? ((likes + comments) / followers) * 100 : 0;
+  const commentShare = likes + comments > 0 ? (comments / (likes + comments)) * 100 : 0;
+  const recentTime = candidate.recentPostAt ? new Date(String(candidate.recentPostAt).replace(/[./]/g, '-')).getTime() : 0;
+  const daysSinceRecent = recentTime ? Math.floor((Date.now() - recentTime) / (24 * 60 * 60 * 1000)) : null;
+  const hasAdRisk = Boolean(candidate.adMemo);
+  const riskFlags = [
+    !candidate.category ? 'category_missing' : '',
+    !followers ? 'followers_missing' : '',
+    engagementRate <= 0 ? 'engagement_missing' : '',
+    daysSinceRecent === null ? 'recent_post_missing' : '',
+    daysSinceRecent !== null && daysSinceRecent > 60 ? 'inactive_over_60d' : '',
+    hasAdRisk ? 'ad_memo_present' : ''
+  ].filter(Boolean);
+
+  if (!hasScoringData) {
+    return {
+      followers,
+      likes,
+      comments,
+      engagementRate: 0,
+      commentShare: 0,
+      daysSinceRecent,
+      score: null,
+      grade: null,
+      analysisStatus: 'data_missing',
+      scoreBreakdown: {},
+      gradeReason: [
+        candidate.category ? `추정 카테고리 ${candidate.category}` : '카테고리 보강 필요',
+        !followers ? '팔로워 수 필요' : `팔로워 ${followers.toLocaleString('ko-KR')}`,
+        likes + comments <= 0 ? '좋아요/댓글 평균 필요' : '반응 지표 확인됨',
+        daysSinceRecent === null ? '최근 게시일 필요' : daysSinceRecent <= 30 ? '최근 활동 양호' : '최근 활동 확인 필요'
+      ],
+      riskFlags
+    };
+  }
+
+  const categoryFitScore = candidate.category ? 20 : 0;
+  const engagementScore = scoreRange(engagementRate, [[6, 30], [3.5, 25], [2, 20], [1, 13], [0.5, 7]]);
+  const commentScore = scoreRange(commentShare, [[8, 15], [5, 12], [2, 8], [0.5, 4]]);
+  const followerScore = scoreRange(followers, [[100000, 15], [30000, 13], [10000, 10], [3000, 7], [1000, 4]]);
+  const freshnessScore = daysSinceRecent === null ? 0 : daysSinceRecent <= 10 ? 10 : daysSinceRecent <= 30 ? 7 : daysSinceRecent <= 60 ? 3 : 0;
+  const adPenalty = hasAdRisk ? 10 : 0;
+  const score = Math.max(0, Math.min(100, Math.round(categoryFitScore + engagementScore + commentScore + followerScore + freshnessScore - adPenalty)));
+  const grade = infludexGradeFromScore(score);
+  const gradeReason = [
+    categoryFitScore ? `카테고리 ${candidate.category}` : '카테고리 미입력',
+    followers ? `팔로워 ${followers.toLocaleString('ko-KR')}` : '팔로워 미입력',
+    engagementRate ? `반응률 ${engagementRate.toFixed(2)}%` : '반응 지표 미입력',
+    commentShare ? `댓글 비중 ${commentShare.toFixed(1)}%` : '댓글 지표 미입력',
+    daysSinceRecent === null ? '최근 게시일 미입력' : daysSinceRecent <= 30 ? '최근 활동 양호' : '최근 활동 확인 필요',
+    hasAdRisk ? '광고/협찬 메모 감점' : '광고성 메모 없음'
+  ];
+
+  return {
+    followers,
+    likes,
+    comments,
+    engagementRate: Number(engagementRate.toFixed(2)),
+    commentShare: Number(commentShare.toFixed(1)),
+    daysSinceRecent,
+    score,
+    grade,
+    analysisStatus: 'scored',
+    scoreBreakdown: {
+      categoryFitScore,
+      engagementScore,
+      commentScore,
+      followerScore,
+      freshnessScore,
+      adPenalty
+    },
+    gradeReason,
+    riskFlags
+  };
 }
 
 function parseUrls(input = '') {
@@ -204,27 +292,53 @@ function parseInfludexRows(input = '', fileName = '') {
     .map((line) => line.trim())
     .filter(Boolean);
   const candidates = [];
+  let header = null;
   rows.forEach((line, index) => {
     const cells = splitCandidateLine(line);
     const joined = cells.join(' ');
-    if (index === 0 && /url|계정|핸들|handle|category|카테고리/i.test(joined) && !/^https?:\/\//i.test(cells[0] || '') && !String(cells[0] || '').startsWith('@')) return;
-    const url = cells.find((cell) => /^https?:\/\//i.test(cell)) || '';
-    const handle = cells.find((cell) => /^@?[a-zA-Z0-9._]{2,50}$/.test(cell) && !/^\d+$/.test(cell)) || (url.match(/instagram\.com\/([^/?#]+)/i)?.[1] || '');
+    const looksLikeHeader = /url|계정|닉네임|핸들|handle|category|카테고리|followers|팔로워|likes|좋아요|댓글|이름\/설명|이메일\/문의/i.test(joined)
+      && !/^https?:\/\//i.test(cells[0] || '')
+      && !String(cells[0] || '').startsWith('@');
+    if (looksLikeHeader) {
+      header = cells.map((cell) => String(cell || '').trim().toLowerCase());
+      return;
+    }
+    const byHeader = (patterns = []) => {
+      if (!header) return '';
+      const columnIndex = header.findIndex((name) => patterns.some((pattern) => pattern.test(name)));
+      return columnIndex >= 0 ? cells[columnIndex] || '' : '';
+    };
+    const rawUrl = byHeader([/^url$/, /링크/]) || cells.find((cell) => /^https?:\/\//i.test(cell)) || '';
+    const url = /^https?:\/\//i.test(rawUrl) ? rawUrl : '';
+    const handle = byHeader([/handle/, /핸들/, /계정/, /닉네임/, /\bid\b/]) || cells.find((cell) => /^@?[a-zA-Z0-9._]{2,50}$/.test(cell) && !/^\d+$/.test(cell)) || (url.match(/instagram\.com\/([^/?#]+)/i)?.[1] || '');
     if (!url && !handle) return;
     const metaCells = cells.filter((cell) => cell !== url && cell !== handle);
-    const recentPostAt = metaCells.find((cell) => /\d{4}[-./]\d{1,2}[-./]\d{1,2}/.test(cell)) || '';
+    const recentPostAt = byHeader([/recent/, /최근/, /게시일/]) || metaCells.find((cell) => /\d{4}[-./]\d{1,2}[-./]\d{1,2}/.test(cell)) || '';
+    const followerCount = parseNumberLike(byHeader([/follower/, /팔로워/]));
+    const avgLikes = parseNumberLike(byHeader([/avglike/, /likes?/, /좋아요/]));
+    const avgComments = parseNumberLike(byHeader([/avgcomment/, /comments?/, /댓글/]));
     const numbers = metaCells.map(parseNumberLike).filter((value) => value !== null);
-    const category = metaCells.find((cell) => cell && cell !== recentPostAt && parseNumberLike(cell) === null && !/광고|협찬|체험단|스폰서/i.test(cell)) || '';
-    const adMemo = metaCells.find((cell) => /광고|협찬|체험단|스폰서|상업/i.test(cell)) || '';
+    const displayName = byHeader([/이름/, /설명/, /name/, /description/]) || '';
+    const contactMemo = byHeader([/이메일/, /문의/, /contact/, /email/]) || metaCells.find((cell) => /@.+\.|010-|오픈톡|litt\.ly|linktr\.ee|카톡|문의/i.test(cell)) || '';
+    const descriptionText = [displayName, contactMemo, fileName].filter(Boolean).join(' ');
+    const inferredCategory = /부업|수익|n잡|n잡|n잡|재테크|머니/i.test(descriptionText) ? '부업/수익화'
+      : /ai|인공지능|콘텐츠/i.test(descriptionText) ? 'AI/콘텐츠'
+        : /마케팅|브랜딩|브랜드/i.test(descriptionText) ? '마케팅/브랜딩'
+          : '';
+    const category = byHeader([/category/, /카테고리/, /분야/]) || inferredCategory || metaCells.find((cell) => cell && cell !== recentPostAt && cell !== contactMemo && parseNumberLike(cell) === null && !/광고|협찬|체험단|스폰서|이동|-$/i.test(cell)) || '';
+    const adMemo = byHeader([/admemo/, /광고/, /협찬/, /메모/]) || metaCells.find((cell) => /광고|협찬|체험단|스폰서|상업/i.test(cell)) || '';
     candidates.push({
       id: `infludex-${hashText(`${url || handle}-${index}`)}`,
       url,
       handle: String(handle || '').replace(/^@/, ''),
+      displayName,
+      description: displayName,
       category,
-      followerCount: numbers[0] ?? null,
-      avgLikes: numbers[1] ?? null,
-      avgComments: numbers[2] ?? null,
+      followerCount: followerCount ?? numbers[0] ?? null,
+      avgLikes: avgLikes ?? numbers[1] ?? null,
+      avgComments: avgComments ?? numbers[2] ?? null,
       recentPostAt,
+      contactMemo,
       adMemo,
       source: fileName ? 'file-or-manual' : 'manual',
       createdAt: now()
@@ -233,6 +347,55 @@ function parseInfludexRows(input = '', fileName = '') {
   return candidates
     .filter((item, index, all) => all.findIndex((row) => (row.url || row.handle) === (item.url || item.handle)) === index)
     .slice(0, 500);
+}
+
+function stripXmlText(xml = '') {
+  return String(xml || '')
+    .replace(/<\/w:tc>/g, ',')
+    .replace(/<\/w:tr>/g, '\n')
+    .replace(/<\/w:p>\s*,/g, ',')
+    .replace(/<\/w:p>/g, '\n')
+    .replace(/<\/a:p>/g, '\n')
+    .replace(/<\/a:t>\s*<a:t[^>]*>/g, ' ')
+    .replace(/<\/w:t>\s*<w:t[^>]*>\s*(?=(?:https?:\/\/|@?[a-zA-Z0-9._-]+,))/g, '\n')
+    .replace(/<\/w:t>\s*<w:t[^>]*>/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/[ \t\f\v]*,[ \t\f\v]*/g, ',')
+    .replace(/\n+,/g, ',')
+    .replace(/,+\n/g, '\n')
+    .replace(/[ \t\f\v]+/g, ' ')
+    .replace(/[ \t\f\v]*\n[ \t\f\v]*/g, '\n')
+    .replace(/\n\s+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function extractDocxTextFromBase64(base64 = '') {
+  const buffer = Buffer.from(String(base64 || ''), 'base64');
+  if (!buffer.length) return '';
+  const zip = new AdmZip(buffer);
+  return zip.getEntries()
+    .filter((entry) => /^word\/(document|header\d+|footer\d+)\.xml$/i.test(entry.entryName))
+    .map((entry) => stripXmlText(entry.getData().toString('utf8')))
+    .filter(Boolean)
+    .join('\n');
+}
+
+function infludexRowsFromFiles(files = []) {
+  return (Array.isArray(files) ? files : []).map((file) => {
+    const fileName = file?.fileName || file?.name || '';
+    const ext = String(fileName).toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] || '';
+    if (ext === 'docx') return extractDocxTextFromBase64(file.base64 || '');
+    if (ext === 'csv' || ext === 'txt') {
+      return Buffer.from(String(file.base64 || ''), 'base64').toString('utf8');
+    }
+    return '';
+  }).filter(Boolean).join('\n');
 }
 
 function normalizeList(input = '') {
@@ -486,8 +649,15 @@ export async function resetDexorWorkspace(userId) {
   });
 }
 
-export async function saveInfludexCandidates(userId, { rows = '', fileName = '' } = {}) {
-  const candidates = parseInfludexRows(rows, fileName);
+export async function saveInfludexCandidates(userId, { rows = '', fileName = '', files = [] } = {}) {
+  const current = await getProductWorkspace(userId, 'infludex');
+  const fileRows = infludexRowsFromFiles(files);
+  const mergedRows = [String(rows || '').trim(), fileRows.trim()].filter(Boolean).join('\n');
+  const selectedFileName = String(fileName || files?.[0]?.fileName || files?.[0]?.name || '').trim();
+  if (!mergedRows.trim() && Array.isArray(current.candidates) && current.candidates.length > 0) {
+    return current;
+  }
+  const candidates = parseInfludexRows(mergedRows, selectedFileName);
   if (candidates.length === 0) {
     const error = new Error('인스타그램 후보를 입력해 주세요.');
     error.status = 400;
@@ -495,7 +665,8 @@ export async function saveInfludexCandidates(userId, { rows = '', fileName = '' 
   }
   return updateWorkspace(userId, 'infludex', {
     candidates,
-    fileName: String(fileName || '').trim(),
+    candidateRows: mergedRows,
+    fileName: selectedFileName,
     infludexResults: []
   });
 }
@@ -509,20 +680,7 @@ export async function analyzeInfludexCandidates(userId) {
     throw error;
   }
   const infludexResults = sortInfludexResults(candidates.map((candidate) => {
-    const hash = hashText(candidate.url || candidate.handle);
-    const followers = Number(candidate.followerCount || 0);
-    const likes = Number(candidate.avgLikes || 0);
-    const comments = Number(candidate.avgComments || 0);
-    const engagementRate = followers > 0 ? ((likes + comments) / followers) * 100 : 0;
-    const categoryBonus = candidate.category ? 6 : 0;
-    const followerBonus = followers >= 100000 ? 12 : followers >= 30000 ? 9 : followers >= 10000 ? 6 : followers >= 3000 ? 3 : 0;
-    const engagementBonus = engagementRate >= 6 ? 14 : engagementRate >= 3 ? 9 : engagementRate >= 1.5 ? 5 : 0;
-    const recentTime = candidate.recentPostAt ? new Date(candidate.recentPostAt.replace(/[./]/g, '-')).getTime() : 0;
-    const daysSinceRecent = recentTime ? Math.floor((Date.now() - recentTime) / (24 * 60 * 60 * 1000)) : null;
-    const freshnessBonus = daysSinceRecent === null ? 0 : daysSinceRecent <= 10 ? 8 : daysSinceRecent <= 30 ? 4 : daysSinceRecent <= 60 ? 0 : -8;
-    const adPenalty = candidate.adMemo ? 8 : 0;
-    const score = Math.max(20, Math.min(99, 42 + (hash % 28) + followerBonus + engagementBonus + categoryBonus + freshnessBonus - adPenalty));
-    const grade = infludexGradeFromScore(score);
+    const analysis = analyzeInfludexCandidate(candidate);
     return {
       id: candidate.id,
       url: candidate.url,
@@ -531,16 +689,20 @@ export async function analyzeInfludexCandidates(userId) {
       followerCount: candidate.followerCount,
       avgLikes: candidate.avgLikes,
       avgComments: candidate.avgComments,
-      engagementRate: Number(engagementRate.toFixed(2)),
-      score,
-      grade,
-      reasons: [
-        candidate.category ? `카테고리 ${candidate.category}` : '카테고리 미입력',
-        followers ? `팔로워 ${followers}` : '팔로워 미입력',
-        engagementRate ? `평균 반응률 ${engagementRate.toFixed(2)}%` : '반응 지표 미입력',
-        daysSinceRecent === null ? '최근 게시일 미입력' : daysSinceRecent <= 30 ? '최근 활동 양호' : '최근 활동 확인 필요',
-        candidate.adMemo ? '광고성 메모 확인 필요' : '광고성 메모 없음'
-      ],
+      recentPostAt: candidate.recentPostAt || '',
+      displayName: candidate.displayName || '',
+      description: candidate.description || '',
+      contactMemo: candidate.contactMemo || '',
+      adMemo: candidate.adMemo || '',
+      engagementRate: analysis.engagementRate,
+      commentShare: analysis.commentShare,
+      score: analysis.score,
+      grade: analysis.grade,
+      analysisStatus: analysis.analysisStatus,
+      scoreBreakdown: analysis.scoreBreakdown,
+      gradeReason: analysis.gradeReason,
+      riskFlags: analysis.riskFlags,
+      reasons: analysis.gradeReason,
       analyzedAt: now()
     };
   }));
@@ -550,6 +712,7 @@ export async function analyzeInfludexCandidates(userId) {
 export async function resetInfludexWorkspace(userId) {
   return updateWorkspace(userId, 'infludex', {
     candidates: [],
+    candidateRows: '',
     fileName: '',
     infludexResults: []
   });
@@ -687,7 +850,7 @@ const POLIBOT_PURPOSES = ['보장 강화', '보험료 절감', '리모델링', '
 function normalizePolibotProductName(value = '') {
   return String(value || '')
     .normalize('NFC')
-    .replace(/\.(pdf|pptx?|xlsx|csv|txt)$/ig, ' ')
+    .replace(/\.(pdf|pptx?|docx|xlsx|csv|txt)$/ig, ' ')
     .replace(/상품명|구\s*분|보험료|변경월|변경일|작성기준일/gi, ' ')
     .replace(/\r?\n+/g, ' ')
     .replace(/^\s*\d+(?:[,.\d]*원|\s*세)?\s*/g, ' ')
@@ -1350,18 +1513,105 @@ export async function saveSpreadCampaign(userId, { goal = '', channel = '', prod
     throw error;
   }
   const draft = {
+    id: `spread-campaign-${Date.now()}-${hashText(`${cleanGoal}-${cleanChannel}-${cleanProduct}`)}`,
+    title: `${cleanProduct || '제품'} 체험단`,
     goal: cleanGoal,
     channel: cleanChannel,
     product: cleanProduct,
+    status: 'draft',
     headline: `${cleanProduct || '제품'} 캠페인 운영 초안`,
     mission: `${cleanChannel || '주요 채널'}에서 ${cleanGoal || '참여자 모집'}을 진행합니다.`,
     checklist: ['참여 조건 확인', '제출 URL 수집', '필수 키워드 검수'],
-    createdAt: now()
+    applicants: [],
+    submissionReview: null,
+    createdAt: now(),
+    updatedAt: now()
   };
-  return updateWorkspaceAndConsume(userId, 'spread', { campaignDraft: draft });
+  const workspace = await getProductWorkspace(userId, 'spread');
+  const campaigns = normalizeSpreadCampaigns(workspace);
+  return updateWorkspaceAndConsume(userId, 'spread', {
+    campaigns: [draft, ...campaigns],
+    selectedCampaignId: draft.id,
+    campaignDraft: draft
+  });
 }
 
-export async function saveSpreadApplicants(userId, { applicants = '', criteria = '' } = {}) {
+function campaignFromLegacyDraft(draft = {}, workspace = {}) {
+  if (!draft || typeof draft !== 'object') return null;
+  return {
+    id: draft.id || `spread-campaign-${hashText(JSON.stringify(draft))}`,
+    title: draft.title || draft.headline || `${draft.product || '제품'} 체험단`,
+    goal: draft.goal || '',
+    channel: draft.channel || '',
+    product: draft.product || '',
+    status: draft.status || 'draft',
+    headline: draft.headline || `${draft.product || '제품'} 캠페인 운영 초안`,
+    mission: draft.mission || `${draft.channel || '주요 채널'}에서 ${draft.goal || '참여자 모집'}을 진행합니다.`,
+    checklist: Array.isArray(draft.checklist) ? draft.checklist : ['참여 조건 확인', '제출 URL 수집', '필수 키워드 검수'],
+    applicants: Array.isArray(draft.applicants) ? draft.applicants : (Array.isArray(workspace.applicants) ? workspace.applicants : []),
+    submissionReview: draft.submissionReview || workspace.submissionReview || null,
+    createdAt: draft.createdAt || now(),
+    updatedAt: draft.updatedAt || draft.createdAt || now()
+  };
+}
+
+function normalizeSpreadCampaigns(workspace = {}) {
+  const campaigns = Array.isArray(workspace.campaigns) ? workspace.campaigns : [];
+  const normalized = campaigns.map((campaign) => campaignFromLegacyDraft(campaign, workspace)).filter(Boolean);
+  if (normalized.length === 0 && workspace.campaignDraft) {
+    const legacy = campaignFromLegacyDraft(workspace.campaignDraft, workspace);
+    if (legacy) normalized.push(legacy);
+  }
+  return normalized;
+}
+
+function selectedSpreadCampaign(workspace = {}, campaignId = '') {
+  const campaigns = normalizeSpreadCampaigns(workspace);
+  const selectedId = campaignId || workspace.selectedCampaignId || campaigns[0]?.id || '';
+  return {
+    campaigns,
+    selectedId,
+    selected: campaigns.find((campaign) => campaign.id === selectedId) || campaigns[0] || null
+  };
+}
+
+function upsertSelectedSpreadCampaign(workspace = {}, campaignId = '', updater = (campaign) => campaign) {
+  const { campaigns, selectedId, selected } = selectedSpreadCampaign(workspace, campaignId);
+  if (!selected) return { campaigns, selectedCampaignId: selectedId, selectedCampaign: null };
+  const nextCampaign = {
+    ...updater(selected),
+    updatedAt: now()
+  };
+  const nextCampaigns = campaigns.map((campaign) => campaign.id === nextCampaign.id ? nextCampaign : campaign);
+  return {
+    campaigns: nextCampaigns,
+    selectedCampaignId: nextCampaign.id,
+    campaignDraft: nextCampaign,
+    selectedCampaign: nextCampaign
+  };
+}
+
+export async function updateSpreadCampaignStatus(userId, { campaignId = '', status = '' } = {}) {
+  const allowedStatuses = new Set(['draft', 'recruiting', 'selecting', 'reviewing', 'completed']);
+  if (!allowedStatuses.has(status)) {
+    const error = new Error('지원하지 않는 캠페인 상태입니다.');
+    error.status = 400;
+    throw error;
+  }
+  const workspace = await getProductWorkspace(userId, 'spread');
+  const patch = upsertSelectedSpreadCampaign(workspace, campaignId, (campaign) => ({
+    ...campaign,
+    status
+  }));
+  if (!patch.selectedCampaign) {
+    const error = new Error('상태를 변경할 캠페인을 찾지 못했습니다.');
+    error.status = 404;
+    throw error;
+  }
+  return updateWorkspace(userId, 'spread', patch);
+}
+
+export async function saveSpreadApplicants(userId, { applicants = '', criteria = '', campaignId = '' } = {}) {
   const criteriaList = normalizeList(criteria);
   const applicantList = normalizeList(applicants);
   if (applicantList.length === 0) {
@@ -1380,13 +1630,21 @@ export async function saveSpreadApplicants(userId, { applicants = '', criteria =
       createdAt: now()
     };
   });
+  const workspace = await getProductWorkspace(userId, 'spread');
+  const patch = upsertSelectedSpreadCampaign(workspace, campaignId, (campaign) => ({
+    ...campaign,
+    status: 'selecting',
+    applicants: rows,
+    applicantCriteria: criteriaList
+  }));
   return updateWorkspaceAndConsume(userId, 'spread', {
+    ...patch,
     applicantCriteria: criteriaList,
     applicants: rows
   });
 }
 
-export async function reviewSpreadSubmission(userId, { url = '', required = '', forbidden = '' } = {}) {
+export async function reviewSpreadSubmission(userId, { url = '', required = '', forbidden = '', campaignId = '' } = {}) {
   const requiredList = normalizeList(required);
   const forbiddenList = normalizeList(forbidden);
   const normalizedUrl = String(url || '').trim();
@@ -1400,13 +1658,21 @@ export async function reviewSpreadSubmission(userId, { url = '', required = '', 
     ...requiredList.map((keyword) => ({ label: `필수 키워드: ${keyword}`, passed: false, detail: '본문 연결 전 수동 확인 필요' })),
     ...forbiddenList.map((keyword) => ({ label: `금지 표현: ${keyword}`, passed: true, detail: '입력 URL 단계에서는 감지 없음' }))
   ];
+  const submissionReview = {
+    url: normalizedUrl,
+    required: requiredList,
+    forbidden: forbiddenList,
+    checks,
+    reviewedAt: now()
+  };
+  const workspace = await getProductWorkspace(userId, 'spread');
+  const patch = upsertSelectedSpreadCampaign(workspace, campaignId, (campaign) => ({
+    ...campaign,
+    status: 'reviewing',
+    submissionReview
+  }));
   return updateWorkspaceAndConsume(userId, 'spread', {
-    submissionReview: {
-      url: normalizedUrl,
-      required: requiredList,
-      forbidden: forbiddenList,
-      checks,
-      reviewedAt: now()
-    }
+    ...patch,
+    submissionReview
   });
 }

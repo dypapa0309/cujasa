@@ -14,10 +14,15 @@ import {
   savePolibotRecommendation,
   savePolibotUpload,
   saveSpreadApplicants,
-  saveSpreadCampaign
+  saveSpreadCampaign,
+  updateSpreadCampaignStatus
 } from '../services/productWorkspaceService.js';
 
 const router = Router();
+
+function spreadServiceClosedInProduction() {
+  return process.env.NODE_ENV === 'production' && process.env.SPREAD_SERVICE_OPEN !== 'true';
+}
 
 function requireUser(req, res) {
   if (!req.user || req.user.type !== 'user') {
@@ -25,6 +30,15 @@ function requireUser(req, res) {
     return null;
   }
   return req.user;
+}
+
+function requireSpreadOpen(req, res) {
+  if (!spreadServiceClosedInProduction()) return true;
+  res.status(503).json({
+    error: 'SPREAD_SERVICE_MAINTENANCE',
+    message: 'SPREAD는 현재 서비스 점검 중입니다.'
+  });
+  return false;
 }
 
 router.get('/:productId', async (req, res, next) => {
@@ -152,6 +166,7 @@ router.post('/polibot/customers', async (req, res, next) => {
 
 router.post('/spread/campaign', async (req, res, next) => {
   try {
+    if (!requireSpreadOpen(req, res)) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await saveSpreadCampaign(user.userId, req.body || {}));
@@ -160,8 +175,20 @@ router.post('/spread/campaign', async (req, res, next) => {
   }
 });
 
+router.post('/spread/campaign/status', async (req, res, next) => {
+  try {
+    if (!requireSpreadOpen(req, res)) return;
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await updateSpreadCampaignStatus(user.userId, req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/spread/applicants', async (req, res, next) => {
   try {
+    if (!requireSpreadOpen(req, res)) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await saveSpreadApplicants(user.userId, req.body || {}));
@@ -172,6 +199,7 @@ router.post('/spread/applicants', async (req, res, next) => {
 
 router.post('/spread/review', async (req, res, next) => {
   try {
+    if (!requireSpreadOpen(req, res)) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await reviewSpreadSubmission(user.userId, req.body || {}));

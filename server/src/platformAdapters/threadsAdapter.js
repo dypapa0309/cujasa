@@ -112,7 +112,7 @@ function threadsError(label, body) {
 export async function uploadPost({ account, post, cta, trackingLink }) {
   const token = account.threads_access_token;
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
-  const linkMode = String(process.env.THREADS_COUPANG_LINK_MODE || 'tracking').toLowerCase();
+  const linkMode = String(process.env.THREADS_COUPANG_LINK_MODE || 'direct').toLowerCase();
   const linkUrl = trackingLink
     ? (linkMode === 'tracking' ? `${baseUrl}/r/${trackingLink.code}` : trackingLink.destination_url)
     : null;
@@ -129,7 +129,7 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   if (process.env.MOCK_UPLOAD === 'true') {
     const url = `${baseUrl}/mock/threads/${post.id}`;
     console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: buildPostText(post), comment: replyText || null, linkMode });
-    return { postUrl: url, raw: { mock: true, linkDeliveryMode: linkUrl ? deliveryMode : 'none', linkMode } };
+    return { postUrl: url, raw: { mock: true, linkDeliveryMode: linkUrl ? deliveryMode : 'none', linkMode, replyText } };
   }
   if (!token) {
     const error = new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');

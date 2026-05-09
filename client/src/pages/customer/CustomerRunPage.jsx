@@ -334,7 +334,7 @@ function normalizeRunError(error) {
 }
 
 function formatSchedule(account) {
-  const max = Number(account?.daily_post_max ?? 5);
+  const max = Number(account?.daily_post_max ?? 3);
   const limit = Math.min(5, Math.max(0, Number.isFinite(max) ? max : 5));
   return `상품 매칭 성공분만 최대 ${limit}개 예약`;
 }

@@ -123,7 +123,7 @@ export function inferKnowledgeMonth(value = '', fallbackDate = new Date()) {
 
 export function inferPolibotFileType(fileName = '') {
   const ext = String(fileName || '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] || '';
-  if (['pdf', 'pptx', 'ppt', 'csv', 'txt'].includes(ext)) return ext;
+  if (['pdf', 'pptx', 'ppt', 'docx', 'csv', 'txt'].includes(ext)) return ext;
   if (['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return 'image';
   return ext || 'unknown';
 }
@@ -150,6 +150,22 @@ export async function extractPolibotTextFromBuffer(buffer, fileName = '') {
       .replace(/<a:t[^>]*>/g, ' ')
       .replace(/<\/a:t>/g, ' ')
       .replace(/<[^>]+>/g, ' ');
+    return cleanText(text);
+  }
+  if (fileType === 'docx') {
+    const zip = new AdmZip(buffer);
+    const text = zip.getEntries()
+      .filter((entry) => /^word\/(document|header\d+|footer\d+)\.xml$/i.test(entry.entryName))
+      .map((entry) => entry.getData().toString('utf8'))
+      .join('\n')
+      .replace(/<w:t[^>]*>/g, ' ')
+      .replace(/<\/w:t>/g, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, ' ')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'");
     return cleanText(text);
   }
   return '';
@@ -365,7 +381,7 @@ export function normalizePolibotKnowledgeSource({ fileName = '', text = '', mont
 
 function normalizeProductCandidateName(value = '') {
   return cleanText(value)
-    .replace(/\.(pdf|pptx?|xlsx|csv|txt)$/ig, ' ')
+    .replace(/\.(pdf|pptx?|docx|xlsx|csv|txt)$/ig, ' ')
     .replace(/상품명|구\s*분|보험료|변경월|변경일|작성기준일/gi, ' ')
     .replace(/\r?\n+/g, ' ')
     .replace(/^\s*\d+(?:[,.\d]*원|\s*세|년|개월)?\s*/g, ' ')

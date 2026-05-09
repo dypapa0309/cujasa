@@ -31,11 +31,11 @@ create table if not exists accounts (
   safe_debate_enabled boolean not null default false,
   content_style_note text,
   daily_post_min int not null default 0,
-  daily_post_max int not null default 5,
-  active_time_windows jsonb not null default '[{"start":"09:00","end":"09:00"}]',
-  min_interval_minutes int not null default 50,
-  link_post_ratio numeric not null default 1,
-  no_link_post_ratio numeric not null default 0,
+  daily_post_max int not null default 3,
+  active_time_windows jsonb not null default '[{"start":"09:00","end":"23:00"}]',
+  min_interval_minutes int not null default 90,
+  link_post_ratio numeric not null default 0.67,
+  no_link_post_ratio numeric not null default 0.33,
   rest_days_per_week int not null default 1,
   threads_access_token text,
   threads_user_id text,
@@ -82,12 +82,16 @@ alter table accounts add column if not exists emoji_level text not null default 
 alter table accounts add column if not exists safe_debate_enabled boolean not null default false;
 alter table accounts add column if not exists content_style_note text;
 alter table accounts alter column daily_post_min set default 0;
-alter table accounts alter column daily_post_max set default 5;
+alter table accounts alter column daily_post_max set default 3;
+alter table accounts alter column active_time_windows set default '[{"start":"09:00","end":"23:00"}]'::jsonb;
+alter table accounts alter column min_interval_minutes set default 90;
+alter table accounts alter column link_post_ratio set default 0.67;
+alter table accounts alter column no_link_post_ratio set default 0.33;
 update accounts
 set
   daily_post_min = 0,
   daily_post_max = least(
-    greatest(coalesce(daily_post_max, 5), 0),
+    greatest(coalesce(daily_post_max, 3), 0),
     5
   );
 

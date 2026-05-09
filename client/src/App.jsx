@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Component, useEffect, useState } from 'react';
 import { ToastProvider } from './lib/toast.jsx';
 import { LayoutDashboard, Settings, Users, Wand2, Boxes, ListChecks, BarChart3, ShieldCheck, Megaphone, ClipboardCheck, DatabaseZap } from 'lucide-react';
 import DashboardPage from './pages/DashboardPage.jsx';
@@ -57,6 +57,43 @@ const pages = {
 };
 const accountScopedPages = new Set(['accounts', 'generate', 'products', 'queue', 'analytics', 'settings']);
 
+function normalizeProducts(products) {
+  return Array.isArray(products) ? products : [];
+}
+
+export class AppErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[APP RENDER ERROR]', error, info);
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="grid min-h-screen place-items-center bg-slate-950 px-5 text-white">
+        <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-white/10 p-6 shadow-2xl">
+          <div className="text-lg font-black">화면을 불러오지 못했습니다</div>
+          <p className="mt-2 text-sm leading-relaxed text-slate-300">로컬 화면 렌더링 중 오류가 발생했습니다. 아래 내용을 확인한 뒤 새로고침해주세요.</p>
+          <pre className="mt-4 max-h-52 overflow-auto rounded-2xl bg-black/35 p-4 text-xs leading-relaxed text-rose-100">
+            {this.state.error?.message || String(this.state.error)}
+          </pre>
+          <button type="button" onClick={() => window.location.reload()} className="mt-4 rounded-xl bg-white px-4 py-2 text-sm font-black text-slate-950">
+            새로고침
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
+
 export default function App() {
   const [page, setPage] = useState('dashboard');
   const [accounts, setAccounts] = useState([]);
@@ -85,7 +122,7 @@ export default function App() {
             email: result.user?.email,
             username: result.user?.username,
             maxAccounts: result.user?.maxAccounts,
-            products: result.user?.products || [],
+            products: normalizeProducts(result.user?.products),
             billing: result.user?.billing || null
           });
           return loadAccounts();
@@ -126,7 +163,7 @@ export default function App() {
       <ToastProvider>
         <GlobalApiLoadingBar />
         <LoginPage onLogin={(info) => {
-          setCurrentUser({ type: info.type, email: info.email, username: info.username, maxAccounts: info.maxAccounts, products: info.products || [], billing: info.billing || null });
+          setCurrentUser({ type: info.type, email: info.email, username: info.username, maxAccounts: info.maxAccounts, products: normalizeProducts(info.products), billing: info.billing || null });
           loadAccounts().catch(console.error);
         }} />
       </ToastProvider>
@@ -140,7 +177,7 @@ export default function App() {
         <GlobalApiLoadingBar />
         <CustomerApp
           accounts={accounts}
-          currentUser={currentUser}
+          currentUser={{ ...currentUser, products: normalizeProducts(currentUser.products) }}
           reloadAccounts={loadAccounts}
           reloadCurrentUser={reloadCurrentUser}
           onLogout={() => { setAuthToken(''); setCurrentUser(null); }}

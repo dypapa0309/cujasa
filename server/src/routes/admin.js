@@ -23,6 +23,7 @@ import { buildMisassignmentReport } from '../services/accountOwnershipService.js
 import { createManualPayment, expireDueEntitlements } from '../services/billingEntitlementService.js';
 import { listPolibotCatalogReview, savePolibotCatalogReviews } from '../services/productWorkspaceService.js';
 import {
+  ingestPolibotKnowledge,
   listPolibotKnowledgeReviewQueue,
   runPolibotSourceOcr,
   updatePolibotCatalogItemReview,
@@ -662,6 +663,22 @@ router.get('/polibot/knowledge-review', async (req, res, next) => {
       status: req.query?.status || 'all',
       scope: req.query?.scope || 'all',
       limit: req.query?.limit || 120
+    }));
+  } catch (e) { next(e); }
+});
+
+router.post('/polibot/knowledge', async (req, res, next) => {
+  try {
+    const files = Array.isArray(req.body?.files) ? req.body.files : [];
+    const note = String(req.body?.note || '').trim();
+    res.json(await ingestPolibotKnowledge({
+      scope: 'global',
+      sourceChannel: 'admin_upload',
+      sourceLabel: req.body?.sourceLabel || req.body?.fileName || 'admin-polibot-upload',
+      files: files.length > 0 ? files : (note ? [{ fileName: '관리자 메모.txt', text: note, size: note.length, type: 'txt' }] : []),
+      month: req.body?.month || '',
+      note,
+      dryRun: false
     }));
   } catch (e) { next(e); }
 });

@@ -119,10 +119,13 @@ export function redactBillingSettings(settings = {}) {
       candidateCount: Array.isArray(workspace.candidates) ? workspace.candidates.length : 0,
       analysisCount: Array.isArray(workspace.analysisResults) ? workspace.analysisResults.length : 0,
       infludexAnalysisCount: Array.isArray(workspace.infludexResults) ? workspace.infludexResults.length : 0,
-      applicantCount: Array.isArray(workspace.applicants) ? workspace.applicants.length : 0,
+      campaignCount: Array.isArray(workspace.campaigns) ? workspace.campaigns.length : (workspace.campaignDraft ? 1 : 0),
+      applicantCount: Array.isArray(workspace.campaigns)
+        ? workspace.campaigns.reduce((sum, campaign) => sum + (Array.isArray(campaign.applicants) ? campaign.applicants.length : 0), 0)
+        : Array.isArray(workspace.applicants) ? workspace.applicants.length : 0,
       customerCount: Array.isArray(workspace.customers) ? workspace.customers.length : 0,
-      hasCampaignDraft: Boolean(workspace.campaignDraft),
-      hasSubmissionReview: Boolean(workspace.submissionReview),
+      hasCampaignDraft: Boolean(workspace.campaignDraft) || (Array.isArray(workspace.campaigns) && workspace.campaigns.length > 0),
+      hasSubmissionReview: Boolean(workspace.submissionReview) || (Array.isArray(workspace.campaigns) && workspace.campaigns.some((campaign) => campaign.submissionReview)),
       hasPolibotUpload: Boolean(workspace.upload),
       hasPolibotRecommendations: Array.isArray(workspace.recommendations) && workspace.recommendations.length > 0,
       updatedAt: workspace.updatedAt || null

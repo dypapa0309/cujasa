@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, DatabaseZap, EyeOff, MessageSquareWarning, RefreshCw, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, DatabaseZap, EyeOff, MessageSquareWarning, RefreshCw, ShieldAlert, Upload } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import { dateTime } from '../lib/format.js';
@@ -30,6 +30,15 @@ const feedbackLabels = {
   unclear: '애매함',
   wrong: '틀림'
 };
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+    reader.onerror = () => reject(new Error('파일을 읽지 못했습니다.'));
+    reader.readAsDataURL(file);
+  });
+}
 
 function StatusPill({ status }) {
   return (
@@ -63,6 +72,8 @@ export default function AdminPolibotKnowledgePage() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState('');
   const [reviewNotes, setReviewNotes] = useState({});
+  const [uploading, setUploading] = useState(false);
+  const [uploadForm, setUploadForm] = useState({ month: '', note: '', files: [] });
 
   const load = async () => {
     const query = new URLSearchParams({ status, scope, limit: '160' });
@@ -142,6 +153,50 @@ export default function AdminPolibotKnowledgePage() {
     }
   };
 
+  const uploadKnowledgeFiles = async (fileList) => {
+    const selected = Array.from(fileList || []);
+    if (selected.length === 0) return;
+    setUploading(true);
+    try {
+      const files = await Promise.all(selected.map(async (file) => ({
+        fileName: file.name,
+        name: file.name,
+        size: file.size,
+        type: file.type || '',
+        base64: await fileToBase64(file)
+      })));
+      setUploadForm((prev) => ({ ...prev, files }));
+      toast(`${files.length}개 자료를 선택했습니다.`, 'success');
+    } catch (err) {
+      toast(err.message || '자료 파일을 읽지 못했습니다.', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const saveAdminKnowledge = async () => {
+    if (uploadForm.files.length === 0 && !uploadForm.note.trim()) {
+      toast('업로드할 자료나 메모를 입력해주세요.', 'error');
+      return;
+    }
+    setUploading(true);
+    try {
+      const result = await api.post('/api/admin/polibot/knowledge', {
+        month: uploadForm.month,
+        note: uploadForm.note,
+        files: uploadForm.files,
+        sourceLabel: uploadForm.files.map((file) => file.fileName).join(', ') || '관리자 메모'
+      });
+      toast(`공통 자료 저장 완료: ${result?.summary?.insertedSources || 0}개 저장`, 'success');
+      setUploadForm({ month: '', note: '', files: [] });
+      await load();
+    } catch (err) {
+      toast(err.message || '공통 자료 저장에 실패했습니다.', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   if (loading && !payload) return <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">POLIBOT 자료 검수 큐를 불러오는 중입니다.</div>;
 
   return (
@@ -155,6 +210,58 @@ export default function AdminPolibotKnowledgePage() {
           <RefreshCw size={15} /> 새로고침
         </button>
       </div>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-slate-950">공통 자료 업로드</h2>
+            <p className="mt-1 text-sm text-slate-500">관리자가 올린 자료는 모든 POLIBOT 추천에 쓰이는 공통 지식베이스로 저장됩니다.</p>
+          </div>
+          <button
+            type="button"
+            onClick={saveAdminKnowledge}
+            disabled={uploading || (uploadForm.files.length === 0 && !uploadForm.note.trim())}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Upload size={15} /> {uploading ? '처리 중...' : '공통 자료 저장'}
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3 lg:grid-cols-[180px_minmax(0,1fr)]">
+          <label className="grid gap-1 text-sm font-semibold text-slate-700">
+            자료 월
+            <input
+              value={uploadForm.month}
+              onChange={(event) => setUploadForm((prev) => ({ ...prev, month: event.target.value }))}
+              placeholder="예: 2026-05"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+            />
+          </label>
+          <label className="grid gap-1 text-sm font-semibold text-slate-700">
+            자료 파일
+            <span className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100">
+              <span className="truncate">{uploadForm.files.length ? `${uploadForm.files.length}개 자료 선택됨` : 'PDF/PPTX/DOCX/CSV/TXT/이미지 업로드'}</span>
+              <Upload size={15} />
+              <input
+                type="file"
+                multiple
+                accept=".pdf,.ppt,.pptx,.docx,.csv,.txt,.jpg,.jpeg,.png,.webp"
+                className="hidden"
+                onChange={(event) => uploadKnowledgeFiles(event.target.files)}
+              />
+            </span>
+          </label>
+        </div>
+        <label className="mt-3 grid gap-1 text-sm font-semibold text-slate-700">
+          자료 메모
+          <textarea
+            value={uploadForm.note}
+            onChange={(event) => setUploadForm((prev) => ({ ...prev, note: event.target.value }))}
+            rows={3}
+            placeholder="파일 없이 월별 변경사항이나 운영 메모만 저장할 수도 있습니다."
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+          />
+        </label>
+      </section>
 
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <SummaryCard label="검토 필요" value={totals.review} icon={AlertTriangle} active={status === 'review_needed'} onClick={() => setStatus('review_needed')} />

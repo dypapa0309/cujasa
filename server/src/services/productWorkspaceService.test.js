@@ -1,13 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import AdmZip from 'adm-zip';
 import { dbInsert } from './supabaseService.js';
 import {
   ingestPolibotKnowledge,
   listPolibotKnowledgeReviewQueue
 } from './polibotKnowledgeDbService.js';
 import {
+  analyzeInfludexCandidates,
+  getProductWorkspace,
+  saveInfludexCandidates,
   savePolibotRecommendation,
-  savePolibotRecommendationFeedback
+  savePolibotRecommendationFeedback,
+  saveSpreadApplicants,
+  saveSpreadCampaign,
+  reviewSpreadSubmission,
+  updateSpreadCampaignStatus
 } from './productWorkspaceService.js';
 
 test('stores POLIBOT recommendation knowledge snapshot with source trace', async () => {
@@ -119,4 +127,256 @@ test('stores POLIBOT recommendation feedback and flags bad feedback for review',
   assert.ok(savedFeedback);
   assert.equal(savedFeedback.rating, 'wrong');
   assert.equal(savedFeedback.routedToReview, true);
+});
+
+test('INFLUDEX link analysis uses deterministic campaign selection scoring', async () => {
+  const userId = '33333333-3333-4333-8333-333333333333';
+  await dbInsert('users', {
+    id: userId,
+    email: 'infludex-score-test@example.com',
+    password_hash: 'test',
+    name: 'INFLUDEX 테스트',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'infludex',
+    status: 'active',
+    role: 'customer',
+    settings: { usage: { infludex: { limit: 5, used: 0, remaining: 5 } } }
+  });
+
+  await saveInfludexCandidates(userId, {
+    fileName: 'infludex.csv',
+    rows: [
+      'url,handle,category,followers,avgLikes,avgComments,recentPostAt,adMemo',
+      'https://instagram.com/good,@good,뷰티,30000,1500,180,2026-05-01,',
+      'https://instagram.com/weak,@weak,,30000,60,1,2025-01-01,협찬 많음'
+    ].join('\n')
+  });
+  const first = await analyzeInfludexCandidates(userId);
+  const second = await analyzeInfludexCandidates(userId);
+  const good = first.infludexResults.find((item) => item.handle === 'good');
+  const weak = first.infludexResults.find((item) => item.handle === 'weak');
+  const goodAgain = second.infludexResults.find((item) => item.handle === 'good');
+
+  assert.ok(good);
+  assert.ok(weak);
+  assert.ok(good.score > weak.score);
+  assert.equal(good.score, goodAgain.score);
+  assert.match(good.grade, /^[SABCD]$/);
+  assert.ok(good.scoreBreakdown.engagementScore > weak.scoreBreakdown.engagementScore);
+  assert.ok(weak.riskFlags.includes('ad_memo_present'));
+});
+
+test('INFLUDEX candidate upload reads DOCX files', async () => {
+  const userId = '44444444-4444-4444-8444-444444444444';
+  await dbInsert('users', {
+    id: userId,
+    email: 'infludex-docx-test@example.com',
+    password_hash: 'test',
+    name: 'INFLUDEX DOCX',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'infludex',
+    status: 'active',
+    role: 'customer',
+    settings: { usage: { infludex: { limit: 5, used: 0, remaining: 5 } } }
+  });
+
+  const zip = new AdmZip();
+  zip.addFile('word/document.xml', Buffer.from('<w:document><w:body><w:t>url,handle,category,followers,avgLikes,avgComments,recentPostAt,adMemo</w:t><w:t> https://instagram.com/docx,@docx,생활,12000,520,44,2026-05-02,</w:t></w:body></w:document>'));
+  const workspace = await saveInfludexCandidates(userId, {
+    fileName: 'infludex.docx',
+    files: [{
+      fileName: 'infludex.docx',
+      base64: zip.toBuffer().toString('base64')
+    }]
+  });
+
+  assert.equal(workspace.candidates.length, 1);
+  assert.equal(workspace.candidates[0].handle, 'docx');
+  assert.equal(workspace.candidates[0].category, '생활');
+  assert.match(workspace.candidateRows, /instagram\.com\/docx/);
+});
+
+test('INFLUDEX candidate upload reads DOCX table rows and keeps saved draft', async () => {
+  const userId = '55555555-5555-4555-8555-555555555555';
+  await dbInsert('users', {
+    id: userId,
+    email: 'infludex-docx-table-test@example.com',
+    password_hash: 'test',
+    name: 'INFLUDEX DOCX Table',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'infludex',
+    status: 'active',
+    role: 'customer',
+    settings: { usage: { infludex: { limit: 5, used: 0, remaining: 5 } } }
+  });
+
+  const zip = new AdmZip();
+  zip.addFile('word/document.xml', Buffer.from([
+    '<w:document><w:body><w:tbl>',
+    '<w:tr><w:tc><w:p><w:t>url</w:t></w:p></w:tc><w:tc><w:p><w:t>handle</w:t></w:p></w:tc><w:tc><w:p><w:t>category</w:t></w:p></w:tc><w:tc><w:p><w:t>followers</w:t></w:p></w:tc><w:tc><w:p><w:t>avgLikes</w:t></w:p></w:tc><w:tc><w:p><w:t>avgComments</w:t></w:p></w:tc></w:tr>',
+    '<w:tr><w:tc><w:p><w:t>https://instagram.com/table</w:t></w:p></w:tc><w:tc><w:p><w:t>@table</w:t></w:p></w:tc><w:tc><w:p><w:t>육아</w:t></w:p></w:tc><w:tc><w:p><w:t>22000</w:t></w:p></w:tc><w:tc><w:p><w:t>700</w:t></w:p></w:tc><w:tc><w:p><w:t>80</w:t></w:p></w:tc></w:tr>',
+    '</w:tbl></w:body></w:document>'
+  ].join('')));
+  const workspace = await saveInfludexCandidates(userId, {
+    fileName: 'infludex-table.docx',
+    files: [{
+      fileName: 'infludex-table.docx',
+      base64: zip.toBuffer().toString('base64')
+    }]
+  });
+  const savedAgain = await saveInfludexCandidates(userId, {});
+
+  assert.equal(workspace.candidates.length, 1);
+  assert.equal(workspace.candidates[0].handle, 'table');
+  assert.equal(workspace.candidates[0].category, '육아');
+  assert.equal(savedAgain.candidates.length, 1);
+});
+
+test('INFLUDEX candidate upload ignores document title and Korean header rows', async () => {
+  const userId = '66666666-6666-4666-8666-666666666666';
+  await dbInsert('users', {
+    id: userId,
+    email: 'infludex-sidejob-docx-test@example.com',
+    password_hash: 'test',
+    name: 'INFLUDEX Sidejob DOCX',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'infludex',
+    status: 'active',
+    role: 'customer',
+    settings: { usage: { infludex: { limit: 5, used: 0, remaining: 5 } } }
+  });
+
+  const zip = new AdmZip();
+  zip.addFile('word/document.xml', Buffer.from([
+    '<w:document><w:body>',
+    '<w:p><w:t>부업 관련 인스타그램 계정 수집 목록</w:t></w:p>',
+    '<w:tbl>',
+    '<w:tr><w:tc><w:p><w:t>닉네임 (ID)</w:t></w:p></w:tc><w:tc><w:p><w:t>이름/설명</w:t></w:p></w:tc><w:tc><w:p><w:t>링크</w:t></w:p></w:tc><w:tc><w:p><w:t>이메일/문의</w:t></w:p></w:tc></w:tr>',
+    '<w:tr><w:tc><w:p><w:t>@money_makers_youtube</w:t></w:p></w:tc><w:tc><w:p><w:t>머니메이커스</w:t></w:p></w:tc><w:tc><w:p><w:t>이동</w:t></w:p></w:tc><w:tc><w:p><w:t>nyeop2022@gmail.com</w:t></w:p></w:tc></w:tr>',
+    '<w:tr><w:tc><w:p><w:t>@positive_feel.tr</w:t></w:p></w:tc><w:tc><w:p><w:t>긍정필터 (AI/인스타 마케팅)</w:t></w:p></w:tc><w:tc><w:p><w:t>이동</w:t></w:p></w:tc><w:tc><w:p><w:t>litt.ly/positive_feel.tr</w:t></w:p></w:tc></w:tr>',
+    '</w:tbl></w:body></w:document>'
+  ].join('')));
+  const workspace = await saveInfludexCandidates(userId, {
+    fileName: '부업_관련_인스타그램_계정_수집_목록.docx',
+    files: [{
+      fileName: '부업_관련_인스타그램_계정_수집_목록.docx',
+      base64: zip.toBuffer().toString('base64')
+    }]
+  });
+  const analyzed = await analyzeInfludexCandidates(userId);
+
+  assert.equal(workspace.candidates.length, 2);
+  assert.equal(workspace.candidates.some((item) => item.handle === '닉네임 (ID)'), false);
+  assert.equal(workspace.candidates.some((item) => item.url === '이동'), false);
+  assert.equal(workspace.candidates[0].displayName, '머니메이커스');
+  assert.equal(workspace.candidates[0].contactMemo, 'nyeop2022@gmail.com');
+  assert.ok(workspace.candidates.find((item) => item.handle === 'positive_feel.tr')?.category);
+  assert.equal(analyzed.infludexResults.every((item) => item.analysisStatus === 'data_missing'), true);
+  assert.equal(analyzed.infludexResults.every((item) => item.grade === null), true);
+});
+
+test('SPREAD campaign draft becomes an operating campaign card', async () => {
+  const userId = '77777777-7777-4777-8777-777777777777';
+  await dbInsert('users', {
+    id: userId,
+    email: 'spread-campaign-test@example.com',
+    password_hash: 'test',
+    name: 'SPREAD 캠페인',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'spread',
+    status: 'active',
+    role: 'customer',
+    settings: { usage: { spread: { limit: 10, used: 0, remaining: 10 } } }
+  });
+
+  const created = await saveSpreadCampaign(userId, {
+    goal: '신제품 체험단 모집',
+    channel: '인스타그램',
+    product: '생활용품'
+  });
+  assert.equal(created.campaigns.length, 1);
+  assert.equal(created.campaigns[0].product, '생활용품');
+  assert.equal(created.campaigns[0].status, 'draft');
+  assert.equal(created.selectedCampaignId, created.campaigns[0].id);
+  assert.equal(created.campaignDraft.id, created.campaigns[0].id);
+
+  const applicants = await saveSpreadApplicants(userId, {
+    campaignId: created.campaigns[0].id,
+    applicants: '김체험\n이리뷰',
+    criteria: '최근 활동성\n카테고리 적합도'
+  });
+  assert.equal(applicants.campaigns[0].applicants.length, 2);
+  assert.equal(applicants.campaigns[0].status, 'selecting');
+  assert.equal(applicants.applicants.length, 2);
+
+  const reviewed = await reviewSpreadSubmission(userId, {
+    campaignId: created.campaigns[0].id,
+    url: 'https://example.com/review',
+    required: '브랜드명',
+    forbidden: '과장 표현'
+  });
+  assert.equal(reviewed.campaigns[0].status, 'reviewing');
+  assert.equal(reviewed.campaigns[0].submissionReview.url, 'https://example.com/review');
+  assert.equal(reviewed.submissionReview.url, 'https://example.com/review');
+
+  const completed = await updateSpreadCampaignStatus(userId, {
+    campaignId: created.campaigns[0].id,
+    status: 'completed'
+  });
+  assert.equal(completed.campaigns[0].status, 'completed');
+});
+
+test('SPREAD legacy campaign draft is reused for applicants', async () => {
+  const userId = '88888888-8888-4888-8888-888888888888';
+  await dbInsert('users', {
+    id: userId,
+    email: 'spread-legacy-test@example.com',
+    password_hash: 'test',
+    name: 'SPREAD Legacy',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'spread',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      workspace: {
+        campaignDraft: {
+          goal: '기존 체험단',
+          channel: '블로그',
+          product: '주방용품',
+          headline: '기존 캠페인 초안'
+        }
+      },
+      usage: { spread: { limit: 10, used: 0, remaining: 10 } }
+    }
+  });
+
+  const before = await getProductWorkspace(userId, 'spread');
+  assert.equal(before.campaignDraft.product, '주방용품');
+
+  const next = await saveSpreadApplicants(userId, {
+    applicants: '박블로거',
+    criteria: '블로그 운영'
+  });
+  assert.equal(next.campaigns.length, 1);
+  assert.equal(next.campaigns[0].product, '주방용품');
+  assert.equal(next.campaigns[0].applicants.length, 1);
+  assert.equal(next.selectedCampaignId, next.campaigns[0].id);
 });

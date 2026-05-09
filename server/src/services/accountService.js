@@ -7,6 +7,8 @@ const COMMENT_STYLES = new Set(['none', 'soft_question', 'experience_question', 
 const PRODUCT_MENTION_STYLES = new Set(['none', 'natural', 'direct']);
 const EMOJI_LEVELS = new Set(['none', 'low', 'medium']);
 const MAX_DAILY_POSTS = 5;
+const BALANCED_LINK_RATIO = 0.67;
+const BALANCED_NO_LINK_RATIO = 0.33;
 const SENSITIVE_ACCOUNT_KEYS = new Set([
   'threads_access_token',
   'coupang_access_key',
@@ -89,10 +91,10 @@ function normalizeAccount(payload) {
     .filter((window) => window?.start && window?.end)
     .map((window) => ({ start: window.start, end: window.end }));
   next.daily_post_min = 0;
-  next.daily_post_max = Math.min(MAX_DAILY_POSTS, Math.max(0, toFiniteNumber(next.daily_post_max, MAX_DAILY_POSTS)));
-  next.min_interval_minutes = Math.max(1, toFiniteNumber(next.min_interval_minutes, 50));
-  next.link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.link_post_ratio, 1)));
-  next.no_link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.no_link_post_ratio, 0)));
+  next.daily_post_max = Math.min(MAX_DAILY_POSTS, Math.max(0, toFiniteNumber(next.daily_post_max, 3)));
+  next.min_interval_minutes = Math.max(1, toFiniteNumber(next.min_interval_minutes, 90));
+  next.link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.link_post_ratio, BALANCED_LINK_RATIO)));
+  next.no_link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.no_link_post_ratio, BALANCED_NO_LINK_RATIO)));
   next.rest_days_per_week = Math.min(7, Math.max(0, toFiniteNumber(next.rest_days_per_week, 1)));
   if (!CONTENT_MODES.has(next.content_mode)) next.content_mode = 'empathy';
   if (!CONTENT_INTENSITIES.has(next.content_intensity)) next.content_intensity = 'normal';
@@ -137,12 +139,12 @@ export const createAccount = (payload) => dbInsert('accounts', normalizeAccount(
   safe_debate_enabled: false,
   content_style_note: '',
   daily_post_min: 0,
-  daily_post_max: 5,
-  active_time_windows: [{ start: '09:00', end: '09:00' }],
-  min_interval_minutes: 50,
+  daily_post_max: 3,
+  active_time_windows: [{ start: '09:00', end: '23:00' }],
+  min_interval_minutes: 90,
   threads_link_delivery_mode: 'reply',
-  link_post_ratio: 1,
-  no_link_post_ratio: 0,
+  link_post_ratio: BALANCED_LINK_RATIO,
+  no_link_post_ratio: BALANCED_NO_LINK_RATIO,
   rest_days_per_week: 1,
   ...sanitizeAccountPayload(payload)
 }));

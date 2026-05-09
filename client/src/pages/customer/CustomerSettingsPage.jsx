@@ -52,7 +52,7 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
       forbidden_topics: Array.isArray(account.forbidden_topics) ? account.forbidden_topics.join('\n') : '',
       forbidden_words: Array.isArray(account.forbidden_words) ? account.forbidden_words.join('\n') : '',
       daily_post_min: 0,
-      daily_post_max: clampDailyPostCount(account.daily_post_max, 5),
+      daily_post_max: clampDailyPostCount(account.daily_post_max, 3),
       coupang_access_key: '',
       coupang_secret_key: '',
       coupang_partner_id: '',
@@ -81,7 +81,7 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
       await api.patch(`/api/accounts/${account.id}`, {
         ...accountPatch,
         daily_post_min: 0,
-        daily_post_max: clampDailyPostCount(form.daily_post_max, 5),
+        daily_post_max: clampDailyPostCount(form.daily_post_max, 3),
         active_time_windows: [{ start: first_upload_time || '09:00', end: first_upload_time || '09:00' }],
         forbidden_topics: form.forbidden_topics.split('\n').map((s) => s.trim()).filter(Boolean),
         forbidden_words: form.forbidden_words.split('\n').map((s) => s.trim()).filter(Boolean),
@@ -331,7 +331,7 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
       <Section title="포스팅 스케줄" collapsible>
         <Field label="하루 최대 포스팅">
           <input type="number" min="0" max={MAX_DAILY_POSTS} value={form.daily_post_max}
-            onChange={(e) => setForm((p) => ({ ...p, daily_post_max: clampDailyPostCount(e.target.value, 5) }))}
+            onChange={(e) => setForm((p) => ({ ...p, daily_post_max: clampDailyPostCount(e.target.value, 3) }))}
             className={`${input} text-center font-bold text-lg`} />
         </Field>
         <Field label="분산 기준 시각">

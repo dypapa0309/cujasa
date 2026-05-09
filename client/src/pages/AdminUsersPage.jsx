@@ -1021,8 +1021,9 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings, onSavePol
             <div>최근 작업 {workspaceSummary.updatedAt ? formatDateTime(workspaceSummary.updatedAt) : '없음'}</div>
             {product.productId === 'spread' && (
               <>
+                <div>캠페인 {workspaceSummary.campaignCount || 0}개</div>
                 <div>참여자 {workspaceSummary.applicantCount || 0}명</div>
-                <div>{workspaceSummary.hasCampaignDraft ? '캠페인 초안 있음' : '캠페인 초안 없음'}</div>
+                <div>{workspaceSummary.hasCampaignDraft ? '캠페인 있음' : '캠페인 없음'}</div>
                 <div>{workspaceSummary.hasSubmissionReview ? '검수 기록 있음' : '검수 기록 없음'}</div>
               </>
             )}
