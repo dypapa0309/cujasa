@@ -91,6 +91,42 @@ test('automation studio creates assets and separated queue links for Threads and
   assert.match(trackedPost.body, /\/r\//);
 });
 
+test('automation studio requires a real account before creating runnable campaigns', async () => {
+  await assert.rejects(() => createAutomationCampaign({
+    productName: '쿠자사',
+    targetGoal: '계정 없는 캠페인 방지',
+    days: 1,
+    dailyPostMax: 1
+  }, { type: 'admin' }), /accountId is required/);
+
+  await assert.rejects(() => createAutomationCampaign({
+    accountId: randomUUID(),
+    productName: '쿠자사',
+    targetGoal: '존재하지 않는 계정 방지',
+    days: 1,
+    dailyPostMax: 1
+  }, { type: 'admin' }), /account not found/);
+});
+
+test('automation studio sanitizes Instagram card image sources', async () => {
+  const { account } = await createAccountFixture();
+  const campaign = await createAutomationCampaign({
+    accountId: account.id,
+    productName: '이미지 검증 제품',
+    productImageUrl: 'javascript:alert(1)',
+    targetGoal: '이미지 소스 검증',
+    days: 1,
+    dailyPostMax: 1,
+    platforms: ['instagram']
+  }, { type: 'admin' });
+  const running = await runAutomationCampaign(campaign.id, { type: 'admin' });
+  const instagramAsset = running.assets.find((asset) => asset.platform === 'instagram');
+  const svg = Buffer.from(instagramAsset.image_data_url.replace(/^data:image\/svg\+xml;base64,/, ''), 'base64').toString('utf8');
+
+  assert.doesNotMatch(svg, /javascript:alert/);
+  assert.match(svg, /PRODUCT/);
+});
+
 test('automation studio analytics groups clicks by campaign asset channel and time', async () => {
   const { account } = await createAccountFixture();
   const campaign = await createAutomationCampaign({

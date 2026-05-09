@@ -44,6 +44,34 @@ function safeHttpsUrl(value) {
   }
 }
 
+function safeImageSource(value) {
+  const source = clean(value);
+  if (!source) return '';
+  if (/^data:image\/(png|jpe?g|webp|gif|svg\+xml);base64,[a-z0-9+/=]+$/i.test(source)) return source;
+  try {
+    const url = new URL(source);
+    return ['https:', 'http:'].includes(url.protocol) ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+async function getRequiredAutomationAccount(accountId) {
+  const id = clean(accountId);
+  if (!id) {
+    const error = new Error('accountId is required to run Automation Studio campaigns');
+    error.status = 400;
+    throw error;
+  }
+  const account = await dbGet('accounts', { id });
+  if (!account) {
+    const error = new Error('Automation Studio account not found');
+    error.status = 404;
+    throw error;
+  }
+  return account;
+}
+
 function clampInt(value, min, max, fallback) {
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
@@ -370,7 +398,7 @@ function buildInstagramAsset(input, index) {
   const line = adLine(input, index);
   const [lineA, lineB] = splitCardLine(line);
   const accent = ['#111827', '#0f766e', '#4338ca'][index % 3];
-  const imageUrl = input.productImageUrl || '';
+  const imageUrl = safeImageSource(input.productImageUrl);
   const mediaBlock = imageUrl
     ? `<image href="${escapeSvg(imageUrl)}" x="116" y="170" width="316" height="316" preserveAspectRatio="xMidYMid slice" />`
     : `<rect x="116" y="170" width="316" height="316" rx="18" fill="#f3f4f6"/><text x="274" y="338" text-anchor="middle" font-size="28" font-weight="800" fill="#9ca3af">PRODUCT</text>`;
@@ -703,7 +731,7 @@ export async function getAutomationCampaign(id) {
 
 export async function createAutomationCampaign(body, user = {}) {
   const input = campaignInput(body);
-  const account = input.accountId ? await dbGet('accounts', { id: input.accountId }) : null;
+  const account = await getRequiredAutomationAccount(input.accountId);
   const payload = {
     project_id: account?.project_id || null,
     account_id: account?.id || null,
@@ -762,7 +790,7 @@ export async function runAutomationCampaign(id, user = {}) {
     throw error;
   }
   await archiveCampaignGeneration(campaign.id);
-  const account = campaign.account_id ? await dbGet('accounts', { id: campaign.account_id }).catch(() => null) : null;
+  const account = await getRequiredAutomationAccount(campaign.account_id);
   const generationId = randomUUID();
   const platforms = normalizePlatforms(campaign.platforms);
   const perPlatformCount = Math.max(1, campaign.days * clampInt(campaign.daily_post_max, 1, MAX_DAILY, 1));

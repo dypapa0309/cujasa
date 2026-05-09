@@ -285,6 +285,10 @@ export default function AutomationStudioPage({ accounts = [] }) {
 
   const createCampaign = async (event) => {
     event.preventDefault();
+    if (!form.accountId) {
+      setCreateStep(1);
+      return;
+    }
     if (!form.productName.trim()) {
       setCreateStep(2);
       return;
@@ -668,7 +672,7 @@ function CreateCampaignWizard({ accounts, form, update, selectedAccount, saving,
               <>
                 <label className={labelClass}>운영 계정
                   <select className={inputClass} value={form.accountId} onChange={(event) => update('accountId', event.target.value)}>
-                    <option value="">계정 없이 미리보기</option>
+                    <option value="">운영 계정 선택</option>
                     {accounts.map((account) => <option key={account.id} value={account.id}>{account.name} {account.account_handle ? `· ${account.account_handle}` : ''}</option>)}
                   </select>
                 </label>
