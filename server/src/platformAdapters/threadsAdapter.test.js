@@ -116,6 +116,7 @@ test('uploadPost returns posted result with reply warning when body succeeds but
   const responses = [
     { ok: true, json: async () => ({ id: 'creation-1' }), text: async () => '{}' },
     { ok: true, json: async () => ({ id: 'post-threads-1' }), text: async () => '{}' },
+    { ok: true, json: async () => ({}), text: async () => JSON.stringify({ id: 'post-threads-1', permalink: 'https://www.threads.net/@replytest/post/SHORT1', shortcode: 'SHORT1', username: 'replytest' }) },
     { ok: false, json: async () => ({}), text: async () => '{"error":{"message":"Application does not have permission for this action","code":10}}' }
   ];
   globalThis.fetch = async () => responses.shift();
@@ -132,8 +133,9 @@ test('uploadPost returns posted result with reply warning when body succeeds but
       trackingLink: { code: 'abc', destination_url: 'https://link.coupang.com/example' }
     });
 
-    assert.equal(uploaded.postUrl, 'https://www.threads.net/@replytest/post/post-threads-1');
+    assert.equal(uploaded.postUrl, 'https://www.threads.net/@replytest/post/SHORT1');
     assert.equal(uploaded.raw.replyFailed, true);
+    assert.equal(uploaded.raw.postDetails.shortcode, 'SHORT1');
     assert.match(uploaded.raw.replyWarning, /permission/);
   } finally {
     globalThis.fetch = previousFetch;

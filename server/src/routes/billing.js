@@ -266,12 +266,17 @@ router.post('/checkout/virtual-account', async (req, res, next) => {
     const user = requireCustomer(req, res);
     if (!user) return;
     const product = await getProduct(req.body.productId || 'onetime_590000');
-    if (product.billing_cycle !== 'once') return res.status(400).json({ error: '일시불 상품만 가상계좌 결제가 가능합니다.' });
     assertTossConfigured();
     const agreement = await createBillingAgreement(req, user, product);
 
     const appProductId = product.app_product_id || 'cujasa';
-    const orderId = makeOrderId(appProductId === 'dexor' ? 'DEXOR-CREDIT' : 'CUJASA-ONETIME');
+    const productPrefix = String(appProductId || 'cujasa').toUpperCase();
+    const orderPrefix = product.billing_cycle === 'monthly'
+      ? `${productPrefix}-MONTHLY`
+      : appProductId === 'dexor' || appProductId === 'infludex'
+        ? `${productPrefix}-CREDIT`
+        : `${productPrefix}-ONETIME`;
+    const orderId = makeOrderId(orderPrefix);
     const payment = await dbInsert('billing_payments', {
       user_id: user.userId,
       app_product_id: appProductId,

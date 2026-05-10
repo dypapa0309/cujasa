@@ -22,6 +22,7 @@ import automationStudioRouter from './routes/automationStudio.js';
 import inquiriesRouter from './routes/inquiries.js';
 import billingRouter, { tossWebhook } from './routes/billing.js';
 import publicCheckoutRouter from './routes/publicCheckout.js';
+import leadFormsRouter from './routes/leadForms.js';
 import supportWidgetRouter from './routes/supportWidget.js';
 import supportRouter from './routes/support.js';
 import productWorkspaceRouter from './routes/productWorkspace.js';
@@ -38,6 +39,7 @@ import { runDailyOpsHealthCheck } from './services/opsHealthService.js';
 import { redactSensitivePayload } from './services/redactionService.js';
 import { dailyPipelineStatus, runDailyPipelineOnce } from './services/schedulerRunService.js';
 import { replyLinkModeStatus } from './utils/replyLinkMode.js';
+import { getPublicLeadForm } from './services/automationStudioService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -149,6 +151,7 @@ app.use('/api/admin/automation-studio', automationStudioRouter);
 app.use('/api/inquiries', inquiriesRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/public/checkout', publicCheckoutRouter);
+app.use('/api/public/lead-forms', leadFormsRouter);
 app.use('/api/support', supportRouter);
 app.post('/api/webhooks/toss', tossWebhook);
 
@@ -201,6 +204,88 @@ app.get('/mock/threads/:postId', (req, res) => {
       </body>
     </html>
   `);
+});
+
+function escapeHtml(value = '') {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+app.get('/lead-forms/:slug', async (req, res, next) => {
+  try {
+    const form = await getPublicLeadForm(req.params.slug);
+    const fields = form.fields.map((field) => {
+      const label = escapeHtml(form.fieldLabels[field] || field);
+      return `<label><span>${label}</span><input name="${escapeHtml(field)}" ${['name', 'phone', 'email'].includes(field) ? 'required' : ''} /></label>`;
+    }).join('');
+    res.type('html').send(`<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(form.title || 'JASAIN 신청')}</title>
+  <style>
+    body { margin: 0; background: #0f0f10; color: #111827; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    main { max-width: 520px; margin: 56px auto; background: #fff; border-radius: 24px; padding: 28px; box-shadow: 0 24px 80px rgba(0,0,0,.25); }
+    .eyebrow { color: #64748b; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    h1 { margin: 10px 0 8px; font-size: 28px; line-height: 1.2; }
+    p { color: #475569; line-height: 1.7; }
+    form { display: grid; gap: 14px; margin-top: 24px; }
+    label { display: grid; gap: 7px; font-size: 13px; font-weight: 800; color: #334155; }
+    input { border: 1px solid #dbe3ef; border-radius: 12px; padding: 13px 14px; font-size: 15px; outline: none; }
+    input:focus { border-color: #111827; }
+    .consent { display: flex; gap: 10px; align-items: flex-start; font-size: 12px; font-weight: 700; color: #64748b; line-height: 1.5; }
+    .consent input { margin-top: 2px; }
+    button { border: 0; border-radius: 14px; background: #111827; color: white; padding: 14px 16px; font-size: 15px; font-weight: 900; cursor: pointer; }
+    .message { min-height: 20px; color: #047857; font-size: 13px; font-weight: 800; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">JASAIN Lead Form</div>
+    <h1>${escapeHtml(form.title || form.productName || '도입 안내 신청')}</h1>
+    <p>${escapeHtml(form.offer || '신청 정보를 남겨주시면 확인 후 안내드릴게요.')}</p>
+    <form id="lead-form">
+      ${fields}
+      <label class="consent"><input type="checkbox" name="privacyAccepted" required /> <span>${escapeHtml(form.privacyNote || '개인정보 수집 및 이용에 동의합니다.')}</span></label>
+      <button>신청하기</button>
+      <div class="message" id="message"></div>
+    </form>
+  </main>
+  <script>
+    document.getElementById('lead-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const payload = Object.fromEntries(new FormData(form).entries());
+      payload.privacyAccepted = Boolean(payload.privacyAccepted);
+      payload.sourceUrl = window.location.href;
+      const message = document.getElementById('message');
+      message.textContent = '제출 중입니다...';
+      const response = await fetch('/api/public/lead-forms/${escapeHtml(req.params.slug)}/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        message.style.color = '#be123c';
+        message.textContent = data.error || '제출에 실패했습니다.';
+        return;
+      }
+      form.reset();
+      message.style.color = '#047857';
+      message.textContent = data.message || '${escapeHtml(form.thankYouMessage || '신청이 접수되었습니다.')}';
+    });
+  </script>
+</body>
+</html>`);
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.use((error, req, res, next) => {

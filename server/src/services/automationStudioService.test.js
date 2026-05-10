@@ -9,8 +9,12 @@ import {
   expandAutomationAsset,
   getAutomationCampaign,
   getAutomationStudioAnalytics,
+  getPublicLeadForm,
+  listAutomationCampaignLeads,
+  regenerateAutomationCampaignAssets,
   runAutomationCampaign,
   stopAutomationCampaign,
+  submitPublicLeadForm,
   updateAutomationAsset,
   updateAutomationCampaign
 } from './automationStudioService.js';
@@ -312,4 +316,61 @@ test('campaign and asset review metadata can be updated for internal operations'
   assert.equal(updatedAsset.reusable, true);
   assert.ok(updatedAsset.metadata.qualityScore >= 58);
   assert.equal(noted.next_action_note || noted.summary.nextActionNote, '클릭 낮으면 문제 제기형으로 재생성');
+});
+
+test('lead campaigns create public lead forms and collect submissions', async () => {
+  const { account } = await createAccountFixture();
+  const campaign = await createAutomationCampaign({
+    accountId: account.id,
+    productName: 'JASAIN 도입 안내',
+    productUrl: 'https://jasain.kr',
+    objectiveType: 'lead',
+    optimizationGoal: 'lead',
+    conversionDestination: 'lead_form',
+    leadOffer: '무료 자동화 점검',
+    leadFields: ['name', 'phone', 'business'],
+    targetGoal: '잠재고객 신청 수집',
+    days: 1,
+    dailyPostMax: 1,
+    platforms: ['threads']
+  }, { type: 'admin', email: 'admin@example.com' });
+
+  assert.ok(campaign.leadForm?.slug);
+  assert.match(campaign.leadForm.public_url, /\/lead-forms\/lead-/);
+  const publicForm = await getPublicLeadForm(campaign.leadForm.slug);
+  assert.deepEqual(publicForm.fields, ['name', 'phone', 'business']);
+
+  const submission = await submitPublicLeadForm(campaign.leadForm.slug, {
+    name: '홍길동',
+    phone: '010-0000-0000',
+    business: '소상공인',
+    privacyAccepted: true
+  }, { userAgent: 'node-test' });
+  const leads = await listAutomationCampaignLeads(campaign.id);
+
+  assert.equal(submission.ok, true);
+  assert.equal(leads.submissions.length, 1);
+  assert.equal(leads.submissions[0].payload.name, '홍길동');
+});
+
+test('regenerating assets applies the latest campaign image to Instagram metadata', async () => {
+  const { account } = await createAccountFixture();
+  const campaign = await createAutomationCampaign({
+    accountId: account.id,
+    productName: '이미지 적용 상품',
+    productImageUrl: 'https://example.com/old.png',
+    targetGoal: '이미지 반영 확인',
+    days: 1,
+    dailyPostMax: 1,
+    platforms: ['instagram']
+  }, { type: 'admin' });
+  const firstRun = await runAutomationCampaign(campaign.id, { type: 'admin' });
+  const updated = await updateAutomationCampaign(firstRun.id, { productImageUrl: 'https://example.com/new.png' }, { type: 'admin' });
+
+  assert.equal(updated.diagnostics.media.needsRegeneration, true);
+  const regenerated = await regenerateAutomationCampaignAssets(firstRun.id, { type: 'admin' });
+  const instagramAsset = regenerated.assets.find((asset) => asset.platform === 'instagram');
+
+  assert.equal(regenerated.diagnostics.media.appliedToCurrentAssets, true);
+  assert.equal(instagramAsset.metadata.sourceProductImageUrl, 'https://example.com/new.png');
 });

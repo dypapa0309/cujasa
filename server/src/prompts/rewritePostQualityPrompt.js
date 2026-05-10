@@ -50,11 +50,24 @@ export function rewritePostQualityPrompt({ body = '', topic = {}, products = [],
           failedReasons: qualityGate.reasons || [],
           rewriteInstructions: qualityGate.rewriteInstructions || []
         },
+        speechRegister: /반말|존댓말\s*금지/.test(String(account.tone || '').replace(/\s+/g, ''))
+          ? {
+            mode: 'banmal',
+            rule: 'Use banmal only. Do not use 요, 죠, 네요, 세요, 입니다, 합니다, 됩니다, 이에요, 예요 endings anywhere.'
+          }
+          : {
+            mode: 'polite_conversational',
+            rule: 'Use one consistent polite conversational register. Prefer 해요체/죠/더라고요/같아요. Do not mix in banmal endings like 해, 했어, 같아, 뭐였어.'
+          },
         rules: [
           'Keep the meaning aligned with topic and account.contentScope.',
           'Never include account names, login IDs, Threads handles, or @handles.',
           'Never mention links, profile links, comments with links, cheapest price, discount, special deal, or where to buy.',
           'Do not sound like an AI, blog article, balanced essay, or shopping recommendation.',
+          /반말|존댓말\s*금지/.test(String(account.tone || '').replace(/\s+/g, ''))
+            ? 'Speech register hard rule: banmal only. Never mix polite endings into a banmal account.'
+            : 'Speech register hard rule: polite conversational Korean only. Never mix banmal endings into a polite account.',
+          'Do not mix 반말 and 존댓말 in the same post.',
           referencePatterns.length
             ? 'Use approved referencePatterns as strong inspiration for pacing, line breaks, list shape, punctuation habits, tone register, hook pattern, and safe question style. Prioritize high qualityScore patterns that solve the failed qualityGate reasons. Do not copy source wording.'
             : 'No approved referencePatterns are available, so use the safe default CUJASA lived-in shape.',

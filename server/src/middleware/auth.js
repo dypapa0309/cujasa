@@ -24,6 +24,8 @@ const publicRoutes = [
 ];
 
 function isPublicRoute(req) {
+  if (req.method === 'GET' && /^\/api\/public\/lead-forms\/[^/]+$/.test(req.path)) return true;
+  if (req.method === 'POST' && /^\/api\/public\/lead-forms\/[^/]+\/submissions$/.test(req.path)) return true;
   return publicRoutes.some((route) => route.method === req.method && route.path === req.path);
 }
 

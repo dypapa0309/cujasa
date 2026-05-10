@@ -5,11 +5,11 @@ import { generatePostsPrompt } from '../prompts/generatePostsPrompt.js';
 import { rewritePostQualityPrompt } from '../prompts/rewritePostQualityPrompt.js';
 import { checkAndRewriteRisk } from './riskService.js';
 import { validatePostCandidate } from '../utils/contentGuardrails.js';
-import { buildFallbackPostBody, scorePostHook, strengthenPostHook, validatePostStyleFit } from '../utils/accountStyle.js';
+import { scorePostHook, strengthenPostHook, validatePostStyleFit } from '../utils/accountStyle.js';
 import { prepareGeneratedPostBody } from '../utils/koreanContentQuality.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 import { validatePostRewriteResponse, validatePostsResponse } from '../utils/aiResponseSchemas.js';
-import { buildChoiceTensionFallback, scorePostEngagement } from '../utils/postEngagementScoring.js';
+import { buildChoiceTensionFallback, scorePostEngagement, scorePostSimilarity } from '../utils/postEngagementScoring.js';
 import { evaluatePostQualityGate } from '../utils/postQualityGate.js';
 import { buildReferencePatternContext, publicPatternIdFromSourceId } from './trendReferenceLearningService.js';
 import { buildAccountPerformanceSignals } from './analyticsService.js';
@@ -50,6 +50,9 @@ function candidateScoreSummary(candidate, index, selected) {
     index,
     contentType: candidate.contentType || null,
     engagementScore: candidate.engagement?.engagementScore ?? 0,
+    originalEngagementScore: candidate.engagement?.originalEngagementScore ?? candidate.engagement?.engagementScore ?? 0,
+    duplicateSimilarity: candidate.similarity?.maxSimilarity ?? candidate.engagement?.duplicateSimilarity ?? 0,
+    duplicatePenalty: candidate.similarity?.penalty ?? candidate.engagement?.duplicatePenalty ?? 0,
     engagementPattern: candidate.engagement?.engagementPattern || null,
     rubric: candidate.engagement?.rubric || {},
     qualityGate: candidate.qualityGate || null,
@@ -71,13 +74,51 @@ function isStableHumanlikeCandidate(candidate) {
     && engagement?.checks?.saveWorthiness
     && !engagement?.checks?.shallowChecklist
     && !engagement?.checks?.genericTemplate
+    && !engagement?.checks?.repetitiveFallback
+    && !engagement?.checks?.abstractSetup
+    && !engagement?.checks?.duplicateRisk
     && !engagement?.checks?.aiLikeTone
     && !engagement?.checks?.accountTokenLeak;
 }
 
-function buildRewriteFallback(topic, account) {
+async function buildRecentBodyContext(accountId, currentTopicId) {
+  const rows = await dbList('posts', { account_id: accountId }, { order: 'created_at', ascending: false, limit: 80 });
+  return rows
+    .filter((row) => row.topic_id !== currentTopicId)
+    .map((row) => String(row.body || '').trim())
+    .filter(Boolean)
+    .slice(0, 40);
+}
+
+function applySimilarityPenalty(candidate, recentBodies = []) {
+  const similarity = scorePostSimilarity(candidate.body, recentBodies);
+  const adjustedScore = Math.max(0, Number(candidate.engagement?.engagementScore || 0) - similarity.penalty);
+  const engagement = {
+    ...candidate.engagement,
+    engagementScore: adjustedScore,
+    originalEngagementScore: candidate.engagement?.engagementScore ?? adjustedScore,
+    duplicateSimilarity: similarity.maxSimilarity,
+    duplicatePenalty: similarity.penalty,
+    checks: {
+      ...(candidate.engagement?.checks || {}),
+      duplicateRisk: similarity.duplicateRisk
+    },
+    selectionReasons: similarity.duplicateRisk
+      ? [...new Set([...(candidate.engagement?.selectionReasons || []), '최근 글과 유사도 높음'])]
+      : candidate.engagement?.selectionReasons
+  };
   return {
-    body: buildChoiceTensionFallback(topic, account),
+    ...candidate,
+    similarity,
+    adjustedScore,
+    engagement,
+    qualityGate: evaluatePostQualityGate(engagement)
+  };
+}
+
+function buildRewriteFallback(topic, account, products = []) {
+  return {
+    body: buildChoiceTensionFallback(topic, account, products),
     contentType: getFallbackContentType(account),
     changeSummary: '품질 기준 미달 후보를 안전한 생활 장면 fallback으로 재작성했습니다.',
     riskLevel: 'low'
@@ -121,7 +162,7 @@ async function tryRewriteCandidateForQuality({
 
   const rewrite = await getJson(
     rewritePostQualityPrompt({ body, topic, products, account, engagement, qualityGate }),
-    () => buildRewriteFallback(topic, account),
+    () => buildRewriteFallback(topic, account, products),
     {
       schemaName: 'rewrite_post_quality',
       validate: validatePostRewriteResponse,
@@ -213,10 +254,11 @@ export async function generatePosts(topicId) {
     const product = await dbGet('coupang_products', { id: row.product_id });
     return product && isRealCoupangProduct(product) ? { ...product, recommendation_reason: row.recommendation_reason, fit_score: row.fit_score, rank: row.rank } : null;
   }))).filter(Boolean);
+  const recentBodies = await buildRecentBodyContext(topic.account_id, topic.id);
   const fallback = {
     posts: [{
       contentType: getFallbackContentType(accountForPrompt),
-      body: buildFallbackPostBody(topic, accountForPrompt),
+      body: buildChoiceTensionFallback(topic, accountForPrompt, selected, { recentBodies }),
       riskLevel: 'low'
     }]
   };
@@ -236,7 +278,7 @@ export async function generatePosts(topicId) {
     let contentTypeToSave = item.contentType || getFallbackContentType(account);
     const rejectionReasons = [];
     if (!prepared.body || prepared.body.length < 20) {
-      ({ risk, prepared } = preparePostBodyCandidate(buildFallbackPostBody(topic, account), account));
+      ({ risk, prepared } = preparePostBodyCandidate(buildChoiceTensionFallback(topic, account, selected, { recentBodies }), account));
       prepared.warnings.push('fallback_body_used_after_cta_cleanup');
     }
     if (prepared.warnings.length) {
@@ -294,7 +336,7 @@ export async function generatePosts(topicId) {
     const styleFit = validatePostStyleFit(prepared.body, account);
     if (!styleFit.allowed) {
       const originalBody = prepared.body;
-      const fallbackCandidate = preparePostBodyCandidate(buildChoiceTensionFallback(topic, account), account);
+      const fallbackCandidate = preparePostBodyCandidate(buildChoiceTensionFallback(topic, account, selected, { recentBodies }), account);
       const fallbackPrepared = fallbackCandidate.prepared;
       const fallbackStyleFit = validatePostStyleFit(fallbackPrepared.body, account);
       await logActivity({
@@ -363,7 +405,7 @@ export async function generatePosts(topicId) {
         topic_id: topic.id
       }
     });
-    candidates.push({
+    candidates.push(applySimilarityPenalty({
       item,
       body: rewriteResult.body,
       contentType: rewriteResult.contentType,
@@ -378,11 +420,11 @@ export async function generatePosts(topicId) {
       qualityRewriteRejectedReasons: rewriteResult.rewriteRejectedReasons || [],
       rejected: false,
       rejectionReasons: []
-    });
+    }, recentBodies));
   }
 
   if (!candidates.some(isStableHumanlikeCandidate)) {
-    const { risk: fallbackRisk, prepared: fallbackPrepared } = preparePostBodyCandidate(buildChoiceTensionFallback(topic, account), account);
+    const { risk: fallbackRisk, prepared: fallbackPrepared } = preparePostBodyCandidate(buildChoiceTensionFallback(topic, account, selected, { recentBodies }), account);
     const fallbackGuardrail = validatePostCandidate(fallbackPrepared.body, account, topic);
     const fallbackStyleFit = validatePostStyleFit(fallbackPrepared.body, account);
     if (fallbackGuardrail.allowed && fallbackStyleFit.allowed && fallbackRisk.riskLevel !== 'high') {
@@ -399,7 +441,7 @@ export async function generatePosts(topicId) {
         rejectionReasons: [],
         fallbackUsed: true
       };
-      candidates.push(fallbackCandidate);
+      candidates.push(applySimilarityPenalty(fallbackCandidate, recentBodies));
       await logActivity({
         account_id: topic.account_id,
         project_id: topic.project_id,
@@ -416,12 +458,17 @@ export async function generatePosts(topicId) {
     }
   }
 
-  const selectableCandidates = candidates.some(isStableHumanlikeCandidate)
-    ? candidates.filter(isStableHumanlikeCandidate)
-    : candidates;
+  const stableCandidates = candidates.filter(isStableHumanlikeCandidate);
+  const qualityPassedCandidates = candidates.filter((candidate) => {
+    const qualityGate = candidate.qualityGate || evaluatePostQualityGate(candidate.engagement);
+    return qualityGate.passed;
+  });
+  const selectableCandidates = stableCandidates.length
+    ? stableCandidates
+    : (qualityPassedCandidates.length ? qualityPassedCandidates : candidates);
   const ranked = selectableCandidates
     .slice()
-    .sort((a, b) => b.engagement.engagementScore - a.engagement.engagementScore);
+    .sort((a, b) => (b.adjustedScore ?? b.engagement.engagementScore) - (a.adjustedScore ?? a.engagement.engagementScore));
   const best = ranked[0];
   if (!best) return [];
 

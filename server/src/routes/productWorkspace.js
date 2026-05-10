@@ -21,6 +21,7 @@ import {
 import { buildReferencePatternContext, ingestTrendReferencesForAccount } from '../services/trendReferenceLearningService.js';
 import { getAccount } from '../services/accountService.js';
 import { extractTrendReferenceFromImage } from '../services/trendReferenceOcrService.js';
+import { buildCujasaContentPreview } from '../services/contentPreviewService.js';
 import { productMaintenancePayload, productServiceClosedInProduction } from '../utils/productAvailability.js';
 
 const router = Router();
@@ -125,6 +126,20 @@ router.post('/cujasa/trend-reference-ocr', async (req, res, next) => {
       base64: req.body?.base64 || '',
       topicKeyword: req.body?.topicKeyword || req.body?.category || ''
     }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/cujasa/content-preview', async (req, res, next) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const accountId = req.body?.accountId;
+    if (!accountId || !user.allowedAccountIds?.includes(accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(await buildCujasaContentPreview(accountId, req.body || {}));
   } catch (error) {
     next(error);
   }

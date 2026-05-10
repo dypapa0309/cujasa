@@ -33,6 +33,7 @@ import { redactAccount, redactAccounts, redactBillingSettings, redactPayment } f
 import { createAdminTrendPatternAssets, listTrendPatternAssets, updateTrendPatternQualityStatus } from '../services/trendReferenceLearningService.js';
 import { extractTrendReferenceFromImage } from '../services/trendReferenceOcrService.js';
 import { ensureAccountBlog } from '../services/blogService.js';
+import { listThreadsConnectionRequests, updateThreadsConnectionRequest } from '../services/threadsConnectionRequestService.js';
 
 const router = Router();
 
@@ -126,6 +127,18 @@ router.use(adminOnly);
 
 router.get('/operations/summary', async (req, res, next) => {
   try { res.json(await operationSummary()); } catch (e) { next(e); }
+});
+
+router.get('/threads-connection-requests', async (req, res, next) => {
+  try {
+    res.json(await listThreadsConnectionRequests({ status: req.query?.status || '' }));
+  } catch (e) { next(e); }
+});
+
+router.patch('/threads-connection-requests/:id', async (req, res, next) => {
+  try {
+    res.json(await updateThreadsConnectionRequest(req.params.id, req.body || {}, req.user));
+  } catch (e) { next(e); }
 });
 
 router.get('/operations/accounts', async (req, res, next) => {

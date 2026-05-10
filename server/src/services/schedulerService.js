@@ -15,12 +15,13 @@ import { createCoupangCooldownError, isCoupangCooldownActive, isCoupangSearchLoc
 import { sendOpsAlert } from './notificationService.js';
 import { isReplyLinkModeEnabled } from '../utils/replyLinkMode.js';
 import { maybeGenerateBlogPostForQueue } from './blogService.js';
+import { canUseSponsoredComment, getSponsorCommentText, sponsoredCommentAlreadyQueuedToday } from './sponsorService.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const REPLY_REPAIR_MAX_ATTEMPTS = 3;
-const FALLBACK_LINK_FAILURE_TO_NO_LINK = String(process.env.THREADS_LINK_FAILURE_FALLBACK_TO_NO_LINK ?? 'true').toLowerCase() !== 'false';
+const FALLBACK_LINK_FAILURE_TO_NO_LINK = String(process.env.THREADS_LINK_FAILURE_FALLBACK_TO_NO_LINK ?? 'false').toLowerCase() !== 'false';
 
 function kstDayRange(date = new Date()) {
   const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -217,6 +218,20 @@ async function assertRealLinkCandidateForPost(post, account, action = 'queue lin
 }
 
 async function isPostAllowedForQueue(post, account) {
+  if (post.metadata?.qualityGate?.passed === false) {
+    await logActivity({
+      account_id: post.account_id,
+      project_id: post.project_id,
+      topic_id: post.topic_id,
+      post_id: post.id,
+      action: 'queue_quality_gate_skipped',
+      level: 'warn',
+      message: (post.metadata.qualityGate.reasons || ['품질 기준 미달']).join('; '),
+      payload: { qualityGate: post.metadata.qualityGate }
+    });
+    await dbUpdate('posts', { id: post.id }, { status: 'manual_required' });
+    return false;
+  }
   const topic = post.topic_id ? await dbGet('topics', { id: post.topic_id }) : null;
   const guardrail = validatePostCandidate(post.body, account, topic);
   if (guardrail.allowed) return true;
@@ -260,17 +275,17 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
     throw error;
   }
   const status = post.status === 'manual_required' || post.risk_level === 'high' ? 'manual_required' : 'scheduled';
-  const requestedPostMode = ['link', 'no_link'].includes(options.postMode)
+  const requestedPostMode = ['link', 'no_link', 'sponsored_comment'].includes(options.postMode)
     ? options.postMode
     : null;
-  const linkCandidate = requestedPostMode === 'no_link'
+  const linkCandidate = ['no_link', 'sponsored_comment'].includes(requestedPostMode)
     ? { postProduct: null, product: null }
     : await assertRealLinkCandidateForPost(post, account, 'add post to queue');
   const postMode = requestedPostMode || (linkCandidate.product ? 'link' : 'no_link');
   if (postMode === 'link' && !linkCandidate.product) {
     throw createNoRealCoupangLinksError('링크 글로 큐에 추가하려면 실제 쿠팡 상품 선택이 필요합니다.');
   }
-  if (postMode === 'link') {
+  if (postMode === 'link' && !options.skipReplyReadiness) {
     const reply = await replyLinkReadiness(account);
     if (!reply.ok) throw createReplyLinkRequiredError(reply.code, reply.message);
   }
@@ -403,21 +418,37 @@ export async function createDailyQueue(accountId, options = {}) {
     trialCapped: times.length < scheduleTimes.length
   };
   const total = times.length;
-  const { linkCount, noLinkCount } = calculateQueueModeCounts(total, account, { allowLink: reply.ok });
   const repairOutcomes = [];
   const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
   const withoutLink = allDrafts.filter((p) => !productsPerTopic.has(p.topic_id));
 
-  const primaryWithLink = withLink.slice(0, linkCount);
+  const primaryWithLink = withLink.slice(0, total);
   const selectedIds = new Set(primaryWithLink.map((post) => post.id));
+  const remainingSlots = Math.max(0, total - primaryWithLink.length);
   const primaryNoLink = withoutLink
-    .concat(allDrafts.filter((post) => !selectedIds.has(post.id)))
     .filter((post, index, list) => list.findIndex((row) => row.id === post.id) === index)
-    .slice(0, noLinkCount);
-  const linkShortage = Math.max(0, linkCount - primaryWithLink.length);
-  const noLinkShortage = Math.max(0, noLinkCount - primaryNoLink.length);
+    .filter((post) => !selectedIds.has(post.id))
+    .slice(0, remainingSlots);
+  const linkCount = primaryWithLink.length;
+  const noLinkCount = remainingSlots;
+  const linkShortage = 0;
+  const noLinkShortage = Math.max(0, remainingSlots - primaryNoLink.length);
+  const linkOverflow = Math.max(0, withLink.length - primaryWithLink.length);
+  let sponsoredSlotAvailable = !(await sponsoredCommentAlreadyQueuedToday(account.id));
+  const noLinkDrafts = [];
+  for (const post of primaryNoLink) {
+    let postMode = 'no_link';
+    if (sponsoredSlotAvailable) {
+      const sponsor = await canUseSponsoredComment({ account, post });
+      if (sponsor.ok) {
+        postMode = 'sponsored_comment';
+        sponsoredSlotAvailable = false;
+      }
+    }
+    noLinkDrafts.push({ post, postMode });
+  }
   const drafts = primaryWithLink.map((post) => ({ post, postMode: 'link' }))
-    .concat(primaryNoLink.map((post) => ({ post, postMode: 'no_link' })));
+    .concat(noLinkDrafts);
   const diagnostics = {
     scheduleCount: total,
     requiredLinkCount: linkCount,
@@ -428,6 +459,7 @@ export async function createDailyQueue(accountId, options = {}) {
     selectedLinkPosts: primaryWithLink.length,
     selectedNoLinkPosts: primaryNoLink.length,
     linkShortage,
+    linkOverflow,
     noLinkShortage,
     linkPostsBlocked: !reply.ok,
     replyLinkReadinessCode: reply.code,
@@ -440,6 +472,7 @@ export async function createDailyQueue(accountId, options = {}) {
     schedulePlan: visibleSchedulePlan,
     productRepairAttempts: repairOutcomes.length,
     productRepairFallbacks: repairOutcomes.filter((row) => row.finalMode === 'no_link').length,
+    sponsoredCommentCount: drafts.filter((row) => row.postMode === 'sponsored_comment').length,
     repairOutcomes: repairOutcomes.map((row) => ({
       postId: row.postId,
       topicId: row.topicId,
@@ -454,7 +487,7 @@ export async function createDailyQueue(accountId, options = {}) {
   else if (allDrafts.length === 0) diagnostics.reasonCode = 'NO_DRAFT_POSTS';
   else if (repairOutcomes.some((row) => row.reasonCode === 'COUPANG_RATE_LIMIT')) diagnostics.reasonCode = 'COUPANG_RATE_LIMIT';
   else if (diagnostics.productRepairFallbacks > 0) diagnostics.reasonCode = 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
-  else if (!reply.ok && primaryNoLink.length > 0) diagnostics.reasonCode = 'LINK_POSTS_BLOCKED_NO_LINK_QUEUED';
+  else if (!reply.ok && primaryWithLink.length > 0) diagnostics.reasonCode = 'LINK_POSTS_QUEUED_WITH_REPLY_REVIEW_NEEDED';
   else if (drafts.length === 0 && linkCount > 0) diagnostics.reasonCode = 'NO_REAL_COUPANG_LINKS';
   else if (drafts.length === 0) diagnostics.reasonCode = 'NO_QUEUEABLE_DRAFTS';
   else if (linkShortage > 0) diagnostics.reasonCode = 'PARTIAL_LINK_CANDIDATES';
@@ -477,7 +510,10 @@ export async function createDailyQueue(accountId, options = {}) {
   }
   const queued = [];
   for (const [index, item] of drafts.slice(0, times.length).entries()) {
-    queued.push(await addPostToQueue(item.post.id, times[index], { postMode: item.postMode }));
+    queued.push(await addPostToQueue(item.post.id, times[index], {
+      postMode: item.postMode,
+      skipReplyReadiness: true
+    }));
     await dbUpdate('posts', { id: item.post.id }, { status: 'queued' });
   }
   diagnostics.queuedCount = queued.length;
@@ -893,7 +929,7 @@ export async function uploadQueueItem(queueId) {
         }).catch(() => null);
       }
     }
-    const resolvedPostMode = requiresLink ? 'link' : 'no_link';
+    const resolvedPostMode = requiresLink ? 'link' : (postMode === 'sponsored_comment' ? 'sponsored_comment' : 'no_link');
     if (postMode !== resolvedPostMode) {
       await dbUpdate('post_queue', { id: queueId }, { post_mode: resolvedPostMode }).catch(() => []);
     }
@@ -921,7 +957,13 @@ export async function uploadQueueItem(queueId) {
       error.permanent = true;
       throw error;
     }
-    const uploaded = await uploadThreads({ account, post, cta, trackingLink });
+    const sponsor = resolvedPostMode === 'sponsored_comment'
+      ? await getSponsorCommentText({ account, post })
+      : { ok: false, commentText: '' };
+    const uploaded = await uploadThreads({ account, post, cta, trackingLink, sponsoredReplyText: sponsor.commentText || '' });
+    const replyClassification = uploaded.raw?.replyWarning
+      ? classifyQueueError(uploaded.raw.replyWarning)
+      : null;
     let postedRows;
     try {
       postedRows = await dbUpdate('post_queue', { id: queueId }, {
@@ -931,7 +973,7 @@ export async function uploadQueueItem(queueId) {
         selected_cta_id: cta?.id,
         tracking_link_id: trackingLink?.id || queue.tracking_link_id || null,
         error_message: uploaded.raw?.replyWarning || null,
-        error_category: uploaded.raw?.replyWarning ? 'reply_warning' : null
+        error_category: replyClassification?.category || null
       });
     } catch (updateError) {
       if (!/error_category|schema cache|column/i.test(updateError.message || '')) throw updateError;

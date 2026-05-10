@@ -60,6 +60,15 @@ export function generatePostsPrompt(topic, products, account) {
           defaultEngagementPattern: 'safe choice-tension',
           priority: 'Make readers want to answer with their own preference or experience.'
         },
+        speechRegister: /반말|존댓말\s*금지/.test(String(account.tone || '').replace(/\s+/g, ''))
+          ? {
+            mode: 'banmal',
+            rule: 'Use banmal only. Do not use 요, 죠, 네요, 세요, 입니다, 합니다, 됩니다, 이에요, 예요 endings anywhere.'
+          }
+          : {
+            mode: 'polite_conversational',
+            rule: 'Use one consistent polite conversational register. Prefer 해요체/죠/더라고요/같아요. Do not mix in banmal endings like 해, 했어, 같아, 뭐였어.'
+          },
         rules: [
           'Generate exactly 5 candidate posts for this topic. The service will score them and save only the best one.',
           'At least 2 candidates must be useful lived-in information posts, not just reply-bait questions.',
@@ -67,12 +76,20 @@ export function generatePostsPrompt(topic, products, account) {
           'Never include account names, login IDs, Threads handles, or @handles in the post body.',
           'Prioritize save-worthy lived-in usefulness first, then comments/replies. A reader should learn one tiny practical standard.',
           'Write like a specific person noticing a small real situation, not like an AI summarizing pros and cons.',
+          /반말|존댓말\s*금지/.test(String(account.tone || '').replace(/\s+/g, ''))
+            ? 'Speech register hard rule: banmal only. Never mix polite endings into a banmal account.'
+            : 'Speech register hard rule: polite conversational Korean only. Never mix banmal endings into a polite account.',
+          'Do not mix 반말 and 존댓말 in the same post. If unsure, use polite conversational 해요체 unless speechRegister.mode is banmal.',
           'Avoid template openings such as "이건 은근 기준이 갈리는 선택", "사람마다 다르더라고요", "작은 기준 하나만 정해도", and generic "실용성 vs 사용감" questions.',
           'Every candidate needs at least one concrete daily detail: where it happens, what is annoying, when it gets noticed, or what changes after choosing.',
           'Strong candidates include small physical details: 현관에서 바로 집는 물건, 설거지 후 둘 자리, 욕실 물기, 빨래 전 바구니, 침대 옆 충전기, 분리수거 봉투처럼 a real spot or chore.',
           'Weak candidates only say broad criteria like "자주 쓰는지, 보관이 쉬운지, 관리가 부담 없는지"; do not submit those unless each criterion has a concrete scene.',
           'A good post should feel like "I wish someone told me this before my first week living alone", not a shopping list.',
-          'Prefer the stable CUJASA shape when it fits: one lived-in opening, one short "막상 써보면/살아보면" observation, 2-3 concrete criteria, then one easy experience question.',
+          'Mix formats naturally. Numbered posts are allowed, but do not make every candidate 1-2-3. Also submit prose, comparison, and experience-question shapes when they fit.',
+          'When using numbered criteria, each number must contain a lived-in scene, not abstract labels like "자주 쓰는지" or "보관이 쉬운지".',
+          'For prose posts, a natural observation such as "A가 애매하면 B가 불편해진다" can pass quality if it contains concrete details.',
+          'Use the stable CUJASA shape only when it fits: one lived-in opening, one short "막상 써보면/살아보면" observation, 2-3 concrete criteria, then one easy experience question.',
+          'Category detail matching is strict: kitchen uses 조리대/싱크대/설거지/물 빠짐; childcare uses 기저귀/물티슈/장난감/아이 손 닿는 자리; cleaning uses 청소포/먼지/욕실 물기/보관 자리; gift posts should avoid childcare or kitchen chore details.',
           'For 자취/원룸/살림 topics, concrete criteria should sound like actual spots or chores: 설거지 후 둘 곳, 빨래 모아둘 곳, 욕실 물기, 조리대 위 자리, 꺼내기 쉬운 구조.',
           'Default to safe choice-tension frames: A/B choice, criteria that split opinions, "people who tried this" questions, and situation-based preferences.',
           referencePatterns.length
@@ -87,7 +104,8 @@ export function generatePostsPrompt(topic, products, account) {
           referencePatterns.length
             ? 'If a reference pattern uses raw list-style observations, keep that raw Threads feel. Avoid formal explanatory phrases such as "경향이 있습니다", "영향을 미칩니다", or "특징이 있습니다".'
             : 'Keep the tone conversational and not essay-like.',
-          'Avoid formal AI-ish connective phrases such as "중요합니다", "도움이 됩니다", "고려해야 합니다", "선택하는 것이 좋습니다", unless the account tone explicitly asks for expert writing.',
+          'Never use awkward or formal phrases: "흐름이에요", "흐름이야", "생활 속에서", "중요합니다", "도움이 됩니다", "고려해야 합니다", "선택하는 것이 좋습니다".',
+          'Prefer action-based Korean such as "다시 두기 편한지", "손이 덜 가는지", "자주 꺼내기 쉬운지", "놔둘 자리가 있는지".',
           'Do not write balanced essay paragraphs. Use short lived-in observations, slightly uneven rhythm, and natural Korean phrasing.',
           referencePatterns.length
             ? 'When mirroring a list pattern, write short subjective one-line observations with new labels and new details. End with one light comment prompt only.'

@@ -78,6 +78,29 @@ export async function postReply(token, postId, text) {
   }
 }
 
+function buildThreadsPostUrl(account, postId, details = {}) {
+  if (details.permalink) return details.permalink;
+  const handle = String(details.username || account.account_handle || 'unknown').replace(/^@/, '') || 'unknown';
+  return `https://www.threads.net/@${handle}/post/${details.shortcode || postId}`;
+}
+
+async function fetchThreadDetails(token, postId) {
+  if (!token || !postId) return {};
+  const params = new URLSearchParams({
+    fields: 'id,permalink,shortcode,username',
+    access_token: token
+  });
+  const detailsRes = await fetch(`${THREADS_API}/${postId}?${params.toString()}`);
+  const text = await detailsRes.text();
+  let json = {};
+  try { json = text ? JSON.parse(text) : {}; } catch { json = {}; }
+  if (!detailsRes.ok || json.error) {
+    console.warn('[THREADS PERMALINK WARNING]', { postId, error: json.error?.message || text || `HTTP ${detailsRes.status}` });
+    return {};
+  }
+  return json;
+}
+
 export async function uploadReplyOnly({ account, postId, text }) {
   const token = account?.threads_access_token;
   if (process.env.MOCK_UPLOAD === 'true') {
@@ -110,7 +133,7 @@ function threadsError(label, body) {
   return error;
 }
 
-export async function uploadPost({ account, post, cta, trackingLink }) {
+export async function uploadPost({ account, post, cta, trackingLink, sponsoredReplyText = '' }) {
   const token = account.threads_access_token;
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
   const linkMode = String(process.env.THREADS_COUPANG_LINK_MODE || 'direct').toLowerCase();
@@ -118,14 +141,15 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
     ? (linkMode === 'tracking' ? `${baseUrl}/r/${trackingLink.code}` : trackingLink.destination_url)
     : null;
   const replyModeEnabled = isReplyLinkModeEnabled();
-  const deliveryMode = linkUrl ? 'reply' : 'none';
+  const sponsoredText = !linkUrl ? String(sponsoredReplyText || '').trim() : '';
+  const deliveryMode = linkUrl || sponsoredText ? 'reply' : 'none';
   if (linkUrl && (!replyModeEnabled || account.threads_link_delivery_mode !== 'reply')) {
     const error = new Error('THREADS_REPLY_LINK_MODE_REQUIRED: 링크 글은 댓글 링크 모드에서만 업로드할 수 있습니다.');
     error.code = 'THREADS_REPLY_LINK_MODE_REQUIRED';
     error.permanent = true;
     throw error;
   }
-  const replyText = linkUrl ? buildReplyText(linkUrl) : '';
+  const replyText = linkUrl ? buildReplyText(linkUrl) : sponsoredText;
   const text = buildPostText(post);
   if (!text) {
     const error = new Error('Threads post text is empty after content cleanup. 콘텐츠 본문을 다시 생성해주세요.');
@@ -151,7 +175,7 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
   if (process.env.MOCK_UPLOAD === 'true') {
     const url = `${baseUrl}/mock/threads/${post.id}`;
     console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: text, comment: replyText || null, linkMode });
-    return { postUrl: url, raw: { mock: true, linkDeliveryMode: linkUrl ? deliveryMode : 'none', linkMode, replyText } };
+    return { postUrl: url, raw: { mock: true, linkDeliveryMode: replyText ? deliveryMode : 'none', linkMode, replyText, sponsoredReply: Boolean(sponsoredText) } };
   }
   if (!token) {
     const error = new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');
@@ -183,9 +207,11 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
     throw threadsError('Threads publish failed', err);
   }
   const { id: postId } = await publishRes.json();
+  const postDetails = await fetchThreadDetails(token, postId);
+  const postUrl = buildThreadsPostUrl(account, postId, postDetails);
 
   let replyWarning = null;
-  if (linkUrl) {
+  if (replyText) {
     if (deliveryMode === 'reply') {
       try {
         await postReply(token, postId, replyText);
@@ -195,23 +221,22 @@ export async function uploadPost({ account, post, cta, trackingLink }) {
       }
     }
     if (deliveryMode === 'reply' && replyWarning) {
-      const handle = account.account_handle?.replace('@', '') || 'unknown';
       return {
-        postUrl: `https://www.threads.net/@${handle}/post/${postId}`,
+        postUrl,
         raw: {
           creationId,
           postId,
+          postDetails,
           linkDeliveryMode: deliveryMode,
           linkMode,
           replyWarning,
           replyFailed: true,
+          sponsoredReply: Boolean(sponsoredText),
           replyText
         }
       };
     }
   }
 
-  const handle = account.account_handle?.replace('@', '') || 'unknown';
-  const postUrl = `https://www.threads.net/@${handle}/post/${postId}`;
-  return { postUrl, raw: { creationId, postId, linkDeliveryMode: linkUrl ? deliveryMode : 'none', linkMode } };
+  return { postUrl, raw: { creationId, postId, postDetails, linkDeliveryMode: replyText ? deliveryMode : 'none', linkMode, sponsoredReply: Boolean(sponsoredText) } };
 }

@@ -170,19 +170,15 @@ export default function CustomerBillingPage({ currentUser }) {
   const startMonthly = async (agreementSnapshot) => {
     setBusy('monthly');
     try {
-      const payload = await api.post('/api/billing/billing-auth', {
+      const payload = await api.post('/api/billing/checkout/virtual-account', {
         productId: 'monthly_59000',
         agreementAccepted: true,
         agreementVersion: BILLING_AGREEMENT_VERSION,
         agreementSnapshot
       });
-      localStorage.setItem(pendingSubscriptionKey, JSON.stringify({
-        subscriptionId: payload.subscription.id,
-        customerKey: payload.toss.customerKey
-      }));
-      await requestBillingAuth(payload.toss);
+      await requestTossPayment(payload.toss);
     } catch (err) {
-      toast(err.message || '자동결제를 시작하지 못했습니다.', 'error');
+      toast(err.message || '월정액 가상계좌 결제를 시작하지 못했습니다.', 'error');
       await load().catch(() => {});
     } finally {
       setBusy('');
@@ -246,7 +242,7 @@ export default function CustomerBillingPage({ currentUser }) {
       <div className="grid gap-4">
         <PlanCard
           icon={Landmark}
-          title="베이직 영구구매"
+          title="프로 영구구매"
           priceText="590,000원"
           caption="가상계좌 결제"
           product={productsById.onetime_590000}
@@ -257,7 +253,7 @@ export default function CustomerBillingPage({ currentUser }) {
           icon={CreditCard}
           title={billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액'}
           priceText="59,000원 / 월"
-          caption={activeSubscription ? `활성 · 다음 결제 ${formatDate(activeSubscription.nextBillingAt)}` : '카드 자동결제'}
+          caption={activeSubscription ? `활성 · 다음 결제 ${formatDate(activeSubscription.nextBillingAt)}` : '가상계좌 결제'}
           product={productsById.monthly_59000}
           busy={busy === 'monthly'}
           onClick={() => openAgreement('monthly', 'monthly_59000')}

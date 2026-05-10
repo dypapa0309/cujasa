@@ -13,6 +13,15 @@ const MAX_DAILY = 3;
 const OBJECTIVE_TYPES = new Set(['click', 'consultation', 'save_follow', 'awareness', 'lead']);
 const PRIORITIES = new Set(['low', 'normal', 'high']);
 const ASSET_STATUSES = new Set(['draft', 'preview', 'needs_review', 'approved', 'queued', 'posted', 'rejected', 'stopped']);
+const LEAD_FIELD_LABELS = {
+  name: '이름',
+  phone: '연락처',
+  email: '이메일',
+  business: '사업/계정 유형',
+  budget: '관심 수준',
+  message: '문의 내용'
+};
+const DEFAULT_LEAD_FIELDS = ['name', 'phone'];
 
 function clean(value) {
   return String(value || '').trim();
@@ -90,6 +99,19 @@ function normalizeArray(value) {
   return String(value).split(/[,|]/).map(clean).filter(Boolean);
 }
 
+function normalizeLeadFields(value) {
+  const fields = normalizeArray(value).filter((field) => LEAD_FIELD_LABELS[field]);
+  return [...new Set(fields.length ? fields : DEFAULT_LEAD_FIELDS)];
+}
+
+function publicBaseUrl() {
+  return (process.env.APP_BASE_URL || process.env.CLIENT_BASE_URL || `http://localhost:${process.env.PORT || 3005}`).split(',')[0].replace(/\/$/, '');
+}
+
+function leadFormPublicUrl(slug) {
+  return `${publicBaseUrl()}/lead-forms/${slug}`;
+}
+
 function campaignInput(body = {}) {
   const product = body.product || {};
   const productName = clean(body.productName || product.name);
@@ -116,7 +138,9 @@ function campaignInput(body = {}) {
     optimizationGoal: clean(body.optimizationGoal || body.optimization_goal) || objectiveType,
     conversionDestination: clean(body.conversionDestination || body.conversion_destination) || (objectiveType === 'lead' ? 'lead_form' : 'website'),
     leadOffer: clean(body.leadOffer || body.lead_offer),
-    leadFields: normalizeArray(body.leadFields || body.lead_fields),
+    leadFields: normalizeLeadFields(body.leadFields || body.lead_fields),
+    leadPrivacyNote: clean(body.leadPrivacyNote || body.lead_privacy_note),
+    leadThankYouMessage: clean(body.leadThankYouMessage || body.lead_thank_you_message),
     audienceStage: clean(body.audienceStage || body.audience_stage) || 'cold',
     audiencePersona: clean(body.audiencePersona || body.audience_persona),
     audiencePain: clean(body.audiencePain || body.audience_pain),
@@ -428,6 +452,7 @@ function buildInstagramAsset(input, index) {
     metadata: {
       variant: index + 1,
       style: input.operationSet?.cardStyle || 'square_product_card',
+      sourceProductImageUrl: imageUrl,
       uploadPolicy: 'preview_only_no_graph_api',
       caption: line,
       adCopy: line
@@ -455,8 +480,72 @@ function postBodyForAsset(asset) {
   return asset.body;
 }
 
+function trackingUrlForLink(link) {
+  if (!link?.code) return '';
+  const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3005}`;
+  return `${baseUrl.replace(/\/$/, '')}/r/${link.code}`;
+}
+
+function postBodyWithTracking(asset, link) {
+  const body = postBodyForAsset(asset);
+  const trackingUrl = trackingUrlForLink(link);
+  if (!trackingUrl) return body;
+  if (String(body || '').includes(trackingUrl)) return body;
+  return `${body}\n${trackingUrl}`.trim();
+}
+
+function campaignObjective(campaign) {
+  return campaign.objective_type || campaign.generation_input?.objectiveType || 'click';
+}
+
+function campaignOperationSet(campaign) {
+  return campaign.operation_set || campaign.generation_input?.operationSet || {};
+}
+
+async function leadFormForCampaign(campaignId) {
+  const rows = await dbList('automation_studio_lead_forms', { campaign_id: campaignId }, { order: 'created_at', ascending: false }).catch(() => []);
+  return rows.find((row) => row.status !== 'archived') || null;
+}
+
+function serializeLeadForm(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    fields: Array.isArray(row.fields) ? row.fields : DEFAULT_LEAD_FIELDS,
+    public_url: row.public_url || leadFormPublicUrl(row.slug)
+  };
+}
+
+async function ensureLeadFormForCampaign(campaign, user = {}) {
+  if (campaignObjective(campaign) !== 'lead') return null;
+  const existing = await leadFormForCampaign(campaign.id);
+  if (existing) return serializeLeadForm(existing);
+  const operationSet = campaignOperationSet(campaign);
+  const fields = normalizeLeadFields(operationSet.leadFields);
+  const slug = `lead-${shortCode(10)}`;
+  const form = await dbInsert('automation_studio_lead_forms', {
+    campaign_id: campaign.id,
+    project_id: campaign.project_id,
+    account_id: campaign.account_id,
+    slug,
+    title: `${campaign.product_name} ${operationSet.leadOffer || '무료 안내'}`,
+    offer: operationSet.leadOffer || '무료 도입 안내',
+    fields,
+    privacy_note: operationSet.leadPrivacyNote || '제출한 정보는 상담 안내와 캠페인 성과 확인 목적으로만 사용합니다.',
+    thank_you_message: operationSet.leadThankYouMessage || '신청이 접수되었습니다. 운영자가 확인 후 연락드릴게요.',
+    status: 'active',
+    created_by: user.email || user.type || 'admin',
+    public_url: leadFormPublicUrl(slug)
+  });
+  return serializeLeadForm(form);
+}
+
 async function createAutomationTrackingLink(campaign, post, asset) {
-  const destinationUrl = safeHttpsUrl(campaign.product_url);
+  let destinationUrl = safeHttpsUrl(campaign.product_url);
+  if (campaignObjective(campaign) === 'lead') {
+    const leadForm = await leadFormForCampaign(campaign.id);
+    destinationUrl = safeHttpsUrl(leadForm?.public_url || leadFormPublicUrl(leadForm?.slug || '')) || destinationUrl;
+  }
   if (!destinationUrl || !post?.id) return null;
   return dbInsert('tracking_links', {
     code: shortCode(),
@@ -479,18 +568,90 @@ async function createAutomationTrackingLink(campaign, post, asset) {
   }).catch(() => null));
 }
 
-function trackingUrlForLink(link) {
-  if (!link?.code) return '';
-  const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3005}`;
-  return `${baseUrl.replace(/\/$/, '')}/r/${link.code}`;
+function campaignMediaStatus(row, assets = []) {
+  const currentImage = row.product_image_url || row.generation_input?.productImageUrl || '';
+  const instagramAssets = assets.filter((asset) => asset.platform === 'instagram');
+  const imageAssets = instagramAssets.filter((asset) => asset.image_data_url);
+  const applied = currentImage
+    ? imageAssets.some((asset) => asset.metadata?.sourceProductImageUrl === safeImageSource(currentImage))
+    : imageAssets.some((asset) => !asset.metadata?.sourceProductImageUrl);
+  const hasImage = Boolean(currentImage);
+  let status = '이미지 없음';
+  if (hasImage && !imageAssets.length) status = '저장됨 · 소재 생성 필요';
+  else if (hasImage && applied) status = '최신 소재에 적용됨';
+  else if (hasImage) status = '소재 재생성 필요';
+  else if (imageAssets.length) status = '기본 카드 이미지 사용 중';
+  return {
+    currentImage,
+    hasImage,
+    instagramAssetCount: instagramAssets.length,
+    appliedToCurrentAssets: applied,
+    needsRegeneration: hasImage && imageAssets.length > 0 && !applied,
+    status
+  };
 }
 
-function postBodyWithTracking(asset, link) {
-  const body = postBodyForAsset(asset);
-  const trackingUrl = trackingUrlForLink(link);
-  if (!trackingUrl) return body;
-  if (String(body || '').includes(trackingUrl)) return body;
-  return `${body}\n${trackingUrl}`.trim();
+async function accountReliabilitySummary(accountId) {
+  if (!accountId) return null;
+  const queues = (await dbList('post_queue', { account_id: accountId }, { order: 'created_at', ascending: false, limit: 50 }).catch(() => []));
+  const issues = [];
+  const rows = [];
+  for (const queue of queues.slice(0, 20)) {
+    const post = queue.post_id ? await dbGet('posts', { id: queue.post_id }).catch(() => null) : null;
+    const postProducts = queue.post_id ? await dbList('post_products', { post_id: queue.post_id }).catch(() => []) : [];
+    const hasProduct = postProducts.length > 0;
+    const reason = (() => {
+      if (hasProduct && queue.post_mode !== 'link') return '상품 연결 글 댓글 링크 누락';
+      if (/permission|권한|Application does not have permission|code 10/i.test(`${queue.error_category || ''} ${queue.error_message || ''}`)) return '댓글 권한 필요';
+      if (['failed', 'retry'].includes(queue.status)) return '업로드 실패';
+      if (queue.status === 'manual_required' || post?.status === 'needs_review') return '품질 탈락/검수 필요';
+      return '';
+    })();
+    if (reason) issues.push(reason);
+    rows.push({
+      queueId: queue.id,
+      postId: queue.post_id,
+      status: queue.status,
+      postMode: queue.post_mode,
+      hasProduct,
+      reason
+    });
+  }
+  const counts = issues.reduce((acc, reason) => ({ ...acc, [reason]: (acc[reason] || 0) + 1 }), {});
+  return {
+    checkedQueues: rows.length,
+    issueCount: issues.length,
+    issues: Object.entries(counts).map(([label, count]) => ({ label, count })),
+    rows: rows.filter((row) => row.reason).slice(0, 8),
+    status: issues.length ? '점검 필요' : '정상'
+  };
+}
+
+function campaignDiagnostics(row, assets, queues, leadForm) {
+  const objective = campaignObjective(row);
+  const operationSet = campaignOperationSet(row);
+  const queueIssues = queues.filter((queue) => ['failed', 'retry', 'manual_required', 'skipped'].includes(queue.status));
+  return {
+    objective,
+    destination: objective === 'lead'
+      ? (leadForm?.public_url || operationSet.conversionDestination || 'lead_form')
+      : (operationSet.conversionDestination || row.product_url || '전환 수집 없음'),
+    media: campaignMediaStatus(row, assets),
+    assets: {
+      total: assets.length,
+      threads: assets.filter((asset) => asset.platform === 'threads').length,
+      instagram: assets.filter((asset) => asset.platform === 'instagram').length,
+      needsReview: assets.filter((asset) => (asset.metadata?.reviewStatus || asset.status) === 'needs_review').length
+    },
+    queues: {
+      total: queues.length,
+      scheduled: queues.filter((queue) => queue.status === 'scheduled').length,
+      manualRequired: queues.filter((queue) => queue.status === 'manual_required').length,
+      failed: queues.filter((queue) => ['failed', 'retry'].includes(queue.status)).length,
+      issueCount: queueIssues.length
+    },
+    leadForm: leadForm ? { connected: true, slug: leadForm.slug, publicUrl: leadForm.public_url } : { connected: false }
+  };
 }
 
 function addDays(date, days) {
@@ -517,9 +678,10 @@ function scheduleTimes(campaign, count) {
 }
 
 async function enrichCampaign(row) {
-  const [allAssets, allLinks] = await Promise.all([
+  const [allAssets, allLinks, leadFormRow] = await Promise.all([
     dbList('automation_studio_assets', { campaign_id: row.id }, { order: 'created_at', ascending: true }),
-    dbList('automation_studio_queue_links', { campaign_id: row.id }, { order: 'created_at', ascending: true })
+    dbList('automation_studio_queue_links', { campaign_id: row.id }, { order: 'created_at', ascending: true }),
+    leadFormForCampaign(row.id)
   ]);
   const currentGenerationId = row.summary?.currentGenerationId || row.generation_input?.currentGenerationId || null;
   const assetsForGeneration = currentGenerationId
@@ -547,7 +709,15 @@ async function enrichCampaign(row) {
     operation_note: asset.operation_note || asset.metadata?.operationNote || '',
     reusable: Boolean(asset.reusable || asset.metadata?.reusable)
   }));
-  return { ...row, assets: assetsWithReview, queueLinks: links, queues, stats };
+  const leadForm = serializeLeadForm(leadFormRow);
+  const leadSubmissions = leadForm
+    ? await dbList('automation_studio_lead_submissions', { form_id: leadForm.id }, { order: 'created_at', ascending: false }).catch(() => [])
+    : [];
+  const diagnostics = {
+    ...campaignDiagnostics(row, assetsWithReview, queues, leadForm),
+    cujasaReliability: await accountReliabilitySummary(row.account_id)
+  };
+  return { ...row, assets: assetsWithReview, queueLinks: links, queues, stats, leadForm, leadSubmissions, diagnostics };
 }
 
 function addMetric(map, key, patch = {}) {
@@ -779,6 +949,16 @@ export async function createAutomationCampaign(body, user = {}) {
     message: campaign.name,
     payload: { campaignId: campaign.id, platforms: campaign.platforms }
   }).catch(() => null);
+  const leadForm = await ensureLeadFormForCampaign(campaign, user).catch(() => null);
+  if (leadForm) {
+    await dbUpdate('automation_studio_campaigns', { id: campaign.id }, {
+      summary: {
+        ...(campaign.summary || {}),
+        leadFormId: leadForm.id,
+        leadFormUrl: leadForm.public_url
+      }
+    }).catch(() => null);
+  }
   return getAutomationCampaign(campaign.id);
 }
 
@@ -790,6 +970,7 @@ export async function runAutomationCampaign(id, user = {}) {
     throw error;
   }
   await archiveCampaignGeneration(campaign.id);
+  await ensureLeadFormForCampaign(campaign, user).catch(() => null);
   const account = await getRequiredAutomationAccount(campaign.account_id);
   const generationId = randomUUID();
   const platforms = normalizePlatforms(campaign.platforms);
@@ -916,6 +1097,31 @@ export async function runAutomationCampaign(id, user = {}) {
     payload: { campaignId: campaign.id, assetCount: assets.length, queueCount: queueLinks.length }
   }).catch(() => null);
   return getAutomationCampaign(campaign.id);
+}
+
+export async function regenerateAutomationCampaignAssets(id, user = {}) {
+  const campaign = await runAutomationCampaign(id, user);
+  await dbUpdate('automation_studio_campaigns', { id }, {
+    summary: {
+      ...(campaign.summary || {}),
+      regeneratedAt: new Date().toISOString(),
+      regeneratedBy: user.email || user.type || 'admin'
+    }
+  }).catch(() => null);
+  return getAutomationCampaign(id);
+}
+
+export async function listAutomationCampaignLeads(campaignId) {
+  const campaign = await dbGet('automation_studio_campaigns', { id: campaignId });
+  if (!campaign) {
+    const error = new Error('Campaign not found');
+    error.status = 404;
+    throw error;
+  }
+  const leadForm = await leadFormForCampaign(campaignId);
+  if (!leadForm) return { leadForm: null, submissions: [] };
+  const submissions = await dbList('automation_studio_lead_submissions', { form_id: leadForm.id }, { order: 'created_at', ascending: false }).catch(() => []);
+  return { leadForm: serializeLeadForm(leadForm), submissions };
 }
 
 export async function updateAutomationAsset(campaignId, assetId, body = {}, user = {}) {
@@ -1070,6 +1276,74 @@ export async function updateAutomationCampaign(campaignId, body = {}, user = {})
     payload: { campaignId, nextActionNote }
   }).catch(() => null);
   return getAutomationCampaign(updated?.id || campaignId);
+}
+
+export async function getPublicLeadForm(slug) {
+  const form = await dbGet('automation_studio_lead_forms', { slug: clean(slug) });
+  if (!form || form.status !== 'active') {
+    const error = new Error('Lead form not found');
+    error.status = 404;
+    throw error;
+  }
+  const campaign = form.campaign_id ? await dbGet('automation_studio_campaigns', { id: form.campaign_id }).catch(() => null) : null;
+  return {
+    id: form.id,
+    slug: form.slug,
+    title: form.title,
+    offer: form.offer,
+    fields: Array.isArray(form.fields) ? form.fields : DEFAULT_LEAD_FIELDS,
+    fieldLabels: LEAD_FIELD_LABELS,
+    privacyNote: form.privacy_note,
+    thankYouMessage: form.thank_you_message,
+    productName: campaign?.product_name || '',
+    campaignName: campaign?.name || ''
+  };
+}
+
+export async function submitPublicLeadForm(slug, body = {}, requestMeta = {}) {
+  const form = await dbGet('automation_studio_lead_forms', { slug: clean(slug) });
+  if (!form || form.status !== 'active') {
+    const error = new Error('Lead form not found');
+    error.status = 404;
+    throw error;
+  }
+  const fields = normalizeLeadFields(form.fields);
+  const payload = {};
+  fields.forEach((field) => {
+    payload[field] = clean(body[field]);
+  });
+  const missing = fields.filter((field) => !payload[field] && ['name', 'phone', 'email'].includes(field));
+  if (missing.length) {
+    const error = new Error(`Required lead fields missing: ${missing.join(', ')}`);
+    error.status = 400;
+    error.code = 'lead_required_fields_missing';
+    throw error;
+  }
+  if (body.privacyAccepted !== true && body.privacy_accepted !== true) {
+    const error = new Error('Privacy consent is required');
+    error.status = 400;
+    error.code = 'lead_privacy_required';
+    throw error;
+  }
+  const submission = await dbInsert('automation_studio_lead_submissions', {
+    form_id: form.id,
+    campaign_id: form.campaign_id,
+    project_id: form.project_id,
+    account_id: form.account_id,
+    payload,
+    status: 'new',
+    source_url: clean(body.sourceUrl || body.source_url || requestMeta.referer),
+    user_agent: clean(requestMeta.userAgent),
+    metadata: {
+      submittedFrom: 'public_lead_form',
+      fieldCount: fields.length
+    }
+  });
+  return {
+    ok: true,
+    id: submission.id,
+    message: form.thank_you_message || '신청이 접수되었습니다.'
+  };
 }
 
 export async function expandAutomationAsset(campaignId, assetId, body = {}, user = {}) {

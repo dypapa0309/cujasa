@@ -128,6 +128,8 @@ function emptyForm(accounts) {
     conversionDestination: 'website',
     leadOffer: '무료 도입 안내',
     leadFields: ['name', 'phone'],
+    leadPrivacyNote: '제출한 정보는 상담 안내와 캠페인 성과 확인 목적으로만 사용합니다.',
+    leadThankYouMessage: '신청이 접수되었습니다. 운영자가 확인 후 연락드릴게요.',
     audienceStage: 'cold',
     audiencePersona: '',
     audiencePain: '',
@@ -318,6 +320,19 @@ export default function AutomationStudioPage({ accounts = [] }) {
     setSelectedId(next.id);
     loadAnalytics(next.id).catch(console.error);
     navigateWorkspace({ view: 'detail', campaignId: next.id });
+  };
+
+  const regenerateCampaignAssets = async (campaignId) => {
+    setUpdatingId(`${campaignId}:regenerate`);
+    try {
+      const next = await api.post(`/api/admin/automation-studio/campaigns/${campaignId}/regenerate-assets`, {});
+      setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
+      setSelectedId(next.id);
+      loadAnalytics(next.id).catch(console.error);
+      navigateWorkspace({ view: 'detail', campaignId: next.id });
+    } finally {
+      setUpdatingId('');
+    }
   };
 
   const stopCampaign = async (campaignId) => {
@@ -512,7 +527,7 @@ export default function AutomationStudioPage({ accounts = [] }) {
 
         {activeView === 'detail' && (
           <div className="p-5">
-            <CampaignDetail campaign={selected} selectedPlatform={selectedPlatform} onRun={runCampaign} onStop={stopCampaign} onDeleteCampaign={deleteCampaign} onDeleteSet={deleteSet} onUpdateAsset={updateAsset} onUpdateCampaignNote={updateCampaignNote} onUpdateCampaignImage={updateCampaignImage} updatingId={updatingId} />
+            <CampaignDetail campaign={selected} selectedPlatform={selectedPlatform} onRun={runCampaign} onRegenerateAssets={regenerateCampaignAssets} onStop={stopCampaign} onDeleteCampaign={deleteCampaign} onDeleteSet={deleteSet} onUpdateAsset={updateAsset} onUpdateCampaignNote={updateCampaignNote} onUpdateCampaignImage={updateCampaignImage} updatingId={updatingId} />
           </div>
         )}
 
@@ -630,7 +645,7 @@ function CreateCampaignWizard({ accounts, form, update, selectedAccount, saving,
                   </label>
                 </div>
                 {form.objectiveType === 'lead' && (
-                  <div className="grid gap-3 rounded-lg border border-blue-100 bg-blue-50 p-4">
+                  <div className="grid gap-4 rounded-lg border border-blue-100 bg-blue-50 p-4">
                     <label className={labelClass}>리드 제공 가치
                       <input className={inputClass} value={form.leadOffer} onChange={(event) => update('leadOffer', event.target.value)} placeholder="예: 무료 도입 안내, 체크리스트, 상담 링크" />
                     </label>
@@ -650,6 +665,14 @@ function CreateCampaignWizard({ accounts, form, update, selectedAccount, saving,
                           </button>
                         ))}
                       </div>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <label className={labelClass}>개인정보 고지
+                        <textarea className={`${inputClass} min-h-20 resize-y`} value={form.leadPrivacyNote} onChange={(event) => update('leadPrivacyNote', event.target.value)} />
+                      </label>
+                      <label className={labelClass}>제출 완료 문구
+                        <textarea className={`${inputClass} min-h-20 resize-y`} value={form.leadThankYouMessage} onChange={(event) => update('leadThankYouMessage', event.target.value)} />
+                      </label>
                     </div>
                   </div>
                 )}
@@ -762,25 +785,7 @@ function CreateCampaignWizard({ accounts, form, update, selectedAccount, saving,
                     <label className={labelClass}>제품 URL
                       <input className={inputClass} value={form.productUrl} onChange={(event) => update('productUrl', event.target.value)} placeholder="https://..." />
                     </label>
-                    <div className="grid gap-2 rounded-lg border border-slate-200 p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <div className="text-xs font-black text-slate-600">Instagram 이미지</div>
-                          <div className="mt-1 text-xs text-slate-500">파일 업로드 또는 이미지 URL을 사용합니다.</div>
-                        </div>
-                        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">
-                          <Upload size={14} /> 이미지 업로드
-                          <input type="file" accept="image/*" className="hidden" onChange={(event) => uploadProductImage(event.target.files?.[0]).catch(console.error)} />
-                        </label>
-                      </div>
-                      <input className={inputClass} value={form.productImageUrl} onChange={(event) => update('productImageUrl', event.target.value)} placeholder="https://... 또는 업로드된 이미지 데이터" />
-                      {form.productImageUrl && (
-                        <div className="grid gap-2 sm:grid-cols-[96px_1fr] sm:items-center">
-                          <img src={form.productImageUrl} alt="Instagram preview" className="aspect-square w-24 rounded-lg border border-slate-200 object-cover" />
-                          <div className="text-xs leading-relaxed text-slate-500">Instagram 카드 제품 영역에 들어갑니다.</div>
-                        </div>
-                      )}
-                    </div>
+                    <CreateMediaPlanner form={form} update={update} uploadProductImage={uploadProductImage} />
                     <div className="grid gap-3 md:grid-cols-2">
                       <label className={labelClass}>소재 형식
                         <select className={inputClass} value={form.creativeFormat} onChange={(event) => update('creativeFormat', event.target.value)}>
@@ -1436,6 +1441,80 @@ function CheckRow({ ok, label }) {
   );
 }
 
+function CreateMediaPlanner({ form, update, uploadProductImage }) {
+  const [previewTab, setPreviewTab] = useState('instagram');
+  const copy = previewCopyForForm(form);
+  const product = form.productName || '제품명';
+  return (
+    <div className="grid gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <div className="grid content-start gap-3">
+        <div>
+          <div className="text-sm font-black text-slate-900">이미지 소스</div>
+          <div className="mt-1 text-xs leading-relaxed text-slate-500">업로드한 이미지는 Instagram 카드 생성 때 제품 영역에 들어갑니다.</div>
+        </div>
+        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+          {form.productImageUrl ? (
+            <img src={form.productImageUrl} alt="제품 이미지 소스" className="aspect-video w-full object-cover" />
+          ) : (
+            <div className="grid aspect-video place-items-center bg-slate-100 text-xs font-black text-slate-400">이미지 없음</div>
+          )}
+        </div>
+        <input className={inputClass} value={form.productImageUrl} onChange={(event) => update('productImageUrl', event.target.value)} placeholder="https://... 또는 업로드된 이미지 데이터" />
+        <div className="flex flex-wrap gap-2">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 hover:bg-slate-50">
+            <Upload size={14} /> 이미지 업로드
+            <input type="file" accept="image/*" className="hidden" onChange={(event) => uploadProductImage(event.target.files?.[0]).catch(console.error)} />
+          </label>
+          <button type="button" onClick={() => update('productImageUrl', '')} disabled={!form.productImageUrl}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-500 hover:bg-slate-50 disabled:opacity-40">
+            제거
+          </button>
+        </div>
+      </div>
+      <div className="grid gap-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-sm font-black text-slate-900">실제 미리보기</div>
+          <div className="flex rounded-lg bg-white p-1 text-xs font-black">
+            {['instagram', 'threads'].map((tab) => (
+              <button key={tab} type="button" onClick={() => setPreviewTab(tab)}
+                className={`rounded-md px-3 py-1.5 ${previewTab === tab ? 'bg-slate-900 text-white' : 'text-slate-500'}`}>
+                {platformLabel(tab)}
+              </button>
+            ))}
+          </div>
+        </div>
+        {previewTab === 'instagram' ? (
+          <div className="aspect-square overflow-hidden rounded-lg border border-slate-200 bg-white p-5">
+            <div className="rounded-lg bg-slate-900 px-4 py-3 text-sm font-black text-white">{objectiveLabel(form.objectiveType)}</div>
+            <div className="mt-5 grid grid-cols-[minmax(84px,120px)_1fr] gap-4">
+              {form.productImageUrl ? (
+                <img src={form.productImageUrl} alt="preview" className="aspect-square w-full rounded-lg border border-slate-200 object-cover" />
+              ) : (
+                <div className="grid aspect-square place-items-center rounded-lg border border-dashed border-slate-300 text-xs font-black text-slate-400">IMAGE</div>
+              )}
+              <div className="min-w-0">
+                <div className="break-words text-lg font-black leading-snug text-slate-950">{product}</div>
+                <div className="mt-2 max-h-20 overflow-hidden text-xs font-bold leading-relaxed text-slate-500">{form.proofPoint || form.audiencePain || '상품 찾기, 글 생성, 예약 운영을 자동화합니다.'}</div>
+              </div>
+            </div>
+            <div className="mt-6 max-h-24 overflow-hidden text-xl font-black leading-snug text-slate-950">{copy}</div>
+          </div>
+        ) : (
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <div className="text-xs font-black text-slate-500">{form.accountHandle || '@jasain'}</div>
+            <div className="mt-3 whitespace-pre-line text-base font-bold leading-relaxed text-slate-950">{copy}</div>
+            {(form.productUrl || form.objectiveType === 'lead') && (
+              <div className="mt-4 truncate rounded-md bg-slate-50 px-3 py-2 text-xs font-bold text-blue-700">
+                {form.objectiveType === 'lead' ? 'JASAIN 리드폼 URL 자동 연결' : form.productUrl}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function StatusBadge({ status }) {
   const tone = {
     running: 'bg-emerald-50 text-emerald-700',
@@ -1446,7 +1525,7 @@ function StatusBadge({ status }) {
   return <span className={`rounded-md px-2 py-1 text-xs font-black ${tone}`}>{statusLabel(status)}</span>;
 }
 
-function CampaignDetail({ campaign, selectedPlatform = 'all', onRun, onStop, onDeleteCampaign, onDeleteSet, onUpdateAsset, onUpdateCampaignNote, onUpdateCampaignImage, updatingId }) {
+function CampaignDetail({ campaign, selectedPlatform = 'all', onRun, onRegenerateAssets, onStop, onDeleteCampaign, onDeleteSet, onUpdateAsset, onUpdateCampaignNote, onUpdateCampaignImage, updatingId }) {
   if (!campaign) {
     return <div className="rounded-lg border border-slate-200 bg-white p-8 text-sm text-slate-500">캠페인을 선택하세요.</div>;
   }
@@ -1528,8 +1607,14 @@ function CampaignDetail({ campaign, selectedPlatform = 'all', onRun, onStop, onD
         <CampaignImageEditor
           campaign={campaign}
           onSave={(value) => onUpdateCampaignImage(campaign.id, value)}
+          onRegenerate={() => onRegenerateAssets(campaign.id)}
           saving={updatingId === `${campaign.id}:image`}
+          regenerating={updatingId === `${campaign.id}:regenerate`}
         />
+
+        <CampaignDiagnosticsPanel campaign={campaign} />
+
+        {campaign.leadForm && <LeadSubmissionsPanel campaign={campaign} />}
 
         <div className={`grid gap-4 ${selectedPlatform === 'all' ? 'xl:grid-cols-2' : ''}`}>
           {selectedPlatform !== 'instagram' && <AssetColumn
@@ -1556,30 +1641,35 @@ function CampaignDetail({ campaign, selectedPlatform = 'all', onRun, onStop, onD
   );
 }
 
-function CampaignImageEditor({ campaign, onSave, saving }) {
+function CampaignImageEditor({ campaign, onSave, onRegenerate, saving, regenerating }) {
   const current = campaign.product_image_url || campaign.generation_input?.productImageUrl || '';
   const [draft, setDraft] = useState(current);
   useEffect(() => setDraft(current), [current, campaign.id]);
+  const media = campaign.diagnostics?.media || {};
+  const isDirty = draft !== current;
+  const statusTone = media.needsRegeneration ? 'bg-amber-50 text-amber-700' : media.appliedToCurrentAssets ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600';
   const upload = async (file) => {
     if (!file) return;
     const dataUrl = await readImageFile(file);
     setDraft(dataUrl);
-    onSave(dataUrl);
   };
   return (
-    <div className="grid gap-3 rounded-lg border border-slate-200 p-4 lg:grid-cols-[156px_1fr] lg:items-center">
-      <div className="grid gap-2">
-        <div className="text-sm font-black text-slate-900">Instagram 이미지</div>
-        {draft ? (
-          <img src={draft} alt="Instagram product" className="aspect-square w-36 rounded-lg border border-slate-200 object-cover" />
-        ) : (
-          <div className="grid aspect-square w-36 place-items-center rounded-lg border border-dashed border-slate-300 text-xs font-bold text-slate-400">이미지 없음</div>
-        )}
-      </div>
-      <div className="grid gap-2">
-        <div className="text-xs leading-relaxed text-slate-500">
-          Instagram 카드에 들어갈 제품 이미지를 캠페인 생성 후에도 등록/교체할 수 있습니다. 저장 후 새 소재 재생성을 누르면 새 카드에 반영됩니다.
+    <div className="grid gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <div className="grid content-start gap-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-black text-slate-900">이미지 소스</div>
+            <div className="mt-1 text-xs leading-relaxed text-slate-500">저장 후 소재 재생성을 해야 생성 카드에 반영됩니다.</div>
+          </div>
+          <span className={`shrink-0 rounded-md px-2 py-1 text-[11px] font-black ${isDirty ? 'bg-blue-50 text-blue-700' : statusTone}`}>
+            {isDirty ? '저장 전' : (media.status || '이미지 없음')}
+          </span>
         </div>
+        {draft ? (
+          <img src={draft} alt="Instagram product" className="aspect-video w-full rounded-lg border border-slate-200 bg-white object-cover" />
+        ) : (
+          <div className="grid aspect-video w-full place-items-center rounded-lg border border-dashed border-slate-300 bg-white text-xs font-bold text-slate-400">이미지 없음</div>
+        )}
         <div className="flex flex-col gap-2 sm:flex-row">
           <input className={inputClass} value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="이미지 URL 또는 업로드 데이터" />
           <button type="button" onClick={() => onSave(draft)} disabled={saving}
@@ -1587,10 +1677,133 @@ function CampaignImageEditor({ campaign, onSave, saving }) {
             <Image size={16} /> {saving ? '저장 중' : '이미지 저장'}
           </button>
         </div>
-        <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50">
-          <Upload size={16} /> 이미지 파일 업로드
-          <input type="file" accept="image/*" className="hidden" onChange={(event) => upload(event.target.files?.[0]).catch(console.error)} />
-        </label>
+        <div className="flex flex-wrap gap-2">
+          <label className="inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50">
+            <Upload size={16} /> 이미지 파일 업로드
+            <input type="file" accept="image/*" className="hidden" onChange={(event) => upload(event.target.files?.[0]).catch(console.error)} />
+          </label>
+          <button type="button" onClick={() => setDraft('')} disabled={!draft}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-500 hover:bg-slate-50 disabled:opacity-40">
+            제거
+          </button>
+        </div>
+      </div>
+      <div className="grid content-start gap-3">
+        <div className="text-sm font-black text-slate-900">생성 카드 미리보기</div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <div className="aspect-square overflow-hidden rounded-lg border border-slate-100 bg-slate-50 p-4">
+            <div className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-black text-white">{objectiveLabel(campaign.objective_type || campaign.generation_input?.objectiveType || 'click')}</div>
+            <div className="mt-4 grid grid-cols-[96px_1fr] gap-3">
+              {draft ? <img src={draft} alt="draft preview" className="aspect-square w-full rounded-lg border border-slate-200 object-cover" /> : <div className="grid aspect-square place-items-center rounded-lg border border-dashed border-slate-300 text-xs font-black text-slate-400">IMAGE</div>}
+              <div className="min-w-0">
+                <div className="break-words text-lg font-black leading-snug text-slate-950">{campaign.product_name}</div>
+                <div className="mt-2 text-xs font-bold leading-relaxed text-slate-500">{campaign.operation_set?.proofPoint || campaign.target_goal}</div>
+              </div>
+            </div>
+            <div className="mt-5 text-lg font-black leading-snug text-slate-950">{campaign.operation_set?.primaryMessage || `${campaign.product_name} 운영 흐름을 자동화하세요.`}</div>
+          </div>
+          <button type="button" onClick={onRegenerate} disabled={regenerating || isDirty}
+            className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2 text-sm font-black text-white disabled:opacity-50">
+            <RefreshCw size={16} /> {regenerating ? '재생성 중' : '이미지 적용하고 소재 재생성'}
+          </button>
+          {isDirty && <div className="mt-2 text-xs font-bold text-amber-700">먼저 이미지 저장을 눌러야 재생성할 수 있습니다.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CampaignDiagnosticsPanel({ campaign }) {
+  const diagnostics = campaign.diagnostics || {};
+  const reliability = diagnostics.cujasaReliability;
+  const checks = [
+    ['목표/전환', `${objectiveLabel(diagnostics.objective || campaign.objective_type || 'click')} · ${diagnostics.destination || '-'}`],
+    ['이미지', diagnostics.media?.status || '이미지 없음'],
+    ['소재', `Threads ${diagnostics.assets?.threads || 0}개 · Instagram ${diagnostics.assets?.instagram || 0}개`],
+    ['예약 큐', `예약 ${diagnostics.queues?.scheduled || 0}개 · 확인 ${diagnostics.queues?.manualRequired || 0}개 · 실패 ${diagnostics.queues?.failed || 0}개`],
+    ['리드폼', diagnostics.leadForm?.connected ? '연결됨' : '없음']
+  ];
+  return (
+    <div className="rounded-lg border border-slate-200 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-black text-slate-900">운영 진단</div>
+          <div className="mt-1 text-xs leading-relaxed text-slate-500">목표, 소재, 큐, 리드폼, CUJASA 기본 흐름을 한 번에 확인합니다.</div>
+        </div>
+        <span className={`rounded-md px-2 py-1 text-xs font-black ${reliability?.issueCount ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+          {reliability?.status || '진단 대기'}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-2 md:grid-cols-5">
+        {checks.map(([label, value]) => (
+          <div key={label} className="rounded-lg bg-slate-50 px-3 py-3">
+            <div className="text-[11px] font-black text-slate-400">{label}</div>
+            <div className="mt-1 text-sm font-black leading-snug text-slate-800">{value}</div>
+          </div>
+        ))}
+      </div>
+      {reliability?.issues?.length > 0 && (
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          {reliability.issues.map((issue) => (
+            <div key={issue.label} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-black text-amber-800">
+              {issue.label} {issue.count}건
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LeadSubmissionsPanel({ campaign }) {
+  const leadForm = campaign.leadForm;
+  const submissions = campaign.leadSubmissions || [];
+  const copyUrl = async () => {
+    if (!leadForm?.public_url) return;
+    await navigator.clipboard?.writeText(leadForm.public_url);
+  };
+  const exportCsv = () => {
+    const fields = leadForm.fields || [];
+    const header = ['created_at', 'status', ...fields];
+    const lines = [header, ...submissions.map((submission) => [
+      submission.created_at,
+      submission.status,
+      ...fields.map((field) => submission.payload?.[field] || '')
+    ])].map((row) => row.map((cell) => `"${String(cell || '').replace(/"/g, '""')}"`).join(','));
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${campaign.name || 'lead-submissions'}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="text-sm font-black text-blue-950">리드 수집 양식</div>
+          <div className="mt-1 break-all text-xs font-bold leading-relaxed text-blue-800">{leadForm.public_url}</div>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs font-black text-blue-800">
+            {(leadForm.fields || []).map((field) => <span key={field} className="rounded-md bg-white px-2 py-1">{leadFieldLabel(field)}</span>)}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={copyUrl} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-black text-blue-800">URL 복사</button>
+          <button type="button" onClick={exportCsv} disabled={!submissions.length} className="rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-black text-blue-800 disabled:opacity-40">CSV</button>
+          <a href={leadForm.public_url} target="_blank" rel="noreferrer" className="rounded-lg bg-blue-700 px-3 py-2 text-xs font-black text-white">양식 열기</a>
+        </div>
+      </div>
+      <div className="mt-4 overflow-hidden rounded-lg border border-blue-100 bg-white">
+        <div className="border-b border-blue-50 px-3 py-2 text-xs font-black text-slate-600">제출 {submissions.length}건</div>
+        {submissions.length ? submissions.slice(0, 6).map((submission) => (
+          <div key={submission.id} className="grid gap-1 border-b border-slate-100 px-3 py-3 text-xs last:border-b-0 md:grid-cols-[1fr_auto]">
+            <div className="font-bold text-slate-700">
+              {Object.entries(submission.payload || {}).map(([key, value]) => `${leadFieldLabel(key)}: ${value}`).join(' · ')}
+            </div>
+            <div className="font-bold text-slate-400">{formatDate(submission.created_at)}</div>
+          </div>
+        )) : <div className="px-3 py-5 text-sm text-slate-500">아직 제출된 리드가 없습니다.</div>}
       </div>
     </div>
   );

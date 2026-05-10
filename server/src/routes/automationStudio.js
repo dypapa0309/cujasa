@@ -7,7 +7,9 @@ import {
   expandAutomationAsset,
   getAutomationCampaign,
   getAutomationStudioAnalytics,
+  listAutomationCampaignLeads,
   listAutomationCampaigns,
+  regenerateAutomationCampaignAssets,
   runAutomationCampaign,
   stopAutomationCampaign,
   updateAutomationAsset,
@@ -45,6 +47,14 @@ router.patch('/campaigns/:campaignId', async (req, res, next) => {
 
 router.post('/campaigns/:campaignId/run', async (req, res, next) => {
   try { res.json(await runAutomationCampaign(req.params.campaignId, req.user)); } catch (e) { next(e); }
+});
+
+router.post('/campaigns/:campaignId/regenerate-assets', async (req, res, next) => {
+  try { res.json(await regenerateAutomationCampaignAssets(req.params.campaignId, req.user)); } catch (e) { next(e); }
+});
+
+router.get('/campaigns/:campaignId/leads', async (req, res, next) => {
+  try { res.json(await listAutomationCampaignLeads(req.params.campaignId)); } catch (e) { next(e); }
 });
 
 router.post('/campaigns/:campaignId/stop', async (req, res, next) => {

@@ -20,10 +20,11 @@ function queueFriendly(row = {}, detail = null) {
 }
 
 function isPostedLinkIssue(row = {}) {
-  return row.status === 'posted' && ['reply_warning', 'reply_repair_blocked'].includes(row.error_category);
+  return row.status === 'posted' && ['reply_warning', 'reply_repair_blocked', 'reply_permission_required'].includes(row.error_category);
 }
 
 function queueAttentionLabel(row = {}) {
+  if (row.error_category === 'reply_permission_required') return '댓글 권한 재연결';
   if (row.error_category === 'reply_repair_blocked') return '링크 수동확인';
   if (row.error_category === 'reply_warning') return '댓글 링크 확인';
   return null;

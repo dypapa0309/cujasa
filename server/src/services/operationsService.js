@@ -9,7 +9,7 @@ import { cleanupOldQueueIssues } from './queueVisibilityService.js';
 const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const NON_FATAL_QUEUE_CATEGORIES = new Set(['reply_warning', 'reply_repair_blocked', 'reply_link_mode_required', 'content_blocked', 'retry_available', 'recheck_required']);
-const REPLY_ATTENTION_CATEGORIES = new Set(['reply_warning', 'reply_repair_blocked']);
+const REPLY_ATTENTION_CATEGORIES = new Set(['reply_warning', 'reply_repair_blocked', 'reply_permission_required']);
 const STALE_RUNNING_CATEGORY = 'pipeline_stuck';
 
 function kstDayRange(date = new Date()) {
@@ -96,6 +96,7 @@ function queueProblemBreakdown(categorizedProblems) {
   return {
     fatal: categorizedProblems.filter((row) => !NON_FATAL_QUEUE_CATEGORIES.has(row.category)).length,
     threadsReconnect: categorizedProblems.filter((row) => row.category === 'threads_reconnect_required').length,
+    replyPermissionRequired: categorizedProblems.filter((row) => row.category === 'reply_permission_required').length,
     retryAvailable: categorizedProblems.filter((row) => row.category === 'retry_available' || row.category === 'recheck_required').length,
     replyWarning: categorizedProblems.filter((row) => row.category === 'reply_warning').length,
     replyRepairBlocked: categorizedProblems.filter((row) => row.category === 'reply_repair_blocked').length,
@@ -169,7 +170,11 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   if (coupang.searchStatus === 'api_error') pushProblem(problems, account, 'warn', 'coupang_api_error', '쿠팡 API 오류');
   if (account.status === 'active' && todayScheduled === 0) pushProblem(problems, account, 'warn', 'no_schedule', '오늘 예약 없음');
   if (queueBreakdown.fatal > 0) {
-    pushProblem(problems, account, 'error', 'queue_failed', queueBreakdown.threadsReconnect ? `재연결 필요 ${queueBreakdown.threadsReconnect}건` : `실패/검토 ${queueBreakdown.fatal}건`);
+    pushProblem(problems, account, 'error', 'queue_failed', queueBreakdown.replyPermissionRequired
+      ? `댓글 권한 재연결 필요 ${queueBreakdown.replyPermissionRequired}건`
+      : queueBreakdown.threadsReconnect
+        ? `재연결 필요 ${queueBreakdown.threadsReconnect}건`
+        : `실패/검토 ${queueBreakdown.fatal}건`);
   }
   if (queueBreakdown.retryAvailable > 0) pushProblem(problems, account, 'warn', 'retry_available', `재연결 후 재시도 가능 ${queueBreakdown.retryAvailable}건`);
   if (queueBreakdown.replyWarning > 0) pushProblem(problems, account, 'warn', 'reply_warning', `댓글/링크 답글 실패 ${queueBreakdown.replyWarning}건`);

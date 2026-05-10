@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { dailyPipelineStatus, hasDailyPipelineWindowPassed, kstDateString, runDailyPipelineOnce } from './schedulerRunService.js';
+import { dbInsert } from './supabaseService.js';
 
 test('kstDateString resolves dates in Korea time', () => {
   assert.equal(kstDateString(new Date('2026-05-08T16:59:00.000Z')), '2026-05-09');
@@ -32,4 +33,42 @@ test('dailyPipelineStatus reports missing after 02:00 KST when no run exists', a
   assert.equal(status.windowPassed, true);
   assert.equal(status.missing, true);
   assert.equal(status.status, 'missing');
+});
+
+test('dailyPipelineStatus marks old running records as stale', async () => {
+  await dbInsert('scheduler_runs', {
+    job_name: 'daily-pipeline',
+    run_date_kst: '2099-02-03',
+    status: 'running',
+    triggered_by: 'test',
+    started_at: '2099-02-02T17:00:00.000Z',
+    summary: {}
+  });
+
+  const status = await dailyPipelineStatus(new Date('2099-02-03T00:30:00.000Z'));
+
+  assert.equal(status.runDateKst, '2099-02-03');
+  assert.equal(status.missing, false);
+  assert.equal(status.stale, true);
+  assert.equal(status.status, 'stale');
+});
+
+test('runDailyPipelineOnce restarts stale running records for the same KST day', async () => {
+  const runDateKst = '2099-02-04';
+  await dbInsert('scheduler_runs', {
+    job_name: 'daily-pipeline',
+    run_date_kst: runDateKst,
+    status: 'running',
+    triggered_by: 'test_stale',
+    started_at: '2000-01-01T00:00:00.000Z',
+    summary: {}
+  });
+
+  const result = await runDailyPipelineOnce({ triggeredBy: 'test_recovery', runDateKst });
+
+  assert.equal(result.duplicate, false);
+  assert.equal(result.recoveredStale, true);
+  assert.equal(result.status, 'completed');
+  assert.equal(result.run.run_date_kst, runDateKst);
+  assert.equal(result.run.triggered_by, 'test_recovery');
 });

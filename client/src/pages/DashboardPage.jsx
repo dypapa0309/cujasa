@@ -299,14 +299,14 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
             {reschedulingToday ? <Spinner /> : <RefreshCw size={16} />}
             오늘 예약 재분산
           </button>
-          {summary?.dailyPipeline?.missing && (
+          {(summary?.dailyPipeline?.missing || summary?.dailyPipeline?.stale) && (
             <button
               onClick={catchUpDailyPipeline}
               disabled={catchingUpDaily}
               className="inline-flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800 disabled:opacity-50"
             >
               {catchingUpDaily ? <Spinner /> : <Clock3 size={16} />}
-              오늘 2시 실행 보정
+              {summary?.dailyPipeline?.stale ? '멈춘 2시 실행 재시작' : '오늘 2시 실행 보정'}
             </button>
           )}
         </div>
@@ -323,14 +323,14 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
         issueBreakdown={summary?.issueBreakdown}
       />
 
-      <div className="grid gap-3 md:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <OpsCard label="계정" value={`${summary?.cards?.accountsActive ?? 0}/${summary?.cards?.accountsTotal ?? 0}`} hint="활성 / 전체" tone="ok" onClick={() => setStatusFilter('all')} />
         <OpsCard
           label="2시 자동 실행"
           value={dailyPipelineLabel(summary?.dailyPipeline)}
           hint={dailyPipelineHint(summary?.dailyPipeline)}
           tone={dailyPipelineTone(summary?.dailyPipeline)}
-          onClick={summary?.dailyPipeline?.missing ? catchUpDailyPipeline : undefined}
+          onClick={(summary?.dailyPipeline?.missing || summary?.dailyPipeline?.stale) ? catchUpDailyPipeline : undefined}
         />
         <OpsCard label="오늘 예약" value={summary?.cards?.scheduledToday ?? 0} hint={`오늘 업로드 완료 ${summary?.cards?.postedToday ?? 0}개`} tone="ok" onClick={() => openEvents('scheduled_today', '오늘 예약/업로드')} />
         <OpsCard label="실패/검토" value={summary?.cards?.queueProblems ?? 0} hint={`큐 정리 ${summary?.issueBreakdown?.queueCleanup ?? 0}개 · 확인 ${summary?.issueBreakdown?.pipelineStuck ?? 0}개`} tone={(summary?.cards?.queueProblems ?? 0) > 0 || (summary?.issueBreakdown?.pipelineStuck ?? 0) > 0 ? 'error' : 'ok'} onClick={() => openEvents('queue_problems', '실패/검토 항목')} />
@@ -849,12 +849,12 @@ function OpsCard({ label, value, hint, tone, onClick }) {
   return (
     <Tag
       onClick={onClick}
-      className={`rounded border bg-white p-4 text-left transition ${onClick ? 'hover:-translate-y-0.5 hover:shadow-sm' : ''} ${tone === 'error' ? 'border-rose-200' : tone === 'warn' ? 'border-amber-200' : 'border-line'}`}
+      className={`min-h-[116px] rounded border bg-white p-4 text-left transition ${onClick ? 'hover:-translate-y-0.5 hover:shadow-sm' : ''} ${tone === 'error' ? 'border-rose-200' : tone === 'warn' ? 'border-amber-200' : 'border-line'}`}
     >
       <div className="text-xs font-bold text-slate-400">{label}</div>
-      <div className="mt-2 text-3xl font-black text-slate-900">{value}</div>
-      <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-400">
-        <span>{hint}</span>
+      <div className="mt-2 text-2xl font-black leading-tight text-slate-900 lg:text-3xl">{value}</div>
+      <div className="mt-2 flex items-start justify-between gap-2 text-xs leading-relaxed text-slate-400">
+        <span className="min-w-0">{hint}</span>
         {onClick && <ExternalLink size={13} className="shrink-0" />}
       </div>
     </Tag>
@@ -862,7 +862,7 @@ function OpsCard({ label, value, hint, tone, onClick }) {
 }
 
 function StatusPill({ status, label }) {
-  return <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-bold ${statusTone[status] || statusTone.warn}`}>{label}</span>;
+  return <span className={`inline-flex max-w-full shrink-0 whitespace-nowrap rounded-full border px-2 py-0.5 text-xs font-bold leading-5 ${statusTone[status] || statusTone.warn}`}>{label}</span>;
 }
 
 function IconButton({ title, onClick, children }) {
@@ -880,6 +880,7 @@ function healthLabel(status) {
 function dailyPipelineLabel(dailyPipeline) {
   if (!dailyPipeline) return '-';
   if (dailyPipeline.missing) return '누락';
+  if (dailyPipeline.stale || dailyPipeline.status === 'stale') return '멈춤';
   if (dailyPipeline.status === 'completed') return '성공';
   if (dailyPipeline.status === 'running') return '실행중';
   if (dailyPipeline.status === 'failed') return '실패';
@@ -888,7 +889,7 @@ function dailyPipelineLabel(dailyPipeline) {
 
 function dailyPipelineTone(dailyPipeline) {
   if (!dailyPipeline) return 'warn';
-  if (dailyPipeline.missing || dailyPipeline.status === 'failed') return 'error';
+  if (dailyPipeline.missing || dailyPipeline.stale || dailyPipeline.status === 'stale' || dailyPipeline.status === 'failed') return 'error';
   if (dailyPipeline.status === 'running' || dailyPipeline.status === 'pending') return 'warn';
   return 'ok';
 }
@@ -896,6 +897,7 @@ function dailyPipelineTone(dailyPipeline) {
 function dailyPipelineHint(dailyPipeline) {
   if (!dailyPipeline) return '오늘 2시 실행 기록 확인 중';
   if (dailyPipeline.missing) return '오늘 02:00 실행 기록 없음';
+  if (dailyPipeline.stale || dailyPipeline.status === 'stale') return '02:00 실행이 오래 멈춤, 재시작 필요';
   const summary = dailyPipeline.run?.summary || {};
   if (dailyPipeline.status === 'completed') {
     return `대상 ${summary.total || 0} · 성공 ${summary.ok || 0} · 후보없음 ${summary.noLinkCandidates || 0}`;
@@ -936,6 +938,7 @@ function activityLabel(action) {
     post_style_blocked: '콘텐츠 후보 제외',
     queue_guardrail_skipped: '콘텐츠 후보 제외',
     upload_reply_failed: '댓글/링크 답글 실패',
+    reply_permission_required: 'Threads 댓글 권한 재연결 필요',
     upload_failed: '업로드 실패',
     upload_completed: '업로드 완료',
     threads_oauth_connected: 'Threads 연결됨',
@@ -949,6 +952,7 @@ function activityMessage(activity) {
   if (!activity) return '';
   if (activity.action === 'post_style_blocked') return `톤 불일치: ${activity.message || '계정 톤 규칙에 맞지 않아 제외'}`;
   if (activity.action === 'queue_guardrail_skipped') return activity.message || '콘텐츠 안전 규칙에 맞지 않아 제외';
+  if (activity.action === 'upload_reply_failed' && /permission|권한|code"?\s*:\s*10/i.test(activity.message || '')) return '본문 업로드 완료, Threads 댓글 권한 재연결이 필요합니다';
   if (activity.action === 'upload_reply_failed') return '본문 업로드 완료, 댓글/링크 답글은 재시도 필요';
   return activity.message || '';
 }
@@ -966,6 +970,7 @@ function friendlyOpsText(value) {
     queue_empty: '오늘 예약 가능한 링크 글이 없습니다',
     threads_reconnect: 'Threads 재연결 필요',
     threads_reconnect_required: 'Threads 재연결 필요',
+    reply_permission_required: 'Threads 댓글 권한 재연결 필요',
     pipeline_stuck: '예약 작업 확인 필요',
     operations_safety_pause: '운영 안전 점검으로 일시정지',
     operations_link_setup_hold: '상품 링크 설정 확인 필요',

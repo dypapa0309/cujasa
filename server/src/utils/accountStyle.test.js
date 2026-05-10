@@ -80,3 +80,26 @@ test('exposes strong-hook guidance in the account style profile', () => {
   assert.equal(profile.strategy.effectiveMode, 'question');
   assert.ok(profile.rules.some((rule) => rule.includes('question')));
 });
+
+test('blocks polite endings on banmal accounts', () => {
+  const result = validatePostStyleFit('수납용품, 많이 사는 것보다 둘 자리를 먼저 정하면 덜 후회하더라고요.\n\n나는 현관 자리를 먼저 봐.', {
+    tone: '반말',
+    content_mode: 'auto',
+    target_audience: '자취생',
+    content_scope: '생활용품'
+  });
+
+  assert.equal(result.allowed, false);
+  assert.ok(result.reasons.some((reason) => reason.includes('말투 불일치')));
+});
+
+test('allows consistent banmal on banmal accounts', () => {
+  const result = validatePostStyleFit('수납용품, 많이 사는 것보다 둘 자리를 먼저 정하면 덜 후회해.\n\n나는 현관에서 바로 집는 물건 자리부터 봐.\n\n너는 어떤 기준 먼저 봐?', {
+    tone: '반말',
+    content_mode: 'auto',
+    target_audience: '자취생',
+    content_scope: '생활용품'
+  });
+
+  assert.equal(result.allowed, true);
+});

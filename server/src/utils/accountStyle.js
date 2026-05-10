@@ -9,6 +9,35 @@ function includesAny(value, terms) {
   return terms.some((term) => value.includes(term));
 }
 
+function wantsBanmal(account = {}) {
+  const tone = String(account.tone || '').replace(/\s+/g, '');
+  return /반말|존댓말금지/.test(tone);
+}
+
+function speechRegisterRule(account = {}) {
+  return wantsBanmal(account)
+    ? 'Speech register is BANMAL only: do not use 요/습니다/합니다/됩니다/세요/이에요/예요 endings anywhere.'
+    : 'Speech register is polite conversational 해요체 only: use 요/죠/더라고요/같아요 consistently, and do not mix in banmal endings.';
+}
+
+function hasPoliteEnding(text = '') {
+  return /(요|죠|네요|더라고요|같아요|봐요|세요|이에요|예요|습니다|합니다|됩니다)(?=$|[\s\n.!?？])/m.test(text);
+}
+
+function hasBanmalEnding(text = '') {
+  return /(했어|됐어|같아|봐|보자|하자|거야|더라|잖아|아니야|뭐였어|있어|없어)(?=$|[\s\n.!?？])/m.test(text);
+}
+
+function speechRegisterViolations(text = '', account = {}) {
+  const value = String(text || '');
+  const banmal = hasBanmalEnding(value);
+  const polite = hasPoliteEnding(value);
+  if (wantsBanmal(account)) {
+    return polite ? ['말투 불일치: 반말 계정에 존댓말/해요체가 섞임'] : [];
+  }
+  return banmal ? ['말투 불일치: 존댓말 계정에 반말 어미가 섞임'] : [];
+}
+
 const modeProfiles = {
   auto: {
     label: '자동 맞춤',
@@ -131,6 +160,7 @@ export function getAccountStyleProfile(account = {}) {
     commentStyleRules[strategy.commentInductionStyle],
     productMentionRules[strategy.productMentionStyle],
     emojiRules[strategy.emojiLevel],
+    speechRegisterRule(account),
     `Tone is secondary guidance only: "${tone}". Do not ignore the structured content mode.`,
     `CTA style is secondary guidance only: "${ctaStyle}".`,
     strategy.contentStyleNote
@@ -188,39 +218,49 @@ export function buildFallbackPostBody(topic, account = {}) {
   const angle = clean(topic?.angle, '고를 때 놓치기 쉬운 포인트');
   const toneKey = profile.tone.replace(/\s+/g, '');
   const mode = profile.strategy.effectiveMode;
+  const banmal = wantsBanmal(account);
 
   if (mode === 'daily') {
+    if (banmal) return `${title}, 평소엔 별거 아닌데 막상 필요할 때마다 은근 신경 쓰여.\n\n${angle}만 먼저 봐도 매번 귀찮던 부분이 조금 줄어들어.\n\n지금 쓰는 방식에서 뭐가 제일 불편한지 먼저 떠올려봐.`;
     return `${title}, 일상에서 은근 자주 마주치는 상황이에요.\n\n${angle}만 잘 봐도 매번 귀찮던 부분이 조금 줄어듭니다.\n\n지금 쓰는 방식에서 뭐가 제일 불편한지 먼저 떠올려보세요.`;
   }
 
   if (mode === 'empathy') {
+    if (banmal) return `${title}, 필요할 때마다 신경 쓰이면 생각보다 피곤해.\n\n${angle} 같은 기준을 잡아두면 고르는 시간이 훨씬 줄어들어.\n\n큰 변화보다 자주 불편했던 부분부터 가볍게 바꿔봐.`;
     return `${title}, 필요할 때마다 신경 쓰이면 생각보다 피곤하죠.\n\n${angle} 같은 기준을 잡아두면 고르는 시간이 훨씬 줄어듭니다.\n\n큰 변화보다 자주 불편했던 부분부터 가볍게 바꿔보면 좋아요.`;
   }
 
   if (mode === 'problem_solution') {
+    if (banmal) return `${title} 고를 때 제일 헷갈리는 건 막상 쓸 상황이 오면 기준이 흐려진다는 거야.\n\n${angle}를 먼저 보고, 자주 쓰는 환경에 맞는지만 확인해봐.\n\n그 기준만 잡아도 불필요한 선택이 줄어들어.`;
     return `${title}를 고를 때 제일 문제는 막상 써야 할 상황이 오면 기준이 헷갈린다는 점이에요.\n\n해결 기준은 간단합니다. ${angle}를 먼저 보고, 자주 쓰는 환경에 맞는지 확인해보세요.\n\n그 기준만 잡아도 불필요한 선택을 줄일 수 있습니다.`;
   }
 
   if (mode === 'checklist') {
+    if (banmal) return `${title} 고를 때는 세 가지만 먼저 봐.\n\n1. 자주 쓰는 상황에 맞는지\n2. ${angle}\n3. 보관이나 관리가 부담스럽지 않은지\n\n처음 눈에 띄는 것보다 계속 쓰기 쉬운지가 더 중요해.`;
     return `${title} 고를 때는 세 가지만 먼저 체크해보세요.\n\n1. 자주 쓰는 상황에 맞는지\n2. ${angle}\n3. 보관이나 관리가 부담스럽지 않은지\n\n처음 눈에 띄는 것보다 실제로 계속 쓰기 쉬운지가 더 중요합니다.`;
   }
 
   if (mode === 'question') {
+    if (banmal) return `${title}, 막상 필요할 때 찾으면 기준이 흐려질 때가 있어.\n\n나는 ${angle}처럼 바로 불편이 줄어드는 부분을 먼저 보는 편이야.\n\n너라면 오래 쓰기 편한 쪽을 봐, 당장 쓰기 쉬운 쪽을 봐?`;
     return `${title}, 막상 필요할 때 찾으면 기준이 흐려질 때가 있어요.\n\n저는 ${angle}처럼 바로 불편이 줄어드는 부분을 먼저 보는 편입니다.\n\n여러분은 고를 때 오래 쓰기 편한 쪽을 보세요, 당장 쓰기 쉬운 쪽을 보세요?`;
   }
 
   if (mode === 'safe_debate') {
+    if (banmal) return `${title}, 쓰는 환경이 다르면 답도 꽤 달라져.\n\n나는 ${angle}처럼 매번 손이 가는 부분을 줄여주는지를 먼저 봐.\n\n너라면 오래 관리하기 쉬운 쪽을 골라, 바로 쓰기 편한 쪽을 골라?`;
     return `${title}, 쓰는 환경이 다르면 답도 꽤 달라져요.\n\n저는 ${angle}처럼 매번 손이 가는 부분을 줄여주는지를 먼저 봅니다.\n\n여러분은 오래 관리하기 쉬운 쪽을 고르세요, 바로 쓰기 편한 쪽을 고르세요?`;
   }
 
   if (includesAny(toneKey, ['설레', '감성', '후기', '리뷰'])) {
+    if (banmal) return `${title}, 고를 때 작은 기준 하나만 있어도 선택이 쉬워져.\n\n${angle} 같은 부분을 보면 오래 두고 쓰기 좋은지 더 잘 보여.\n\n처음 눈에 띄는 것보다 자주 손이 갈 만한지를 먼저 봐.`;
     return `${title}, 고를 때 작은 기준 하나만 있어도 선택이 쉬워져요.\n\n${angle} 같은 부분을 보면 오래 두고 쓰기 좋은지 더 잘 보입니다.\n\n처음 눈에 띄는 것보다 자주 손이 갈 만한지를 먼저 체크해보세요.`;
   }
 
   if (includesAny(toneKey, ['전문', '신뢰'])) {
+    if (banmal) return `${title} 고를 때는 기준을 먼저 나눠보는 게 좋아.\n\n${angle}를 확인하면 실제 사용 환경에 맞는지 판단하기 쉬워.\n\n가격보다 자주 쓰는 상황에 맞는지를 먼저 봐.`;
     return `${title}를 고를 때는 기준을 먼저 나누는 게 좋습니다.\n\n${angle}를 확인하면 실제 사용 환경에 맞는지 판단하기 쉽습니다.\n\n가격보다 자주 쓰는 상황에 맞는지를 먼저 보세요.`;
   }
 
+  if (banmal) return `${title}, 생각보다 은근 신경 쓰이는 부분이야.\n\n${angle}만 잘 봐도 일상이 조금 편해져.\n\n크게 바꾸기보다 자주 쓰는 물건부터 맞춰봐.`;
   return `${title}, 생각보다 은근 신경 쓰이는 부분이에요.\n\n${angle}만 잘 봐도 일상이 조금 편해집니다.\n\n크게 바꾸기보다 자주 쓰는 물건부터 맞춰보면 좋아요.`;
 }
 
@@ -251,7 +291,15 @@ export function strengthenPostHook(body = '', topic = {}, account = {}) {
   const title = sanitizeContentTitle(topic?.title || profile.contentScope, account);
   const angle = clean(topic?.angle, '고를 때 놓치기 쉬운 기준');
   const mode = profile.strategy.effectiveMode;
-  const hooks = {
+  const hooks = wantsBanmal(account) ? {
+    auto: `${title}, 이건 상황마다 기준이 은근 갈리는 포인트야.`,
+    empathy: `${title}, 이거 은근 나만 불편한 줄 알았는데 생각보다 많이 겪는 상황이야.`,
+    daily: `${title}, 평소에는 별거 아닌데 막상 필요할 때마다 은근 신경 쓰여.`,
+    problem_solution: `${title}, 사고 나서 후회하는 포인트는 보통 ${angle}에서 갈려.`,
+    checklist: `${title}, 고르기 전에 ${angle} 하나만 놓쳐도 다시 찾게 돼.`,
+    question: `${title}, 너는 ${angle} 쪽을 먼저 봐, 아니면 편하게 쓰는 쪽을 먼저 봐?`,
+    safe_debate: `${title}, 이건 취향보다 사용 습관에 따라 꽤 갈리는 선택이야.`
+  } : {
     auto: `${title}, 이건 상황마다 기준이 은근 갈리는 포인트예요.`,
     empathy: `${title}, 이거 은근 나만 불편한 줄 알았는데 생각보다 많이 겪는 상황이에요.`,
     daily: `${title}, 평소에는 별거 아닌데 막상 필요할 때마다 은근 신경 쓰이죠.`,
@@ -277,6 +325,7 @@ export function validatePostStyleFit(body, account = {}) {
   if (includesAny(text, hostileTerms) || /(^|[\s.,!?])거지(?=$|[\s.,!?])/.test(text)) {
     reasons.push('후킹 안전장치 위반: 비하/혐오/조롱/위험 갈등 표현 포함');
   }
+  reasons.push(...speechRegisterViolations(text, account));
 
   const hook = scorePostHook(text);
   if (!hook.strong) reasons.push('후킹 부족: 첫 문장에 구체적 불편/선택 갈등/후회 방지/경험 질문 신호 부족');
@@ -290,7 +339,7 @@ export function validatePostStyleFit(body, account = {}) {
   }
 
   if (profile.strategy.effectiveMode === 'problem_solution') {
-    if (!/불편|문제|해결|도움|편해|관리|정리/.test(text)) reasons.push('콘텐츠 방식 불일치: 문제 해결형 신호 부족');
+    if (!/불편|문제|해결|도움|편해|관리|정리|덜\s*후회|줄어|기준|먼저|손\s*가/.test(text)) reasons.push('콘텐츠 방식 불일치: 문제 해결형 신호 부족');
   }
 
   if (profile.strategy.effectiveMode === 'daily') {

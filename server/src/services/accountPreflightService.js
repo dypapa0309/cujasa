@@ -221,16 +221,17 @@ export async function preflightAccount(accountId, options = {}) {
     if (broken.length > 0) {
       const latest = broken[0];
       const first = normalizeQueueClassification(latest, { currentThreadsOk });
-      const isReconnectProblem = first?.category === 'threads_reconnect_required';
+      const isReplyPermissionProblem = first?.category === 'reply_permission_required';
+      const isReconnectProblem = ['threads_reconnect_required', 'reply_permission_required'].includes(first?.category);
       const isPastReconnectProblem = ['retry_available', 'recheck_required'].includes(first?.category);
       checks.push(makeCheck(
         'recent_queue_errors',
-        isReconnectProblem && currentThreadsError ? 'error' : 'warn',
-        (isReconnectProblem && !currentThreadsError) || isPastReconnectProblem ? '과거 업로드 실패 기록이 있습니다' : '최근 업로드 실패가 있습니다',
-        ((isReconnectProblem && !currentThreadsError) || isPastReconnectProblem)
+        (isReplyPermissionProblem || (isReconnectProblem && currentThreadsError)) ? 'error' : 'warn',
+        (isReconnectProblem && !currentThreadsError && !isReplyPermissionProblem) || isPastReconnectProblem ? '과거 업로드 실패 기록이 있습니다' : '최근 업로드 실패가 있습니다',
+        ((isReconnectProblem && !currentThreadsError && !isReplyPermissionProblem) || isPastReconnectProblem)
           ? '현재 Threads 연결은 정상입니다. 과거 실패 항목은 본문 게시 여부를 확인한 뒤 재시도하거나 정리할 수 있습니다.'
           : (first?.message || `${broken.length}개의 확인 필요한 포스팅이 있습니다.`),
-        isReconnectProblem && currentThreadsError ? 'reconnect_threads' : null
+        (isReplyPermissionProblem || (isReconnectProblem && currentThreadsError)) ? 'reconnect_threads' : null
       ));
     }
   }

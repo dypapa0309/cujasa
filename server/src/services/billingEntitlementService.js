@@ -1,9 +1,11 @@
 import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { grantUserProduct } from './authService.js';
 import { ensureSetupTaskForPayment } from './setupTaskService.js';
+import { rememberCujasaPlanPayment } from './sponsorService.js';
 
 const CUJASA_PRODUCT_ID = 'cujasa';
 const DEXOR_PRODUCT_ID = 'dexor';
+const INFLUDEX_PRODUCT_ID = 'infludex';
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const BASIC_MAX_ACCOUNTS = 2;
 export const DEXOR_CREDIT_PRODUCTS = {
@@ -12,6 +14,78 @@ export const DEXOR_CREDIT_PRODUCTS = {
   dexor_credit_50000: 150,
   dexor_credit_100000: 350
 };
+export const INFLUDEX_CREDIT_PRODUCTS = {
+  infludex_credit_19000: 30,
+  infludex_credit_49000: 100,
+  infludex_credit_99000: 250
+};
+export const MONTHLY_USAGE_PRODUCTS = {
+  spread_starter_monthly_49000: { productId: 'spread', limit: 3 },
+  spread_basic_monthly_149000: { productId: 'spread', limit: 10 },
+  spread_pro_monthly_390000: { productId: 'spread', limit: 30 },
+  polibot_starter_monthly_39000: { productId: 'polibot', limit: 100 },
+  polibot_basic_monthly_99000: { productId: 'polibot', limit: 500 },
+  polibot_pro_monthly_290000: { productId: 'polibot', limit: 2000 }
+};
+
+async function addUsageCredits({ userId, productId, product, payment, credits, paidAt, source }) {
+  await grantUserProduct(userId, productId, { status: 'active', role: 'customer' });
+  if (credits <= 0) return dbGet('users', { id: userId });
+  const grant = await dbGet('user_products', { user_id: userId, product_id: productId });
+  const current = grant?.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  const usageRoot = current.usage && typeof current.usage === 'object' ? current.usage : {};
+  const currentUsage = usageRoot[productId] && typeof usageRoot[productId] === 'object' ? usageRoot[productId] : {};
+  const limit = Number.isFinite(Number(currentUsage.limit)) ? Math.max(0, Number(currentUsage.limit)) : 5;
+  const used = Number.isFinite(Number(currentUsage.used)) ? Math.max(0, Number(currentUsage.used)) : 0;
+  await dbUpdate('user_products', { user_id: userId, product_id: productId }, {
+    settings: {
+      ...current,
+      usage: {
+        ...usageRoot,
+        [productId]: {
+          limit: limit + credits,
+          used
+        }
+      },
+      lastCreditPayment: {
+        productId: product.id,
+        paymentId: payment?.id || null,
+        credits,
+        paidAt: new Date(paidAt).toISOString(),
+        source
+      }
+    }
+  });
+  return dbGet('users', { id: userId });
+}
+
+async function applyMonthlyUsageGrant({ userId, product, payment, paidAt, source, productId, limit }) {
+  await grantUserProduct(userId, productId, { status: 'active', role: 'customer' });
+  const grant = await dbGet('user_products', { user_id: userId, product_id: productId });
+  const current = grant?.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  const usageRoot = current.usage && typeof current.usage === 'object' ? current.usage : {};
+  await dbUpdate('user_products', { user_id: userId, product_id: productId }, {
+    settings: {
+      ...current,
+      usage: {
+        ...usageRoot,
+        [productId]: {
+          limit,
+          used: 0,
+          periodStartedAt: new Date(paidAt).toISOString(),
+          periodEndsAt: new Date(new Date(paidAt).getTime() + MONTH_MS).toISOString()
+        }
+      },
+      lastPlanPayment: {
+        productId: product.id,
+        paymentId: payment?.id || null,
+        paidAt: new Date(paidAt).toISOString(),
+        source
+      }
+    }
+  });
+  return dbGet('users', { id: userId });
+}
 
 export function addEntitlementDays(date = new Date(), days = 30) {
   return new Date(new Date(date).getTime() + days * 24 * 60 * 60 * 1000);
@@ -21,38 +95,14 @@ export async function applyPaidEntitlement({ userId, product, payment, paidAt = 
   if (!userId || !product) return null;
   const appProductId = product.app_product_id || CUJASA_PRODUCT_ID;
   if (appProductId === DEXOR_PRODUCT_ID) {
-    const creditAmount = DEXOR_CREDIT_PRODUCTS[product.id] || 0;
-    await grantUserProduct(userId, DEXOR_PRODUCT_ID, { status: 'active', role: 'customer' });
-    if (creditAmount > 0) {
-      const grant = await dbGet('user_products', { user_id: userId, product_id: DEXOR_PRODUCT_ID });
-      const current = grant?.settings && typeof grant.settings === 'object' ? grant.settings : {};
-      const usageRoot = current.usage && typeof current.usage === 'object' ? current.usage : {};
-      const currentUsage = usageRoot[DEXOR_PRODUCT_ID] && typeof usageRoot[DEXOR_PRODUCT_ID] === 'object'
-        ? usageRoot[DEXOR_PRODUCT_ID]
-        : {};
-      const limit = Number.isFinite(Number(currentUsage.limit)) ? Math.max(0, Number(currentUsage.limit)) : 5;
-      const used = Number.isFinite(Number(currentUsage.used)) ? Math.max(0, Number(currentUsage.used)) : 0;
-      await dbUpdate('user_products', { user_id: userId, product_id: DEXOR_PRODUCT_ID }, {
-        settings: {
-          ...current,
-          usage: {
-            ...usageRoot,
-            [DEXOR_PRODUCT_ID]: {
-              limit: limit + creditAmount,
-              used
-            }
-          },
-          lastCreditPayment: {
-            productId: product.id,
-            paymentId: payment?.id || null,
-            credits: creditAmount,
-            paidAt: new Date(paidAt).toISOString(),
-            source
-          }
-        }
-      });
-    }
-    return dbGet('users', { id: userId });
+    return addUsageCredits({ userId, productId: DEXOR_PRODUCT_ID, product, payment, credits: DEXOR_CREDIT_PRODUCTS[product.id] || 0, paidAt, source });
+  }
+  if (appProductId === INFLUDEX_PRODUCT_ID) {
+    return addUsageCredits({ userId, productId: INFLUDEX_PRODUCT_ID, product, payment, credits: INFLUDEX_CREDIT_PRODUCTS[product.id] || 0, paidAt, source });
+  }
+  const monthlyUsage = MONTHLY_USAGE_PRODUCTS[product.id];
+  if (monthlyUsage) {
+    return applyMonthlyUsageGrant({ userId, product, payment, paidAt, source, ...monthlyUsage });
   }
   const paidDate = new Date(paidAt);
   const user = await dbGet('users', { id: userId });
@@ -75,6 +125,7 @@ export async function applyPaidEntitlement({ userId, product, payment, paidAt = 
   });
 
   await grantUserProduct(userId, CUJASA_PRODUCT_ID, { status: 'active', role: 'customer' });
+  await rememberCujasaPlanPayment({ userId, product, payment, paidAt, source }).catch(() => null);
   if (payment?.id) await ensureSetupTaskForPayment(payment, { source });
   return updatedUser;
 }

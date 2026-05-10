@@ -315,7 +315,7 @@ test('createDailyQueue uses balanced link and no-link mix', async () => {
       content_scope: '생활 꿀팁',
       forbidden_topics: [],
       forbidden_words: [],
-      daily_post_max: 3,
+      daily_post_max: 5,
       active_time_windows: [{ start: '09:00', end: '23:00' }],
       min_interval_minutes: 90,
       link_post_ratio: 0.67,
@@ -330,7 +330,7 @@ test('createDailyQueue uses balanced link and no-link mix', async () => {
       coupang_search_status: 'ok'
     });
     const posts = [];
-    for (let index = 0; index < 3; index += 1) {
+    for (let index = 0; index < 5; index += 1) {
       const topic = await dbInsert('topics', {
         project_id: project.id,
         account_id: account.id,
@@ -347,7 +347,7 @@ test('createDailyQueue uses balanced link and no-link mix', async () => {
         status: 'draft'
       });
       posts.push(post);
-      if (index < 2) {
+      if (index < 3) {
         const product = await dbInsert('coupang_products', {
           project_id: project.id,
           account_id: account.id,
@@ -373,17 +373,17 @@ test('createDailyQueue uses balanced link and no-link mix', async () => {
     }
 
     const queued = await createDailyQueue(account.id, { skipPreflight: true });
-    assert.equal(queued.length, 3);
-    assert.equal(queued.filter((row) => row.post_mode === 'link').length, 2);
-    assert.equal(queued.filter((row) => row.post_mode === 'no_link').length, 1);
-    assert.equal(queued.diagnostics.requiredLinkCount, 2);
-    assert.equal(queued.diagnostics.requiredNoLinkCount, 1);
+    assert.equal(queued.length, 5);
+    assert.equal(queued.filter((row) => row.post_mode === 'link').length, 3);
+    assert.equal(queued.filter((row) => row.post_mode === 'no_link').length, 2);
+    assert.equal(queued.diagnostics.requiredLinkCount, 3);
+    assert.equal(queued.diagnostics.requiredNoLinkCount, 2);
   } finally {
     globalThis.fetch = previousFetch;
   }
 });
 
-test('createDailyQueue keeps no-link posting available when reply failures block links', async () => {
+test('createDailyQueue keeps product-linked drafts in link mode even when previous reply failures need review', async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
     ok: true,
@@ -397,32 +397,57 @@ test('createDailyQueue keeps no-link posting available when reply failures block
       status: 'manual_required',
       error_category: 'reply_warning'
     });
-    const topic = await dbInsert('topics', {
-      project_id: account.project_id,
-      account_id: account.id,
-      title: '일반 생활 질문',
-      angle: '댓글 유도'
-    });
-    await dbInsert('posts', {
-      project_id: account.project_id,
-      account_id: account.id,
-      topic_id: topic.id,
-      content_type: '질문형',
-      body: '집안일에서 은근 미루게 되는 일 하나만 고르면 뭐예요?',
-      risk_level: 'low',
-      status: 'draft'
-    });
+    for (let index = 0; index < 3; index += 1) {
+      const topic = await dbInsert('topics', {
+        project_id: account.project_id,
+        account_id: account.id,
+        title: `생활 링크 후보 ${index}`,
+        angle: '댓글 유도'
+      });
+      await dbInsert('posts', {
+        project_id: account.project_id,
+        account_id: account.id,
+        topic_id: topic.id,
+        content_type: '질문형',
+        body: '집 정리할 때 수납 기준은 은근 갈리죠. 꺼내기 쉬운 쪽을 보세요, 보기 깔끔한 쪽을 보세요?',
+        risk_level: 'low',
+        status: 'draft'
+      });
+      const product = await dbInsert('coupang_products', {
+        project_id: account.project_id,
+        account_id: account.id,
+        topic_id: topic.id,
+        keyword: '수납함',
+        product_id: `product-reply-blocked-${index}`,
+        product_name: '수납함',
+        product_price: 12900,
+        product_image: 'https://example.com/image.jpg',
+        product_url: `https://www.coupang.com/vp/products/${index}?itemId=2&vendorItemId=3`,
+        partner_url: `https://link.coupang.com/re/AFFSDP?pageKey=${index}&itemId=2&vendorItemId=3`,
+        category_name: '생활',
+        is_fallback: false
+      });
+      await dbInsert('post_products', {
+        topic_id: topic.id,
+        product_id: product.id,
+        rank: 1,
+        fit_score: 90,
+        recommendation_reason: '상황에 맞습니다.'
+      });
+    }
 
     const queued = await createDailyQueue(account.id, { skipPreflight: true });
     assert.ok(queued.length > 0);
-    assert.equal(queued.every((row) => row.post_mode === 'no_link'), true);
+    assert.equal(queued.filter((row) => row.post_mode === 'link').length, queued.length);
+    assert.equal(queued.filter((row) => row.post_mode === 'no_link').length, 0);
+    assert.equal(queued.diagnostics.requiredLinkCount, queued.length);
     assert.equal(queued.diagnostics.linkPostsBlocked, true);
   } finally {
     globalThis.fetch = previousFetch;
   }
 });
 
-test('uploadQueueItem falls back to no-link when prior reply failures block safe link posting', async () => {
+test('uploadQueueItem keeps link queue in manual review instead of falling back to no-link', async () => {
   const previousMock = process.env.MOCK_UPLOAD;
   const previousFetch = globalThis.fetch;
   process.env.MOCK_UPLOAD = 'true';
@@ -488,10 +513,9 @@ test('uploadQueueItem falls back to no-link when prior reply failures block safe
 
     const uploaded = await uploadQueueItem(queue.id);
 
-    assert.equal(uploaded.status, 'posted');
-    assert.equal(uploaded.post_mode, 'no_link');
-    assert.equal(uploaded.tracking_link_id, null);
-    assert.equal(uploaded.error_message, null);
+    assert.equal(uploaded.status, 'manual_required');
+    assert.equal(uploaded.post_mode, 'link');
+    assert.match(uploaded.error_message, /REPLY_LINK_FAILURE_UNRESOLVED/);
   } finally {
     restoreEnv('MOCK_UPLOAD', previousMock);
     globalThis.fetch = previousFetch;

@@ -4,7 +4,7 @@ import { scorePostEngagement } from './postEngagementScoring.js';
 import { evaluatePostQualityGate } from './postQualityGate.js';
 
 test('passes lived-in save-worthy human posts', () => {
-  const body = '자취생을 위한 집기 추천, 많이 사는 것보다 “어디에 둘지”부터 정하면 덜 후회하더라고요.\n\n처음엔 큰 것부터 눈에 들어오는데, 막상 살아보면 매일 손 가는 작은 자리가 더 먼저 티 나요.\n\n저라면 큰 가구보다\n1. 설거지 끝나고 바로 내려둘 자리\n2. 빨래 돌리기 전 잠깐 모아둘 바구니 자리\n3. 현관에서 나갈 때 바로 집는 물건 자리\n이 세 자리부터 맞출 것 같아요.\n\n처음 자취할 때 “이건 빨리 사길 잘했다” 싶은 집기, 여러분은 뭐였어요?';
+  const body = '자취템은 사기 전에 어디에 둘지 먼저 떠올리면 덜 후회하더라고요.\n\n매일 쓰다 보면 예쁜 모양보다 손이 가는 위치가 더 빨리 티 나요.\n\n저라면\n1. 설거지 끝나고 바로 내려둘 자리\n2. 빨래 돌리기 전 잠깐 모아둘 바구니 자리\n3. 현관에서 나갈 때 바로 집는 물건 자리\n부터 봐요.\n\n처음 자취할 때 “이건 빨리 사길 잘했다” 싶은 집기, 여러분은 뭐였어요?';
   const gate = evaluatePostQualityGate(scorePostEngagement(body));
 
   assert.equal(gate.passed, true);
@@ -18,4 +18,28 @@ test('fails shallow AI-like checklist posts with rewrite instructions', () => {
   assert.equal(gate.passed, false);
   assert.ok(gate.reasons.some((reason) => /생활 디테일|AI식|얕은 체크리스트/.test(reason)));
   assert.ok(gate.rewriteInstructions.some((item) => /생활 디테일/.test(item)));
+});
+
+test('fails repetitive fallback skeletons', () => {
+  const body = '자취생을 위한 집기 추천, 많이 사는 것보다 “어디에 둘지”부터 정하면 덜 후회하더라고요.\n\n막상 살아보면 큰 기능보다 매일 손 가는 자리가 먼저 티 나요.\n\n저라면\n1. 설거지 끝나고 바로 내려둘 자리\n2. 빨래 돌리기 전 잠깐 모아둘 바구니 자리\n3. 현관에서 나갈 때 바로 집는 물건 자리\n부터 봐요.\n\n여러분은 뭐였어요?';
+  const gate = evaluatePostQualityGate(scorePostEngagement(body));
+
+  assert.equal(gate.passed, false);
+  assert.ok(gate.reasons.some((reason) => /반복/.test(reason)));
+  assert.ok(gate.rewriteInstructions.some((item) => /최근 글|같은 첫 문장/.test(item)));
+});
+
+test('fails awkward phrases and category detail mismatches', () => {
+  const awkward = '주방용품 고를 때 은근 놓치는 게 제자리에 돌려두는 흐름이에요.\n\n조리대와 싱크대 옆 자리가 맞으면 손이 덜 가요.\n\n여러분은 뭐부터 보세요?';
+  const mismatch = '선물은 받는 사람이 바로 쓸 수 있는지가 먼저예요.\n\n아이 손이 닿는 낮은 자리인지, 기저귀나 물티슈를 바로 집을 수 있는지도 같이 봐요.\n\n여러분은 뭐가 좋았어요?';
+
+  const awkwardGate = evaluatePostQualityGate(scorePostEngagement(awkward));
+  const mismatchGate = evaluatePostQualityGate(scorePostEngagement(mismatch));
+
+  assert.equal(awkwardGate.passed, false);
+  assert.ok(awkwardGate.reasons.some((reason) => /금지 표현/.test(reason)));
+  assert.ok(awkwardGate.rewriteInstructions.some((item) => /다시 두기 편한지/.test(item)));
+  assert.equal(mismatchGate.passed, false);
+  assert.ok(mismatchGate.reasons.some((reason) => /카테고리/.test(reason)));
+  assert.ok(mismatchGate.rewriteInstructions.some((item) => /선물 글/.test(item)));
 });

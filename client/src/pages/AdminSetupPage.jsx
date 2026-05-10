@@ -19,6 +19,14 @@ const statusClass = {
   canceled: 'border-slate-200 bg-slate-50 text-slate-500'
 };
 
+const threadsStatusLabels = {
+  requested: '등록 필요',
+  meta_registered: 'Meta 등록',
+  customer_action_required: '고객 승인 필요',
+  connected: '연결 완료',
+  canceled: '취소'
+};
+
 export default function AdminSetupPage() {
   const toast = useToast();
   const [tasks, setTasks] = useState([]);
@@ -34,18 +42,21 @@ export default function AdminSetupPage() {
   const [editForm, setEditForm] = useState(null);
   const [normalizing, setNormalizing] = useState(false);
   const [assistantMetrics, setAssistantMetrics] = useState(null);
+  const [threadsRequests, setThreadsRequests] = useState([]);
 
   const load = async () => {
-    const [rows, nextUsers, nextProducts, metrics] = await Promise.all([
+    const [rows, nextUsers, nextProducts, metrics, nextThreadsRequests] = await Promise.all([
       api.get('/api/admin/setup-tasks'),
       api.get('/api/admin/users'),
       api.get('/api/admin/billing/products'),
-      api.get('/api/admin/operations/assistant-metrics').catch(() => null)
+      api.get('/api/admin/operations/assistant-metrics').catch(() => null),
+      api.get('/api/admin/threads-connection-requests').catch(() => [])
     ]);
     setTasks(rows);
     setUsers(nextUsers);
     setProducts(nextProducts);
     setAssistantMetrics(metrics);
+    setThreadsRequests(Array.isArray(nextThreadsRequests) ? nextThreadsRequests : []);
   };
 
   useEffect(() => {
@@ -55,8 +66,9 @@ export default function AdminSetupPage() {
   const counts = useMemo(() => ({
     pending: tasks.filter((task) => task.status === 'pending').length,
     inProgress: tasks.filter((task) => task.status === 'in_progress').length,
-    completed: tasks.filter((task) => task.status === 'completed').length
-  }), [tasks]);
+    completed: tasks.filter((task) => task.status === 'completed').length,
+    threadsOpen: threadsRequests.filter((row) => ['requested', 'meta_registered', 'customer_action_required'].includes(row.status)).length
+  }), [tasks, threadsRequests]);
 
   const taskUserIdsByStatus = useMemo(() => {
     const result = { pending: new Set(), in_progress: new Set(), completed: new Set(), canceled: new Set(), open: new Set(), all: new Set() };
@@ -102,6 +114,19 @@ export default function AdminSetupPage() {
       await load();
     } catch (err) {
       toast(err.message || '셋업 상태 변경에 실패했습니다.', 'error');
+    } finally {
+      setSavingId('');
+    }
+  };
+
+  const updateThreadsRequest = async (request, status) => {
+    setSavingId(request.id);
+    try {
+      await api.patch(`/api/admin/threads-connection-requests/${request.id}`, { status });
+      toast(`Threads 요청을 ${threadsStatusLabels[status] || status} 상태로 변경했습니다.`, 'success');
+      await load();
+    } catch (err) {
+      toast(err.message || 'Threads 요청 상태 변경에 실패했습니다.', 'error');
     } finally {
       setSavingId('');
     }
@@ -212,11 +237,65 @@ export default function AdminSetupPage() {
         </button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-4">
         <SummaryCard icon={<Clock3 size={18} />} label="대기" value={counts.pending} />
         <SummaryCard icon={<Wrench size={18} />} label="셋업 중" value={counts.inProgress} />
         <SummaryCard icon={<CheckCircle2 size={18} />} label="완료" value={counts.completed} />
+        <SummaryCard icon={<Wrench size={18} />} label="Threads 요청" value={counts.threadsOpen} />
       </div>
+
+      <section className="rounded border border-line bg-white">
+        <div className="border-b border-line px-5 py-4">
+          <h3 className="font-bold">Threads 연결 요청</h3>
+          <p className="mt-0.5 text-xs text-slate-400">고객이 입력한 Threads 핸들을 Meta 개발자센터에 등록한 뒤 완료 처리합니다.</p>
+        </div>
+        {threadsRequests.filter((row) => row.status !== 'connected' && row.status !== 'canceled').length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-slate-400">현재 처리할 Threads 연결 요청이 없습니다.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-[900px] w-full text-sm">
+              <thead className="bg-panel text-left text-xs font-bold text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">상태</th>
+                  <th className="px-4 py-3">고객</th>
+                  <th className="px-4 py-3">계정</th>
+                  <th className="px-4 py-3">Threads</th>
+                  <th className="px-4 py-3">요청 메모</th>
+                  <th className="px-4 py-3 text-right">액션</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-line">
+                {threadsRequests.filter((row) => row.status !== 'connected' && row.status !== 'canceled').map((request) => (
+                  <tr key={request.id}>
+                    <td className="px-4 py-3"><span className="rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">{threadsStatusLabels[request.status] || request.status}</span></td>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-slate-900">{request.user?.buyer_name || request.user?.username || '-'}</div>
+                      <div className="text-xs text-slate-400">{request.user?.email || '-'}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-slate-900">{request.account?.name || request.account_id}</div>
+                      <div className="text-xs text-slate-400">{request.account?.account_handle || '-'}</div>
+                    </td>
+                    <td className="px-4 py-3 font-bold text-slate-700">{request.threads_handle}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500">{request.request_memo || '-'}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-2">
+                        {request.status === 'requested' && (
+                          <button disabled={savingId === request.id} onClick={() => updateThreadsRequest(request, 'customer_action_required')} className="rounded bg-slate-900 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">Meta 등록 완료</button>
+                        )}
+                        {request.status !== 'connected' && (
+                          <button disabled={savingId === request.id} onClick={() => updateThreadsRequest(request, 'connected')} className="rounded border border-line px-3 py-1.5 text-xs font-bold hover:bg-panel disabled:opacity-50">연결 완료 처리</button>
+                        )}
+                        <button disabled={savingId === request.id} onClick={() => updateThreadsRequest(request, 'canceled')} className="rounded border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50">취소</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       {assistantMetrics && (
         <section className="rounded border border-line bg-white p-5">

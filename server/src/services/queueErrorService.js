@@ -40,6 +40,14 @@ export function classifyQueueError(message = '') {
       message: 'Threads 연결이 만료되었거나 사용할 수 없습니다. 다시 연결하기 전까지 업로드를 시도하지 않습니다.'
     };
   }
+  if (/Application does not have permission for this action|code"?\s*:\s*10|permission.*action|threads_manage_replies|권한/i.test(value)) {
+    return {
+      category: 'reply_permission_required',
+      severity: 'error',
+      title: 'Threads 댓글 권한 재연결 필요',
+      message: 'Threads 댓글 권한이 빠진 연결입니다. Meta 앱 권한을 확인하고 계정을 다시 연결한 뒤 댓글 링크를 복구해야 합니다.'
+    };
+  }
   if (/reply container failed|reply publish failed/i.test(value)) {
     return {
       category: 'reply_warning',
@@ -115,6 +123,14 @@ export function classificationForCategory(category, fallbackMessage = '') {
       message: 'Threads 연결이 만료되었거나 사용할 수 없습니다. 다시 연결하기 전까지 업로드를 시도하지 않습니다.'
     };
   }
+  if (category === 'reply_permission_required') {
+    return {
+      category,
+      severity: 'error',
+      title: 'Threads 댓글 권한 재연결 필요',
+      message: 'Threads 댓글 권한이 빠진 연결입니다. Meta 앱 권한을 확인하고 계정을 다시 연결한 뒤 댓글 링크를 복구해야 합니다.'
+    };
+  }
   if (category === 'reply_warning') {
     return {
       category,
@@ -166,6 +182,9 @@ export function normalizeQueueClassification(row = {}, options = {}) {
   if (category === 'manual_required' && messageClassification.category !== 'manual_required') {
     category = messageClassification.category;
   }
+  if (messageClassification.category === 'reply_permission_required') {
+    category = 'reply_permission_required';
+  }
   if (category === 'threads_reconnect_required' && options.currentThreadsOk) {
     category = options.reconnectedCategory || 'retry_available';
   }
@@ -175,7 +194,7 @@ export function normalizeQueueClassification(row = {}, options = {}) {
 
 export function isThreadsReconnectQueueError(row = {}) {
   const classified = normalizeQueueClassification(row);
-  return classified.category === 'threads_reconnect_required';
+  return ['threads_reconnect_required', 'reply_permission_required'].includes(classified.category);
 }
 
 export function decorateQueueRow(row = {}) {
@@ -210,7 +229,7 @@ export function postModeLabel(postMode = 'auto') {
 
 export function adminActivityLabel(action, message = '') {
   if (action === 'upload_failed') return classifyQueueError(message).title;
-  if (action === 'upload_reply_failed') return '댓글/링크 답글 실패';
+  if (action === 'upload_reply_failed') return classifyQueueError(message).title || '댓글/링크 답글 실패';
   if (action === 'reply_link_repair_blocked') return '댓글 링크 수동확인';
   if (action === 'reply_link_failure_repaired') return '댓글 링크 복구 완료';
   if (action === 'reply_link_failure_repair_failed') return '댓글 링크 복구 실패';
@@ -231,7 +250,7 @@ export function adminActivityLabel(action, message = '') {
 
 export function adminActivityMessage(action, message = '') {
   if (action === 'upload_failed') return classifyQueueError(message).message;
-  if (action === 'upload_reply_failed') return '본문 업로드는 완료됐고, 댓글/링크 답글만 재시도하면 됩니다.';
+  if (action === 'upload_reply_failed') return classifyQueueError(message).message || '본문 업로드는 완료됐고, 댓글/링크 답글만 재시도하면 됩니다.';
   if (action === 'reply_link_repair_blocked') return message || '댓글 링크 자동 복구에 필요한 정보가 부족해 수동확인으로 분리했습니다.';
   if (action === 'reply_link_failure_repaired') return message || '기존 Threads 게시글에 쿠팡 링크 댓글을 다시 등록했습니다.';
   if (action === 'reply_link_failure_repair_failed') return message || '댓글 링크 복구에 실패했습니다. 반복되면 수동 확인이 필요합니다.';

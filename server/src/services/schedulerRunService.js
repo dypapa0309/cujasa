@@ -10,6 +10,17 @@ export const DAILY_PIPELINE_JOB = 'daily-pipeline';
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAILY_PIPELINE_HOUR_KST = 2;
+const DEFAULT_DAILY_PIPELINE_STALE_MINUTES = 360;
+
+function positiveNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const DAILY_PIPELINE_STALE_MS = positiveNumber(
+  process.env.DAILY_PIPELINE_STALE_MINUTES,
+  DEFAULT_DAILY_PIPELINE_STALE_MINUTES
+) * 60 * 1000;
 
 function now() {
   return new Date();
@@ -59,9 +70,28 @@ function isDuplicateSchedulerRunError(error) {
   return /scheduler_runs|duplicate key|idx_scheduler_runs_job_date|unique/i.test(error.message || '');
 }
 
+function isStaleSchedulerRun(run, date = now()) {
+  if (!run || run.status !== 'running') return false;
+  const lastSeen = new Date(run.finished_at || run.started_at).getTime();
+  return Number.isFinite(lastSeen) && date.getTime() - lastSeen > DAILY_PIPELINE_STALE_MS;
+}
+
 async function startSchedulerRun({ jobName, runDateKst, triggeredBy }) {
   const existing = await dbGet('scheduler_runs', { job_name: jobName, run_date_kst: runDateKst }).catch(() => null);
-  if (existing) return { run: existing, acquired: false };
+  if (existing) {
+    if (isStaleSchedulerRun(existing)) {
+      const [run] = await dbUpdate('scheduler_runs', { id: existing.id }, {
+        status: 'running',
+        triggered_by: triggeredBy,
+        started_at: now().toISOString(),
+        finished_at: null,
+        summary: {},
+        error_message: null
+      });
+      return { run, acquired: true, recoveredStale: true };
+    }
+    return { run: existing, acquired: false };
+  }
   try {
     const run = await dbInsert('scheduler_runs', {
       job_name: jobName,
@@ -103,12 +133,14 @@ export async function dailyPipelineStatus(date = now()) {
   const runDateKst = kstDateString(date);
   const run = await getSchedulerRun(DAILY_PIPELINE_JOB, runDateKst).catch(() => null);
   const windowPassed = hasDailyPipelineWindowPassed(date);
+  const stale = isStaleSchedulerRun(run, date);
   return {
     jobName: DAILY_PIPELINE_JOB,
     runDateKst,
     windowPassed,
     missing: windowPassed && !run,
-    status: run?.status || (windowPassed ? 'missing' : 'pending'),
+    stale,
+    status: stale ? 'stale' : (run?.status || (windowPassed ? 'missing' : 'pending')),
     run: run ? {
       id: run.id,
       status: run.status,
@@ -122,7 +154,7 @@ export async function dailyPipelineStatus(date = now()) {
 }
 
 export async function runDailyPipelineOnce({ triggeredBy = 'scheduler', runDateKst = kstDateString() } = {}) {
-  const { run, acquired } = await startSchedulerRun({
+  const { run, acquired, recoveredStale = false } = await startSchedulerRun({
     jobName: DAILY_PIPELINE_JOB,
     runDateKst,
     triggeredBy
@@ -141,8 +173,8 @@ export async function runDailyPipelineOnce({ triggeredBy = 'scheduler', runDateK
   await logActivity({
     action: 'scheduler_daily_pipeline_started',
     level: 'info',
-    message: `${runDateKst} daily-pipeline 시작`,
-    payload: { triggeredBy }
+    message: `${runDateKst} daily-pipeline ${recoveredStale ? 'stale 재시작' : '시작'}`,
+    payload: { triggeredBy, recoveredStale }
   }).catch(() => {});
 
   try {
@@ -166,7 +198,7 @@ export async function runDailyPipelineOnce({ triggeredBy = 'scheduler', runDateK
       message: `${runDateKst} daily-pipeline 완료`,
       payload: summary
     }).catch(() => {});
-    return { ok: true, duplicate: false, status: 'completed', run: updated, summary };
+    return { ok: true, duplicate: false, recoveredStale, status: 'completed', run: updated, summary };
   } catch (error) {
     const summary = {
       failedAt: now().toISOString(),
@@ -184,6 +216,6 @@ export async function runDailyPipelineOnce({ triggeredBy = 'scheduler', runDateK
       hint: 'scheduler_runs와 서버 로그를 확인하세요.',
       payload: { runDateKst, triggeredBy }
     }).catch(() => {});
-    return { ok: false, duplicate: false, status: 'failed', run: updated, summary, error: error.message };
+    return { ok: false, duplicate: false, recoveredStale, status: 'failed', run: updated, summary, error: error.message };
   }
 }

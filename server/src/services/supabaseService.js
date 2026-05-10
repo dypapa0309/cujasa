@@ -86,6 +86,23 @@ const tables = {
   automation_studio_campaigns: [],
   automation_studio_assets: [],
   automation_studio_queue_links: [],
+  automation_studio_lead_forms: [],
+  automation_studio_lead_submissions: [],
+  threads_connection_requests: [],
+  sponsor_campaigns: [
+    {
+      id: 'sponsor-jasain-default',
+      name: 'JASAIN 자체 홍보',
+      product_name: 'JASAIN',
+      destination_url: 'https://jasain.kr',
+      category: 'automation',
+      label_text: '[광고]',
+      comment_text: '[광고] Threads 자동화 수익 플랫폼 JASAIN · https://jasain.kr',
+      active: true,
+      created_at: now(),
+      updated_at: now()
+    }
+  ],
   trend_reference_patterns: [],
   activity_logs: [],
   account_conflict_audits: [],
@@ -154,13 +171,24 @@ const tables = {
   polibot_recommendation_feedback: [],
   billing_products: [
     {
+      id: 'sponsored_monthly_19000',
+      app_product_id: 'cujasa',
+      name: 'CUJASA 스폰서 스타터',
+      plan: 'monthly',
+      amount: 19000,
+      billing_cycle: 'monthly',
+      max_accounts: 1,
+      active: true,
+      created_at: now()
+    },
+    {
       id: 'onetime_590000',
       app_product_id: 'cujasa',
-      name: 'CUJASA 베이직 일시불',
+      name: 'CUJASA 프로 영구구매',
       plan: 'onetime',
       amount: 590000,
       billing_cycle: 'once',
-      max_accounts: 2,
+      max_accounts: 4,
       active: true,
       created_at: now()
     },
@@ -229,6 +257,105 @@ const tables = {
       max_accounts: 0,
       active: true,
       created_at: now()
+    },
+    {
+      id: 'infludex_credit_19000',
+      app_product_id: 'infludex',
+      name: 'INFLUDEX 라이트 분석 30회',
+      plan: 'onetime',
+      amount: 19000,
+      billing_cycle: 'once',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'infludex_credit_49000',
+      app_product_id: 'infludex',
+      name: 'INFLUDEX 베이직 분석 100회',
+      plan: 'onetime',
+      amount: 49000,
+      billing_cycle: 'once',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'infludex_credit_99000',
+      app_product_id: 'infludex',
+      name: 'INFLUDEX 프로 분석 250회',
+      plan: 'onetime',
+      amount: 99000,
+      billing_cycle: 'once',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'spread_starter_monthly_49000',
+      app_product_id: 'spread',
+      name: 'SPREAD 스타터 월정액',
+      plan: 'monthly',
+      amount: 49000,
+      billing_cycle: 'monthly',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'spread_basic_monthly_149000',
+      app_product_id: 'spread',
+      name: 'SPREAD 베이직 월정액',
+      plan: 'monthly',
+      amount: 149000,
+      billing_cycle: 'monthly',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'spread_pro_monthly_390000',
+      app_product_id: 'spread',
+      name: 'SPREAD 프로 월정액',
+      plan: 'monthly',
+      amount: 390000,
+      billing_cycle: 'monthly',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'polibot_starter_monthly_39000',
+      app_product_id: 'polibot',
+      name: 'POLIBOT 스타터 월정액',
+      plan: 'monthly',
+      amount: 39000,
+      billing_cycle: 'monthly',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'polibot_basic_monthly_99000',
+      app_product_id: 'polibot',
+      name: 'POLIBOT 베이직 월정액',
+      plan: 'monthly',
+      amount: 99000,
+      billing_cycle: 'monthly',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'polibot_pro_monthly_290000',
+      app_product_id: 'polibot',
+      name: 'POLIBOT 프로 월정액',
+      plan: 'monthly',
+      amount: 290000,
+      billing_cycle: 'monthly',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
     }
   ],
   billing_payments: [],
@@ -256,6 +383,10 @@ const updatedAtTables = new Set([
   'post_metrics_jobs',
   'automation_studio_campaigns',
   'automation_studio_assets',
+  'automation_studio_lead_forms',
+  'automation_studio_lead_submissions',
+  'threads_connection_requests',
+  'sponsor_campaigns',
   'trend_reference_patterns',
   'blog_posts',
   'notifications',

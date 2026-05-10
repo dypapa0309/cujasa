@@ -163,10 +163,11 @@ function statusLabel(status) {
 }
 
 function isPostedLinkIssue(row = {}) {
-  return row.status === 'posted' && ['reply_warning', 'reply_repair_blocked'].includes(row.error_category);
+  return row.status === 'posted' && ['reply_warning', 'reply_repair_blocked', 'reply_permission_required'].includes(row.error_category);
 }
 
 function queueAttentionLabel(row = {}) {
+  if (row.error_category === 'reply_permission_required') return '댓글 권한 재연결';
   if (row.error_category === 'reply_repair_blocked') return '링크 수동확인';
   if (row.error_category === 'reply_warning') return '댓글 링크 확인';
   return null;
@@ -952,11 +953,23 @@ export default function CustomerBetaPage({
               )}
 
               {messages.length > 0 && (
-                <section className="min-h-0 overflow-y-auto px-1 py-2 text-left lg:py-3">
-                  <div className="mx-auto grid w-full max-w-3xl gap-3 lg:gap-2.5">
-                    {messages.map((message) => (
-                      <BetaChatMessage key={message.id} message={message} onOpenAction={openWorkspaceAction} />
-                    ))}
+                <section className="min-h-0 overflow-y-auto px-1 py-3 text-left lg:py-5">
+                  <div className="mx-auto flex w-full max-w-2xl flex-col gap-3.5 lg:gap-4">
+                    {(() => {
+                      let previousAssistantContent = '';
+                      return messages.map((message) => {
+                        const repeatedAssistant = message.role === 'assistant' && message.content === previousAssistantContent;
+                        if (message.role === 'assistant') previousAssistantContent = message.content;
+                        return (
+                          <BetaChatMessage
+                            key={message.id}
+                            message={message}
+                            repeatedAssistant={repeatedAssistant}
+                            onOpenAction={openWorkspaceAction}
+                          />
+                        );
+                      });
+                    })()}
                     {isTestAssistantUser && assistantWorkflow?.state && (
                       <TestAssistantWorkflowStatus workflow={assistantWorkflow.state} onOpenAction={openWorkspaceAction} />
                     )}
@@ -965,35 +978,31 @@ export default function CustomerBetaPage({
                 </section>
               )}
 
-              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-3xl min-w-0 ${messages.length > 0 ? 'pt-2 lg:pb-1' : 'mt-5 lg:mt-5'}`}>
-                <div className="overflow-hidden rounded-[24px] border border-white/10 bg-[#242424] p-2.5 shadow-2xl shadow-black/30 lg:rounded-[24px]">
-                  <textarea
-                    value={prompt}
-                    disabled={assistantLoading}
-                    onChange={(event) => setPrompt(event.target.value)}
-                    onKeyDown={(event) => {
-                      if ((event.nativeEvent?.isComposing || event.isComposing)) return;
-                      if (event.key === 'Enter' && !event.shiftKey) {
-                        event.preventDefault();
-                        submitPrompt(event);
-                      }
-                    }}
-                    rows={messages.length > 0 ? 2 : 2}
-                    placeholder="예: 오늘 자동화 실행해줘, 설정 확인하고 싶어, 포스팅 현황 보여줘"
-                    className="min-h-[48px] w-full resize-none bg-transparent px-2 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:text-base lg:min-h-[52px]"
-                  />
-                  {assistantLoading && (
-                    <div className="px-2 pb-1 text-xs font-bold text-zinc-600">JASAIN Assistant가 확인 중이에요...</div>
-                  )}
-                  <div className="mt-1.5 flex items-center justify-between gap-3 border-t border-white/5 pt-2 lg:mt-1.5 lg:pt-2">
-                    <div className="flex min-w-0 flex-wrap gap-2">
-                      <span className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-500">CUJASA</span>
-                      <span className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-bold text-zinc-500">{selectedProduct.name}</span>
-                    </div>
-                    <button type="submit" disabled={assistantLoading} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 hover:bg-white disabled:cursor-wait disabled:opacity-60">
-                      <ChevronRight size={20} />
+              <form onSubmit={submitPrompt} className={`mx-auto w-full max-w-2xl min-w-0 ${messages.length > 0 ? 'pt-2 lg:pb-1' : 'mt-5 lg:mt-5'}`}>
+                <div className="rounded-[22px] border border-white/10 bg-[#202020] px-3 py-2 shadow-xl shadow-black/25 transition focus-within:border-white/20">
+                  <div className="flex items-end gap-2">
+                    <textarea
+                      value={prompt}
+                      disabled={assistantLoading}
+                      onChange={(event) => setPrompt(event.target.value)}
+                      onKeyDown={(event) => {
+                        if ((event.nativeEvent?.isComposing || event.isComposing)) return;
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                          event.preventDefault();
+                          submitPrompt(event);
+                        }
+                      }}
+                      rows={1}
+                      placeholder="작업을 입력해 주세요"
+                      className="max-h-28 min-h-[38px] flex-1 resize-none bg-transparent px-1 py-2 text-sm leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:outline-none disabled:cursor-wait disabled:opacity-60 sm:text-[15px]"
+                    />
+                    <button type="submit" disabled={assistantLoading} className="mb-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-zinc-100 text-zinc-950 hover:bg-white disabled:cursor-wait disabled:opacity-60">
+                      <ChevronRight size={19} />
                     </button>
                   </div>
+                  {assistantLoading && (
+                    <div className="px-1 pb-0.5 pt-1 text-[11px] font-bold text-zinc-600">JASAIN Assistant가 확인 중이에요...</div>
+                  )}
                 </div>
               </form>
 
@@ -1371,32 +1380,49 @@ function SidebarFooterButton({ itemRef, icon: Icon, label, sub = '', onClick, on
   );
 }
 
-function BetaChatMessage({ message, onOpenAction }) {
+function BetaChatMessage({ message, repeatedAssistant = false, onOpenAction }) {
   const isUser = message.role === 'user';
   const handleAction = (action) => {
     if (action.actionKey) onOpenAction(action.actionKey);
   };
+  const actions = Array.isArray(message.actions)
+    ? message.actions.filter((action, index, list) => (
+      action?.label && list.findIndex((item) => item?.label === action.label) === index
+    )).slice(0, 3)
+    : [];
+
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[min(78%,520px)] rounded-[20px] border border-white/10 bg-zinc-100 px-4 py-2.5 text-sm font-bold leading-relaxed text-zinc-950 shadow-lg shadow-black/20">
+          {message.content}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[86%] rounded-3xl px-4 py-3 text-sm leading-relaxed ${isUser ? 'bg-white text-zinc-950' : 'bg-black/25 text-zinc-200'}`}>
+    <article className={`px-1 py-2 ${repeatedAssistant ? 'opacity-85' : ''}`}>
+      <div className="whitespace-pre-wrap text-[15px] font-semibold leading-[1.8] text-zinc-200">
         {message.content}
-        {!isUser && message.actions?.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {message.actions.map((action) => (
-              <button
-                key={`${message.id}-${action.label}`}
-                type="button"
-                onClick={() => handleAction(action)}
-                className="rounded-full border border-white/10 px-3 py-1.5 text-xs font-black text-zinc-300 hover:bg-white/10 hover:text-white"
-              >
-                {action.label}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
-    </div>
+      <div className="min-w-0">
+          {actions.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2.5">
+              {actions.map((action) => (
+                <button
+                  key={`${message.id}-${action.label}`}
+                  type="button"
+                  onClick={() => handleAction(action)}
+                  className="inline-flex h-9 items-center rounded-full border border-white/10 bg-white/[0.03] px-3.5 text-xs font-black text-zinc-300 transition hover:border-white/20 hover:bg-white/10 hover:text-white"
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
+      </div>
+    </article>
   );
 }
 
@@ -1406,7 +1432,7 @@ function TestAssistantWorkflowStatus({ workflow, onOpenAction }) {
   const confirm = missing.filter((field) => field.importance === 'confirm');
   const nextQuestion = Array.isArray(workflow.nextQuestions) ? workflow.nextQuestions[0] : '';
   return (
-    <div className="justify-self-start rounded-3xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-zinc-300">
+    <div className="rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-zinc-300">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-black text-zinc-100">테스트 대화 상태</span>
         {workflow.readyToSubmit ? (
@@ -1437,17 +1463,21 @@ function TaskDrawer(props) {
   const compactPreview = ['dexor', 'spread', 'polibot', 'infludex'].includes(action.key);
   const isTestUser = String(props.currentUser?.email || '').trim().toLowerCase() === 'test1@test.com';
   const compactPolibotStepper = action.key === 'polibot-recommend' && isTestUser;
+  const wideBilling = action.key === 'billing';
   const wideWorkspace = action.key === 'polibot-recommend';
   const desktopWidthClass = compactPolibotStepper
     ? 'lg:w-[min(680px,calc(100vw-340px))]'
-    : wideWorkspace
+    : wideBilling
+      ? 'lg:w-[min(1180px,calc(100vw-340px))]'
+      : wideWorkspace
       ? 'lg:w-[min(980px,calc(100vw-340px))]'
       : 'lg:w-[min(640px,calc(100vw-340px))]';
+  const mobileWidthClass = wideBilling ? 'w-[min(1120px,96vw)]' : 'w-[min(420px,92vw)]';
 
   return (
     <div className={`fixed inset-0 z-40 transition-opacity duration-300 lg:pointer-events-none ${closing ? 'bg-black/0 opacity-0 lg:bg-transparent' : 'bg-black/45 opacity-100 lg:bg-transparent'}`}>
       <button type="button" aria-label="닫기" className="absolute inset-0 lg:hidden" onClick={onClose} />
-      <aside className={`pointer-events-auto absolute inset-y-0 right-0 w-[min(420px,92vw)] overflow-y-auto rounded-l-[28px] border-l border-white/10 bg-[#191919] p-4 shadow-2xl shadow-black/50 transition-all duration-300 ease-out lg:left-auto lg:right-4 ${desktopWidthClass} lg:rounded-[28px] lg:border lg:p-5 ${compactPreview ? 'lg:top-16 lg:bottom-auto lg:max-h-[calc(100vh-8rem)]' : 'lg:inset-y-4 lg:max-h-none'} ${closing ? 'translate-x-full opacity-0 lg:translate-x-8 lg:translate-y-0' : 'translate-x-0 opacity-100'}`}>
+      <aside className={`pointer-events-auto absolute inset-y-0 right-0 ${mobileWidthClass} overflow-y-auto rounded-l-[28px] border-l border-white/10 bg-[#191919] p-4 shadow-2xl shadow-black/50 transition-all duration-300 ease-out lg:left-auto lg:right-4 ${desktopWidthClass} lg:rounded-[28px] lg:border lg:p-5 ${compactPreview ? 'lg:top-16 lg:bottom-auto lg:max-h-[calc(100vh-8rem)]' : 'lg:inset-y-4 lg:max-h-none'} ${closing ? 'translate-x-full opacity-0 lg:translate-x-8 lg:translate-y-0' : 'translate-x-0 opacity-100'}`}>
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-2xl bg-white/10 text-zinc-100">
@@ -1654,6 +1684,9 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [connectingThreads, setConnectingThreads] = useState(false);
+  const [threadsRequests, setThreadsRequests] = useState([]);
+  const [threadsRequestMemo, setThreadsRequestMemo] = useState('');
+  const [requestingThreads, setRequestingThreads] = useState(false);
   const [requestingSetup, setRequestingSetup] = useState(false);
   const [appliedDraftId, setAppliedDraftId] = useState(null);
   const [contentAdvancedOpen, setContentAdvancedOpen] = useState(false);
@@ -1703,6 +1736,16 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
     setForm((prev) => prev ? ({ ...prev, ...settingsDraft.values }) : prev);
     setAppliedDraftId(settingsDraft.id);
   }, [settingsDraft, appliedDraftId]);
+
+  useEffect(() => {
+    if (!account?.id || account.has_threads_access_token) {
+      setThreadsRequests([]);
+      return;
+    }
+    api.get(`/api/me/threads-connection-requests?accountId=${account.id}`)
+      .then((rows) => setThreadsRequests(Array.isArray(rows) ? rows : []))
+      .catch(() => setThreadsRequests([]));
+  }, [account?.id, account?.has_threads_access_token]);
 
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
   const updateContentMode = (value) => setForm((prev) => ({
@@ -1755,6 +1798,28 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
     }
   };
 
+  const requestThreadsRegistration = async () => {
+    if (!account?.id || !form?.account_handle?.trim()) {
+      toast('연결할 Threads 핸들을 먼저 입력해 주세요.', 'error');
+      return;
+    }
+    setRequestingThreads(true);
+    try {
+      const result = await api.post('/api/me/threads-connection-requests', {
+        accountId: account.id,
+        threadsHandle: form.account_handle,
+        requestMemo: threadsRequestMemo
+      });
+      setThreadsRequests((prev) => [result.request, ...prev.filter((row) => row.id !== result.request?.id)].filter(Boolean));
+      await reloadAccounts?.();
+      toast(result.alreadyExists ? '기존 Threads 등록 요청을 업데이트했어요.' : 'Threads 등록 요청을 보냈어요.', 'success');
+    } catch (err) {
+      toast(err.message || 'Threads 등록 요청을 보내지 못했어요.', 'error');
+    } finally {
+      setRequestingThreads(false);
+    }
+  };
+
   const copyBlogUrl = async () => {
     if (!account?.blog_public_url) return;
     try {
@@ -1786,6 +1851,17 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
   };
 
   if (!form) return <Notice>계정 설정을 불러오는 중이에요.</Notice>;
+  const activeThreadsRequest = threadsRequests
+    .filter((row) => row && !['connected', 'canceled'].includes(row.status))
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0] || null;
+  const threadsOAuthReady = account?.has_threads_access_token || activeThreadsRequest?.status === 'customer_action_required';
+  const threadsStatusText = account?.has_threads_access_token
+    ? '연결됨'
+    : activeThreadsRequest?.status === 'customer_action_required'
+      ? 'Meta 등록 완료 · 고객 승인 필요'
+      : activeThreadsRequest?.status === 'requested'
+        ? '관리자 등록 대기'
+        : '미연결';
 
   return (
     <>
@@ -1811,19 +1887,41 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
       </div>
 
       <CollapsiblePanel title="Threads 연결">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3">
-          <div>
-            <div className="text-sm font-black text-zinc-100">{account?.has_threads_access_token ? '연결됨' : '미연결'}</div>
-            <div className="mt-1 text-xs text-zinc-500">{account?.account_handle || 'Threads 핸들 미입력'}</div>
+        <div className="grid gap-3 rounded-2xl bg-black/25 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-black text-zinc-100">{threadsStatusText}</div>
+              <div className="mt-1 text-xs text-zinc-500">{form.account_handle || account?.account_handle || 'Threads 핸들 미입력'}</div>
+            </div>
+            {threadsOAuthReady ? (
+              <DarkButton variant="ghost" size="sm" onClick={connectThreads} disabled={connectingThreads}>
+                <Link2 size={15} />
+                {connectingThreads ? '이동 중...' : account?.has_threads_access_token ? '다시 연결' : '승인 후 연결'}
+              </DarkButton>
+            ) : (
+              <DarkButton variant="ghost" size="sm" onClick={requestThreadsRegistration} disabled={requestingThreads}>
+                <Link2 size={15} />
+                {requestingThreads ? '요청 중...' : activeThreadsRequest ? '요청 업데이트' : '등록 요청'}
+              </DarkButton>
+            )}
           </div>
-          <DarkButton variant="ghost" size="sm" onClick={connectThreads} disabled={connectingThreads}>
-            <Link2 size={15} />
-            {connectingThreads ? '이동 중...' : account?.has_threads_access_token ? '다시 연결' : 'Threads 연결'}
-          </DarkButton>
+          {!account?.has_threads_access_token && !threadsOAuthReady && (
+            <div className="grid gap-2">
+              <label className={labelClass}>운영자에게 보낼 메모<input className={inputClass} value={threadsRequestMemo} onChange={(event) => setThreadsRequestMemo(event.target.value)} placeholder="예: 이 계정으로 연결하고 싶어요" /></label>
+              <p className="text-xs leading-relaxed text-zinc-500">
+                운영자가 Meta 개발자센터에 Threads 계정을 등록한 뒤, 여기에서 승인/연결 버튼이 열립니다.
+              </p>
+            </div>
+          )}
         </div>
-        {!account?.has_threads_access_token && (
+        {!account?.has_threads_access_token && threadsOAuthReady && (
           <Notice>
-            Threads 재연결이 필요해요. 기존 설정, 예약 기록, 결제 정보는 유지되고 Threads 연결만 다시 진행하면 돼요.
+            Meta 등록이 완료됐어요. Meta 웹 승인 초대를 수락한 뒤 Threads 연결을 마무리해 주세요.
+          </Notice>
+        )}
+        {!account?.has_threads_access_token && !activeThreadsRequest && (
+          <Notice>
+            처음 연결할 때는 운영자 등록이 필요해요. 연결할 Threads 핸들을 입력한 뒤 등록 요청을 보내주세요.
           </Notice>
         )}
       </CollapsiblePanel>
@@ -1832,8 +1930,46 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
         <div className="grid gap-3">
           <label className={labelClass}>계정명<input className={inputClass} value={form.name} onChange={(e) => update('name', e.target.value)} /></label>
           <label className={labelClass}>Threads 핸들<input className={inputClass} value={form.account_handle} onChange={(e) => update('account_handle', e.target.value)} placeholder="@myhandle" /></label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DarkSelect
+              label="타깃 빠른 선택"
+              value=""
+              onChange={(value) => value && update('target_audience', value)}
+              options={[
+                { value: '', label: '선택해서 채우기' },
+                { value: '2030 자취생', label: '2030 자취생' },
+                { value: '육아와 살림을 같이 하는 3040', label: '육아/살림 3040' },
+                { value: '집 정리와 생활 효율을 좋아하는 직장인', label: '생활 효율 직장인' },
+                { value: '가성비와 실사용 후기를 중시하는 소비자', label: '가성비 소비자' }
+              ]}
+            />
+            <DarkSelect
+              label="카테고리 빠른 선택"
+              value=""
+              onChange={(value) => value && update('content_scope', value)}
+              options={[
+                { value: '', label: '선택해서 채우기' },
+                { value: '자취 꿀템, 원룸 수납, 청소용품', label: '자취/원룸' },
+                { value: '주방용품, 살림템, 정리수납', label: '주방/살림' },
+                { value: '육아용품, 생활 편의용품', label: '육아/생활' },
+                { value: '가전 주변기기, 책상 정리, 생활 효율템', label: '생활 효율' }
+              ]}
+            />
+          </div>
           <label className={labelClass}>타깃층<textarea className={inputClass} rows="2" value={form.target_audience} onChange={(e) => update('target_audience', e.target.value)} /></label>
           <label className={labelClass}>다룰 카테고리<textarea className={inputClass} rows="2" value={form.content_scope} onChange={(e) => update('content_scope', e.target.value)} /></label>
+          <DarkSelect
+            label="톤 빠른 선택"
+            value=""
+            onChange={(value) => value && update('tone', value)}
+            options={[
+              { value: '', label: '선택해서 채우기' },
+              { value: '친근하고 자연스러운 반말 느낌', label: '친근한 반말' },
+              { value: '담백한 생활 관찰형', label: '담백한 관찰형' },
+              { value: '실사용 기준을 짧게 짚는 말투', label: '실사용 기준형' },
+              { value: '살짝 공감하고 질문으로 마무리', label: '공감 질문형' }
+            ]}
+          />
           <label className={labelClass}>톤<input className={inputClass} value={form.tone} onChange={(e) => update('tone', e.target.value)} /></label>
         </div>
       </CollapsiblePanel>
@@ -2080,18 +2216,28 @@ function fileToBase64Payload(file) {
   });
 }
 
-function TrendReferencesPanel({ account, reloadAccounts }) {
+function TrendReferencesPanel({ account, currentUser, reloadAccounts }) {
   const toast = useToast();
   const [category, setCategory] = useState(account?.content_scope || '');
   const [targetAudienceHint, setTargetAudienceHint] = useState(account?.target_audience || '');
+  const [previewForm, setPreviewForm] = useState({
+    contentMode: account?.content_mode || 'auto',
+    contentIntensity: account?.content_intensity || 'normal',
+    commentStyle: account?.comment_induction_style || 'soft_question',
+    productMentionStyle: account?.product_mention_style || 'natural',
+    emojiLevel: account?.emoji_level || 'low'
+  });
   const [text, setText] = useState('');
   const [ocrSamples, setOcrSamples] = useState([]);
   const [result, setResult] = useState(null);
+  const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [ocrLoading, setOcrLoading] = useState(false);
   const [savingLearning, setSavingLearning] = useState(false);
   const [showLearningInfo, setShowLearningInfo] = useState(false);
   const [learningEnabled, setLearningEnabled] = useState(Boolean(account?.anonymous_learning_enabled));
+  const showQualityLab = String(currentUser?.email || '').trim().toLowerCase() === 'test1@test.com';
 
   useEffect(() => {
     setLearningEnabled(Boolean(account?.anonymous_learning_enabled));
@@ -2186,8 +2332,82 @@ function TrendReferencesPanel({ account, reloadAccounts }) {
     }
   };
 
+  const runPreview = async () => {
+    if (!account?.id) return;
+    setPreviewLoading(true);
+    try {
+      const next = await api.post('/api/product-workspace/cujasa/content-preview', {
+        accountId: account.id,
+        category,
+        targetAudience: targetAudienceHint,
+        ...previewForm
+      });
+      setPreview(next);
+      toast('예약 없이 예시 글을 생성했어요.', 'success');
+    } catch (err) {
+      toast(err.message || '콘텐츠 미리보기에 실패했어요.', 'error');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   return (
     <div className="grid gap-4">
+      {showQualityLab && <PanelCard title="콘텐츠 품질 Lab">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className={labelClass}>카테고리<input className={inputClass} value={category} onChange={(event) => setCategory(event.target.value)} placeholder="자취 꿀템, 살림 꿀템" /></label>
+          <label className={labelClass}>타깃<input className={inputClass} value={targetAudienceHint} onChange={(event) => setTargetAudienceHint(event.target.value)} placeholder="2030 자취생" /></label>
+          <DarkSelect label="콘텐츠 방식" value={previewForm.contentMode} onChange={(value) => setPreviewForm((prev) => ({ ...prev, contentMode: value }))} options={contentModeOptions} />
+          <DarkSelect label="강도" value={previewForm.contentIntensity} onChange={(value) => setPreviewForm((prev) => ({ ...prev, contentIntensity: value }))} options={contentIntensityOptions} />
+          <DarkSelect label="댓글 유도" value={previewForm.commentStyle} onChange={(value) => setPreviewForm((prev) => ({ ...prev, commentStyle: value }))} options={commentStyleOptions} />
+          <DarkSelect label="상품 언급" value={previewForm.productMentionStyle} onChange={(value) => setPreviewForm((prev) => ({ ...prev, productMentionStyle: value }))} options={productMentionOptions} />
+          <DarkSelect label="이모지" value={previewForm.emojiLevel} onChange={(value) => setPreviewForm((prev) => ({ ...prev, emojiLevel: value }))} options={emojiLevelOptions} />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <DarkButton onClick={runPreview} disabled={previewLoading}>{previewLoading ? '생성 중...' : '예시 글 생성'}</DarkButton>
+          <DarkButton variant="ghost" onClick={() => setPreview(null)} disabled={previewLoading || !preview}>미리보기 초기화</DarkButton>
+        </div>
+        {preview && (
+          <div className="mt-4 grid gap-3">
+            <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs font-bold text-zinc-500 sm:grid-cols-3">
+              <div>패턴 {preview.patterns?.length || 0}개 사용</div>
+              <div>후보 {preview.candidates?.length || 0}개</div>
+              <div>선택 #{Number(preview.selectedIndex ?? -1) + 1 || '-'}</div>
+            </div>
+            {(preview.candidates || []).map((candidate, index) => (
+              <div key={`${candidate.index}-${index}`} className={`rounded-3xl border px-4 py-4 ${candidate.selected ? 'border-emerald-300/30 bg-emerald-400/10' : candidate.allowed ? 'border-white/10 bg-black/20' : 'border-rose-300/20 bg-rose-400/10'}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-black text-zinc-100">후보 {index + 1}</div>
+                  <div className="flex flex-wrap gap-2 text-[11px] font-black">
+                    {candidate.selected && <span className="rounded-full bg-emerald-400/15 px-2 py-1 text-emerald-100">선택 후보</span>}
+                    <span className="rounded-full bg-white/10 px-2 py-1 text-zinc-300">점수 {candidate.engagementScore || 0}</span>
+                    <span className={`rounded-full px-2 py-1 ${candidate.allowed ? 'bg-emerald-400/10 text-emerald-100' : 'bg-rose-400/10 text-rose-100'}`}>{candidate.allowed ? '통과' : '제외'}</span>
+                  </div>
+                </div>
+                <div className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-zinc-200">{candidate.body}</div>
+                <div className="mt-3 grid gap-2 text-xs text-zinc-500">
+                  {(candidate.selectionReasons || []).slice(0, 3).map((reason) => <div key={reason}>선택 신호 · {reason}</div>)}
+                  {(candidate.rejectionReasons || []).slice(0, 4).map((reason) => <div key={reason} className="text-rose-200/80">제외 이유 · {reason}</div>)}
+                </div>
+              </div>
+            ))}
+            {preview.patterns?.length > 0 && (
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+                <div className="text-xs font-black uppercase tracking-wide text-zinc-600">사용된 학습 패턴</div>
+                <div className="mt-2 grid gap-2">
+                  {preview.patterns.slice(0, 5).map((pattern) => (
+                    <div key={pattern.sourceId} className="rounded-2xl bg-black/25 px-3 py-2 text-xs text-zinc-400">
+                      <span className="font-black text-zinc-200">{pattern.hookPattern || pattern.sourceId}</span>
+                      <span className="ml-2 text-zinc-600">품질 {pattern.qualityScore || 0}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </PanelCard>}
+
       <PanelCard>
         <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -2427,7 +2647,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
         } else if (authKey) {
           const pending = JSON.parse(localStorage.getItem(pendingSubscriptionKey) || '{}');
           await api.post('/api/billing/billing-auth', {
-            productId: 'monthly_59000',
+            productId: pending.productId || 'monthly_59000',
             subscriptionId: pending.subscriptionId,
             authKey,
             customerKey: customerKey || pending.customerKey
@@ -2447,11 +2667,11 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
     finish();
   }, [redirectHandled, load, toast]);
 
-  const startOnetime = async (agreementSnapshot) => {
-    setBusy('onetime');
+  const startOnetime = async (productId, agreementSnapshot) => {
+    setBusy(productId);
     try {
       const payload = await api.post('/api/billing/checkout/virtual-account', {
-        productId: 'onetime_590000',
+        productId,
         agreementAccepted: true,
         agreementVersion: BILLING_AGREEMENT_VERSION,
         agreementSnapshot
@@ -2465,22 +2685,18 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
     }
   };
 
-  const startMonthly = async (agreementSnapshot) => {
-    setBusy('monthly');
+  const startMonthly = async (productId, agreementSnapshot) => {
+    setBusy(productId);
     try {
-      const payload = await api.post('/api/billing/billing-auth', {
-        productId: 'monthly_59000',
+      const payload = await api.post('/api/billing/checkout/virtual-account', {
+        productId,
         agreementAccepted: true,
         agreementVersion: BILLING_AGREEMENT_VERSION,
         agreementSnapshot
       });
-      localStorage.setItem(pendingSubscriptionKey, JSON.stringify({
-        subscriptionId: payload.subscription.id,
-        customerKey: payload.toss.customerKey
-      }));
-      await requestBillingAuth(payload.toss);
+      await requestTossPayment(payload.toss);
     } catch (err) {
-      toast(err.message || '자동결제를 시작하지 못했어요.', 'error');
+      toast(err.message || '월정액 가상계좌 결제를 시작하지 못했어요.', 'error');
       await load().catch(() => {});
     } finally {
       setBusy('');
@@ -2516,6 +2732,66 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
       }
     });
   };
+  const cujasaPlans = [
+    {
+      id: 'sponsored_monthly_19000',
+      product: productsById.sponsored_monthly_19000 || {
+        id: 'sponsored_monthly_19000',
+        name: 'CUJASA 스폰서 스타터',
+        amount: 19000,
+        billing_cycle: 'monthly',
+        max_accounts: 1
+      },
+      title: '스폰서 스타터',
+      priceText: '19,000원 / 월',
+      caption: '가볍게 시작하는 광고 지원 플랜',
+      badge: '스폰서',
+      buttonLabel: '19,000원으로 시작',
+      icon: CreditCard,
+      features: ['Threads 계정 1개 운영', '주제 선정, 상품 검색, 글 생성', '예약 업로드와 기본 현황 확인', '스폰서/광고 라벨 노출 가능'],
+      testOnly: !productsById.sponsored_monthly_19000
+    },
+    {
+      id: 'monthly_59000',
+      product: productsById.monthly_59000,
+      title: billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액',
+      priceText: '59,000원 / 월',
+      caption: activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '광고 없이 안정적으로 운영',
+      badge: '추천',
+      buttonLabel: billing?.status === 'past_due' ? '연장하기' : '월정액 시작',
+      icon: CreditCard,
+      featured: true,
+      features: ['Threads 계정 2개 운영', '광고 없는 콘텐츠/추천 흐름', '가상계좌 기반 월 단위 이용', '운영 셋업과 재연결 지원']
+    },
+    {
+      id: 'onetime_590000',
+      product: productsById.onetime_590000 ? { ...productsById.onetime_590000, max_accounts: 4 } : null,
+      title: '프로 영구구매',
+      priceText: '590,000원',
+      caption: '장기 운영용 일시불',
+      badge: '평생 이용',
+      buttonLabel: '영구구매 신청',
+      icon: Landmark,
+      features: ['Threads 계정 4개 운영', '광고 없는 콘텐츠/추천 흐름', '가상계좌 일시불 결제', '장기 운영용 셋업 지원']
+    }
+  ];
+
+  return (
+    <TestBillingPricingPage
+      currentUser={currentUser}
+      billing={billing}
+      productsById={productsById}
+      payments={payments}
+      latestWaiting={latestWaiting}
+      activeSubscription={activeSubscription}
+      cujasaPlans={cujasaPlans}
+      busy={busy}
+      load={load}
+      requestAgreement={requestAgreement}
+      startOnetime={startOnetime}
+      startMonthly={startMonthly}
+    />
+  );
 
   return (
     <>
@@ -2560,23 +2836,23 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
       )}
 
       <div className="grid gap-3">
-        <BetaPlanCard
+        <LegacyBetaPlanCard
           icon={Landmark}
-          title="베이직 영구구매"
+          title="프로 영구구매"
           priceText="590,000원"
           caption="가상계좌 결제"
-          product={productsById.onetime_590000}
-          busy={busy === 'onetime'}
-          onClick={() => requestAgreement('onetime', productsById.onetime_590000, startOnetime)}
+          product={productsById.onetime_590000 ? { ...productsById.onetime_590000, max_accounts: 4 } : null}
+          busy={busy === 'onetime_590000'}
+          onClick={() => requestAgreement('onetime', productsById.onetime_590000, (snapshot) => startOnetime('onetime_590000', snapshot))}
         />
-        <BetaPlanCard
+        <LegacyBetaPlanCard
           icon={CreditCard}
           title={billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액'}
           priceText="59,000원 / 월"
-          caption={activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '자동결제 준비 중'}
+          caption={activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '가상계좌 결제'}
           product={productsById.monthly_59000}
-          busy={busy === 'monthly'}
-          onClick={() => requestAgreement('monthly', productsById.monthly_59000, startMonthly)}
+          busy={busy === 'monthly_59000'}
+          onClick={() => requestAgreement('monthly', productsById.monthly_59000, (snapshot) => startMonthly('monthly_59000', snapshot))}
         />
       </div>
 
@@ -2626,6 +2902,404 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
   );
 }
 
+function catalogProduct(productsById, id, fallback) {
+  const product = productsById[id];
+  return product || { id, ...fallback };
+}
+
+function pricingPlan(productsById, id, fallback, details = {}) {
+  const product = catalogProduct(productsById, id, fallback);
+  return {
+    id,
+    product,
+    priceText: price(fallback.amount) + (fallback.billing_cycle === 'monthly' ? ' / 월' : ''),
+    testOnly: !productsById[id],
+    ...details
+  };
+}
+
+function buildWorkspacePricingCatalog({ productsById, cujasaPlans, currentUser }) {
+  const grants = currentUser?.products || [];
+  const usageFor = (productId) => getGrantUsage(grants.find((grant) => grant.productId === productId), productId);
+  return [
+    {
+      id: 'cujasa',
+      label: 'CUJASA',
+      title: '쿠팡 파트너스 자동화',
+      modeLabel: '운영형 3단계 요금제',
+      description: 'Threads 포스팅, 쿠팡 실상품 검색, 댓글 링크 운영까지 이어지는 자동화 상품입니다.',
+      plans: cujasaPlans,
+      comparisonRows: [
+        { label: 'Threads 계정', values: ['1개', '2개', '4개'] },
+        { label: '스폰서/광고 라벨', values: ['노출 가능', '없음', '없음'] },
+        { label: '콘텐츠 생성', values: [true, true, true] },
+        { label: '쿠팡 실상품 검색', values: [true, true, true] },
+        { label: '예약 업로드', values: [true, true, true] },
+        { label: '결제 방식', values: ['가상계좌', '가상계좌', '가상계좌'] }
+      ]
+    },
+    {
+      id: 'dexor',
+      label: 'DEXOR',
+      title: '블로그 분석 크레딧',
+      modeLabel: '충전형 크레딧',
+      description: '블로그 등급/선정 분석을 필요한 만큼 충전해서 쓰는 사용량 기반 상품입니다.',
+      usage: usageFor('dexor'),
+      plans: [
+        pricingPlan(productsById, 'dexor_credit_5000', { name: 'DEXOR 크레딧 10회 충전', app_product_id: 'dexor', amount: 5000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+          title: '라이트 충전',
+          caption: '작게 테스트하는 분석권',
+          buttonLabel: '10회 충전',
+          features: ['블로그 분석 10회', '무료 사용량 이후 즉시 추가', '가상계좌 입금 확인 후 반영']
+        }),
+        pricingPlan(productsById, 'dexor_credit_10000', { name: 'DEXOR 크레딧 25회 충전', app_product_id: 'dexor', amount: 10000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+          title: '베이직 충전',
+          caption: '반복 분석용 기본 충전',
+          badge: '추천',
+          buttonLabel: '25회 충전',
+          features: ['블로그 분석 25회', '라이트 대비 낮은 회당 비용', '가상계좌 입금 확인 후 반영']
+        }),
+        pricingPlan(productsById, 'dexor_credit_50000', { name: 'DEXOR 크레딧 150회 충전', app_product_id: 'dexor', amount: 50000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+          title: '프로 충전',
+          caption: '대량 후보 선별용',
+          buttonLabel: '150회 충전',
+          features: ['블로그 분석 150회', '캠페인 후보 대량 검토', '가상계좌 입금 확인 후 반영']
+        })
+      ],
+      extraTitle: '대량 충전',
+      extraPlans: [
+        pricingPlan(productsById, 'dexor_credit_100000', { name: 'DEXOR 크레딧 350회 충전', app_product_id: 'dexor', amount: 100000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+          title: '350회 대량 충전',
+          caption: '운영팀 단위 후보 검토용',
+          buttonLabel: '350회 충전'
+        })
+      ],
+      comparisonRows: [
+        { label: '분석 횟수', values: ['10회', '25회', '150회'] },
+        { label: '과금 방식', values: ['충전형', '충전형', '충전형'] },
+        { label: '추천 용도', values: ['테스트', '반복 분석', '대량 선별'] },
+        { label: '결제 방식', values: ['가상계좌', '가상계좌', '가상계좌'] }
+      ]
+    },
+    {
+      id: 'spread',
+      label: 'SPREAD',
+      title: '추천 캠페인 운영 자동화',
+      modeLabel: '운영형 3단계 요금제',
+      description: '캠페인 생성, 신청자 정리, 제출물 검수 흐름을 줄이는 월정액 상품입니다.',
+      plans: [
+        pricingPlan(productsById, 'spread_starter_monthly_49000', { name: 'SPREAD 스타터 월정액', app_product_id: 'spread', amount: 49000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
+          title: '스타터',
+          caption: '작은 캠페인 운영 시작',
+          buttonLabel: '스타터 시작',
+          features: ['월 캠페인 3개', '신청자/제출물 기본 정리', '가상계좌 월 단위 이용']
+        }),
+        pricingPlan(productsById, 'spread_basic_monthly_149000', { name: 'SPREAD 베이직 월정액', app_product_id: 'spread', amount: 149000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
+          title: '베이직',
+          caption: '추천/선정 자동화 포함',
+          badge: '추천',
+          buttonLabel: '베이직 시작',
+          features: ['월 캠페인 10개', '신청자 추천/선정 자동화', '운영 현황 확인']
+        }),
+        pricingPlan(productsById, 'spread_pro_monthly_390000', { name: 'SPREAD 프로 월정액', app_product_id: 'spread', amount: 390000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
+          title: '프로',
+          caption: '운영팀 캠페인 관리용',
+          buttonLabel: '프로 시작',
+          features: ['월 캠페인 30개', '제출물/운영 리포트', '우선 지원']
+        })
+      ],
+      comparisonRows: [
+        { label: '캠페인 한도', values: ['3개 / 월', '10개 / 월', '30개 / 월'] },
+        { label: '신청자 정리', values: [true, true, true] },
+        { label: '추천/선정 자동화', values: ['기본', '포함', '고급'] },
+        { label: '결제 방식', values: ['가상계좌', '가상계좌', '가상계좌'] }
+      ]
+    },
+    {
+      id: 'polibot',
+      label: 'POLIBOT',
+      title: '보험 상담/추천 자동화',
+      modeLabel: '운영형 3단계 요금제',
+      description: '고객 상담 맥락, 보장분석 자료, 상품 추천 흐름을 정리하는 월정액 상품입니다.',
+      plans: [
+        pricingPlan(productsById, 'polibot_starter_monthly_39000', { name: 'POLIBOT 스타터 월정액', app_product_id: 'polibot', amount: 39000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
+          title: '스타터',
+          caption: '가볍게 상담 추천 시작',
+          buttonLabel: '스타터 시작',
+          features: ['상담/추천 100회', '지식 업로드 기본', '가상계좌 월 단위 이용']
+        }),
+        pricingPlan(productsById, 'polibot_basic_monthly_99000', { name: 'POLIBOT 베이직 월정액', app_product_id: 'polibot', amount: 99000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
+          title: '베이직',
+          caption: '고객별 추천 히스토리',
+          badge: '추천',
+          buttonLabel: '베이직 시작',
+          features: ['상담/추천 500회', '고객별 추천 히스토리', '상품 추천 근거 정리']
+        }),
+        pricingPlan(productsById, 'polibot_pro_monthly_290000', { name: 'POLIBOT 프로 월정액', app_product_id: 'polibot', amount: 290000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
+          title: '프로',
+          caption: '팀 단위 상담 운영',
+          buttonLabel: '프로 시작',
+          features: ['상담/추천 2,000회', '팀 단위 운영', '우선 지원']
+        })
+      ],
+      comparisonRows: [
+        { label: '상담/추천 한도', values: ['100회 / 월', '500회 / 월', '2,000회 / 월'] },
+        { label: '지식 업로드', values: ['기본', '확장', '팀 운영'] },
+        { label: '추천 히스토리', values: ['기본', '포함', '고급'] },
+        { label: '결제 방식', values: ['가상계좌', '가상계좌', '가상계좌'] }
+      ]
+    },
+    {
+      id: 'infludex',
+      label: 'INFLUDEX',
+      title: '인플루언서 후보 분석 크레딧',
+      modeLabel: '충전형 크레딧',
+      description: '인스타그램 후보 1명 단위로 등급, 적합도, 리스크를 분석하는 사용량 기반 상품입니다.',
+      usage: usageFor('infludex'),
+      plans: [
+        pricingPlan(productsById, 'infludex_credit_19000', { name: 'INFLUDEX 라이트 분석 30회', app_product_id: 'infludex', amount: 19000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+          title: '라이트 분석',
+          caption: '작은 후보군 검토',
+          buttonLabel: '30회 충전',
+          features: ['후보 분석 30회', '등급/리스크 확인', '가상계좌 입금 확인 후 반영']
+        }),
+        pricingPlan(productsById, 'infludex_credit_49000', { name: 'INFLUDEX 베이직 분석 100회', app_product_id: 'infludex', amount: 49000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+          title: '베이직 분석',
+          caption: '캠페인 후보 선별용',
+          badge: '추천',
+          buttonLabel: '100회 충전',
+          features: ['후보 분석 100회', '캠페인 후보 비교', '가상계좌 입금 확인 후 반영']
+        }),
+        pricingPlan(productsById, 'infludex_credit_99000', { name: 'INFLUDEX 프로 분석 250회', app_product_id: 'infludex', amount: 99000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+          title: '프로 분석',
+          caption: '대량 후보 검토',
+          buttonLabel: '250회 충전',
+          features: ['후보 분석 250회', '대량 후보 등급 분석', '가상계좌 입금 확인 후 반영']
+        })
+      ],
+      comparisonRows: [
+        { label: '분석 횟수', values: ['30회', '100회', '250회'] },
+        { label: '분석 대상', values: ['후보 1명 단위', '후보 1명 단위', '후보 1명 단위'] },
+        { label: '추천 용도', values: ['소규모', '캠페인 선별', '대량 검토'] },
+        { label: '결제 방식', values: ['가상계좌', '가상계좌', '가상계좌'] }
+      ]
+    }
+  ];
+}
+
+function TestBillingPricingPage({
+  currentUser,
+  billing,
+  productsById,
+  payments,
+  latestWaiting,
+  activeSubscription,
+  cujasaPlans,
+  busy,
+  load,
+  requestAgreement,
+  startOnetime,
+  startMonthly
+}) {
+  const [activeProductId, setActiveProductId] = useState('cujasa');
+  const productPricing = useMemo(() => buildWorkspacePricingCatalog({ productsById, cujasaPlans, currentUser }), [productsById, cujasaPlans, currentUser]);
+  const activePricing = productPricing.find((item) => item.id === activeProductId) || productPricing[0];
+  const openPlan = (plan) => {
+    if (plan.testOnly) return;
+    const flow = plan.product?.billing_cycle === 'once' ? 'onetime' : 'monthly';
+    const runner = flow === 'onetime'
+      ? (snapshot) => startOnetime(plan.id, snapshot)
+      : (snapshot) => startMonthly(plan.id, snapshot);
+    requestAgreement(flow, plan.product, runner);
+  };
+
+  return (
+    <div className="grid gap-5">
+      <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[#171717] text-zinc-100 shadow-2xl shadow-black/30">
+        <div className="grid gap-5 bg-[#202020] px-5 pb-7 pt-5 lg:grid-cols-[1.1fr_1fr_auto] lg:items-center lg:px-7 lg:pb-8">
+          <div>
+            <div className="text-xs font-black uppercase tracking-wide text-zinc-500">JASAIN 결제 관리</div>
+            <h2 className="mt-3 text-2xl font-black tracking-normal text-zinc-50">제품별 이용 방식에 맞는 요금제를 선택하세요</h2>
+            <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+              {currentUser?.email || currentUser?.username || 'JASAIN 계정'} · 현재 {billingTitle(billing)}
+            </p>
+          </div>
+          <div className="rounded-3xl border border-white/10 bg-black/25 px-4 py-3">
+            <div className="text-xs font-black text-zinc-500">현재 이용 한도</div>
+            <div className="mt-1 text-xl font-black text-zinc-50">Threads 계정 {billing?.maxAccounts ?? currentUser?.maxAccounts ?? 2}개</div>
+            <div className="mt-1 text-xs font-bold text-zinc-500">
+              {billing?.paidUntil && billing?.status !== 'past_due' ? `${formatBillingDate(billing.paidUntil)}까지 이용 가능` : '결제 상태를 기준으로 자동화 권한이 정해집니다.'}
+            </div>
+          </div>
+          <button type="button" onClick={() => load().catch(() => {})} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-black text-zinc-100 hover:bg-white/10">
+            <RefreshCw size={16} />
+            새로고침
+          </button>
+        </div>
+
+        <div className="border-t border-white/10 bg-black/20 px-4 py-4 lg:px-7">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {productPricing.map((product) => (
+              <button
+                key={product.id}
+                type="button"
+                onClick={() => setActiveProductId(product.id)}
+                className={`shrink-0 rounded-2xl border px-4 py-2 text-sm font-black transition ${activePricing.id === product.id ? 'border-white/30 bg-zinc-100 text-zinc-950' : 'border-white/10 bg-white/[0.04] text-zinc-400 hover:bg-white/10 hover:text-zinc-100'}`}
+              >
+                {product.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+            <div>
+              <div className="text-xs font-black uppercase tracking-[0.08em] text-zinc-500">{activePricing.modeLabel}</div>
+              <h3 className="mt-2 text-xl font-black text-zinc-50">{activePricing.title}</h3>
+              <p className="mt-2 max-w-3xl text-sm font-bold leading-6 text-zinc-400">{activePricing.description}</p>
+            </div>
+            {activePricing.usage && (
+              <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-right">
+                <div className="text-xs font-black text-zinc-500">현재 사용량</div>
+                <div className="mt-1 text-xl font-black text-zinc-50">{usageRemainingLabel(activePricing.usage)}</div>
+                <div className="mt-1 text-xs font-bold text-zinc-500">{usageSummaryLabel(activePricing.usage)}</div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {billing?.status === 'past_due' && (
+          <div className="border-b border-rose-500/20 bg-rose-500/10 px-5 py-3 text-sm font-black text-rose-200 lg:px-7">
+            자동화 실행이 잠시 중지됐어요. 월결제를 연장하거나 영구구매로 전환해 주세요.
+          </div>
+        )}
+        {latestWaiting && (
+          <div className="border-b border-amber-400/20 bg-amber-400/10 px-5 py-3 text-sm font-bold text-amber-200 lg:px-7">
+            입금 대기 중 · {productsById[latestWaiting.productId]?.name || 'CUJASA 베이직'} · {price(latestWaiting.amount)}
+          </div>
+        )}
+
+        <div className="grid gap-0 border-t border-white/10 lg:grid-cols-3">
+          {activePricing.plans.map((plan, index) => (
+            <TestPricingColumn
+              key={plan.id}
+              plan={plan}
+              index={index}
+              activeSubscription={activeSubscription}
+              busy={busy === plan.id}
+              onClick={() => openPlan(plan)}
+            />
+          ))}
+        </div>
+
+        {activePricing.extraPlans?.length > 0 && (
+          <div className="border-t border-white/10 bg-black/20 px-5 py-4 lg:px-7">
+            <div className="mb-3 text-xs font-black uppercase tracking-[0.08em] text-zinc-500">{activePricing.extraTitle || '추가 상품'}</div>
+            <div className="grid gap-2 lg:grid-cols-2">
+              {activePricing.extraPlans.map((plan) => (
+                <button
+                  key={plan.id}
+                  type="button"
+                  onClick={() => openPlan(plan)}
+                  disabled={busy === plan.id || !plan.product || plan.testOnly}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-left hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <span>
+                    <span className="block text-sm font-black text-zinc-100">{plan.title}</span>
+                    <span className="mt-1 block text-xs font-bold text-zinc-500">{plan.caption}</span>
+                  </span>
+                  <span className="shrink-0 text-sm font-black text-zinc-100">{plan.priceText}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="overflow-x-auto border-t border-white/10">
+          <table className="w-full min-w-[820px] border-collapse text-sm">
+            <tbody>
+              {activePricing.comparisonRows.map((row) => (
+                <tr key={row.label} className="border-b border-white/10 last:border-b-0">
+                  <th className="w-[28%] bg-black/25 px-5 py-4 text-left font-black text-zinc-300 lg:px-7">{row.label}</th>
+                  {row.values.map((value, index) => (
+                    <td key={`${row.label}-${index}`} className={`w-[24%] border-l border-white/10 px-5 py-4 text-center font-bold ${index === 1 ? 'bg-white/[0.06] text-zinc-50' : 'bg-[#191919] text-zinc-300'}`}>
+                      {value === true ? <CheckCircle2 className="mx-auto text-zinc-100" size={18} /> : value}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="grid gap-3 lg:grid-cols-2">
+        <PanelCard title="최근 결제">
+          {payments.length > 0 ? (
+            <div className="grid gap-3">
+              {payments.slice(0, 4).map((payment) => (
+                <div key={payment.id} className="flex items-center justify-between gap-3 border-t border-white/5 pt-3 first:border-t-0 first:pt-0">
+                  <div>
+                    <div className="text-sm font-bold text-zinc-200">{productsById[payment.productId]?.name || payment.productId}</div>
+                    <div className="mt-0.5 text-xs text-zinc-600">{payment.orderId}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-black text-zinc-100">{price(payment.amount)}</div>
+                    <BetaPaymentStatus status={payment.status} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Notice>아직 결제 내역이 없어요.</Notice>
+          )}
+        </PanelCard>
+        <PanelCard title="테스트 안내">
+          <Notice>
+            이 제품별 요금제 화면은 test1@test.com 전용 테스트입니다. 모든 상품은 Toss 가상계좌 결제 흐름으로 검증할 수 있어요.
+          </Notice>
+        </PanelCard>
+      </section>
+    </div>
+  );
+}
+
+function TestPricingColumn({ plan, index, busy, onClick }) {
+  const featured = index === 1;
+  return (
+    <article className={`flex min-h-[390px] flex-col border-b border-white/10 px-6 py-7 lg:border-b-0 lg:border-l lg:px-7 lg:py-8 lg:first:border-l-0 ${featured ? 'bg-white/[0.07]' : 'bg-[#171717]'}`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs font-black uppercase tracking-[0.08em] text-zinc-500">{index === 0 ? 'Starter' : index === 1 ? 'Growth' : 'Lifetime'}</div>
+          <h3 className={`mt-4 text-2xl font-black leading-snug tracking-normal ${plan.testOnly ? 'text-zinc-500' : 'text-zinc-50'}`}>{plan.title}</h3>
+          <p className="mt-3 text-sm font-bold leading-6 text-zinc-400">{plan.caption}</p>
+        </div>
+        {plan.badge && (
+          <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${featured ? 'bg-zinc-100 text-zinc-950' : 'bg-white/10 text-zinc-300'}`}>
+            {plan.badge}
+          </span>
+        )}
+      </div>
+      <div className="mt-9 text-3xl font-black leading-tight tracking-normal text-zinc-50">{plan.priceText}</div>
+      <ul className="mt-8 grid gap-5 text-sm font-bold leading-7 text-zinc-300">
+        {plan.features.map((feature) => (
+          <li key={feature} className="flex gap-3">
+            <CheckCircle2 size={17} className="mt-1 shrink-0 text-zinc-100" />
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={busy || !plan.product || plan.testOnly}
+        className={`mt-10 w-full rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${featured ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-white/10 text-zinc-50 hover:bg-white/15'}`}
+      >
+        {busy ? '진행 중...' : plan.testOnly ? '상품 등록 후 활성화' : plan.buttonLabel}
+      </button>
+      {plan.testOnly && <div className="mt-3 text-center text-xs font-bold text-amber-600">테스트 표시 · 결제 미연동</div>}
+    </article>
+  );
+}
+
 function AccountInfoRow({ label, value }) {
   return (
     <div className="grid gap-1 rounded-2xl bg-black/25 px-4 py-3">
@@ -2635,7 +3309,7 @@ function AccountInfoRow({ label, value }) {
   );
 }
 
-function BetaPlanCard({ icon: Icon, title, priceText, caption, product, busy, onClick }) {
+function LegacyBetaPlanCard({ icon: Icon, title, priceText, caption, product, busy, onClick }) {
   return (
     <PanelCard>
       <div className="flex items-start gap-3">
@@ -2658,6 +3332,57 @@ function BetaPlanCard({ icon: Icon, title, priceText, caption, product, busy, on
         {busy ? '진행 중...' : '결제하기'}
       </DarkButton>
     </PanelCard>
+  );
+}
+
+function BetaPlanCard({ icon: Icon, title, priceText, caption, badge, features = [], featured = false, testOnly = false, buttonLabel = '결제하기', product, busy, onClick }) {
+  return (
+    <div className={`flex min-h-[360px] flex-col rounded-3xl border p-4 ${featured ? 'border-white/30 bg-zinc-100 text-zinc-950' : 'border-white/10 bg-black/25 text-zinc-100'}`}>
+      <div className="flex items-start gap-3">
+        <div className={`grid h-10 w-10 place-items-center rounded-2xl ${featured ? 'bg-zinc-950 text-white' : 'bg-white/10 text-zinc-100'}`}>
+          <Icon size={20} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className={`font-black ${featured ? 'text-zinc-950' : 'text-zinc-100'}`}>{title}</h3>
+            {badge && (
+              <span className={`rounded-full px-2 py-0.5 text-[11px] font-black ${featured ? 'bg-zinc-950 text-white' : 'bg-white/10 text-zinc-300'}`}>
+                {badge}
+              </span>
+            )}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold ${featured ? 'border-zinc-300 text-zinc-600' : 'border-white/10 text-zinc-500'}`}>
+              <ShieldCheck size={12} />
+              계정 {product?.max_accounts ?? 2}개
+            </span>
+            {testOnly && (
+              <span className="rounded-full border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 text-[11px] font-black text-amber-300">
+                테스트 표시
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className={`mt-5 text-2xl font-black ${featured ? 'text-zinc-950' : 'text-zinc-100'}`}>{priceText}</div>
+      <div className={`mt-2 min-h-10 text-sm leading-relaxed ${featured ? 'text-zinc-600' : 'text-zinc-500'}`}>{caption}</div>
+      <ul className={`mt-5 grid gap-2 text-xs font-bold leading-relaxed ${featured ? 'text-zinc-700' : 'text-zinc-300'}`}>
+        {features.map((item) => (
+          <li key={item} className="flex gap-2">
+            <CheckCircle2 size={14} className={`mt-0.5 shrink-0 ${featured ? 'text-coupang' : 'text-zinc-500'}`} />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={busy || !product || testOnly}
+        className={`mt-auto w-full rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${featured ? 'bg-zinc-950 text-white hover:bg-black' : 'bg-white text-zinc-950 hover:bg-zinc-200'}`}
+      >
+        {busy ? '진행 중...' : testOnly ? '상품 등록 후 활성화' : buttonLabel}
+      </button>
+    </div>
   );
 }
 

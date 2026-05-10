@@ -294,7 +294,7 @@ create table if not exists post_queue (
   post_url text,
   status text not null check (status in ('scheduled', 'posting', 'posted', 'failed', 'retry', 'manual_required', 'skipped')),
   retry_count int not null default 0,
-  post_mode text not null default 'auto' check (post_mode in ('auto', 'link', 'no_link')),
+  post_mode text not null default 'auto' check (post_mode in ('auto', 'link', 'no_link', 'sponsored_comment')),
   error_message text,
   error_category text,
   customer_hidden_at timestamptz,
@@ -304,6 +304,26 @@ create table if not exists post_queue (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create table if not exists threads_connection_requests (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  account_id uuid not null references accounts(id) on delete cascade,
+  threads_handle text not null,
+  status text not null default 'requested' check (status in ('requested', 'meta_registered', 'customer_action_required', 'connected', 'canceled')),
+  request_memo text,
+  admin_memo text,
+  meta_registered_at timestamptz,
+  connected_at timestamptz,
+  canceled_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_threads_connection_requests_account
+  on threads_connection_requests(account_id, created_at desc);
+create index if not exists idx_threads_connection_requests_status
+  on threads_connection_requests(status, created_at desc);
 
 create table if not exists automation_studio_campaigns (
   id uuid primary key default gen_random_uuid(),
@@ -373,6 +393,45 @@ create index if not exists idx_automation_studio_assets_campaign
 
 create index if not exists idx_automation_studio_queue_links_campaign
   on automation_studio_queue_links(campaign_id, platform, status);
+
+create table if not exists automation_studio_lead_forms (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references automation_studio_campaigns(id) on delete cascade,
+  project_id uuid references projects(id) on delete set null,
+  account_id uuid references accounts(id) on delete set null,
+  slug text not null unique,
+  title text not null,
+  offer text,
+  fields jsonb not null default '["name","phone"]',
+  privacy_note text,
+  thank_you_message text,
+  status text not null default 'active' check (status in ('active', 'paused', 'archived')),
+  public_url text,
+  created_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists automation_studio_lead_submissions (
+  id uuid primary key default gen_random_uuid(),
+  form_id uuid not null references automation_studio_lead_forms(id) on delete cascade,
+  campaign_id uuid references automation_studio_campaigns(id) on delete cascade,
+  project_id uuid references projects(id) on delete set null,
+  account_id uuid references accounts(id) on delete set null,
+  payload jsonb not null default '{}',
+  status text not null default 'new' check (status in ('new', 'contacted', 'qualified', 'closed', 'spam')),
+  source_url text,
+  user_agent text,
+  metadata jsonb not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_automation_studio_lead_forms_campaign
+  on automation_studio_lead_forms(campaign_id, status);
+
+create index if not exists idx_automation_studio_lead_submissions_campaign
+  on automation_studio_lead_submissions(campaign_id, created_at desc);
 
 create table if not exists pipeline_runs (
   id uuid primary key default gen_random_uuid(),
@@ -594,13 +653,23 @@ alter table billing_products add column if not exists app_product_id text not nu
 
 insert into billing_products (id, app_product_id, name, plan, amount, billing_cycle, max_accounts, active)
 values
-  ('onetime_590000', 'cujasa', 'CUJASA 베이직 일시불', 'onetime', 590000, 'once', 2, true),
+  ('sponsored_monthly_19000', 'cujasa', 'CUJASA 스폰서 스타터', 'monthly', 19000, 'monthly', 1, true),
+  ('onetime_590000', 'cujasa', 'CUJASA 프로 영구구매', 'onetime', 590000, 'once', 4, true),
   ('monthly_59000', 'cujasa', 'CUJASA 베이직 월정액', 'monthly', 59000, 'monthly', 2, true),
   ('monthly_129000', 'cujasa', 'CUJASA 베이직 월정액(판매 중단)', 'monthly', 129000, 'monthly', 2, false),
   ('dexor_credit_5000', 'dexor', 'DEXOR 크레딧 10회 충전', 'onetime', 5000, 'once', 0, true),
   ('dexor_credit_10000', 'dexor', 'DEXOR 크레딧 25회 충전', 'onetime', 10000, 'once', 0, true),
   ('dexor_credit_50000', 'dexor', 'DEXOR 크레딧 150회 충전', 'onetime', 50000, 'once', 0, true),
-  ('dexor_credit_100000', 'dexor', 'DEXOR 크레딧 350회 충전', 'onetime', 100000, 'once', 0, true)
+  ('dexor_credit_100000', 'dexor', 'DEXOR 크레딧 350회 충전', 'onetime', 100000, 'once', 0, true),
+  ('infludex_credit_19000', 'infludex', 'INFLUDEX 라이트 분석 30회', 'onetime', 19000, 'once', 0, true),
+  ('infludex_credit_49000', 'infludex', 'INFLUDEX 베이직 분석 100회', 'onetime', 49000, 'once', 0, true),
+  ('infludex_credit_99000', 'infludex', 'INFLUDEX 프로 분석 250회', 'onetime', 99000, 'once', 0, true),
+  ('spread_starter_monthly_49000', 'spread', 'SPREAD 스타터 월정액', 'monthly', 49000, 'monthly', 0, true),
+  ('spread_basic_monthly_149000', 'spread', 'SPREAD 베이직 월정액', 'monthly', 149000, 'monthly', 0, true),
+  ('spread_pro_monthly_390000', 'spread', 'SPREAD 프로 월정액', 'monthly', 390000, 'monthly', 0, true),
+  ('polibot_starter_monthly_39000', 'polibot', 'POLIBOT 스타터 월정액', 'monthly', 39000, 'monthly', 0, true),
+  ('polibot_basic_monthly_99000', 'polibot', 'POLIBOT 베이직 월정액', 'monthly', 99000, 'monthly', 0, true),
+  ('polibot_pro_monthly_290000', 'polibot', 'POLIBOT 프로 월정액', 'monthly', 290000, 'monthly', 0, true)
 on conflict (id) do update set
   app_product_id = excluded.app_product_id,
   name = excluded.name,
@@ -667,6 +736,24 @@ create table if not exists billing_agreements (
   user_agent text,
   created_at timestamptz not null default now()
 );
+
+create table if not exists sponsor_campaigns (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  product_name text not null,
+  destination_url text not null,
+  category text,
+  label_text text not null default '[광고]',
+  comment_text text not null default '[광고] Threads 자동화 수익 플랫폼 JASAIN · https://jasain.kr',
+  starts_at timestamptz,
+  ends_at timestamptz,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists idx_sponsor_campaigns_active
+  on sponsor_campaigns(active, starts_at, ends_at);
 
 create index if not exists idx_accounts_project on accounts(project_id);
 create index if not exists idx_accounts_automation_status on accounts(status, automation_status);
