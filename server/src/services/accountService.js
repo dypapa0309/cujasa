@@ -134,7 +134,7 @@ function normalizeAccount(payload) {
   next.safe_debate_enabled = Boolean(next.safe_debate_enabled);
   next.anonymous_learning_enabled = Boolean(next.anonymous_learning_enabled);
   next.blog_enabled = Boolean(next.blog_enabled);
-  next.blog_slug = next.blog_slug == null ? '' : String(next.blog_slug).trim().slice(0, 120);
+  next.blog_slug = next.blog_slug == null ? null : (String(next.blog_slug).trim().slice(0, 120) || null);
   next.blog_title = next.blog_title == null ? '' : String(next.blog_title).trim().slice(0, 120);
   next.blog_public_url = next.blog_public_url == null ? '' : String(next.blog_public_url).trim().slice(0, 300);
   next.blog_auto_publish_enabled = Boolean(next.blog_auto_publish_enabled);
