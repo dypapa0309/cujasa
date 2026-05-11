@@ -71,6 +71,20 @@ async function assignCreatedAccountToOwner({ accountId, ownerUserId }) {
   return dbInsert('user_accounts', { user_id: ownerUserId, account_id: accountId });
 }
 
+async function resolveAccountProjectId(rawProjectId) {
+  const requestedProjectId = String(rawProjectId || '').trim();
+  if (requestedProjectId) {
+    const project = await dbGet('projects', { id: requestedProjectId });
+    if (project) return project.id;
+  }
+  const projects = await dbList('projects', { type: 'coupang' }, { order: 'created_at', ascending: true });
+  const fallback = projects.find((project) => project.status !== 'archived') || projects[0];
+  if (fallback?.id) return fallback.id;
+  const error = new Error('계정을 생성할 프로젝트가 없습니다. 프로젝트를 먼저 생성해주세요.');
+  error.status = 400;
+  throw error;
+}
+
 async function attachOwnerLabels(accounts = []) {
   const [links, users] = await Promise.all([
     dbList('user_accounts'),
@@ -144,6 +158,7 @@ router.post('/', async (req, res, next) => {
       await assertOwnerCanReceiveAccount(ownerUserId);
     }
     const payload = stripBlankSensitiveAccountFields(req.body);
+    payload.project_id = await resolveAccountProjectId(payload.project_id);
     const account = await createAccount(payload);
     if (req.user?.type === 'user') {
       await dbInsert('user_accounts', { user_id: req.user.userId, account_id: account.id });
