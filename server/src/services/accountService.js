@@ -82,6 +82,14 @@ function isMissingSchemaError(error) {
     || message.includes('could not find');
 }
 
+function missingColumnFromError(error) {
+  const message = String(error?.message || '');
+  return message.match(/Could not find the '([^']+)' column/i)?.[1]
+    || message.match(/column "([^"]+)" of relation "accounts" does not exist/i)?.[1]
+    || message.match(/column "([^"]+)" does not exist/i)?.[1]
+    || '';
+}
+
 function toFiniteNumber(value, fallback) {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -158,44 +166,70 @@ export function assertAccountActive(account, action = 'run automation') {
     throw error;
   }
 }
-export const createAccount = (payload) => dbInsert('accounts', normalizeAccount({
-  platform: 'threads',
-  status: 'active',
-  automation_status: 'paused',
-  forbidden_topics: [],
-  forbidden_words: ['100%', '무조건', '완벽', '보장', '치료', '예방', '다이어트 약', '보조제', '가르시니아', '효과 보장', '체중감량 보장'],
-  content_mode: 'auto',
-  content_intensity: 'normal',
-  seasonality_enabled: true,
-  comment_induction_style: 'soft_question',
-  product_mention_style: 'natural',
-  emoji_level: 'low',
-  safe_debate_enabled: false,
-  anonymous_learning_enabled: false,
-  personal_reference_patterns: [],
-  blog_enabled: false,
-  blog_slug: '',
-  blog_title: '',
-  blog_public_url: '',
-  blog_created_at: null,
-  blog_auto_publish_enabled: false,
-  blog_publish_mode: 'test_only',
-  blog_base_url: '',
-  toss_share_link_enabled: false,
-  toss_share_link_url: '',
-  toss_share_link_label: '',
-  toss_share_link_memo: '',
-  content_style_note: '',
-  daily_post_min: 0,
-  daily_post_max: 3,
-  active_time_windows: [{ start: '09:00', end: '23:00' }],
-  min_interval_minutes: 90,
-  threads_link_delivery_mode: 'reply',
-  link_post_ratio: BALANCED_LINK_RATIO,
-  no_link_post_ratio: BALANCED_NO_LINK_RATIO,
-  rest_days_per_week: 1,
-  ...sanitizeAccountPayload(payload)
-}));
+export async function createAccount(payload) {
+  const normalized = normalizeAccount({
+    platform: 'threads',
+    status: 'active',
+    automation_status: 'paused',
+    forbidden_topics: [],
+    forbidden_words: ['100%', '무조건', '완벽', '보장', '치료', '예방', '다이어트 약', '보조제', '가르시니아', '효과 보장', '체중감량 보장'],
+    content_mode: 'auto',
+    content_intensity: 'normal',
+    seasonality_enabled: true,
+    comment_induction_style: 'soft_question',
+    product_mention_style: 'natural',
+    emoji_level: 'low',
+    safe_debate_enabled: false,
+    anonymous_learning_enabled: false,
+    personal_reference_patterns: [],
+    blog_enabled: false,
+    blog_slug: '',
+    blog_title: '',
+    blog_public_url: '',
+    blog_created_at: null,
+    blog_auto_publish_enabled: false,
+    blog_publish_mode: 'test_only',
+    blog_base_url: '',
+    toss_share_link_enabled: false,
+    toss_share_link_url: '',
+    toss_share_link_label: '',
+    toss_share_link_memo: '',
+    content_style_note: '',
+    daily_post_min: 0,
+    daily_post_max: 3,
+    active_time_windows: [{ start: '09:00', end: '23:00' }],
+    min_interval_minutes: 90,
+    threads_link_delivery_mode: 'reply',
+    link_post_ratio: BALANCED_LINK_RATIO,
+    no_link_post_ratio: BALANCED_NO_LINK_RATIO,
+    rest_days_per_week: 1,
+    ...sanitizeAccountPayload(payload)
+  });
+  const insertPayload = { ...normalized };
+  const droppedColumns = new Set();
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    try {
+      return await dbInsert('accounts', insertPayload);
+    } catch (error) {
+      const missingColumn = isMissingSchemaError(error) ? missingColumnFromError(error) : '';
+      if (!missingColumn || droppedColumns.has(missingColumn) || !Object.prototype.hasOwnProperty.call(insertPayload, missingColumn)) {
+        if (isMissingSchemaError(error)) {
+          const nextError = new Error('계정 생성에 필요한 DB 스키마가 아직 적용되지 않았습니다. 운영 DB 마이그레이션 상태를 확인해주세요.');
+          nextError.status = 503;
+          nextError.code = 'ACCOUNT_SCHEMA_NOT_READY';
+          throw nextError;
+        }
+        throw error;
+      }
+      delete insertPayload[missingColumn];
+      droppedColumns.add(missingColumn);
+    }
+  }
+  const error = new Error('계정 생성 DB 스키마 확인이 필요합니다.');
+  error.status = 503;
+  error.code = 'ACCOUNT_SCHEMA_NOT_READY';
+  throw error;
+}
 export const updateAccount = async (id, payload) => {
   const current = await getAccount(id);
   if (!current) {
