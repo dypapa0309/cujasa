@@ -23,6 +23,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [showArchivedUsers, setShowArchivedUsers] = useState(false);
   const [archiveBusyUserId, setArchiveBusyUserId] = useState('');
   const [blogBusyAccountId, setBlogBusyAccountId] = useState('');
+  const [accountCreateBusyUserId, setAccountCreateBusyUserId] = useState('');
 
   const load = async () => {
     const [nextUsers, nextProducts, nextConflicts, nextMisassignments, nextSetupTasks] = await Promise.all([
@@ -71,6 +72,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   };
 
   const createAndAssignAccount = async (user) => {
+    if (accountCreateBusyUserId) return;
     const draft = accountDrafts[user.id] || {};
     const name = String(draft.name || '').trim();
     const accountHandle = String(draft.account_handle || '').trim();
@@ -83,20 +85,24 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
       toast(`계정 한도 초과 (최대 ${user.max_accounts}개)`, 'error');
       return;
     }
+    setAccountCreateBusyUserId(user.id);
     try {
-      const account = await api.post('/api/accounts', {
+      const projectId = accounts.find((account) => account.project_id)?.project_id || '00000000-0000-0000-0000-000000000001';
+      await api.post('/api/accounts', {
         name,
         account_handle: accountHandle,
         platform: 'threads',
-        project_id: '00000000-0000-0000-0000-000000000001',
+        project_id: projectId,
+        owner_user_id: user.id,
         coupang_tracking_code: trackingCode
       });
-      await api.post(`/api/admin/users/${user.id}/accounts`, { accountId: account.id });
       setAccountDrafts((prev) => ({ ...prev, [user.id]: { name: '', account_handle: '', coupang_tracking_code: '' } }));
       await load();
       toast('설정이 변경되었습니다.', 'success');
     } catch (err) {
-      toast(err.message || 'Threads 계정 생성/할당에 실패했습니다.', 'error');
+      toast(err.status === 401 ? '로그인이 만료됐어요. 다시 로그인해주세요.' : (err.message || 'Threads 계정 생성/할당에 실패했습니다.'), 'error');
+    } finally {
+      setAccountCreateBusyUserId('');
     }
   };
 
@@ -704,9 +710,10 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                         <button
                           type="button"
                           onClick={() => createAndAssignAccount(user)}
+                          disabled={accountCreateBusyUserId === user.id}
                           className="rounded bg-coupang px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
                         >
-                          생성/할당
+                          {accountCreateBusyUserId === user.id ? '처리 중...' : '생성/할당'}
                         </button>
                       </div>
                     </div>

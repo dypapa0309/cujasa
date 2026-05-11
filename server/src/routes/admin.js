@@ -21,6 +21,7 @@ import { recoverReplyLinkModeRequiredQueues, repairReplyLinkFailures, reschedule
 import { listSetupTasks, updateSetupTask } from '../services/setupTaskService.js';
 import { buildMisassignmentReport } from '../services/accountOwnershipService.js';
 import { createManualPayment, expireDueEntitlements } from '../services/billingEntitlementService.js';
+import { clearAuthContextCache } from '../middleware/auth.js';
 import { listPolibotCatalogReview, savePolibotCatalogReviews } from '../services/productWorkspaceService.js';
 import {
   ingestPolibotKnowledge,
@@ -34,6 +35,7 @@ import { createAdminTrendPatternAssets, listTrendPatternAssets, updateTrendPatte
 import { extractTrendReferenceFromImage } from '../services/trendReferenceOcrService.js';
 import { ensureAccountBlog } from '../services/blogService.js';
 import { listThreadsConnectionRequests, updateThreadsConnectionRequest } from '../services/threadsConnectionRequestService.js';
+import { buildCujasaQueueDiagnostics, reclassifyQueueErrors, repairThreadsPostUrls } from '../services/queueReliabilityService.js';
 
 const router = Router();
 
@@ -154,6 +156,32 @@ router.get('/operations/events', async (req, res, next) => {
     res.json(await operationEvents({
       type: req.query?.type || 'queue_problems',
       limit: req.query?.limit || 200
+    }));
+  } catch (e) { next(e); }
+});
+
+router.get('/operations/cujasa-queue-diagnostics/:accountId', async (req, res, next) => {
+  try {
+    res.json(await buildCujasaQueueDiagnostics(req.params.accountId, { limit: req.query.limit || 50 }));
+  } catch (e) { next(e); }
+});
+
+router.post('/operations/reclassify-queue-errors', async (req, res, next) => {
+  try {
+    res.json(await reclassifyQueueErrors({
+      accountId: req.body?.accountId || null,
+      limit: req.body?.limit || 250,
+      dryRun: req.body?.mode !== 'apply'
+    }));
+  } catch (e) { next(e); }
+});
+
+router.post('/operations/repair-threads-post-urls', async (req, res, next) => {
+  try {
+    res.json(await repairThreadsPostUrls({
+      accountId: req.body?.accountId || null,
+      limit: req.body?.limit || 250,
+      dryRun: req.body?.mode !== 'apply'
     }));
   } catch (e) { next(e); }
 });
@@ -377,6 +405,7 @@ router.post('/account-misassignments/cleanup', async (req, res, next) => {
     if (mode === 'apply') {
       for (const row of targets) {
         await dbDelete('user_accounts', { user_id: row.userId, account_id: row.accountId });
+        clearAuthContextCache(row.userId);
         await auditMisassignment(row, 'auto_unassigned');
       }
       for (const row of reviews) await auditMisassignment(row, 'needs_review');
@@ -390,6 +419,7 @@ router.post('/account-misassignments/unassign', async (req, res, next) => {
     const { userId, accountId } = req.body || {};
     if (!userId || !accountId) return res.status(400).json({ error: 'userId, accountId 필수' });
     await dbDelete('user_accounts', { user_id: userId, account_id: accountId });
+    clearAuthContextCache(userId);
     res.json({ ok: true });
   } catch (e) { next(e); }
 });
@@ -411,6 +441,8 @@ router.post('/account-misassignments/reassign', async (req, res, next) => {
     if (fromUserId) await dbDelete('user_accounts', { user_id: fromUserId, account_id: accountId });
     const exists = (await dbList('user_accounts', { user_id: toUserId, account_id: accountId }))[0];
     const link = exists || await dbInsert('user_accounts', { user_id: toUserId, account_id: accountId });
+    if (fromUserId) clearAuthContextCache(fromUserId);
+    clearAuthContextCache(toUserId);
     res.json(link);
   } catch (e) { next(e); }
 });
@@ -483,6 +515,7 @@ router.delete('/users/:id', async (req, res, next) => {
       reason: req.body?.reason || req.query?.reason || 'admin_archive',
       archivedBy: req.user?.email || req.user?.adminId || 'admin'
     });
+    clearAuthContextCache(req.params.id);
     res.json(archived);
   } catch (e) { next(e); }
 });
@@ -604,6 +637,7 @@ router.patch('/users/:id', async (req, res, next) => {
     if (buyerNameValue !== undefined) patch.buyer_name = String(buyerNameValue || '').trim() || null;
     if (password) patch.password_hash = hashPassword(password);
     const [updated] = await updateUser(req.params.id, patch);
+    clearAuthContextCache(req.params.id);
     res.json({ ...updated, password_hash: undefined });
   } catch (e) { next(e); }
 });
@@ -629,6 +663,7 @@ router.post('/users/:id/plan', async (req, res, next) => {
     } else {
       await grantUserProduct(req.params.id, 'cujasa', { status: 'active', role: 'customer' });
     }
+    clearAuthContextCache(req.params.id);
     res.json({ ...updated, password_hash: undefined });
   } catch (e) { next(e); }
 });
@@ -650,6 +685,7 @@ router.post('/users/:id/accounts', async (req, res, next) => {
       return res.status(409).json({ error: '이미 다른 고객에게 할당된 계정입니다.' });
     }
     const ua = await dbInsert('user_accounts', { user_id: req.params.id, account_id: accountId });
+    clearAuthContextCache(req.params.id);
     res.status(201).json(ua);
   } catch (e) { next(e); }
 });
@@ -658,6 +694,7 @@ router.post('/users/:id/accounts', async (req, res, next) => {
 router.delete('/users/:id/accounts/:accountId', async (req, res, next) => {
   try {
     await dbDelete('user_accounts', { user_id: req.params.id, account_id: req.params.accountId });
+    clearAuthContextCache(req.params.id);
     res.status(204).end();
   } catch (e) { next(e); }
 });
@@ -669,6 +706,7 @@ router.post('/users/:id/products', async (req, res, next) => {
     const user = await dbGet('users', { id: req.params.id });
     if (!user) return res.status(404).json({ error: 'User not found' });
     const grant = await grantUserProduct(req.params.id, productId, { status, role });
+    clearAuthContextCache(req.params.id);
     res.status(201).json(grant);
   } catch (e) { next(e); }
 });
@@ -676,6 +714,7 @@ router.post('/users/:id/products', async (req, res, next) => {
 router.delete('/users/:id/products/:productId', async (req, res, next) => {
   try {
     await revokeUserProduct(req.params.id, req.params.productId);
+    clearAuthContextCache(req.params.id);
     res.status(204).end();
   } catch (e) { next(e); }
 });
@@ -698,6 +737,7 @@ router.get('/users/:id/products/:productId/settings/:field', async (req, res, ne
 router.patch('/users/:id/products/:productId/settings', async (req, res, next) => {
   try {
     const updated = await updateUserProductSettings(req.params.id, req.params.productId, req.body || {});
+    clearAuthContextCache(req.params.id);
     const settings = updated.settings && typeof updated.settings === 'object' ? updated.settings : {};
     res.json({
       productId: req.params.productId,

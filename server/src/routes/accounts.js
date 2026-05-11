@@ -10,6 +10,7 @@ import { redactAccount, redactAccounts, stripBlankSensitiveAccountFields } from 
 import { assertUserCanStartTrialAction } from '../services/trialEntitlementService.js';
 import { AUTOMATION_PAUSED, AUTOMATION_RUNNING, normalizeAutomationStatus, setAutomationStatus } from '../services/accountAutomationService.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
+import { clearAuthContextCache } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -44,6 +45,30 @@ function mapPipelineRun(run) {
     },
     result
   };
+}
+
+async function assertOwnerCanReceiveAccount(ownerUserId) {
+  const owner = await dbGet('users', { id: ownerUserId });
+  if (!owner) {
+    const error = new Error('구매자를 찾을 수 없습니다.');
+    error.status = 404;
+    throw error;
+  }
+  const current = await dbList('user_accounts', { user_id: ownerUserId });
+  const maxAccounts = Number(owner.max_accounts ?? 999);
+  if (Number.isFinite(maxAccounts) && current.length >= maxAccounts) {
+    const error = new Error(`계정 한도 초과 (최대 ${owner.max_accounts}개)`);
+    error.status = 403;
+    throw error;
+  }
+  return owner;
+}
+
+async function assignCreatedAccountToOwner({ accountId, ownerUserId }) {
+  if (!ownerUserId) return null;
+  const existing = (await dbList('user_accounts', { user_id: ownerUserId, account_id: accountId }))[0];
+  if (existing) return existing;
+  return dbInsert('user_accounts', { user_id: ownerUserId, account_id: accountId });
 }
 
 async function attachOwnerLabels(accounts = []) {
@@ -104,6 +129,9 @@ router.get('/', async (req, res, next) => {
 
 router.post('/', async (req, res, next) => {
   try {
+    const ownerUserId = req.user?.type === 'admin'
+      ? String(req.body?.owner_user_id || req.body?.ownerUserId || '').trim()
+      : '';
     if (req.user?.type === 'user') {
       await assertUserCanOperate(req.user.userId);
       const current = await dbList('user_accounts', { user_id: req.user.userId });
@@ -112,13 +140,20 @@ router.post('/', async (req, res, next) => {
         error.status = 403;
         throw error;
       }
+    } else if (ownerUserId) {
+      await assertOwnerCanReceiveAccount(ownerUserId);
     }
     const payload = stripBlankSensitiveAccountFields(req.body);
     const account = await createAccount(payload);
     if (req.user?.type === 'user') {
       await dbInsert('user_accounts', { user_id: req.user.userId, account_id: account.id });
+      clearAuthContextCache(req.user.userId);
+    } else if (ownerUserId) {
+      await assignCreatedAccountToOwner({ accountId: account.id, ownerUserId });
+      clearAuthContextCache(ownerUserId);
     }
-    res.status(201).json(redactAccount(account));
+    const [withOwner] = await attachOwnerLabels([account]);
+    res.status(201).json(redactAccount(withOwner || account));
   } catch (e) { next(e); }
 });
 

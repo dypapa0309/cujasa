@@ -8,22 +8,28 @@ export default function AccountListPage({ accounts, reloadAccounts, setSelectedA
   const [editing, setEditing] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [adminRows, setAdminRows] = useState([]);
+  const [adminUsers, setAdminUsers] = useState([]);
   const [accountActionId, setAccountActionId] = useState('');
+  const [creatingAccount, setCreatingAccount] = useState(false);
   const [customerFilter, setCustomerFilter] = useState('');
   const isAdmin = !currentUser || currentUser.type === 'admin';
   const maxAccounts = currentUser?.maxAccounts ?? 999;
   const atLimit = !isAdmin && accounts.length >= maxAccounts;
   const sourceAccounts = isAdmin && showArchived ? adminRows : accounts;
-  const customers = [...new Map(sourceAccounts
+  const accountOwners = [...new Map(sourceAccounts
     .filter((account) => account.owner)
     .map((account) => [account.owner.id, account.owner])).values()]
     .sort((a, b) => String(a.buyerName || a.username || a.email).localeCompare(String(b.buyerName || b.username || b.email)));
+  const customers = (adminUsers.length > 0 ? adminUsers : accountOwners)
+    .filter((customer) => customer?.id)
+    .sort((a, b) => String(a.buyerName || a.buyer_name || a.username || a.email).localeCompare(String(b.buyerName || b.buyer_name || b.username || b.email)));
   const customerOptions = customers.map((customer) => {
-    const label = [customer.buyerName || customer.username || customer.email, customer.username ? `ID ${customer.username}` : ''].filter(Boolean).join(' · ');
+    const buyerName = customer.buyerName || customer.buyer_name || '';
+    const label = [buyerName || customer.username || customer.email, customer.username ? `ID ${customer.username}` : ''].filter(Boolean).join(' · ');
     return {
       value: customer.id,
       label,
-      searchText: [label, customer.email, customer.buyerName, customer.username].filter(Boolean).join(' ')
+      searchText: [label, customer.email, buyerName, customer.username].filter(Boolean).join(' ')
     };
   });
   const displayAccounts = customerFilter
@@ -35,9 +41,18 @@ export default function AccountListPage({ accounts, reloadAccounts, setSelectedA
     setAdminRows(await api.get('/api/accounts?includeArchived=1'));
   };
 
+  const loadAdminUsers = async () => {
+    if (!isAdmin) return;
+    setAdminUsers(await api.get('/api/admin/users'));
+  };
+
   useEffect(() => {
     loadAdminRows().catch(console.error);
   }, [showArchived, isAdmin]);
+
+  useEffect(() => {
+    loadAdminUsers().catch(console.error);
+  }, [isAdmin]);
 
   useEffect(() => {
     if (!accountSettingsOpenId) return;
@@ -49,23 +64,46 @@ export default function AccountListPage({ accounts, reloadAccounts, setSelectedA
   }, [accountSettingsOpenId, displayAccounts, onAccountSettingsOpened]);
 
   const create = async () => {
-    const projects = await api.get('/api/projects');
-    const project = projects[0];
-    if (!project) {
-      alert('프로젝트가 없습니다. 관리자에게 문의하세요.');
+    if (creatingAccount) return;
+    if (isAdmin && !customerFilter) {
+      alert('계정을 생성할 구매자를 먼저 선택해주세요.');
       return;
     }
-    const account = await api.post('/api/accounts', {
-      project_id: project.id,
-      name: '새 쿠팡 계정',
-      target_audience: '타깃을 입력하세요',
-      content_scope: '다룰 주제 범위를 입력하세요',
-      tone: '친근하고 짧게',
-      cta_style: '댓글 유도형'
-    });
-    setSelectedAccountId(account.id);
-    setEditing(account);
-    await reloadAccounts();
+    setCreatingAccount(true);
+    try {
+      const existingProjectId = sourceAccounts.find((account) => account.project_id)?.project_id
+        || accounts.find((account) => account.project_id)?.project_id;
+      let projectId = existingProjectId;
+      if (!projectId) {
+        const projects = await api.get('/api/projects');
+        projectId = projects[0]?.id;
+      }
+      if (!projectId) {
+        alert('프로젝트가 없습니다. 관리자에게 문의하세요.');
+        return;
+      }
+      const account = await api.post('/api/accounts', {
+        project_id: projectId,
+        owner_user_id: isAdmin ? customerFilter : undefined,
+        name: '새 쿠팡 계정',
+        target_audience: '타깃을 입력하세요',
+        content_scope: '다룰 주제 범위를 입력하세요',
+        tone: '친근하고 짧게',
+        cta_style: '댓글 유도형'
+      });
+      setSelectedAccountId(account.id);
+      setEditing(account);
+      await reloadAccounts();
+      if (showArchived) await loadAdminRows();
+    } catch (error) {
+      if (error?.status === 401) {
+        alert('로그인이 만료됐어요. 다시 로그인한 뒤 계정을 생성해주세요.');
+      } else {
+        alert(error?.message || '계정 생성에 실패했습니다.');
+      }
+    } finally {
+      setCreatingAccount(false);
+    }
   };
   const refreshRows = async () => {
     await reloadAccounts?.();
@@ -119,7 +157,13 @@ export default function AccountListPage({ accounts, reloadAccounts, setSelectedA
           </div>
         )}
         {(isAdmin || !atLimit) && (
-          <button onClick={create} className={`${isAdmin ? '' : 'ml-auto'} rounded bg-coupang px-4 py-2 font-medium text-white`}>계정 생성</button>
+          <button
+            onClick={create}
+            disabled={creatingAccount}
+            className={`${isAdmin ? '' : 'ml-auto'} rounded bg-coupang px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            {creatingAccount ? '생성 중...' : isAdmin && customerFilter ? '선택 고객 계정 생성' : '계정 생성'}
+          </button>
         )}
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">

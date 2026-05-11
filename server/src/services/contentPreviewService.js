@@ -5,6 +5,10 @@ import { scorePostEngagement } from '../utils/postEngagementScoring.js';
 import { evaluatePostQualityGate } from '../utils/postQualityGate.js';
 import { validatePostCandidate } from '../utils/contentGuardrails.js';
 import { validatePostStyleFit } from '../utils/accountStyle.js';
+import { dbList } from './supabaseService.js';
+import { evaluateProductTopicMatch } from '../utils/productMatching.js';
+import { buildReplyText } from '../platformAdapters/threadsAdapter.js';
+import { assessContentPatternQuality } from '../utils/contentPatternQuality.js';
 
 function mergePreviewAccount(account = {}, input = {}) {
   return {
@@ -27,6 +31,52 @@ function previewTopic(account, input = {}) {
   };
 }
 
+function keywordTokens(...values) {
+  return [...new Set(values
+    .join(' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2)
+    .slice(0, 12))];
+}
+
+async function previewProductMatches(account, topic, body) {
+  const candidates = await dbList('coupang_products', { account_id: account.id }, { order: 'created_at', ascending: false, limit: 80 });
+  const keywords = keywordTokens(topic.title, topic.angle, account.content_scope, account.target_audience, body);
+  const scored = candidates.map((product) => {
+    const match = evaluateProductTopicMatch(product, {
+      ...topic,
+      search_keyword: keywords.join(' ')
+    }, account, { body });
+    return {
+      product,
+      match
+    };
+  }).sort((a, b) => b.match.score - a.match.score);
+  const matches = scored.slice(0, 3).map(({ product, match }) => ({
+    id: product.id,
+    productId: product.product_id,
+    name: product.product_name,
+    price: product.product_price,
+    image: product.product_image,
+    partnerUrl: product.partner_url || product.product_url,
+    group: match.group,
+    score: match.score,
+    matchReasons: match.matchReasons,
+    riskReasons: match.riskReasons,
+    linkable: match.linkable
+  }));
+  const selected = matches.find((match) => match.linkable) || null;
+  return {
+    searchKeywords: keywords.slice(0, 8),
+    matches,
+    selected,
+    productLinkable: Boolean(selected),
+    replyPreview: selected ? buildReplyText(selected.partnerUrl) : ''
+  };
+}
+
 export async function buildCujasaContentPreview(accountId, input = {}) {
   const baseAccount = await getAccount(accountId);
   if (!baseAccount) {
@@ -45,12 +95,16 @@ export async function buildCujasaContentPreview(accountId, input = {}) {
     patterns: reference.patterns,
     useAi: input.useAi !== false
   });
-  const candidates = posts.map((post, index) => {
+  const peerBodies = posts.map((post) => post.body);
+  const candidates = await Promise.all(posts.map(async (post, index) => {
     const engagement = scorePostEngagement(post.body);
     const qualityGate = evaluatePostQualityGate(engagement);
     const guardrail = validatePostCandidate(post.body, account, topic);
     const styleFit = validatePostStyleFit(post.body, account);
-    const allowed = Boolean(post.allowed) && qualityGate.passed && guardrail.allowed && styleFit.allowed;
+    const patternQuality = assessContentPatternQuality(post.body, peerBodies.filter((_, bodyIndex) => bodyIndex !== index));
+    const productPreview = await previewProductMatches(account, topic, post.body);
+    const productAllowed = input.productMentionStyle === 'none' || productPreview.productLinkable;
+    const allowed = Boolean(post.allowed) && qualityGate.passed && guardrail.allowed && styleFit.allowed && productAllowed && patternQuality.allowed;
     return {
       ...post,
       index,
@@ -64,10 +118,14 @@ export async function buildCujasaContentPreview(accountId, input = {}) {
         ...(qualityGate.passed ? [] : qualityGate.reasons),
         ...(guardrail.allowed ? [] : guardrail.reasons),
         ...(styleFit.allowed ? [] : styleFit.reasons),
+        ...(productAllowed ? [] : ['상품 매칭 실패']),
+        ...(patternQuality.allowed ? [] : patternQuality.reasons),
         ...(post.safetyFlags || [])
-      ].filter(Boolean)
+      ].filter(Boolean),
+      patternQuality,
+      productPreview
     };
-  });
+  }));
   const selected = candidates
     .filter((candidate) => candidate.allowed)
     .sort((a, b) => Number(b.engagementScore || 0) - Number(a.engagementScore || 0))[0] || null;
@@ -93,6 +151,6 @@ export async function buildCujasaContentPreview(accountId, input = {}) {
     })),
     candidates,
     selectedIndex: selected?.index ?? -1,
-    productLinkable: false
+    productLinkable: Boolean(selected?.productPreview?.productLinkable)
   };
 }

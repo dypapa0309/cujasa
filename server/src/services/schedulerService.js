@@ -6,7 +6,7 @@ import { listCtas } from './ctaService.js';
 import { createTrackingLink } from './trackingService.js';
 import { validatePostCandidate } from '../utils/contentGuardrails.js';
 import { assertPreflightCanPublish, preflightAccount } from './accountPreflightService.js';
-import { classifyQueueError } from './queueErrorService.js';
+import { classifyQueueError, normalizeQueueClassification } from './queueErrorService.js';
 import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
 import { assertAccountCanUpload, recordSuccessfulUpload } from './trialEntitlementService.js';
 import { assertAutomationRunning, isAutomationRunning } from './accountAutomationService.js';
@@ -16,12 +16,12 @@ import { sendOpsAlert } from './notificationService.js';
 import { isReplyLinkModeEnabled } from '../utils/replyLinkMode.js';
 import { maybeGenerateBlogPostForQueue } from './blogService.js';
 import { canUseSponsoredComment, getSponsorCommentText, sponsoredCommentAlreadyQueuedToday } from './sponsorService.js';
+import { evaluateProductTopicMatch } from '../utils/productMatching.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const REPLY_REPAIR_MAX_ATTEMPTS = 3;
-const FALLBACK_LINK_FAILURE_TO_NO_LINK = String(process.env.THREADS_LINK_FAILURE_FALLBACK_TO_NO_LINK ?? 'false').toLowerCase() !== 'false';
 
 function kstDayRange(date = new Date()) {
   const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -85,9 +85,16 @@ function isReplyLinkModeRequiredQueue(row = {}) {
 
 function isReplyFailureQueue(row = {}) {
   if (row.customer_hidden_at) return false;
-  if (!['failed', 'retry', 'manual_required'].includes(row.status)) return false;
-  if (row.error_category === 'reply_warning') return true;
-  return classifyQueueError(row.error_message || '').category === 'reply_warning';
+  const classified = normalizeQueueClassification(row);
+  const replyCategories = new Set([
+    'reply_warning',
+    'reply_permission_required',
+    'threads_reply_target_invalid',
+    'reply_repair_blocked'
+  ]);
+  if (!replyCategories.has(classified.category)) return false;
+  if (row.status === 'posted') return Boolean(row.error_message || row.error_category);
+  return ['failed', 'retry', 'manual_required'].includes(row.status);
 }
 
 function isRepairableReplyWarningQueue(row = {}) {
@@ -98,10 +105,38 @@ function isRepairableReplyWarningQueue(row = {}) {
 }
 
 function canRepairReplyFailureQueue(row = {}) {
-  return isRepairableReplyWarningQueue(row)
+  const classified = normalizeQueueClassification(row);
+  return classified.category === 'reply_warning'
+    && isRepairableReplyWarningQueue(row)
     && (row.post_mode || 'auto') === 'link'
     && Boolean(row.post_url)
     && Number(row.retry_count || 0) < REPLY_REPAIR_MAX_ATTEMPTS;
+}
+
+function replyBlockReason(blocked = []) {
+  const categories = blocked.map((row) => normalizeQueueClassification(row).category);
+  if (categories.includes('reply_permission_required')) {
+    return {
+      code: 'REPLY_PERMISSION_REQUIRED',
+      message: 'Threads 댓글 권한 재연결 필요: 권한 확인 전까지 링크 글 예약을 막습니다.'
+    };
+  }
+  if (categories.includes('threads_reply_target_invalid')) {
+    return {
+      code: 'THREADS_REPLY_TARGET_INVALID',
+      message: '댓글 복구 불가 / 게시글 ID 문제: 기존 실패 큐를 수동 정리해야 링크 글 예약을 재개할 수 있습니다.'
+    };
+  }
+  if (categories.includes('reply_repair_blocked')) {
+    return {
+      code: 'REPLY_REPAIR_BLOCKED',
+      message: '댓글 링크 복구 불가 항목이 있습니다. 수동 확인 후 다시 실행해주세요.'
+    };
+  }
+  return {
+    code: 'REPLY_LINK_FAILURE_UNRESOLVED',
+    message: '댓글 링크 실패 항목이 복구 불가 상태입니다. 수동 확인 후 다시 실행해주세요.'
+  };
 }
 
 async function markReplyRepairBlocked(queue, reason, detail = '') {
@@ -139,10 +174,11 @@ async function replyLinkReadiness(account) {
   const unresolved = queues.filter(isReplyFailureQueue);
   const blocked = unresolved.filter((row) => !canRepairReplyFailureQueue(row));
   if (blocked.length > 0) {
+    const reason = replyBlockReason(blocked);
     return {
       ok: false,
-      code: 'REPLY_LINK_FAILURE_UNRESOLVED',
-      message: '댓글 링크 실패 항목이 복구 불가 상태입니다. 수동 확인 후 다시 실행해주세요.',
+      code: reason.code,
+      message: reason.message,
       unresolvedCount: blocked.length
     };
   }
@@ -166,10 +202,13 @@ function canRecoverReplyLinkModeQueue(queue = {}, account = {}) {
 
 async function getFirstLinkableProductForTopic(topicId) {
   if (!topicId) return { postProduct: null, product: null };
+  const topic = await dbGet('topics', { id: topicId });
+  const account = topic?.account_id ? await dbGet('accounts', { id: topic.account_id }) : null;
   const rows = await dbList('post_products', { topic_id: topicId }, { order: 'rank', ascending: true });
   for (const row of rows) {
     const product = row.product_id ? await dbGet('coupang_products', { id: row.product_id }) : null;
-    if (isLinkableCoupangProduct(product)) return { postProduct: row, product };
+    const match = product && topic && account ? evaluateProductTopicMatch(product, topic, account) : { linkable: isLinkableCoupangProduct(product) };
+    if (isLinkableCoupangProduct(product) && match.linkable) return { postProduct: row, product, match };
   }
   return { postProduct: null, product: null };
 }
@@ -391,10 +430,12 @@ export async function createDailyQueue(accountId, options = {}) {
   const topicIds = [...new Set(allDrafts.map((p) => p.topic_id))];
   const productsPerTopic = new Set();
   for (const tid of topicIds) {
+    const topic = await dbGet('topics', { id: tid });
     const pp = await dbList('post_products', { topic_id: tid });
     for (const row of pp) {
       const product = row.product_id ? await dbGet('coupang_products', { id: row.product_id }) : null;
-      if (isRealCoupangProduct(product)) {
+      const match = product && topic ? evaluateProductTopicMatch(product, topic, account) : { linkable: false };
+      if (isRealCoupangProduct(product) && match.linkable) {
         productsPerTopic.add(tid);
         break;
       }
@@ -422,14 +463,15 @@ export async function createDailyQueue(accountId, options = {}) {
   const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
   const withoutLink = allDrafts.filter((p) => !productsPerTopic.has(p.topic_id));
 
-  const primaryWithLink = withLink.slice(0, total);
+  const candidateWithLink = withLink.slice(0, total);
+  const primaryWithLink = reply.ok ? candidateWithLink : [];
   const selectedIds = new Set(primaryWithLink.map((post) => post.id));
   const remainingSlots = Math.max(0, total - primaryWithLink.length);
   const primaryNoLink = withoutLink
     .filter((post, index, list) => list.findIndex((row) => row.id === post.id) === index)
     .filter((post) => !selectedIds.has(post.id))
     .slice(0, remainingSlots);
-  const linkCount = primaryWithLink.length;
+  const linkCount = candidateWithLink.length;
   const noLinkCount = remainingSlots;
   const linkShortage = 0;
   const noLinkShortage = Math.max(0, remainingSlots - primaryNoLink.length);
@@ -483,11 +525,16 @@ export async function createDailyQueue(accountId, options = {}) {
     })),
     reasonCode: null
   };
+  const blockedLinkPosts = reply.ok ? 0 : candidateWithLink.length;
+
+  diagnostics.blockedLinkPosts = blockedLinkPosts;
+
   if (total === 0) diagnostics.reasonCode = 'NO_SCHEDULE_TIMES';
   else if (allDrafts.length === 0) diagnostics.reasonCode = 'NO_DRAFT_POSTS';
   else if (repairOutcomes.some((row) => row.reasonCode === 'COUPANG_RATE_LIMIT')) diagnostics.reasonCode = 'COUPANG_RATE_LIMIT';
   else if (diagnostics.productRepairFallbacks > 0) diagnostics.reasonCode = 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
-  else if (!reply.ok && primaryWithLink.length > 0) diagnostics.reasonCode = 'LINK_POSTS_QUEUED_WITH_REPLY_REVIEW_NEEDED';
+  else if (!reply.ok && candidateWithLink.length > 0 && drafts.length === 0) diagnostics.reasonCode = reply.code || 'REPLY_LINK_BLOCKED';
+  else if (!reply.ok && candidateWithLink.length > 0) diagnostics.reasonCode = 'LINK_POSTS_BLOCKED_REPLY_REVIEW_NEEDED';
   else if (drafts.length === 0 && linkCount > 0) diagnostics.reasonCode = 'NO_REAL_COUPANG_LINKS';
   else if (drafts.length === 0) diagnostics.reasonCode = 'NO_QUEUEABLE_DRAFTS';
   else if (linkShortage > 0) diagnostics.reasonCode = 'PARTIAL_LINK_CANDIDATES';
@@ -909,24 +956,18 @@ export async function uploadQueueItem(queueId) {
     if (requiresLink) {
       const reply = await replyLinkReadiness(account);
       if (!reply.ok) {
-        if (!FALLBACK_LINK_FAILURE_TO_NO_LINK) throw createReplyLinkRequiredError(reply.code, reply.message);
-        requiresLink = false;
-        await dbUpdate('post_queue', { id: queueId }, {
-          post_mode: 'no_link',
-          error_message: null,
-          error_category: null
-        }).catch(() => []);
         await logActivity({
           account_id: queue.account_id,
           project_id: queue.project_id,
           topic_id: queue.topic_id,
           post_id: queue.post_id,
           queue_id: queue.id,
-          action: 'link_queue_fallback_to_no_link',
-          level: 'warn',
-          message: reply.message || '댓글 링크 상태가 안전하지 않아 본문만 업로드합니다.',
+          action: 'link_queue_blocked_reply_readiness',
+          level: 'error',
+          message: reply.message || '댓글 링크 상태가 안전하지 않아 링크 글 업로드를 막았습니다.',
           payload: { reasonCode: reply.code, unresolvedReplyFailures: reply.unresolvedCount || 0 }
         }).catch(() => null);
+        throw createReplyLinkRequiredError(reply.code, reply.message);
       }
     }
     const resolvedPostMode = requiresLink ? 'link' : (postMode === 'sponsored_comment' ? 'sponsored_comment' : 'no_link');

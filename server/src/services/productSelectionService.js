@@ -12,12 +12,13 @@ import {
 import { isRealCoupangProduct, realProductIssues } from '../utils/productQuality.js';
 import { validateProductSelectionResponse } from '../utils/aiResponseSchemas.js';
 import { buildAccountPerformanceSignals } from './analyticsService.js';
+import { evaluateProductTopicMatch } from '../utils/productMatching.js';
 
 function isSelectableProduct(product, topic, account, item = {}) {
   if (!isRealCoupangProduct(product)) return false;
-  const relevance = scoreProductTopicRelevance(product, topic, account);
+  const match = evaluateProductTopicMatch(product, topic, account);
   const fitScore = Number(item.fitScore || 0);
-  return fitScore >= 60 || relevance.score >= 20;
+  return match.linkable && (fitScore >= 60 || match.score >= 45);
 }
 
 export async function selectProducts(topicId, postId = null) {
@@ -177,6 +178,13 @@ export async function manuallySelectProduct(topicId, productId, options = {}) {
   if (duplicate) return duplicate;
 
   const relevance = scoreProductTopicRelevance(product, topic, account);
+  const match = evaluateProductTopicMatch(product, topic, account);
+  if (!match.linkable) {
+    const error = new Error(`Product relevance blocked: ${match.riskReasons.join(', ')}`);
+    error.status = 422;
+    error.code = 'PRODUCT_RELEVANCE_BLOCKED';
+    throw error;
+  }
   return dbInsert('post_products', {
     post_id: options.postId || null,
     topic_id: topicId,

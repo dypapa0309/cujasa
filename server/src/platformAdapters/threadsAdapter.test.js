@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { buildPostText, buildReplyText, uploadPost } from './threadsAdapter.js';
+import { isTrustedThreadsPostUrl, threadsPostUrlStatus } from '../utils/threadsPostUrl.js';
 
 function restoreEnv(key, value) {
   if (value === undefined) delete process.env[key];
@@ -22,6 +23,12 @@ test('buildReplyText includes disclosure and the link', () => {
 
   assert.match(reply, /\[광고\]/);
   assert.match(reply, /https:\/\/link\.coupang\.com\/example/);
+});
+
+test('Threads post URL trust check hides numeric media id fallbacks', () => {
+  assert.equal(isTrustedThreadsPostUrl('https://www.threads.net/@dangzang.gogo/post/18081644654439950'), false);
+  assert.equal(isTrustedThreadsPostUrl('https://www.threads.net/@dangzang.gogo/post/DYKHE_GmMiP'), true);
+  assert.equal(threadsPostUrlStatus('https://www.threads.net/@dangzang.gogo/post/18081644654439950').status, 'numeric_media_id');
 });
 
 test('uploadPost rejects link posts unless reply link mode is enabled for the account', async () => {
@@ -137,6 +144,36 @@ test('uploadPost returns posted result with reply warning when body succeeds but
     assert.equal(uploaded.raw.replyFailed, true);
     assert.equal(uploaded.raw.postDetails.shortcode, 'SHORT1');
     assert.match(uploaded.raw.replyWarning, /permission/);
+  } finally {
+    globalThis.fetch = previousFetch;
+    restoreEnv('MOCK_UPLOAD', previousMock);
+  }
+});
+
+test('uploadPost stores no postUrl when Threads permalink lookup returns only media id', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousMock = process.env.MOCK_UPLOAD;
+  delete process.env.MOCK_UPLOAD;
+  const responses = [
+    { ok: true, json: async () => ({ id: 'creation-1' }), text: async () => '{}' },
+    { ok: true, json: async () => ({ id: '18081644654439950' }), text: async () => '{}' },
+    { ok: true, json: async () => ({ id: '18081644654439950', username: 'replytest' }), text: async () => JSON.stringify({ id: '18081644654439950', username: 'replytest' }) }
+  ];
+  globalThis.fetch = async () => responses.shift();
+
+  try {
+    const uploaded = await uploadPost({
+      account: {
+        name: 'test',
+        account_handle: '@replytest',
+        threads_access_token: 'token',
+        threads_link_delivery_mode: 'reply'
+      },
+      post: { id: 'post-6', body: '집 정리할 때 수납 기준은 은근 갈리죠. 꺼내기 쉬운 쪽을 보세요, 보기 깔끔한 쪽을 보세요?' }
+    });
+
+    assert.equal(uploaded.postUrl, null);
+    assert.equal(uploaded.raw.postUrlStatus.status, 'missing');
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv('MOCK_UPLOAD', previousMock);

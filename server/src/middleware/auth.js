@@ -1,5 +1,5 @@
 import { isTokenConfigured, listUserProducts, shouldBypassAuth, verifyToken } from '../services/authService.js';
-import { dbList } from '../services/supabaseService.js';
+import { dbGet, dbList } from '../services/supabaseService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
 
 const AUTH_CONTEXT_CACHE_TTL_MS = Math.max(0, Number(process.env.AUTH_CONTEXT_CACHE_TTL_MS || 30000));
@@ -61,11 +61,13 @@ export async function requireAuth(req, res, next) {
         ? cached.value
         : await (async () => {
           await refreshUserEntitlement(payload.userId);
-          const [userAccounts, products] = await Promise.all([
+          const [appUser, userAccounts, products] = await Promise.all([
+            dbGet('users', { id: payload.userId }).catch(() => null),
             dbList('user_accounts', { user_id: payload.userId }),
             listUserProducts(payload.userId)
           ]);
           const value = {
+            user: appUser,
             allowedAccountIds: userAccounts.map((ua) => ua.account_id).filter(Boolean),
             products
           };
@@ -74,12 +76,15 @@ export async function requireAuth(req, res, next) {
           }
           return value;
         })();
+      if (!context.user) return res.status(401).json({ error: 'Unauthorized' });
+      if (context.user.status === 'suspended') return res.status(403).json({ error: 'Account suspended' });
+      if (context.user.archived_at) return res.status(403).json({ error: 'Account archived' });
       req.user = {
         type: 'user',
         userId: payload.userId,
-        email: payload.sub,
-        username: payload.username || null,
-        maxAccounts: payload.maxAccounts ?? 2,
+        email: context.user.email || payload.sub,
+        username: context.user.username || payload.username || null,
+        maxAccounts: context.user.max_accounts ?? payload.maxAccounts ?? 2,
         allowedAccountIds: context.allowedAccountIds,
         products: context.products
       };

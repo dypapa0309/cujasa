@@ -383,7 +383,7 @@ test('createDailyQueue uses balanced link and no-link mix', async () => {
   }
 });
 
-test('createDailyQueue keeps product-linked drafts in link mode even when previous reply failures need review', async () => {
+test('createDailyQueue blocks product-linked drafts when previous reply failures need review', async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
     ok: true,
@@ -437,11 +437,13 @@ test('createDailyQueue keeps product-linked drafts in link mode even when previo
     }
 
     const queued = await createDailyQueue(account.id, { skipPreflight: true });
-    assert.ok(queued.length > 0);
-    assert.equal(queued.filter((row) => row.post_mode === 'link').length, queued.length);
+    assert.equal(queued.length, 0);
+    assert.equal(queued.filter((row) => row.post_mode === 'link').length, 0);
     assert.equal(queued.filter((row) => row.post_mode === 'no_link').length, 0);
-    assert.equal(queued.diagnostics.requiredLinkCount, queued.length);
+    assert.equal(queued.diagnostics.requiredLinkCount, 1);
+    assert.equal(queued.diagnostics.blockedLinkPosts, 1);
     assert.equal(queued.diagnostics.linkPostsBlocked, true);
+    assert.equal(queued.diagnostics.reasonCode, 'REPLY_LINK_FAILURE_UNRESOLVED');
   } finally {
     globalThis.fetch = previousFetch;
   }

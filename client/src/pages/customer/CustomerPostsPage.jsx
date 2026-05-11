@@ -10,6 +10,14 @@ function postModeLabel(postMode) {
   return '기존 예약 글';
 }
 
+function isTrustedThreadsPostUrl(url = '') {
+  const value = String(url || '').trim();
+  if (!value) return false;
+  if (/\/mock\/threads\/[^/?#]+/i.test(value)) return true;
+  if (!/https?:\/\/(?:www\.)?threads\.(?:net|com)\/@[^/]+\/post\/[^/?#]+/i.test(value)) return false;
+  return !/\/post\/\d+(?:[/?#].*)?$/i.test(value);
+}
+
 function queueFriendly(row = {}, detail = null) {
   const queue = detail?.queue || row;
   return {
@@ -451,10 +459,13 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
                       )}
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
-                      {r.post_url && (
+                      {r.post_url && isTrustedThreadsPostUrl(r.post_url) && (
                         <a href={r.post_url} target="_blank" rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
                           className="text-xs text-coupang font-medium hover:underline">Threads →</a>
+                      )}
+                      {r.post_url && !isTrustedThreadsPostUrl(r.post_url) && (
+                        <span className="text-xs font-bold text-amber-600">링크 확인 필요</span>
                       )}
                       <span className="text-gray-300 text-sm">{isExpanded ? '▲' : '▼'}</span>
                     </div>

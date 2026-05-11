@@ -14,6 +14,7 @@ import { evaluatePostQualityGate } from '../utils/postQualityGate.js';
 import { buildReferencePatternContext, publicPatternIdFromSourceId } from './trendReferenceLearningService.js';
 import { buildAccountPerformanceSignals } from './analyticsService.js';
 import { sanitizePostBody } from '../utils/contentText.js';
+import { assessContentPatternQuality } from '../utils/contentPatternQuality.js';
 
 const STABLE_HUMANLIKE_SCORE = 82;
 
@@ -389,6 +390,27 @@ export async function generatePosts(topicId) {
       continue;
     }
     const engagement = scorePostEngagement(prepared.body, { products: selected });
+    const patternQuality = assessContentPatternQuality(prepared.body, recentBodies);
+    if (!patternQuality.allowed) {
+      rejectionReasons.push(...patternQuality.reasons);
+      rejectedCandidates.push({
+        contentType: contentTypeToSave,
+        engagement,
+        rejected: true,
+        rejectionReasons,
+        patternQuality
+      });
+      await logActivity({
+        account_id: topic.account_id,
+        project_id: topic.project_id,
+        topic_id: topic.id,
+        action: 'post_pattern_blocked',
+        level: 'warn',
+        message: patternQuality.reasons.join('; '),
+        payload: { contentType: contentTypeToSave, body: prepared.body, patternQuality }
+      });
+      continue;
+    }
     const qualityGate = evaluatePostQualityGate(engagement);
     const rewriteResult = await tryRewriteCandidateForQuality({
       body: prepared.body,

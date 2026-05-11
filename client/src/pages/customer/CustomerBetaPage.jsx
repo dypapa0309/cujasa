@@ -75,6 +75,14 @@ const productTaskActions = {
 const actions = [...cujasaActions, ...workspaceActions, ...productPreviewActions, ...dexorActions, ...spreadActions, ...polibotActions, ...infludexActions];
 const pendingSubscriptionKey = 'cujasa_pending_subscription';
 
+function isTrustedThreadsPostUrl(url = '') {
+  const value = String(url || '').trim();
+  if (!value) return false;
+  if (/\/mock\/threads\/[^/?#]+/i.test(value)) return true;
+  if (!/https?:\/\/(?:www\.)?threads\.(?:net|com)\/@[^/]+\/post\/[^/?#]+/i.test(value)) return false;
+  return !/\/post\/\d+(?:[/?#].*)?$/i.test(value);
+}
+
 function isProductInMaintenance(product = {}) {
   if (!product) return false;
   if (product?.id === 'spread') return spreadMaintenanceEnabled;
@@ -2389,6 +2397,39 @@ function TrendReferencesPanel({ account, currentUser, reloadAccounts }) {
                   {(candidate.selectionReasons || []).slice(0, 3).map((reason) => <div key={reason}>선택 신호 · {reason}</div>)}
                   {(candidate.rejectionReasons || []).slice(0, 4).map((reason) => <div key={reason} className="text-rose-200/80">제외 이유 · {reason}</div>)}
                 </div>
+                <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-black text-zinc-500">
+                    <span>예상 검색어</span>
+                    {(candidate.productPreview?.searchKeywords || []).slice(0, 6).map((keyword) => (
+                      <span key={keyword} className="rounded-full bg-white/10 px-2 py-1 text-zinc-300">{keyword}</span>
+                    ))}
+                  </div>
+                  {(candidate.productPreview?.matches || []).length > 0 ? (
+                    <div className="grid gap-2 sm:grid-cols-3">
+                      {candidate.productPreview.matches.map((product) => (
+                        <div key={product.id || product.productId || product.name} className={`rounded-2xl border p-3 ${product.linkable ? 'border-emerald-300/20 bg-emerald-400/10' : 'border-white/10 bg-black/25'}`}>
+                          <div className="aspect-[4/3] overflow-hidden rounded-xl bg-white/5">
+                            {product.image ? <img src={product.image} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-[11px] font-black text-zinc-600">이미지 없음</div>}
+                          </div>
+                          <div className="mt-2 line-clamp-2 text-xs font-black text-zinc-100">{product.name || '상품명 없음'}</div>
+                          <div className="mt-1 text-[11px] font-bold text-zinc-500">{product.price ? `${Number(product.price).toLocaleString()}원` : '가격 없음'} · 매칭 {product.score || 0}</div>
+                          <div className="mt-2 grid gap-1 text-[11px] text-zinc-500">
+                            {(product.matchReasons || []).slice(0, 2).map((reason) => <div key={reason}>이유 · {reason}</div>)}
+                            {(product.riskReasons || []).slice(0, 2).map((reason) => <div key={reason} className="text-rose-200/80">위험 · {reason}</div>)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl bg-black/25 px-3 py-2 text-xs font-bold text-rose-200/80">매칭 가능한 실상품이 없어서 실제 링크 큐에는 넣지 않습니다.</div>
+                  )}
+                  {candidate.productPreview?.replyPreview && (
+                    <div className="rounded-2xl bg-white/[0.04] px-3 py-2">
+                      <div className="text-[11px] font-black uppercase tracking-wide text-zinc-600">댓글 링크 미리보기</div>
+                      <div className="mt-1 whitespace-pre-wrap text-xs leading-5 text-zinc-300">{candidate.productPreview.replyPreview}</div>
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
             {preview.patterns?.length > 0 && (
@@ -3407,6 +3448,8 @@ function BetaPostsPanel({ account, currentUser, queue, posts, loading, reloadWor
   const [detail, setDetail] = useState({});
   const [loadingDetailId, setLoadingDetailId] = useState('');
   const [dismissingId, setDismissingId] = useState('');
+  const [diagnostics, setDiagnostics] = useState(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
 
   const scheduled = queue.filter((row) => row.status === 'scheduled').sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at));
   const posted = queue.filter((row) => row.status === 'posted').sort((a, b) => new Date(b.posted_at) - new Date(a.posted_at));
@@ -3444,11 +3487,82 @@ function BetaPostsPanel({ account, currentUser, queue, posts, loading, reloadWor
     }
   };
 
+  const loadDiagnostics = async () => {
+    if (!account?.id) return;
+    setDiagnosticsLoading(true);
+    try {
+      const payload = await api.get(`/api/product-workspace/cujasa/queue-diagnostics/${account.id}?limit=30`);
+      setDiagnostics(payload);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
+
   if (loading) return <Notice>포스팅 현황을 불러오는 중이에요.</Notice>;
 
   return (
     <>
       {pipelineResult && <PipelineResultCard pipelineResult={pipelineResult} account={account} currentUser={currentUser} />}
+      <PanelCard title="계정별 E2E 진단">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm font-bold leading-relaxed text-zinc-400">글 품질, 상품 매칭, 큐 모드, 본문 업로드, 댓글 링크 실패 원인을 한 줄로 확인해요.</div>
+          <DarkButton variant="ghost" onClick={loadDiagnostics} disabled={diagnosticsLoading}>{diagnosticsLoading ? '진단 중...' : '진단 새로고침'}</DarkButton>
+        </div>
+        {diagnostics && (
+          <div className="mt-4 grid gap-3">
+            <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-xs font-black text-zinc-500 sm:grid-cols-5">
+              <div>전체 {diagnostics.summary?.total || 0}</div>
+              <div>링크 글 {diagnostics.summary?.linkRows || 0}</div>
+              <div>상품 매칭 {diagnostics.summary?.productMatched || 0}</div>
+              <div>권한 필요 {diagnostics.summary?.replyPermissionRequired || 0}</div>
+              <div>링크 확인 {diagnostics.summary?.untrustedPostUrls || 0}</div>
+            </div>
+            <div className="overflow-x-auto rounded-2xl border border-white/10">
+              <table className="min-w-[960px] w-full text-left text-xs">
+                <thead className="bg-white/[0.04] text-[11px] font-black uppercase tracking-wide text-zinc-600">
+                  <tr>
+                    <th className="px-3 py-3">글/상태</th>
+                    <th className="px-3 py-3">품질</th>
+                    <th className="px-3 py-3">상품</th>
+                    <th className="px-3 py-3">큐</th>
+                    <th className="px-3 py-3">완료 URL</th>
+                    <th className="px-3 py-3">댓글</th>
+                    <th className="px-3 py-3">다음 조치</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {(diagnostics.rows || []).slice(0, 12).map((row) => (
+                    <tr key={row.id} className="align-top text-zinc-300">
+                      <td className="px-3 py-3">
+                        <div className="font-black text-zinc-100">{row.topicTitle || row.postId || '제목 없음'}</div>
+                        <div className="mt-1 text-zinc-600">{row.statusLabel}</div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className={`rounded-full px-2 py-1 font-black ${row.quality?.ok ? 'bg-emerald-400/10 text-emerald-100' : 'bg-rose-400/10 text-rose-100'}`}>{row.quality?.ok ? '통과' : '확인'}</span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className={row.productMatching?.ok ? 'text-emerald-100' : 'text-rose-100'}>{row.productMatching?.ok ? `실상품 ${row.productMatching.realCount}개` : '상품 없음/불량'}</div>
+                        <div className="mt-1 line-clamp-2 text-zinc-600">{row.productMatching?.products?.[0]?.name || ''}</div>
+                      </td>
+                      <td className="px-3 py-3 font-black text-zinc-200">{row.postMode}</td>
+                      <td className="px-3 py-3">
+                        <div className={row.upload?.urlStatus?.trusted ? 'text-emerald-100' : 'font-black text-amber-200'}>{row.upload?.urlStatus?.label || '확인 필요'}</div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <div className={row.reply?.classification?.severity === 'error' ? 'font-black text-rose-100' : 'text-zinc-300'}>{row.reply?.status}</div>
+                        {row.failure && <div className="mt-1 text-zinc-600">{row.failure.title}</div>}
+                      </td>
+                      <td className="px-3 py-3 font-bold text-zinc-400">{row.nextAction}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </PanelCard>
       <QueueSection title={`확인 필요 (${needsAttention.length})`} rows={needsAttention} posts={posts} expandedId={expandedId} detail={detail} loadingDetailId={loadingDetailId} dismissingId={dismissingId} onToggle={toggleDetail} onDismiss={dismissQueue} />
       <QueueSection title={`예약됨 (${scheduled.length})`} rows={scheduled} posts={posts} expandedId={expandedId} detail={detail} loadingDetailId={loadingDetailId} onToggle={toggleDetail} />
       <QueueSection title={`완료 (${posted.length})`} rows={posted} posts={posts} expandedId={expandedId} detail={detail} loadingDetailId={loadingDetailId} onToggle={toggleDetail} />
@@ -6128,7 +6242,8 @@ function QueueSection({ title, rows, posts, expandedId, detail, loadingDetailId,
                         </div>
                       )}
                       {(row.friendly_message || row.error_message) && <Notice tone={isPostedLinkIssue(row) ? 'warning' : 'error'}>{row.friendly_title ? `${row.friendly_title} · ` : ''}{row.friendly_message || row.error_message}</Notice>}
-                      {row.post_url && <a href={row.post_url} target="_blank" rel="noreferrer" className="text-sm font-bold text-zinc-100 hover:text-white">게시글 보기</a>}
+                      {row.post_url && isTrustedThreadsPostUrl(row.post_url) && <a href={row.post_url} target="_blank" rel="noreferrer" className="text-sm font-bold text-zinc-100 hover:text-white">게시글 보기</a>}
+                      {row.post_url && !isTrustedThreadsPostUrl(row.post_url) && <div className="text-sm font-bold text-amber-200">Threads 링크 확인 필요</div>}
                       {onDismiss && (
                         <DarkButton variant="ghost" size="sm" onClick={() => onDismiss(row.id)} disabled={dismissingId === row.id}>
                           {dismissingId === row.id ? '정리 중...' : '확인 완료'}

@@ -58,7 +58,7 @@ router.get('/me', async (req, res, next) => {
         email: user.email,
         username: entitlement.user?.username || user.username || null,
         userId: user.userId,
-        maxAccounts: user.maxAccounts,
+        maxAccounts: entitlement.user?.max_accounts ?? user.maxAccounts,
         allowedAccountIds: user.allowedAccountIds,
         products: await listUserProducts(user.userId),
         billing: entitlement.billing

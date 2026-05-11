@@ -1,5 +1,21 @@
 export function classifyQueueError(message = '') {
   const value = String(message || '');
+  if (/reply_to_id is not a valid threads_media ID|code"?\s*:\s*100(?!\d)|invalid threads_media ID/i.test(value)) {
+    return {
+      category: 'threads_reply_target_invalid',
+      severity: 'error',
+      title: '댓글 복구 불가 / 게시글 ID 문제',
+      message: 'Threads가 댓글 대상 게시글 ID를 유효하지 않다고 응답했습니다. 기존 댓글 복구 대신 게시글/큐를 수동 정리해야 합니다.'
+    };
+  }
+  if (/Application does not have permission for this action|code"?\s*:\s*10(?!\d)|permission.*action|threads_manage_replies|권한/i.test(value)) {
+    return {
+      category: 'reply_permission_required',
+      severity: 'error',
+      title: 'Threads 댓글 권한 재연결 필요',
+      message: 'Threads 댓글 권한이 빠진 연결입니다. Meta 앱 권한을 확인하고 계정을 다시 연결한 뒤 댓글 링크를 복구해야 합니다.'
+    };
+  }
   if (/REPLY_LINK_MODE_REQUIRED/i.test(value)) {
     return {
       category: 'reply_link_mode_required',
@@ -38,14 +54,6 @@ export function classifyQueueError(message = '') {
       severity: 'error',
       title: 'Threads 토큰 만료/재연결 필요',
       message: 'Threads 연결이 만료되었거나 사용할 수 없습니다. 다시 연결하기 전까지 업로드를 시도하지 않습니다.'
-    };
-  }
-  if (/Application does not have permission for this action|code"?\s*:\s*10|permission.*action|threads_manage_replies|권한/i.test(value)) {
-    return {
-      category: 'reply_permission_required',
-      severity: 'error',
-      title: 'Threads 댓글 권한 재연결 필요',
-      message: 'Threads 댓글 권한이 빠진 연결입니다. Meta 앱 권한을 확인하고 계정을 다시 연결한 뒤 댓글 링크를 복구해야 합니다.'
     };
   }
   if (/reply container failed|reply publish failed/i.test(value)) {
@@ -131,6 +139,14 @@ export function classificationForCategory(category, fallbackMessage = '') {
       message: 'Threads 댓글 권한이 빠진 연결입니다. Meta 앱 권한을 확인하고 계정을 다시 연결한 뒤 댓글 링크를 복구해야 합니다.'
     };
   }
+  if (category === 'threads_reply_target_invalid') {
+    return {
+      category,
+      severity: 'error',
+      title: '댓글 복구 불가 / 게시글 ID 문제',
+      message: 'Threads가 댓글 대상 게시글 ID를 유효하지 않다고 응답했습니다. 기존 댓글 복구 대신 게시글/큐를 수동 정리해야 합니다.'
+    };
+  }
   if (category === 'reply_warning') {
     return {
       category,
@@ -184,6 +200,9 @@ export function normalizeQueueClassification(row = {}, options = {}) {
   }
   if (messageClassification.category === 'reply_permission_required') {
     category = 'reply_permission_required';
+  }
+  if (messageClassification.category === 'threads_reply_target_invalid') {
+    category = 'threads_reply_target_invalid';
   }
   if (category === 'threads_reconnect_required' && options.currentThreadsOk) {
     category = options.reconnectedCategory || 'retry_available';

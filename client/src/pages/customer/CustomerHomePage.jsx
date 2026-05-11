@@ -3,6 +3,14 @@ import { api } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 import TrialStatusCard from './TrialStatusCard.jsx';
 
+function isTrustedThreadsPostUrl(url = '') {
+  const value = String(url || '').trim();
+  if (!value) return false;
+  if (/\/mock\/threads\/[^/?#]+/i.test(value)) return true;
+  if (!/https?:\/\/(?:www\.)?threads\.(?:net|com)\/@[^/]+\/post\/[^/?#]+/i.test(value)) return false;
+  return !/\/post\/\d+(?:[/?#].*)?$/i.test(value);
+}
+
 export default function CustomerHomePage({ account, currentUser, trialStatus, setTab }) {
   const [queue, setQueue] = useState([]);
   const [analytics, setAnalytics] = useState(null);
@@ -117,11 +125,14 @@ export default function CustomerHomePage({ account, currentUser, trialStatus, se
               <div key={r.id} className="px-5 py-3 flex items-center justify-between">
                 <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
                 <div className="text-sm text-gray-500 flex-1 mx-3">{dateTime(r.posted_at)}</div>
-                {r.post_url && (
+                {r.post_url && isTrustedThreadsPostUrl(r.post_url) && (
                   <a href={r.post_url} target="_blank" rel="noreferrer"
                     className="text-xs text-coupang font-medium hover:underline">
                     보기 →
                   </a>
+                )}
+                {r.post_url && !isTrustedThreadsPostUrl(r.post_url) && (
+                  <span className="text-xs font-bold text-amber-600">링크 확인 필요</span>
                 )}
               </div>
             ))}

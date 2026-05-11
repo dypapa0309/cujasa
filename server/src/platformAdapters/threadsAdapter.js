@@ -1,5 +1,6 @@
 import { isReplyLinkModeEnabled } from '../utils/replyLinkMode.js';
 import { inspectGeneratedPostText } from '../utils/contentText.js';
+import { isTrustedThreadsPostUrl, threadsPostUrlStatus } from '../utils/threadsPostUrl.js';
 
 const THREADS_API = 'https://graph.threads.net/v1.0';
 const COUPANG_DISCLOSURE = '[광고] 이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다.';
@@ -80,11 +81,14 @@ export async function postReply(token, postId, text) {
 
 function buildThreadsPostUrl(account, postId, details = {}) {
   if (details.permalink) return details.permalink;
-  const handle = String(details.username || account.account_handle || 'unknown').replace(/^@/, '') || 'unknown';
-  return `https://www.threads.net/@${handle}/post/${details.shortcode || postId}`;
+  if (details.shortcode) {
+    const handle = String(details.username || account.account_handle || 'unknown').replace(/^@/, '') || 'unknown';
+    return `https://www.threads.net/@${handle}/post/${details.shortcode}`;
+  }
+  return '';
 }
 
-async function fetchThreadDetails(token, postId) {
+export async function fetchThreadDetails(token, postId) {
   if (!token || !postId) return {};
   const params = new URLSearchParams({
     fields: 'id,permalink,shortcode,username',
@@ -99,6 +103,16 @@ async function fetchThreadDetails(token, postId) {
     return {};
   }
   return json;
+}
+
+export async function fetchThreadsPostPermalink(account = {}, postId = '') {
+  const details = await fetchThreadDetails(account?.threads_access_token, postId);
+  const postUrl = buildThreadsPostUrl(account, postId, details);
+  return {
+    postUrl: isTrustedThreadsPostUrl(postUrl) ? postUrl : '',
+    details,
+    urlStatus: threadsPostUrlStatus(postUrl)
+  };
 }
 
 export async function uploadReplyOnly({ account, postId, text }) {
@@ -209,6 +223,8 @@ export async function uploadPost({ account, post, cta, trackingLink, sponsoredRe
   const { id: postId } = await publishRes.json();
   const postDetails = await fetchThreadDetails(token, postId);
   const postUrl = buildThreadsPostUrl(account, postId, postDetails);
+  const urlStatus = threadsPostUrlStatus(postUrl);
+  const trustedPostUrl = urlStatus.trusted ? postUrl : null;
 
   let replyWarning = null;
   if (replyText) {
@@ -222,11 +238,12 @@ export async function uploadPost({ account, post, cta, trackingLink, sponsoredRe
     }
     if (deliveryMode === 'reply' && replyWarning) {
       return {
-        postUrl,
+        postUrl: trustedPostUrl,
         raw: {
           creationId,
           postId,
           postDetails,
+          postUrlStatus: urlStatus,
           linkDeliveryMode: deliveryMode,
           linkMode,
           replyWarning,
@@ -238,5 +255,5 @@ export async function uploadPost({ account, post, cta, trackingLink, sponsoredRe
     }
   }
 
-  return { postUrl, raw: { creationId, postId, postDetails, linkDeliveryMode: replyText ? deliveryMode : 'none', linkMode, sponsoredReply: Boolean(sponsoredText) } };
+  return { postUrl: trustedPostUrl, raw: { creationId, postId, postDetails, postUrlStatus: urlStatus, linkDeliveryMode: replyText ? deliveryMode : 'none', linkMode, sponsoredReply: Boolean(sponsoredText) } };
 }

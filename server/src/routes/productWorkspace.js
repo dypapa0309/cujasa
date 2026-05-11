@@ -22,6 +22,7 @@ import { buildReferencePatternContext, ingestTrendReferencesForAccount } from '.
 import { getAccount } from '../services/accountService.js';
 import { extractTrendReferenceFromImage } from '../services/trendReferenceOcrService.js';
 import { buildCujasaContentPreview } from '../services/contentPreviewService.js';
+import { buildCujasaQueueDiagnostics } from '../services/queueReliabilityService.js';
 import { productMaintenancePayload, productServiceClosedInProduction } from '../utils/productAvailability.js';
 
 const router = Router();
@@ -140,6 +141,19 @@ router.post('/cujasa/content-preview', async (req, res, next) => {
       return res.status(403).json({ error: 'Access denied' });
     }
     res.json(await buildCujasaContentPreview(accountId, req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/cujasa/queue-diagnostics/:accountId', async (req, res, next) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    if (!user.allowedAccountIds?.includes(req.params.accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(await buildCujasaQueueDiagnostics(req.params.accountId, { limit: req.query.limit || 30 }));
   } catch (error) {
     next(error);
   }
