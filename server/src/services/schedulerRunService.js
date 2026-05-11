@@ -41,6 +41,18 @@ export function hasDailyPipelineWindowPassed(date = now()) {
 
 function summarizePipelineResults(results = []) {
   const rows = Array.isArray(results) ? results : [];
+  const reconnectRequiredRows = rows.filter((row) => {
+    const text = [
+      row.status,
+      row.code,
+      row.reason,
+      row.message,
+      row.error,
+      row.label
+    ].filter(Boolean).join(' ');
+    return /reply_permission_required|threads_reconnect|threads_reconnect_required|Threads.*재연결|댓글 권한|재연결 필요|access token|OAuth/i.test(text);
+  });
+  const skippedRows = rows.filter((row) => row.status === 'skipped');
   const byStatus = rows.reduce((acc, row) => {
     const key = row.status || (row.ok ? 'ok' : 'unknown');
     acc[key] = (acc[key] || 0) + 1;
@@ -49,7 +61,9 @@ function summarizePipelineResults(results = []) {
   return {
     total: rows.length,
     ok: rows.filter((row) => row.ok === true || row.status === 'ok').length,
-    skipped: rows.filter((row) => row.status === 'skipped').length,
+    skipped: skippedRows.length,
+    reconnectRequired: reconnectRequiredRows.length,
+    skippedOther: Math.max(0, skippedRows.length - reconnectRequiredRows.filter((row) => row.status === 'skipped').length),
     noLinkCandidates: rows.filter((row) => row.status === 'no_link_candidates').length,
     error: rows.filter((row) => row.ok === false || row.status === 'error').length,
     byStatus,

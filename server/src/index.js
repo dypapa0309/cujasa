@@ -122,7 +122,14 @@ app.use(securityHeaders);
 app.use(express.json({ limit: '20mb' }));
 app.use(requireAuth);
 
-app.get('/api/health', (req, res) => res.json({ ok: true, service: 'jasain-api', product: 'cujasa' }));
+app.get('/api/health', (req, res) => res.json({
+  ok: true,
+  service: 'jasain-api',
+  product: 'cujasa',
+  commit: process.env.RENDER_GIT_COMMIT || process.env.VERCEL_GIT_COMMIT_SHA || process.env.GIT_COMMIT || null,
+  environment: process.env.NODE_ENV || 'development',
+  checkedAt: new Date().toISOString()
+}));
 app.use('/api/auth', authRouter);
 app.use('/api/me', meRouter);
 app.use('/api/projects', projectsRouter);

@@ -618,6 +618,12 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                             {a.threads_connected_at ? ` · 연결 ${formatDateTime(a.threads_connected_at)}` : ''}
                             {a.threads_token_expires_at ? ` · 만료 ${formatDateTime(a.threads_token_expires_at)}` : ''}
                           </div>
+                          {a.latest_threads_connection_request && (
+                            <div className="mt-1 rounded border border-amber-100 bg-amber-50 px-2 py-1 text-[11px] font-semibold leading-relaxed text-amber-700">
+                              연결 요청: {connectionRequestText(a.latest_threads_connection_request)}
+                              {a.latest_threads_connection_request.admin_memo ? ` · ${a.latest_threads_connection_request.admin_memo}` : ''}
+                            </div>
+                          )}
                           {a.blog_enabled && a.blog_public_url && (
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-emerald-700">
                               <span className="font-semibold">자체 블로그</span>
@@ -745,6 +751,17 @@ function connectionText(account) {
   if (!account.has_threads_access_token) return 'Threads 연결 필요';
   if (account.threads_token_status === 'refresh_failed') return '다시 연결 필요';
   return `연결됨${account.threads_token_status ? ` · ${account.threads_token_status}` : ''}`;
+}
+
+function connectionRequestText(request) {
+  const status = ({
+    requested: '관리자 등록 대기',
+    meta_registered: 'Meta 등록 완료',
+    customer_action_required: '고객 웹 승인 필요',
+    connected: '연결 완료',
+    canceled: '취소됨'
+  })[request?.status] || request?.status || '요청 없음';
+  return [status, request?.threads_handle].filter(Boolean).join(' · ');
 }
 
 function formatDateTime(value) {

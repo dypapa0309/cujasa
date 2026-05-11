@@ -1700,6 +1700,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
   const [contentAdvancedOpen, setContentAdvancedOpen] = useState(false);
   const [blogDetailsOpen, setBlogDetailsOpen] = useState(false);
   const [tossDetailsOpen, setTossDetailsOpen] = useState(false);
+  const [threadsOAuthError, setThreadsOAuthError] = useState(null);
 
   useEffect(() => {
     if (!account) {
@@ -1755,6 +1756,23 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
       .catch(() => setThreadsRequests([]));
   }, [account?.id, account?.has_threads_access_token]);
 
+  useEffect(() => {
+    if (!account?.id) {
+      setThreadsOAuthError(null);
+      return;
+    }
+    if (account.has_threads_access_token) {
+      setThreadsOAuthError(null);
+      return;
+    }
+    try {
+      const raw = sessionStorage.getItem(`cujasa:threadsOAuthError:${account.id}`);
+      setThreadsOAuthError(raw ? JSON.parse(raw) : null);
+    } catch {
+      setThreadsOAuthError(null);
+    }
+  }, [account?.id, account?.has_threads_access_token]);
+
   const update = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
   const updateContentMode = (value) => setForm((prev) => ({
     ...prev,
@@ -1801,6 +1819,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
       const payload = await api.get(`/api/auth/threads/start?accountId=${account.id}`);
       if (payload?.url) window.location.href = payload.url;
     } catch (err) {
+      setThreadsOAuthError({ message: err.message || 'Threads 연결을 시작하지 못했어요.', code: 'THREADS_OAUTH_START_FAILED', at: new Date().toISOString() });
       toast(err.message || 'Threads 연결을 시작하지 못했어요.', 'error');
       setConnectingThreads(false);
     }
@@ -1900,6 +1919,12 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
             <div>
               <div className="text-sm font-black text-zinc-100">{threadsStatusText}</div>
               <div className="mt-1 text-xs text-zinc-500">{form.account_handle || account?.account_handle || 'Threads 핸들 미입력'}</div>
+              {!account?.has_threads_access_token && threadsOAuthError?.message && (
+                <div className="mt-2 max-w-xl rounded-2xl border border-red-400/20 bg-red-500/10 px-3 py-2 text-xs font-bold leading-relaxed text-red-100">
+                  최근 연결 실패: {threadsOAuthError.message}
+                  {threadsOAuthError.code ? <span className="ml-1 text-red-200/70">({threadsOAuthError.code})</span> : null}
+                </div>
+              )}
             </div>
             {threadsOAuthReady ? (
               <DarkButton variant="ghost" size="sm" onClick={connectThreads} disabled={connectingThreads}>

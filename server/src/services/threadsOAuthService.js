@@ -87,6 +87,44 @@ export function verifyThreadsState(state) {
   return { accountId, userId, actorType };
 }
 
+export function peekThreadsState(state) {
+  try {
+    const payload = JSON.parse(Buffer.from(state || '', 'base64url').toString('utf8'));
+    return {
+      accountId: payload.accountId || null,
+      userId: payload.userId || null,
+      actorType: payload.actorType || 'user',
+      exp: payload.exp || null
+    };
+  } catch {
+    return { accountId: null, userId: null, actorType: null, exp: null };
+  }
+}
+
+function oauthErrorCode(error = {}) {
+  const status = Number(error.status || 0);
+  const message = String(error.message || '');
+  if (status === 409 && /이미.*연결|다른 계정/i.test(message)) return 'THREADS_DUPLICATE_ACCOUNT';
+  if (status === 409 && /선택한 계정|현재 Threads 로그인|핸들/i.test(message)) return 'THREADS_HANDLE_MISMATCH';
+  if (status === 400 && /state|expired|invalid/i.test(message)) return 'THREADS_OAUTH_STATE_INVALID';
+  if (status === 403 || /Access denied|Unauthorized/i.test(message)) return 'THREADS_OAUTH_ACCESS_DENIED';
+  if (/redirect_uri|redirect uri/i.test(message)) return 'THREADS_REDIRECT_URI_MISMATCH';
+  if (/permission|review|scope|not authorized|not approved/i.test(message)) return 'THREADS_META_PERMISSION_REQUIRED';
+  if (/configured/i.test(message)) return 'THREADS_OAUTH_NOT_CONFIGURED';
+  return 'THREADS_OAUTH_FAILED';
+}
+
+function userFacingOAuthMessage(error = {}) {
+  const code = oauthErrorCode(error);
+  if (code === 'THREADS_HANDLE_MISMATCH') return error.message;
+  if (code === 'THREADS_DUPLICATE_ACCOUNT') return error.message;
+  if (code === 'THREADS_OAUTH_STATE_INVALID') return 'Threads 연결 요청이 만료됐어요. 설정 화면에서 다시 연결을 눌러주세요.';
+  if (code === 'THREADS_REDIRECT_URI_MISMATCH') return 'Threads OAuth Redirect URI 설정이 맞지 않습니다. 운영자 확인이 필요합니다.';
+  if (code === 'THREADS_META_PERMISSION_REQUIRED') return 'Meta 앱 권한 또는 웹 승인 상태 확인이 필요합니다. 초대 수락 후 다시 연결해주세요.';
+  if (code === 'THREADS_OAUTH_NOT_CONFIGURED') return 'Threads 연결 환경변수가 아직 설정되지 않았습니다.';
+  return error.message || 'Threads 연결에 실패했습니다.';
+}
+
 export async function createThreadsAuthUrl({ accountId, user }) {
   const account = await dbGet('accounts', { id: accountId });
   if (!account) {
@@ -111,6 +149,21 @@ export async function createThreadsAuthUrl({ accountId, user }) {
       actorType: user?.type || 'admin'
     })
   });
+  await logActivity({
+    account_id: accountId,
+    project_id: account.project_id,
+    action: 'threads_oauth_started',
+    level: 'info',
+    message: account.account_handle || account.name || accountId,
+    payload: {
+      actorType: user?.type || 'admin',
+      userId: user?.userId || user?.email || 'admin',
+      redirectHost: (() => {
+        try { return new URL(redirectUri).host; } catch { return null; }
+      })(),
+      scope: THREADS_OAUTH_SCOPE
+    }
+  }).catch(() => null);
   return `${THREADS_AUTH_URL}?${params.toString()}`;
 }
 
@@ -233,6 +286,38 @@ export async function completeThreadsOAuth({ code, state }) {
     payload: { threadsUserId: me.id, expiresAt, retryableQueueCount }
   });
   return account;
+}
+
+export async function recordThreadsOAuthFailure({ state, error }) {
+  const statePayload = peekThreadsState(state);
+  const accountId = statePayload.accountId;
+  const code = oauthErrorCode(error);
+  const message = userFacingOAuthMessage(error);
+  let account = null;
+  if (accountId) account = await dbGet('accounts', { id: accountId }).catch(() => null);
+  if (accountId) {
+    const requests = await dbList('threads_connection_requests', { account_id: accountId }, { order: 'created_at', ascending: false, limit: 1 }).catch(() => []);
+    const request = requests[0];
+    if (request && !['connected', 'canceled'].includes(request.status)) {
+      await dbUpdate('threads_connection_requests', { id: request.id }, {
+        admin_memo: `${message} (${code})`
+      }).catch(() => []);
+    }
+  }
+  await logActivity({
+    account_id: accountId || null,
+    project_id: account?.project_id || null,
+    action: 'threads_oauth_failed',
+    level: 'error',
+    message,
+    payload: {
+      code,
+      status: error?.status || null,
+      rawMessage: error?.message || null,
+      state: statePayload
+    }
+  }).catch(() => null);
+  return { code, message, accountId };
 }
 
 export async function refreshThreadsToken(account) {

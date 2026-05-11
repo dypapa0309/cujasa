@@ -3,7 +3,7 @@ import { DEFAULT_PRODUCT_ID, productById } from '../config/products.js';
 import { grantUserProduct, isAuthConfigured, listAvailableProducts, listUserProducts, loginAdmin, loginUser, registerFreeUser, shouldBypassAuth } from '../services/authService.js';
 import { createRateLimit } from '../middleware/rateLimit.js';
 import { clearAuthContextCache } from '../middleware/auth.js';
-import { completeThreadsOAuth, createThreadsAuthUrl } from '../services/threadsOAuthService.js';
+import { completeThreadsOAuth, createThreadsAuthUrl, recordThreadsOAuthFailure } from '../services/threadsOAuthService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
 import { productMaintenancePayload, productServiceClosedInProduction } from '../utils/productAvailability.js';
 
@@ -125,7 +125,17 @@ router.get('/threads/callback', async (req, res, next) => {
     res.redirect(`${clientBase}?${params.toString()}`);
   } catch (error) {
     const clientBase = (process.env.CLIENT_BASE_URL || 'http://localhost:5175').split(',')[0].trim();
-    const params = new URLSearchParams({ threads: 'error', message: error.message });
+    const failure = await recordThreadsOAuthFailure({ state: req.query.state, error }).catch(() => ({
+      code: 'THREADS_OAUTH_FAILED',
+      message: error.message || 'Threads 연결에 실패했습니다.',
+      accountId: null
+    }));
+    const params = new URLSearchParams({
+      threads: 'error',
+      message: failure.message,
+      code: failure.code
+    });
+    if (failure.accountId) params.set('accountId', failure.accountId);
     res.redirect(`${clientBase}?${params.toString()}`);
   }
 });

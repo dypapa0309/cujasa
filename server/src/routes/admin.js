@@ -491,17 +491,40 @@ router.patch('/setup-tasks/:id', async (req, res, next) => {
 router.get('/users', async (req, res, next) => {
   try {
     const users = await listUsers({ includeArchived: req.query?.includeArchived === '1' || req.query?.includeArchived === 'true' });
+    const threadsRequests = await dbList('threads_connection_requests', {}, { order: 'created_at', ascending: false }).catch(() => []);
+    const latestThreadsRequestByAccount = new Map();
+    for (const request of threadsRequests) {
+      if (!request.account_id || latestThreadsRequestByAccount.has(request.account_id)) continue;
+      latestThreadsRequestByAccount.set(request.account_id, request);
+    }
     const result = await Promise.all(users.map(async (u) => {
       const [ua, products] = await Promise.all([
         dbList('user_accounts', { user_id: u.id }),
         listUserProducts(u.id, { includeSettings: true })
       ]);
       const accounts = await Promise.all(ua.map((x) => dbGet('accounts', { id: x.account_id })));
+      const redactedAccounts = redactAccounts(accounts.filter(Boolean)).map((account) => {
+        const request = latestThreadsRequestByAccount.get(account.id);
+        return {
+          ...account,
+          latest_threads_connection_request: request ? {
+            id: request.id,
+            status: request.status,
+            threads_handle: request.threads_handle,
+            admin_memo: request.admin_memo,
+            request_memo: request.request_memo,
+            meta_registered_at: request.meta_registered_at,
+            connected_at: request.connected_at,
+            created_at: request.created_at,
+            updated_at: request.updated_at
+          } : null
+        };
+      });
       return {
         ...u,
         buyerName: u.buyer_name || '',
         password_hash: undefined,
-        accounts: redactAccounts(accounts.filter(Boolean)),
+        accounts: redactedAccounts,
         products
       };
     }));

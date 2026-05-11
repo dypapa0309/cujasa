@@ -298,8 +298,22 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
       if (nextIndex >= 0) setSelectedIdx(nextIndex);
     }
     setTab('settings');
-    if (threads === 'connected') toast('Threads 연결이 완료됐습니다.', 'success');
-    if (threads === 'error') toast(params.get('message') || 'Threads 연결에 실패했습니다.', 'error');
+    if (threads === 'connected') {
+      toast('Threads 연결이 완료됐습니다.', 'success');
+      if (accountId) sessionStorage.removeItem(`cujasa:threadsOAuthError:${accountId}`);
+    }
+    if (threads === 'error') {
+      const message = params.get('message') || 'Threads 연결에 실패했습니다.';
+      const code = params.get('code') || '';
+      toast(message, 'error');
+      if (accountId) {
+        sessionStorage.setItem(`cujasa:threadsOAuthError:${accountId}`, JSON.stringify({
+          message,
+          code,
+          at: new Date().toISOString()
+        }));
+      }
+    }
     if (threads === 'connected') {
       reloadAccounts?.();
       loadSetupStatus();
@@ -307,6 +321,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
     params.delete('threads');
     params.delete('accountId');
     params.delete('message');
+    params.delete('code');
     const nextSearch = params.toString();
     const nextAccountId = accountId || account?.id || accounts[0]?.id || '';
     window.history.replaceState(

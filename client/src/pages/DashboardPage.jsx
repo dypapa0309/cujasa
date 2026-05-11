@@ -839,7 +839,7 @@ function ContentQualityPanel() {
 function runResultLabel(row) {
   if (row.status === 'ok') return '성공';
   if (row.reason === 'already_running') return '이미 실행 중';
-  if (/Threads|토큰|연결|access token|OAuth/i.test(row.error || row.reason || '')) return '재연결 필요';
+  if (/reply_permission_required|Threads|토큰|연결|access token|OAuth|댓글 권한|permission/i.test(row.error || row.reason || row.message || row.code || '')) return '재연결 필요';
   if (row.status === 'skipped') return '스킵';
   return '실패';
 }
@@ -900,7 +900,9 @@ function dailyPipelineHint(dailyPipeline) {
   if (dailyPipeline.stale || dailyPipeline.status === 'stale') return '02:00 실행이 오래 멈춤, 재시작 필요';
   const summary = dailyPipeline.run?.summary || {};
   if (dailyPipeline.status === 'completed') {
-    return `대상 ${summary.total || 0} · 성공 ${summary.ok || 0} · 후보없음 ${summary.noLinkCandidates || 0}`;
+    const reconnect = summary.reconnectRequired || 0;
+    const skippedOther = summary.skippedOther ?? Math.max(0, (summary.skipped || 0) - reconnect);
+    return `대상 ${summary.total || 0} · 예약 성공 ${summary.ok || 0} · 재연결 필요 ${reconnect} · 기타 스킵 ${skippedOther} · 시스템 오류 ${summary.error || 0}`;
   }
   if (dailyPipeline.status === 'running') return '현재 자동 실행 중';
   if (dailyPipeline.status === 'failed') return dailyPipeline.run?.errorMessage || '자동 실행 실패';
@@ -911,6 +913,7 @@ function dailyResultLabel(result) {
   if (!result) return '';
   if (result.status === 'no_link_candidates' || result.reason === 'pipeline_skipped_no_link_candidates') return '상품 후보 없음';
   if (result.status === 'ok') return '성공';
+  if (/reply_permission_required|threads_reconnect|Threads|댓글 권한|재연결|access token|OAuth|permission/i.test(result.error || result.reason || result.message || result.code || '')) return '재연결 필요';
   if (result.status === 'skipped') return '스킵';
   if (result.status === 'error') return '실패';
   return result.status || '확인 필요';
