@@ -51,6 +51,15 @@ export const PRODUCTS = [
     appUrl: 'https://app.jasain.kr',
     landingUrl: 'https://jasain.kr/infludex',
     status: 'active'
+  },
+  {
+    id: 'sublog',
+    name: 'SUBLOG',
+    description: '구독 비용 관리',
+    supportLabel: '구독 비용 관리',
+    appUrl: 'https://app.jasain.kr',
+    landingUrl: 'https://jasain.kr/sublog',
+    status: 'active'
   }
 ];
 

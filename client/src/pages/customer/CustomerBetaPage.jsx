@@ -31,7 +31,8 @@ const productPreviewActions = [
   { key: 'dexor', label: 'DEXOR', icon: Search, hint: '캠페인에 맞는 블로그 후보를 고르는 솔루션이에요.' },
   { key: 'spread', label: 'SPREAD', icon: Sparkles, hint: '캠페인 운영과 제출물 확인을 줄이는 솔루션이에요.' },
   { key: 'polibot', label: 'POLIBOT', icon: ShieldCheck, hint: '보험 보장분석과 상품 추천을 정리하는 솔루션이에요.' },
-  { key: 'infludex', label: 'INFLUDEX', icon: BarChart3, hint: '인스타그램 인플루언서를 카테고리와 등급으로 분석해요.' }
+  { key: 'infludex', label: 'INFLUDEX', icon: BarChart3, hint: '인스타그램 인플루언서를 카테고리와 등급으로 분석해요.' },
+  { key: 'sublog', label: 'SUBLOG', icon: CreditCard, hint: '매달 결제되는 구독 비용을 한눈에 정리해요.' }
 ];
 
 const dexorActions = [
@@ -59,6 +60,10 @@ const infludexActions = [
   { key: 'infludex-download', productId: 'infludex', label: '결과 다운로드', icon: Download, hint: '분석 결과를 CSV로 내려받아요.' }
 ];
 
+const sublogActions = [
+  { key: 'sublog-dashboard', productId: 'sublog', label: '구독 대시보드', icon: CreditCard, hint: '매달 결제되는 구독 비용을 직접 등록하고 한눈에 봐요.' }
+];
+
 const workspaceActions = [
   { key: 'account-settings', label: '계정 설정', icon: UserCircle, hint: 'JASAIN 로그인 정보와 보유 솔루션을 확인해요.' },
   { key: 'billing', label: '결제', icon: CreditCard, hint: 'JASAIN 계정의 결제 상태와 이용권을 확인해요.' }
@@ -69,10 +74,11 @@ const productTaskActions = {
   dexor: dexorActions,
   spread: spreadActions,
   polibot: polibotActions,
-  infludex: infludexActions
+  infludex: infludexActions,
+  sublog: sublogActions
 };
 
-const actions = [...cujasaActions, ...workspaceActions, ...productPreviewActions, ...dexorActions, ...spreadActions, ...polibotActions, ...infludexActions];
+const actions = [...cujasaActions, ...workspaceActions, ...productPreviewActions, ...dexorActions, ...spreadActions, ...polibotActions, ...infludexActions, ...sublogActions];
 const pendingSubscriptionKey = 'cujasa_pending_subscription';
 
 function isTrustedThreadsPostUrl(url = '') {
@@ -455,14 +461,21 @@ export default function CustomerBetaPage({
   }, [queue, analytics]);
 
   const userProducts = Array.isArray(currentUser?.products) ? currentUser.products : [];
-  const activeProducts = useMemo(() => userProducts
-    .filter((grant) => grant?.status !== 'suspended')
-    .map((grant) => productById(grant?.productId) || {
-      id: grant?.productId,
-      name: grant?.name || grant?.productId,
-      description: grant?.description || ''
-    })
-    .filter((product) => product?.id), [userProducts]);
+  const activeProducts = useMemo(() => {
+    const products = userProducts
+      .filter((grant) => grant?.status !== 'suspended')
+      .map((grant) => productById(grant?.productId) || {
+        id: grant?.productId,
+        name: grant?.name || grant?.productId,
+        description: grant?.description || ''
+      })
+      .filter((product) => product?.id);
+    const sublog = productById('sublog');
+    if (isTestAssistantUser && sublog && !products.some((product) => product.id === 'sublog')) {
+      products.push(sublog);
+    }
+    return products;
+  }, [isTestAssistantUser, userProducts]);
   const grantedProductIds = new Set(activeProducts.map((product) => product.id));
   const fallbackProduct = CURRENT_PRODUCT || PRODUCTS.find(Boolean) || { id: 'cujasa', name: 'CUJASA', description: '쿠팡 파트너스 자동화 콘솔' };
   const visibleProducts = activeProducts.length ? activeProducts : [fallbackProduct];
@@ -517,7 +530,7 @@ export default function CustomerBetaPage({
       : actionOrKey;
     if (!action) return;
 
-    const previewProductIds = ['dexor', 'spread', 'polibot', 'infludex'];
+    const previewProductIds = ['dexor', 'spread', 'polibot', 'infludex', 'sublog'];
     const productId = action.productId || (previewProductIds.includes(action.key) ? action.key : '');
     const actionProduct = productById(productId);
     if (isProductInMaintenance(actionProduct)) {
@@ -1468,7 +1481,7 @@ function TestAssistantWorkflowStatus({ workflow, onOpenAction }) {
 function TaskDrawer(props) {
   const { action, loadError, closing, onClose } = props;
   const Icon = action.icon;
-  const compactPreview = ['dexor', 'spread', 'polibot', 'infludex'].includes(action.key);
+  const compactPreview = ['dexor', 'spread', 'polibot', 'infludex', 'sublog'].includes(action.key);
   const isTestUser = String(props.currentUser?.email || '').trim().toLowerCase() === 'test1@test.com';
   const compactPolibotStepper = action.key === 'polibot-recommend' && isTestUser;
   const wideBilling = action.key === 'billing';
@@ -1530,7 +1543,8 @@ function TaskDrawer(props) {
           {action.key === 'infludex-upload' && <InfludexUploadPanel onOpenGrade={() => props.onOpenAction?.('infludex-grade')} />}
           {action.key === 'infludex-grade' && <InfludexGradePanel reloadCurrentUser={props.reloadCurrentUser} onOpenUpload={() => props.onOpenAction?.('infludex-upload')} />}
           {action.key === 'infludex-download' && <InfludexDownloadPanel onOpenUpload={() => props.onOpenAction?.('infludex-upload')} />}
-          {['dexor', 'spread', 'polibot', 'infludex'].includes(action.key) && <ProductPreview action={action} onStartProduct={props.onStartProduct} starting={props.startingProductId === action.key} />}
+          {action.key === 'sublog-dashboard' && <SublogPanel currentUser={props.currentUser} />}
+          {['dexor', 'spread', 'polibot', 'infludex', 'sublog'].includes(action.key) && <ProductPreview action={action} onStartProduct={props.onStartProduct} starting={props.startingProductId === action.key} />}
         </div>
       </aside>
     </div>
@@ -6139,8 +6153,397 @@ const productPreviewContent = {
     motto: '카테고리와 반응 지표로 후보를 먼저 걸러요.',
     description: '인스타그램 계정 후보를 S/A/B/C/D 등급으로 정리하고 결과를 다운로드해요.',
     cta: 'INFLUDEX 시작하기'
+  },
+  sublog: {
+    title: 'SUBLOG',
+    subtitle: '구독 비용 관리',
+    motto: '매달 새는 돈을 한눈에 봐요.',
+    description: '매달 결제되는 구독 서비스를 직접 등록하고 월간, 연간, 하루 평균 비용을 정리해요.',
+    cta: 'SUBLOG 시작하기'
   }
 };
+
+const sublogStorageKeyPrefix = 'jasain_sublog_subscriptions_v1';
+const sublogCategories = ['전체', 'AI', '영상', '음악', '생산성', '클라우드', '기타'];
+const sublogPresets = [
+  { name: 'ChatGPT Plus', amount: 20, currency: 'USD', category: 'AI' },
+  { name: 'Claude Pro', amount: 20, currency: 'USD', category: 'AI' },
+  { name: 'Cursor', amount: 20, currency: 'USD', category: 'AI' },
+  { name: 'Netflix', amount: 17000, currency: 'KRW', category: '영상' },
+  { name: 'YouTube Premium', amount: 14900, currency: 'KRW', category: '영상' },
+  { name: 'Spotify', amount: 10900, currency: 'KRW', category: '음악' },
+  { name: 'Notion', amount: 10, currency: 'USD', category: '생산성' },
+  { name: 'iCloud+', amount: 1100, currency: 'KRW', category: '클라우드' }
+];
+
+function sublogId() {
+  return crypto?.randomUUID?.() || `sublog-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function sublogToKrw(item = {}) {
+  return Number(item.amount || 0) * (item.currency === 'USD' ? 1350 : 1);
+}
+
+function sublogMoney(value = 0) {
+  return `${Math.round(Number(value) || 0).toLocaleString('ko-KR')}원`;
+}
+
+function sublogDisplayAmount(item = {}) {
+  const amount = Number(item.amount || 0);
+  return item.currency === 'USD' ? `$${amount.toLocaleString('en-US')}` : sublogMoney(amount);
+}
+
+function sublogDaysUntil(day, today = new Date()) {
+  const base = new Date(today);
+  base.setHours(0, 0, 0, 0);
+  const candidate = new Date(base.getFullYear(), base.getMonth(), Math.min(Number(day) || 1, new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate()));
+  if (candidate >= base) return Math.round((candidate - base) / 86400000);
+  const next = new Date(base.getFullYear(), base.getMonth() + 1, Math.min(Number(day) || 1, new Date(base.getFullYear(), base.getMonth() + 2, 0).getDate()));
+  return Math.round((next - base) / 86400000);
+}
+
+function SublogPanel({ currentUser }) {
+  const accountStorageKey = useMemo(() => {
+    const accountKey = String(currentUser?.email || currentUser?.userId || 'unknown').trim().toLowerCase() || 'unknown';
+    return `${sublogStorageKeyPrefix}:${accountKey}`;
+  }, [currentUser?.email, currentUser?.userId]);
+  const skipNextStorageWriteRef = useRef(false);
+  const [items, setItems] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(accountStorageKey) || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [filter, setFilter] = useState('전체');
+  const [sort, setSort] = useState('recent');
+  const [activeTab, setActiveTab] = useState('subscriptions');
+  const [editingId, setEditingId] = useState('');
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState({ name: '', amount: '', currency: 'KRW', billingDay: 1, category: '기타', memo: '' });
+  const [reminderDays, setReminderDays] = useState(() => {
+    const saved = Number(localStorage.getItem(`${accountStorageKey}:reminder_days`));
+    return Number.isFinite(saved) && saved >= 0 ? saved : 3;
+  });
+  const [notificationPermission, setNotificationPermission] = useState(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return 'unsupported';
+    return window.Notification.permission;
+  });
+
+  useEffect(() => {
+    skipNextStorageWriteRef.current = true;
+    try {
+      setItems(JSON.parse(localStorage.getItem(accountStorageKey) || '[]'));
+    } catch {
+      setItems([]);
+    }
+    const savedReminderDays = Number(localStorage.getItem(`${accountStorageKey}:reminder_days`));
+    setReminderDays(Number.isFinite(savedReminderDays) && savedReminderDays >= 0 ? savedReminderDays : 3);
+  }, [accountStorageKey]);
+
+  useEffect(() => {
+    if (skipNextStorageWriteRef.current) {
+      skipNextStorageWriteRef.current = false;
+      return;
+    }
+    localStorage.setItem(accountStorageKey, JSON.stringify(items));
+  }, [accountStorageKey, items]);
+
+  useEffect(() => {
+    localStorage.setItem(`${accountStorageKey}:reminder_days`, String(reminderDays));
+  }, [accountStorageKey, reminderDays]);
+
+  const totals = useMemo(() => {
+    const monthly = items.reduce((sum, item) => sum + sublogToKrw(item), 0);
+    return { monthly, yearly: monthly * 12, daily: monthly / 30, count: items.length };
+  }, [items]);
+  const nearest = useMemo(() => [...items].sort((a, b) => sublogDaysUntil(a.billingDay) - sublogDaysUntil(b.billingDay))[0] || null, [items]);
+  const upcomingReminders = useMemo(() => items
+    .map((item) => ({ ...item, daysUntil: sublogDaysUntil(item.billingDay) }))
+    .filter((item) => item.daysUntil <= Number(reminderDays))
+    .sort((a, b) => a.daysUntil - b.daysUntil), [items, reminderDays]);
+  const visible = useMemo(() => {
+    const rows = filter === '전체' ? items : items.filter((item) => item.category === filter);
+    return [...rows].sort((a, b) => {
+      if (sort === 'amount-desc') return sublogToKrw(b) - sublogToKrw(a);
+      if (sort === 'amount-asc') return sublogToKrw(a) - sublogToKrw(b);
+      if (sort === 'billing-soon') return sublogDaysUntil(a.billingDay) - sublogDaysUntil(b.billingDay);
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+    });
+  }, [filter, items, sort]);
+
+  const resetForm = () => {
+    setEditingId('');
+    setForm({ name: '', amount: '', currency: 'KRW', billingDay: 1, category: '기타', memo: '' });
+  };
+  const openAddForm = () => {
+    resetForm();
+    setFormOpen(true);
+  };
+  const closeForm = () => {
+    resetForm();
+    setFormOpen(false);
+  };
+  const save = (event) => {
+    event.preventDefault();
+    const amount = Number(String(form.amount).replace(/,/g, ''));
+    const name = form.name.trim();
+    if (!name || !Number.isFinite(amount) || amount <= 0) return;
+    const now = new Date().toISOString();
+    const payload = { ...form, name, amount, billingDay: Math.min(31, Math.max(1, Number(form.billingDay) || 1)), memo: form.memo.trim(), updatedAt: now };
+    setItems((current) => editingId
+      ? current.map((item) => item.id === editingId ? { ...item, ...payload } : item)
+      : [{ id: sublogId(), ...payload, createdAt: now }, ...current]);
+    closeForm();
+  };
+  const edit = (item) => {
+    setEditingId(item.id);
+    setForm({ name: item.name, amount: String(item.amount), currency: item.currency, billingDay: item.billingDay, category: item.category, memo: item.memo || '' });
+    setFormOpen(true);
+  };
+  const remove = (item) => {
+    if (window.confirm(`${item.name} 구독을 삭제할까요?`)) setItems((current) => current.filter((row) => row.id !== item.id));
+  };
+  const applyPreset = (preset) => setForm({ ...form, ...preset, amount: String(preset.amount), billingDay: form.billingDay || 1, memo: '' });
+  const addSample = () => setItems((current) => [
+    { id: sublogId(), name: 'ChatGPT Plus', amount: 20, currency: 'USD', billingDay: 12, category: 'AI', memo: '업무 보조', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    { id: sublogId(), name: 'YouTube Premium', amount: 14900, currency: 'KRW', billingDay: 21, category: '영상', memo: '광고 없이 보기', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    ...current
+  ]);
+  const requestBrowserNotification = async () => {
+    if (!('Notification' in window)) {
+      setNotificationPermission('unsupported');
+      return;
+    }
+    const next = await window.Notification.requestPermission();
+    setNotificationPermission(next);
+  };
+
+  useEffect(() => {
+    if (notificationPermission !== 'granted' || upcomingReminders.length === 0) return;
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const notificationKey = `${accountStorageKey}:notification_sent:${todayKey}`;
+    if (localStorage.getItem(notificationKey) === '1') return;
+    const body = upcomingReminders
+      .slice(0, 3)
+      .map((item) => `${item.daysUntil === 0 ? '오늘' : `${item.daysUntil}일 뒤`} ${item.name} · ${sublogDisplayAmount(item)}`)
+      .join('\n');
+    try {
+      new window.Notification('SUBLOG 결제 알림', { body });
+      localStorage.setItem(notificationKey, '1');
+    } catch {
+      // Some mobile browsers block notifications unless the web app is installed.
+    }
+  }, [accountStorageKey, notificationPermission, upcomingReminders]);
+
+  return (
+    <div className="grid gap-3">
+      <div>
+        <div className="text-xs font-black uppercase tracking-wide text-zinc-500">SUBLOG</div>
+        <div className="mt-1 flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-black text-zinc-100">매달 새는 돈을 한눈에.</h2>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-500">구독비와 다음 결제일만 빠르게 정리해요.</p>
+          </div>
+          {activeTab === 'subscriptions' && (
+            <button type="button" onClick={openAddForm} className="shrink-0 rounded-2xl bg-white px-3 py-2 text-xs font-black text-zinc-950 hover:bg-zinc-100">
+              구독 추가
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 rounded-2xl border border-white/10 bg-black/25 p-1">
+        {[
+          ['subscriptions', '구독'],
+          ['settings', '설정']
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setActiveTab(key)}
+            className={`rounded-xl px-3 py-2 text-sm font-black transition ${activeTab === key ? 'bg-white text-zinc-950' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'subscriptions' && (
+        <>
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-4">
+            <div className="text-xs font-bold text-zinc-500">이번 달 구독비</div>
+            <div className="mt-1 text-3xl font-black text-zinc-100">{sublogMoney(totals.monthly)}</div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+              {[
+                ['하루 평균', sublogMoney(totals.daily)],
+                ['연간 예상', sublogMoney(totals.yearly)],
+                ['구독 수', `${totals.count}개`]
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-xl bg-white/[0.04] px-3 py-2">
+                  <div className="font-bold text-zinc-600">{label}</div>
+                  <div className="mt-0.5 truncate font-black text-zinc-300">{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+            {nearest ? (
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-zinc-500">다음 결제</div>
+                  <div className="mt-1 truncate text-sm font-black text-zinc-100">{nearest.name}</div>
+                  <div className="mt-0.5 text-xs font-bold text-zinc-500">매월 {nearest.billingDay}일 · {sublogDisplayAmount(nearest)}</div>
+                </div>
+                <div className="shrink-0 rounded-2xl bg-white px-3 py-2 text-center text-zinc-950">
+                  <div className="text-[10px] font-black text-zinc-500">남은 기간</div>
+                  <div className="text-sm font-black">{sublogDaysUntil(nearest.billingDay) === 0 ? '오늘' : `D-${sublogDaysUntil(nearest.billingDay)}`}</div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-sm font-bold text-zinc-500">첫 구독을 추가하면 다음 결제 예정일을 보여드릴게요.</div>
+            )}
+          </div>
+        </>
+      )}
+
+      {activeTab === 'settings' && <PanelCard title="결제 알림">
+        <div className="grid gap-3">
+          <div className="grid gap-2">
+            <div className="text-xs font-bold text-zinc-500">알림 기준</div>
+            <select className={inputClass} value={reminderDays} onChange={(e) => setReminderDays(Number(e.target.value))}>
+              <option value={0}>결제 당일</option>
+              <option value={1}>1일 전부터</option>
+              <option value={3}>3일 전부터</option>
+              <option value={7}>7일 전부터</option>
+            </select>
+          </div>
+          {upcomingReminders.length > 0 ? (
+            <div className="grid gap-2">
+              {upcomingReminders.slice(0, 4).map((item) => (
+                <div key={`reminder-${item.id}`} className="rounded-2xl bg-black/25 px-4 py-3 text-sm">
+                  <div className="font-black text-zinc-100">
+                    {item.daysUntil === 0 ? '오늘 결제 예정' : `${item.daysUntil}일 뒤 결제 예정`}
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-zinc-500">{item.name} · {sublogDisplayAmount(item)} · 매월 {item.billingDay}일</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl bg-black/25 px-4 py-3 text-sm text-zinc-500">선택한 기간 안에 결제 예정인 구독이 없습니다.</div>
+          )}
+          {notificationPermission === 'unsupported' ? (
+            <Notice>이 브라우저에서는 알림 권한을 지원하지 않아요. SUBLOG 안의 결제 예정 목록으로 확인해 주세요.</Notice>
+          ) : notificationPermission === 'granted' ? (
+            <Notice tone="success">브라우저 알림이 켜져 있어요. SUBLOG를 열었을 때 결제 예정 알림을 보여드릴게요.</Notice>
+          ) : (
+            <DarkButton type="button" variant="ghost" onClick={requestBrowserNotification}>브라우저 알림 켜기</DarkButton>
+          )}
+        </div>
+      </PanelCard>}
+
+      {activeTab === 'subscriptions' && <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <div className="text-sm font-black text-zinc-100">구독 목록</div>
+            <div className="text-xs font-bold text-zinc-600">{visible.length}개 표시 중</div>
+          </div>
+          <select className="w-36 rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-xs font-black text-zinc-300 outline-none focus:border-white/25" value={sort} onChange={(e) => setSort(e.target.value)}>
+            <option value="recent">최근 추가 순</option>
+            <option value="amount-desc">금액 높은 순</option>
+            <option value="amount-asc">금액 낮은 순</option>
+            <option value="billing-soon">결제일 가까운 순</option>
+          </select>
+        </div>
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {sublogCategories.map((category) => (
+            <button key={category} type="button" onClick={() => setFilter(category)} className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-black ${filter === category ? 'border-white/30 bg-white text-zinc-950' : 'border-white/10 text-zinc-500 hover:bg-white/5'}`}>
+              {category}
+            </button>
+          ))}
+        </div>
+      </div>}
+
+      {activeTab === 'subscriptions' && (items.length === 0 ? (
+        <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-5 text-center">
+          <div className="text-sm font-black text-zinc-100">아직 등록된 구독이 없습니다.</div>
+          <p className="mt-1 text-sm text-zinc-500">가장 자주 쓰는 서비스부터 하나씩 추가해보세요.</p>
+          <div className="mt-4 flex justify-center gap-2">
+            <DarkButton type="button" onClick={openAddForm}>구독 추가</DarkButton>
+            <DarkButton type="button" variant="ghost" onClick={addSample}>예시로 보기</DarkButton>
+          </div>
+        </div>
+      ) : (
+        <div className="grid gap-2">
+          {visible.map((item) => (
+            <div key={item.id} className="rounded-2xl border border-white/10 bg-black/25 px-3.5 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="truncate font-black text-zinc-100">{item.name}</div>
+                    <span className="shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] font-black text-zinc-500">{item.category}</span>
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-zinc-500">매월 {item.billingDay}일 · {sublogDisplayAmount(item)} · {sublogDaysUntil(item.billingDay) === 0 ? '오늘' : `D-${sublogDaysUntil(item.billingDay)}`}</div>
+                  {item.memo && <div className="mt-1 truncate text-xs text-zinc-600">{item.memo}</div>}
+                </div>
+                <div className="flex shrink-0 gap-1">
+                  <button type="button" onClick={() => edit(item)} className="rounded-full px-2 py-1 text-xs font-black text-zinc-400 hover:bg-white/10 hover:text-white">수정</button>
+                  <button type="button" onClick={() => remove(item)} className="rounded-full px-2 py-1 text-xs font-black text-zinc-500 hover:bg-white/10 hover:text-red-200">삭제</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+
+      {formOpen && (
+        <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm lg:absolute lg:inset-0 lg:rounded-[28px]">
+          <button type="button" aria-label="닫기" className="absolute inset-0" onClick={closeForm} />
+          <div className="absolute inset-x-0 bottom-0 max-h-[86vh] overflow-y-auto rounded-t-[28px] border-t border-white/10 bg-[#191919] p-4 shadow-2xl shadow-black/60 lg:inset-x-3 lg:bottom-3 lg:rounded-[24px] lg:border">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-lg font-black text-zinc-100">{editingId ? '구독 정보 수정' : '새 구독 추가'}</div>
+                <div className="mt-1 text-xs leading-relaxed text-zinc-500">월 결제 금액과 결제일만 입력하면 비용을 자동으로 계산해요.</div>
+              </div>
+              <button type="button" onClick={closeForm} className="grid h-9 w-9 place-items-center rounded-full text-zinc-500 hover:bg-white/10 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
+              {sublogPresets.map((preset) => (
+                <button key={preset.name} type="button" onClick={() => applyPreset(preset)} className="shrink-0 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-black text-zinc-300 hover:bg-white/10">
+                  {preset.name}
+                </button>
+              ))}
+            </div>
+            <form onSubmit={save} className="grid gap-3">
+              <input className={inputClass} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="서비스 이름 예: Netflix" autoFocus />
+              <div className="grid grid-cols-2 gap-2">
+                <input className={inputClass} inputMode="decimal" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value.replace(/[^\d.]/g, '') })} placeholder="매달 결제 금액" />
+                <select className={inputClass} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+                  <option>KRW</option>
+                  <option>USD</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input className={inputClass} type="number" min="1" max="31" value={form.billingDay} onChange={(e) => setForm({ ...form, billingDay: e.target.value })} placeholder="결제일" />
+                <select className={inputClass} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                  {sublogCategories.filter((item) => item !== '전체').map((category) => <option key={category}>{category}</option>)}
+                </select>
+              </div>
+              <textarea className={`${inputClass} min-h-[74px]`} value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="메모 예: 가족 공유, 해지 예정, 업무용" />
+              <div className="grid grid-cols-2 gap-2">
+                <DarkButton type="button" variant="ghost" onClick={closeForm}>취소</DarkButton>
+                <DarkButton type="submit">{editingId ? '저장하기' : '구독 추가'}</DarkButton>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function ProductPreview({ action, onStartProduct, starting }) {
   const product = productPreviewContent[action.key] || productPreviewContent.dexor;

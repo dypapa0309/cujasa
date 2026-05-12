@@ -160,6 +160,16 @@ const tables = {
       status: 'active',
       created_at: now(),
       updated_at: now()
+    },
+    {
+      id: 'sublog',
+      name: 'SUBLOG',
+      description: '구독 비용 관리',
+      app_url: 'https://app.jasain.kr',
+      landing_url: 'https://jasain.kr/sublog',
+      status: 'active',
+      created_at: now(),
+      updated_at: now()
     }
   ],
   user_products: [],
