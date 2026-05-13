@@ -40,12 +40,30 @@ export default function LoginPage({ onLogin }) {
   const [previewProductId, setPreviewProductId] = useState(requestedProduct);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [coreHealthStatus, setCoreHealthStatus] = useState(null);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [businessInfoOpen, setBusinessInfoOpen] = useState(false);
   const previewProduct = productById(previewProductId) || fallbackProduct;
+  const coreDegraded = coreHealthStatus && coreHealthStatus.status !== 'ok';
+
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/api/core/health')
+      .then((health) => {
+        if (!cancelled) setCoreHealthStatus(health);
+      })
+      .catch(() => {
+        if (!cancelled) setCoreHealthStatus({ status: 'degraded', message: '현재 데이터베이스 연결이 지연되고 있습니다.' });
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const submit = async (event) => {
     event.preventDefault();
+    if (coreDegraded) {
+      setError('현재 데이터베이스 연결이 지연되고 있습니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -62,6 +80,10 @@ export default function LoginPage({ onLogin }) {
 
   const submitRegister = async (event) => {
     event.preventDefault();
+    if (coreDegraded) {
+      setError('현재 데이터베이스 연결이 지연되고 있습니다. 잠시 후 다시 시도해주세요.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -193,8 +215,13 @@ export default function LoginPage({ onLogin }) {
                   </div>
                 )}
 
+                {coreDegraded ? (
+                  <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-sm font-bold leading-relaxed text-amber-50">
+                    현재 데이터베이스 연결이 지연되고 있어 로그인/회원가입을 잠시 막아두었습니다. 잠시 후 다시 시도해주세요.
+                  </div>
+                ) : null}
                 {error ? <div className="mt-4 rounded-2xl border border-white/10 bg-black/40 p-3 text-sm font-bold text-zinc-200">{error}</div> : null}
-                <button disabled={busy} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-950 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60">
+                <button disabled={busy || coreDegraded} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-950 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60">
                   {busy ? '확인 중' : mode === 'login' ? '로그인' : '무료로 시작하기'}
                   <ChevronRight size={18} />
                 </button>

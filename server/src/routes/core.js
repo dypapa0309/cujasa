@@ -6,7 +6,7 @@ const router = Router();
 router.get('/health', async (req, res, next) => {
   try {
     const health = await coreHealth();
-    res.status(health.status === 'ok' ? 200 : 503).json(health);
+    res.json(health);
   } catch (error) {
     next(error);
   }
