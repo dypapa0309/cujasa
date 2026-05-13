@@ -21,6 +21,10 @@ const revealableAccountFields = new Set([
   'coupang_tracking_code'
 ]);
 
+function isDbUnavailableError(error = {}) {
+  return error?.code === 'SUPABASE_UNAVAILABLE' || error?.status === 503;
+}
+
 function mapPipelineRun(run) {
   if (!run) return null;
   const result = run.result && typeof run.result === 'object' ? run.result : {};
@@ -138,7 +142,13 @@ router.get('/', async (req, res, next) => {
       return res.json(redactAccounts(assigned.filter((account) => !hiddenIds.has(account.id))));
     }
     res.json(redactAccounts(await attachOwnerLabels(all)));
-  } catch (e) { next(e); }
+  } catch (e) {
+    if (isDbUnavailableError(e)) {
+      res.setHeader('X-CUJASA-Degraded', 'SUPABASE_UNAVAILABLE');
+      return res.json([]);
+    }
+    next(e);
+  }
 });
 
 router.post('/', async (req, res, next) => {

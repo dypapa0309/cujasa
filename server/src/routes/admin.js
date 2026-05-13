@@ -55,6 +55,10 @@ function accountLabel(account) {
   return [account?.name, account?.account_handle].filter(Boolean).join(' · ');
 }
 
+function isDbUnavailableError(error = {}) {
+  return error?.code === 'SUPABASE_UNAVAILABLE' || error?.status === 503;
+}
+
 async function buildAccountConflicts() {
   const [accounts, userAccounts, users] = await Promise.all([
     dbList('accounts'),
@@ -392,11 +396,23 @@ router.post('/setup-tasks/normalize-onetime', async (req, res, next) => {
 });
 
 router.get('/account-conflicts', async (req, res, next) => {
-  try { res.json(await buildAccountConflicts()); } catch (e) { next(e); }
+  try { res.json(await buildAccountConflicts()); } catch (e) {
+    if (isDbUnavailableError(e)) {
+      res.setHeader('X-CUJASA-Degraded', 'SUPABASE_UNAVAILABLE');
+      return res.json([]);
+    }
+    next(e);
+  }
 });
 
 router.get('/account-misassignments', async (req, res, next) => {
-  try { res.json(await buildMisassignmentReport()); } catch (e) { next(e); }
+  try { res.json(await buildMisassignmentReport()); } catch (e) {
+    if (isDbUnavailableError(e)) {
+      res.setHeader('X-CUJASA-Degraded', 'SUPABASE_UNAVAILABLE');
+      return res.json({ degraded: true, separable: [], needsReview: [], healthy: [] });
+    }
+    next(e);
+  }
 });
 
 async function auditMisassignment(row, action) {
