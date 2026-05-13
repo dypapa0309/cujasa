@@ -366,6 +366,8 @@ export default function CustomerBetaPage({
   reloadAccounts,
   reloadCurrentUser,
   onSelectAccount,
+  oauthReturn,
+  accountCreation,
   pipelineResult,
   onPipelineDone,
   onPipelineRunningChange
@@ -397,6 +399,7 @@ export default function CustomerBetaPage({
   const chatEndRef = useRef(null);
   const accountMenuRef = useRef(null);
   const lastPromptRef = useRef({ value: '', at: 0 });
+  const urlActionHandledRef = useRef('');
   const isTestAssistantUser = String(currentUser?.email || '').trim().toLowerCase() === 'test1@test.com';
 
   const loadWorkspaceData = useCallback(async () => {
@@ -560,6 +563,17 @@ export default function CustomerBetaPage({
     }
     openAction(action);
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const actionKey = params.get('action');
+    if (!actionKey) return;
+    const marker = `${account?.id || 'no-account'}:${actionKey}`;
+    if (urlActionHandledRef.current === marker) return;
+    if (!actions.some((item) => item.key === actionKey)) return;
+    urlActionHandledRef.current = marker;
+    openWorkspaceAction(actionKey);
+  }, [account?.id, grantedProductIds, selectedProductId, oauthReturn?.at]);
 
   const applyAssistantResult = (result, fallbackValue = '') => {
     if (!result) return false;
@@ -815,9 +829,24 @@ export default function CustomerBetaPage({
                       <div className="mt-0.5 truncate text-xs text-zinc-600">{item.account_handle || 'Threads 미연결'}</div>
                     </button>
                   ))}
+                  <button
+                    type="button"
+                    onClick={accountCreation?.open}
+                    disabled={!accountCreation?.canAdd || accountCreation?.adding}
+                    className="mt-1 flex items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 px-3 py-2 text-xs font-black text-zinc-400 hover:border-white/25 hover:bg-white/5 hover:text-zinc-100 disabled:cursor-not-allowed disabled:border-white/5 disabled:text-zinc-700"
+                  >
+                    <Plus size={14} />
+                    계정 추가
+                  </button>
+                  {!accountCreation?.canAdd && (
+                    <div className="px-3 text-[11px] font-bold text-zinc-700">
+                      계정 {accountCreation?.count ?? accounts.length}/{accountCreation?.maxAccounts ?? currentUser?.maxAccounts ?? 2} 한도
+                    </div>
+                  )}
+                  {accountCreation?.show && <BetaAccountAddForm accountCreation={accountCreation} />}
                   {accounts.length === 0 && (
                     <div className="rounded-xl px-3 py-2 text-xs leading-relaxed text-zinc-600">
-                      연결된 CUJASA 계정이 없어요. 설정에서 Threads 계정을 먼저 연결해 주세요.
+                      연결된 CUJASA 계정이 없어요. 새 계정을 추가한 뒤 Threads를 연결해 주세요.
                     </div>
                   )}
                 </SidebarGroup>
@@ -1076,6 +1105,7 @@ export default function CustomerBetaPage({
               onOpenAction={openWorkspaceAction}
               onRequestBillingAgreement={setAgreementIntent}
               startingProductId={startingProductId}
+              accountCreation={accountCreation}
               closing={drawerClosing}
               onClose={closeDrawer}
             />
@@ -1715,6 +1745,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
   const [blogDetailsOpen, setBlogDetailsOpen] = useState(false);
   const [tossDetailsOpen, setTossDetailsOpen] = useState(false);
   const [threadsOAuthError, setThreadsOAuthError] = useState(null);
+  const [threadsOAuthSuccess, setThreadsOAuthSuccess] = useState(null);
 
   useEffect(() => {
     if (!account) {
@@ -1773,17 +1804,20 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
   useEffect(() => {
     if (!account?.id) {
       setThreadsOAuthError(null);
+      setThreadsOAuthSuccess(null);
       return;
     }
     if (account.has_threads_access_token) {
       setThreadsOAuthError(null);
-      return;
     }
     try {
-      const raw = sessionStorage.getItem(`cujasa:threadsOAuthError:${account.id}`);
-      setThreadsOAuthError(raw ? JSON.parse(raw) : null);
+      const rawError = sessionStorage.getItem(`cujasa:threadsOAuthError:${account.id}`);
+      const rawSuccess = sessionStorage.getItem(`cujasa:threadsOAuthSuccess:${account.id}`);
+      setThreadsOAuthError(account.has_threads_access_token ? null : rawError ? JSON.parse(rawError) : null);
+      setThreadsOAuthSuccess(rawSuccess ? JSON.parse(rawSuccess) : null);
     } catch {
       setThreadsOAuthError(null);
+      setThreadsOAuthSuccess(null);
     }
   }, [account?.id, account?.has_threads_access_token]);
 
@@ -1898,6 +1932,8 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
   const threadsOAuthReady = account?.has_threads_access_token || activeThreadsRequest?.status === 'customer_action_required';
   const threadsStatusText = account?.has_threads_access_token
     ? '연결됨'
+    : threadsOAuthError?.code === 'THREADS_META_PERMISSION_REQUIRED' || /댓글 권한|permission|권한/i.test(threadsOAuthError?.message || '')
+      ? '댓글 권한 재연결 필요'
     : activeThreadsRequest?.status === 'customer_action_required'
       ? 'Meta 등록 완료 · 고객 승인 필요'
       : activeThreadsRequest?.status === 'requested'
@@ -1909,6 +1945,11 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
       {settingsDraft?.id === appliedDraftId && (
         <Notice>
           채팅에서 만든 설정 초안이에요. 타깃, 톤, 카테고리를 확인한 뒤 설정 저장을 눌러야 실제로 반영돼요.
+        </Notice>
+      )}
+      {threadsOAuthSuccess?.message && (
+        <Notice tone="success">
+          {threadsOAuthSuccess.message} 연결 상태가 반영되지 않았다면 새로고침 후 다시 확인해 주세요.
         </Notice>
       )}
 
@@ -1964,6 +2005,11 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
         {!account?.has_threads_access_token && threadsOAuthReady && (
           <Notice>
             Meta 등록이 완료됐어요. Meta 웹 승인 초대를 수락한 뒤 Threads 연결을 마무리해 주세요.
+          </Notice>
+        )}
+        {!account?.has_threads_access_token && threadsOAuthError?.message && (
+          <Notice tone="error">
+            Safari/Chrome에서 threads.net에 연결할 계정으로 로그인되어 있는지, Meta 웹 승인 초대를 수락했는지 확인한 뒤 다시 연결해 주세요.
           </Notice>
         )}
         {!account?.has_threads_access_token && !activeThreadsRequest && (
@@ -2419,7 +2465,7 @@ function TrendReferencesPanel({ account, currentUser, reloadAccounts }) {
             <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs font-bold text-zinc-500 sm:grid-cols-3">
               <div>패턴 {preview.patterns?.length || 0}개 사용</div>
               <div>후보 {preview.candidates?.length || 0}개</div>
-              <div>선택 #{Number(preview.selectedIndex ?? -1) + 1 || '-'}</div>
+              <div>선택 {Number(preview.selectedIndex ?? -1) >= 0 ? `#${Number(preview.selectedIndex) + 1}` : '-'}</div>
             </div>
             {(preview.candidates || []).map((candidate, index) => (
               <div key={`${candidate.index}-${index}`} className={`rounded-3xl border px-4 py-4 ${candidate.selected ? 'border-emerald-300/30 bg-emerald-400/10' : candidate.allowed ? 'border-white/10 bg-black/20' : 'border-rose-300/20 bg-rose-400/10'}`}>
@@ -2429,12 +2475,14 @@ function TrendReferencesPanel({ account, currentUser, reloadAccounts }) {
                     {candidate.selected && <span className="rounded-full bg-emerald-400/15 px-2 py-1 text-emerald-100">선택 후보</span>}
                     <span className="rounded-full bg-white/10 px-2 py-1 text-zinc-300">점수 {candidate.engagementScore || 0}</span>
                     <span className={`rounded-full px-2 py-1 ${candidate.allowed ? 'bg-emerald-400/10 text-emerald-100' : 'bg-rose-400/10 text-rose-100'}`}>{candidate.allowed ? '통과' : '제외'}</span>
+                    <span className={`rounded-full px-2 py-1 ${candidate.queueReady ? 'bg-emerald-400/10 text-emerald-100' : 'bg-amber-400/10 text-amber-100'}`}>{candidate.queueReady ? '링크 준비' : '상품 필요'}</span>
                   </div>
                 </div>
                 <div className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-7 text-zinc-200">{candidate.body}</div>
                 <div className="mt-3 grid gap-2 text-xs text-zinc-500">
                   {(candidate.selectionReasons || []).slice(0, 3).map((reason) => <div key={reason}>선택 신호 · {reason}</div>)}
                   {(candidate.rejectionReasons || []).slice(0, 4).map((reason) => <div key={reason} className="text-rose-200/80">제외 이유 · {reason}</div>)}
+                  {(candidate.productWarnings || []).slice(0, 2).map((reason) => <div key={reason} className="text-amber-100/80">상품 상태 · {reason}</div>)}
                 </div>
                 <div className="mt-4 grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-3">
                   <div className="flex flex-wrap items-center gap-2 text-[11px] font-black text-zinc-500">
@@ -2589,7 +2637,7 @@ function TrendReferencesPanel({ account, currentUser, reloadAccounts }) {
   );
 }
 
-function BetaAccountSettingsPanel({ currentUser, account, accounts, onLogout, onOpenPrivacy }) {
+function BetaAccountSettingsPanel({ currentUser, account, accounts, onLogout, onOpenPrivacy, accountCreation }) {
   const grantedProducts = (currentUser?.products || [])
     .filter((grant) => grant.status !== 'suspended')
     .map((grant) => ({
@@ -2622,7 +2670,31 @@ function BetaAccountSettingsPanel({ currentUser, account, accounts, onLogout, on
           <AccountInfoRow label="고객명" value={currentUser?.username || '등록된 이름 없음'} />
           <AccountInfoRow label="연락처" value={currentUser?.phone || '계정 API에서 연락처를 불러오도록 연결 예정'} />
           <AccountInfoRow label="선택 계정" value={account?.name || '선택된 CUJASA 계정 없음'} />
-          <AccountInfoRow label="등록 계정 수" value={`${accounts?.length || 0}개`} />
+          <AccountInfoRow label="등록 계정 수" value={`${accountCreation?.count ?? accounts?.length ?? 0}/${accountCreation?.maxAccounts ?? currentUser?.maxAccounts ?? 2}개`} />
+        </div>
+      </PanelCard>
+
+      <PanelCard title="CUJASA 계정 추가">
+        <div className="grid gap-3">
+          {accountCreation?.canAdd ? (
+            <>
+              <p className="text-sm leading-relaxed text-zinc-500">
+                새 Threads 계정을 먼저 등록한 뒤 설정 확인에서 Threads 연결과 게시 조건을 점검합니다.
+              </p>
+              {accountCreation.show ? (
+                <BetaAccountAddForm accountCreation={accountCreation} />
+              ) : (
+                <DarkButton variant="ghost" onClick={accountCreation.open}>
+                  <Plus size={16} />
+                  계정 추가
+                </DarkButton>
+              )}
+            </>
+          ) : (
+            <Notice>
+              현재 이용권의 계정 한도에 도달했습니다. 추가 계정이 필요하면 결제 메뉴에서 이용권을 확인해 주세요.
+            </Notice>
+          )}
         </div>
       </PanelCard>
 
@@ -2666,6 +2738,57 @@ function BetaAccountSettingsPanel({ currentUser, account, accounts, onLogout, on
         Threads 핸들, 쿠팡 API, 콘텐츠 톤과 타깃은 CUJASA 제품 설정이에요. 왼쪽 Tasks의 설정 확인에서 관리해요.
       </Notice>
     </>
+  );
+}
+
+function BetaAccountAddForm({ accountCreation }) {
+  const draft = accountCreation?.draft || { name: '', account_handle: '' };
+  const updateDraft = (patch) => {
+    accountCreation?.setDraft?.((prev) => ({ ...(prev || {}), ...patch }));
+  };
+
+  if (!accountCreation?.canAdd) {
+    return (
+      <Notice>
+        계정 {accountCreation?.count ?? 0}/{accountCreation?.maxAccounts ?? 2} 한도에 도달했습니다.
+      </Notice>
+    );
+  }
+
+  return (
+    <form onSubmit={accountCreation.submit} className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-black text-zinc-300">새 Threads 계정</div>
+        <button type="button" onClick={accountCreation.close} className="grid h-7 w-7 place-items-center rounded-full text-zinc-600 hover:bg-white/10 hover:text-zinc-200">
+          <X size={14} />
+        </button>
+      </div>
+      <input
+        type="text"
+        value={draft.name || ''}
+        onChange={(event) => updateDraft({ name: event.target.value })}
+        placeholder="계정 이름 (예: 자취 꿀템)"
+        className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-bold text-zinc-100 placeholder:text-zinc-700 focus:border-white/25 focus:outline-none"
+        required
+      />
+      <input
+        type="text"
+        value={draft.account_handle || ''}
+        onChange={(event) => updateDraft({ account_handle: event.target.value })}
+        placeholder="Threads 핸들 (예: @myhandle)"
+        className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-bold text-zinc-100 placeholder:text-zinc-700 focus:border-white/25 focus:outline-none"
+      />
+      <button
+        type="submit"
+        disabled={accountCreation.adding || !String(draft.name || '').trim()}
+        className="rounded-xl bg-zinc-100 px-3 py-2 text-sm font-black text-zinc-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {accountCreation.adding ? '추가 중...' : '추가하기'}
+      </button>
+      <p className="text-[11px] leading-relaxed text-zinc-700">
+        생성 후 자동화는 바로 시작하지 않습니다. 먼저 Threads 연결과 게시 조건을 확인합니다.
+      </p>
+    </form>
   );
 }
 

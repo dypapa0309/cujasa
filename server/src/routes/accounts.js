@@ -58,14 +58,26 @@ async function assertOwnerCanReceiveAccount(ownerUserId) {
     error.status = 404;
     throw error;
   }
-  const current = await dbList('user_accounts', { user_id: ownerUserId });
+  const currentCount = await countActiveAssignedAccounts(ownerUserId);
   const maxAccounts = Number(owner.max_accounts ?? 999);
-  if (Number.isFinite(maxAccounts) && current.length >= maxAccounts) {
+  if (Number.isFinite(maxAccounts) && currentCount >= maxAccounts) {
     const error = new Error(`계정 한도 초과 (최대 ${owner.max_accounts}개)`);
     error.status = 403;
     throw error;
   }
   return owner;
+}
+
+export async function countActiveAssignedAccounts(userId) {
+  const links = await dbList('user_accounts', { user_id: userId });
+  if (links.length === 0) return 0;
+  const accounts = await Promise.all(
+    links
+      .map((link) => link.account_id)
+      .filter(Boolean)
+      .map((accountId) => dbGet('accounts', { id: accountId }).catch(() => null))
+  );
+  return accounts.filter((account) => account?.status === 'active').length;
 }
 
 async function assignCreatedAccountToOwner({ accountId, ownerUserId }) {
@@ -158,8 +170,8 @@ router.post('/', async (req, res, next) => {
       : '';
     if (req.user?.type === 'user') {
       await assertUserCanOperate(req.user.userId);
-      const current = await dbList('user_accounts', { user_id: req.user.userId });
-      if (current.length >= req.user.maxAccounts) {
+      const currentCount = await countActiveAssignedAccounts(req.user.userId);
+      if (currentCount >= req.user.maxAccounts) {
         const error = new Error(`계정은 최대 ${req.user.maxAccounts}개까지 생성할 수 있습니다. 추가 계정은 별도 문의해주세요.`);
         error.status = 403;
         throw error;

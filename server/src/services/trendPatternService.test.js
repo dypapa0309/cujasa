@@ -84,7 +84,7 @@ test('generateTrendInspiredPosts returns scored safe variants without AI', async
     patterns,
     useAi: false
   });
-  assert.equal(posts.length, 3);
+  assert.ok(posts.length >= 5);
   assert.ok(posts.every((post) => post.engagementScore > 0));
   assert.ok(posts.every((post) => post.similarityRisk === 'low'));
 });
@@ -99,7 +99,7 @@ test('buildTrendInspiredContentPreview falls back to fixture provider', async ()
   });
   assert.equal(preview.source.provider, 'fixture');
   assert.ok(preview.patterns.length > 0);
-  assert.equal(preview.posts.length, 3);
+  assert.ok(preview.posts.length >= 5);
 });
 
 test('anonymous learning off keeps customer references out of public assets', async () => {

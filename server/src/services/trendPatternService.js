@@ -219,6 +219,18 @@ function normalizeAiPatterns(patterns = [], samples = []) {
   }).filter((pattern) => !pattern.safetyFlags.includes('unsafe_conflict_frame'));
 }
 
+function hasFinalConsonant(value = '') {
+  const last = String(value || '').trim().slice(-1);
+  const code = last.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return false;
+  return (code - 0xac00) % 28 !== 0;
+}
+
+function withSubjectParticle(value = '') {
+  const text = normalizeText(value);
+  return `${text}${hasFinalConsonant(text) ? '은' : '는'}`;
+}
+
 export async function extractTrendPatterns(samples = [], { query = '', limit = 5, useAi = true } = {}) {
   const ranked = rankTrendSamples(samples, { query, limit });
   const safeRanked = ranked.filter((sample) => !sample.safetyFlags.includes('unsafe_conflict_frame'));
@@ -235,6 +247,7 @@ export async function extractTrendPatterns(samples = [], { query = '', limit = 5
 
 function trendFallbackPosts({ query = '', contentScope = '', targetAudience = '', productCategory = '', patterns = [] } = {}) {
   const topic = normalizeText(query || productCategory || contentScope || '생활용품');
+  const topicSubject = withSubjectParticle(topic);
   const audience = normalizeText(targetAudience || '이 계정의 독자');
   const pattern = patterns[0] || {};
   const livingDetails = /자취|원룸|집기|살림|생활/.test(`${topic} ${contentScope} ${audience}`)
@@ -296,6 +309,31 @@ function trendFallbackPosts({ query = '', contentScope = '', targetAudience = ''
           '',
           '이거 나만 이렇게 봄?'
         ].join('\n')
+      },
+      {
+        contentType: '상황비교형',
+        patternSourceId: pattern.sourceId || '',
+        body: [
+          `${topicSubject} 살 때보다 쓰는 순간이 더 정확하더라`,
+          '',
+          `${livingDetails[0]}에서 편하면 오래 감`,
+          `${livingDetails[1]}에서 귀찮으면 금방 방치됨`,
+          `${livingDetails[2]}에서 손이 바로 가면 성공에 가까움`,
+          '',
+          `${audience} 입장에선 어떤 순간이 제일 중요함?`
+        ].join('\n')
+      },
+      {
+        contentType: '후회방지형',
+        patternSourceId: pattern.sourceId || '',
+        body: [
+          `${topic} 고르기 전에 하나만 보면`,
+          '내가 이걸 꺼내고 다시 넣는 장면이 바로 그려지는지',
+          '',
+          '그게 안 그려지면 예뻐도 생각보다 손이 덜 가더라고요.',
+          '',
+          '다들 살 때 제일 먼저 보는 기준 뭐예요?'
+        ].join('\n')
       }
     ];
   }
@@ -314,6 +352,16 @@ function trendFallbackPosts({ query = '', contentScope = '', targetAudience = ''
       contentType: '체크리스트형',
       patternSourceId: pattern.sourceId || '',
       body: `${topic} 사기 전에는 큰 것보다 작은 동선을 먼저 보면 좋아요.\n\n1. ${livingDetails[0]}\n2. ${livingDetails[1]}\n3. ${livingDetails[2]}\n\n이 세 자리만 맞아도 처음 자취할 때 덜 어수선해요. 여러분은 어디부터 맞출 것 같아요?`
+    },
+    {
+      contentType: '상황비교형',
+      patternSourceId: pattern.sourceId || '',
+      body: `막상 살아보면 ${topicSubject} 예쁜지보다 손이 덜 가는지가 오래 남더라고요.\n\n${livingDetails[0]}에서는 바로 쓰기 쉬운지,\n${livingDetails[1]}에서는 치우기 쉬운지,\n${livingDetails[2]}에서는 자리 차지를 덜 하는지.\n\n${audience}라면 셋 중 뭐부터 볼 것 같아요?`
+    },
+    {
+      contentType: '후회방지형',
+      patternSourceId: pattern.sourceId || '',
+      body: `${topic} 살 때 후회 줄이는 기준은 생각보다 단순했어요.\n\n매일 쓰는 위치가 정해지는지,\n꺼내고 넣는 과정이 번거롭지 않은지,\n안 쓸 때도 집이 덜 어수선한지.\n\n처음 사는 거라면 여러분은 어떤 기준부터 챙길래요?`
     }
   ];
 }

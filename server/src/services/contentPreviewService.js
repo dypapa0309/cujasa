@@ -103,12 +103,18 @@ export async function buildCujasaContentPreview(accountId, input = {}) {
     const styleFit = validatePostStyleFit(post.body, account);
     const patternQuality = assessContentPatternQuality(post.body, peerBodies.filter((_, bodyIndex) => bodyIndex !== index));
     const productPreview = await previewProductMatches(account, topic, post.body);
-    const productAllowed = input.productMentionStyle === 'none' || productPreview.productLinkable;
-    const allowed = Boolean(post.allowed) && qualityGate.passed && guardrail.allowed && styleFit.allowed && productAllowed && patternQuality.allowed;
+    const productRequired = account.product_mention_style !== 'none';
+    const productReady = !productRequired || productPreview.productLinkable;
+    const contentAllowed = Boolean(post.allowed) && qualityGate.passed && guardrail.allowed && styleFit.allowed && patternQuality.allowed;
+    const allowed = contentAllowed;
+    const queueReady = contentAllowed && productReady;
     return {
       ...post,
       index,
       allowed,
+      queueReady,
+      contentAllowed,
+      productReady,
       selected: false,
       engagementScore: engagement.engagementScore,
       engagementPattern: engagement.engagementPattern,
@@ -118,10 +124,10 @@ export async function buildCujasaContentPreview(accountId, input = {}) {
         ...(qualityGate.passed ? [] : qualityGate.reasons),
         ...(guardrail.allowed ? [] : guardrail.reasons),
         ...(styleFit.allowed ? [] : styleFit.reasons),
-        ...(productAllowed ? [] : ['상품 매칭 실패']),
         ...(patternQuality.allowed ? [] : patternQuality.reasons),
         ...(post.safetyFlags || [])
       ].filter(Boolean),
+      productWarnings: productReady ? [] : ['상품 매칭 필요'],
       patternQuality,
       productPreview
     };
@@ -151,6 +157,7 @@ export async function buildCujasaContentPreview(accountId, input = {}) {
     })),
     candidates,
     selectedIndex: selected?.index ?? -1,
-    productLinkable: Boolean(selected?.productPreview?.productLinkable)
+    productLinkable: Boolean(selected?.productPreview?.productLinkable),
+    queueReady: Boolean(selected?.queueReady)
   };
 }

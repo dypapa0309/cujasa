@@ -83,3 +83,57 @@ test('preserves stored sensitive account values when blanks are submitted', asyn
   assert.equal(updated.coupang_partner_id, 'stored-partner');
   assert.equal(updated.coupang_tracking_code, 'stored-track');
 });
+
+test('normalizes customer-facing content and schedule settings', async () => {
+  const projectId = randomUUID();
+  await dbInsert('projects', {
+    id: projectId,
+    name: 'Customer settings normalization project',
+    type: 'coupang',
+    status: 'active'
+  });
+  const account = await createAccount({
+    project_id: projectId,
+    name: '고객 설정 계정',
+    target_audience: '기존 타겟',
+    content_scope: '기존 주제'
+  });
+
+  const updated = await updateAccount(account.id, {
+    account_handle: 'customer.handle',
+    target_audience: '처음 자취하는 20대',
+    content_scope: '자취용품, 원룸 수납',
+    tone: '친근하고 실제 후기처럼 짧게',
+    content_mode: 'safe_debate',
+    safe_debate_enabled: false,
+    content_intensity: 'loud',
+    comment_induction_style: 'choice_question',
+    product_mention_style: 'direct',
+    emoji_level: 'none',
+    seasonality_enabled: false,
+    anonymous_learning_enabled: true,
+    daily_post_min: 4,
+    daily_post_max: 99,
+    active_time_windows: [{ start: '09:30', end: '09:30' }],
+    min_interval_minutes: 0,
+    forbidden_topics: ['의약품'],
+    forbidden_words: ['100%']
+  });
+
+  assert.equal(updated.account_handle, '@customer.handle');
+  assert.equal(updated.target_audience, '처음 자취하는 20대');
+  assert.equal(updated.content_scope, '자취용품, 원룸 수납');
+  assert.equal(updated.content_mode, 'question');
+  assert.equal(updated.content_intensity, 'normal');
+  assert.equal(updated.comment_induction_style, 'choice_question');
+  assert.equal(updated.product_mention_style, 'direct');
+  assert.equal(updated.emoji_level, 'none');
+  assert.equal(updated.seasonality_enabled, false);
+  assert.equal(updated.anonymous_learning_enabled, true);
+  assert.equal(updated.daily_post_min, 0);
+  assert.equal(updated.daily_post_max, 5);
+  assert.deepEqual(updated.active_time_windows, [{ start: '09:30', end: '09:30' }]);
+  assert.equal(updated.min_interval_minutes, 1);
+  assert.deepEqual(updated.forbidden_topics, ['의약품']);
+  assert.deepEqual(updated.forbidden_words, ['100%']);
+});
