@@ -456,7 +456,7 @@ function isTransientSupabaseFailure(error = {}) {
 }
 
 function unavailableDbError(reason = '') {
-  const error = new Error('Database is temporarily unavailable. Please retry shortly.');
+  const error = new Error('현재 데이터베이스 연결이 지연되고 있습니다. 잠시 후 다시 시도해주세요.');
   error.status = 503;
   error.code = 'SUPABASE_UNAVAILABLE';
   error.reason = reason || dbCircuitReason || null;

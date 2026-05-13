@@ -889,12 +889,15 @@ export async function repairReplyLinkFailures({
 export async function processDueQueue({
   limit = QUEUE_PROCESS_BATCH_LIMIT,
   maxRunMs = QUEUE_PROCESS_MAX_RUN_MS,
+  recoverMaintenance = true,
   repairReplies = false
 } = {}) {
   const startedAt = Date.now();
   const cappedLimit = Math.max(1, Math.min(Number(limit) || QUEUE_PROCESS_BATCH_LIMIT, 100));
-  await recoverStalePostingQueue();
-  await recoverReplyLinkModeRequiredQueues();
+  if (recoverMaintenance) {
+    await recoverStalePostingQueue();
+    await recoverReplyLinkModeRequiredQueues();
+  }
   if (repairReplies) {
     await repairReplyLinkFailures({ dryRun: false, limit: Math.min(10, cappedLimit) });
   }
@@ -914,7 +917,10 @@ export async function processDueQueue({
     })
   ]);
   const rows = [...scheduled, ...retrying].filter((row) => (row.platform || 'threads') === 'threads');
-  const activeAccounts = await dbList('accounts', { status: 'active' });
+  const activeAccounts = await dbList('accounts', { status: 'active' }, {
+    select: 'id,status,automation_status',
+    limit: 1000
+  });
   const activeAccountIds = new Set(activeAccounts.filter(isAutomationRunning).map((account) => account.id));
   const due = rows
     .filter((row) => activeAccountIds.has(row.account_id) && new Date(row.scheduled_at) <= new Date())
@@ -1001,7 +1007,7 @@ export async function rescheduleTodayQueue({ accountId = null } = {}) {
   };
 }
 
-export async function recoverReplyLinkModeRequiredQueues({ accountId = null, limit = 100 } = {}) {
+export async function recoverReplyLinkModeRequiredQueues({ accountId = null, limit = 100, dryRun = false } = {}) {
   const cappedLimit = Math.max(1, Math.min(Number(limit) || 100, 500));
   const [queues, accounts] = await Promise.all([
     accountId
@@ -1017,6 +1023,7 @@ export async function recoverReplyLinkModeRequiredQueues({ accountId = null, lim
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
   const nowIso = new Date().toISOString();
   const recovered = [];
+  const wouldRecover = [];
   const skipped = [];
 
   for (const queue of queues) {
@@ -1047,6 +1054,16 @@ export async function recoverReplyLinkModeRequiredQueues({ accountId = null, lim
     const scheduledAt = new Date(queue.scheduled_at || 0).getTime() <= Date.now()
       ? nowIso
       : queue.scheduled_at;
+    if (dryRun) {
+      wouldRecover.push({
+        queueId: queue.id,
+        accountId: queue.account_id,
+        postId: queue.post_id,
+        previousStatus: queue.status,
+        scheduledAt
+      });
+      continue;
+    }
     const [updated] = await dbUpdate('post_queue', { id: queue.id }, {
       status: 'retry',
       scheduled_at: scheduledAt,
@@ -1070,8 +1087,11 @@ export async function recoverReplyLinkModeRequiredQueues({ accountId = null, lim
 
   return {
     ok: true,
+    mode: dryRun ? 'dry-run' : 'apply',
+    wouldRecoverCount: wouldRecover.length,
     recoveredCount: recovered.length,
     skippedCount: skipped.length,
+    wouldRecover,
     recovered,
     skipped
   };

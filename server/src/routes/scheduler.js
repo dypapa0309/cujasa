@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { processDueQueue } from '../services/schedulerService.js';
 import { runFullPipeline } from '../services/pipelineService.js';
 import { generateBlogPost } from '../services/blogService.js';
 import { requireAdmin } from '../middleware/rateLimit.js';
 import { runDailyPipelineOnce } from '../services/schedulerRunService.js';
+import { processCoreDueQueue } from '../services/cujasaCoreService.js';
 
 const router = Router();
 let manualFullPipelineRunning = false;
@@ -23,13 +23,14 @@ function requireSchedulerSecret(req, res, next) {
 router.post('/daily-pipeline', requireSchedulerSecret, async (req, res, next) => {
   try {
     res.json(await runDailyPipelineOnce({
-      triggeredBy: req.body?.triggeredBy || 'external_scheduler'
+      triggeredBy: req.body?.triggeredBy || 'external_scheduler',
+      mode: req.body?.mode || 'scheduled'
     }));
   } catch (e) { next(e); }
 });
 
 router.post('/run', requireAdmin, async (req, res, next) => {
-  try { res.json({ processed: await processDueQueue() }); } catch (e) { next(e); }
+  try { res.json({ processed: await processCoreDueQueue() }); } catch (e) { next(e); }
 });
 
 router.post('/run-pipeline', requireAdmin, async (req, res, next) => {

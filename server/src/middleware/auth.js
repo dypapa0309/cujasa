@@ -14,6 +14,8 @@ export function clearAuthContextCache(userId = '') {
 const publicRoutes = [
   { method: 'GET', path: '/api/health' },
   { method: 'HEAD', path: '/api/health' },
+  { method: 'GET', path: '/api/core/health' },
+  { method: 'HEAD', path: '/api/core/health' },
   { method: 'POST', path: '/api/auth/login' },
   { method: 'POST', path: '/api/auth/register' },
   { method: 'GET', path: '/api/auth/threads/callback' },

@@ -1,4 +1,4 @@
-import { runPipelineForAccount } from './pipelineService.js';
+import { runCorePipeline } from './cujasaCoreService.js';
 import { safeLogActivity } from './supabaseService.js';
 import { AUTOMATION_PAUSED, setAutomationStatus } from './accountAutomationService.js';
 
@@ -33,7 +33,7 @@ export function runPipelineForAccountInBackground(accountId, options = {}) {
   };
 
   setTimeout(() => {
-    runPipelineForAccount(accountId, pipelineOptions)
+    runCorePipeline(accountId, pipelineOptions)
       .then(async (result) => {
         if (isPipelineFailureResult(result)) {
           await pauseAfterPipelineFailure(accountId, {

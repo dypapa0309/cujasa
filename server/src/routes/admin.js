@@ -36,6 +36,7 @@ import { extractTrendReferenceFromImage } from '../services/trendReferenceOcrSer
 import { ensureAccountBlog } from '../services/blogService.js';
 import { listThreadsConnectionRequests, updateThreadsConnectionRequest } from '../services/threadsConnectionRequestService.js';
 import { buildCujasaQueueDiagnostics, reclassifyQueueErrors, repairThreadsPostUrls } from '../services/queueReliabilityService.js';
+import { recoverCore } from '../services/cujasaCoreService.js';
 
 const router = Router();
 
@@ -220,6 +221,16 @@ router.post('/operations/repair-reply-link-failures', async (req, res, next) => 
       accountId: req.body?.accountId || null,
       limit: req.body?.limit || 20,
       dryRun: req.body?.mode !== 'apply'
+    }));
+  } catch (e) { next(e); }
+});
+
+router.post('/core/recover', async (req, res, next) => {
+  try {
+    res.json(await recoverCore({
+      accountId: req.body?.accountId || null,
+      limit: req.body?.limit || 20,
+      mode: req.body?.mode === 'apply' ? 'apply' : 'dry-run'
     }));
   } catch (e) { next(e); }
 });

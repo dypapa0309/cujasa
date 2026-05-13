@@ -11,6 +11,7 @@ import productsRouter from './routes/products.js';
 import postsRouter from './routes/posts.js';
 import queueRouter from './routes/queue.js';
 import schedulerRouter from './routes/scheduler.js';
+import coreRouter from './routes/core.js';
 import trackingRouter from './routes/tracking.js';
 import metricsRouter from './routes/metrics.js';
 import analyticsRouter from './routes/analytics.js';
@@ -29,7 +30,7 @@ import productWorkspaceRouter from './routes/productWorkspace.js';
 import workspaceAssistantRouter from './routes/workspaceAssistant.js';
 import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
-import { processDueQueue } from './services/schedulerService.js';
+import { processCoreDueQueue } from './services/cujasaCoreService.js';
 import { runDueMetricJobs } from './services/metricsJobService.js';
 import { listBlogPosts } from './services/blogService.js';
 import { refreshExpiringThreadsTokens } from './services/threadsOAuthService.js';
@@ -145,6 +146,7 @@ app.use('/api/posts', queueRouter);
 app.use('/api/accounts', queueRouter);
 app.use('/api/queue', queueRouter);
 app.use('/api/scheduler', schedulerRouter);
+app.use('/api/core', coreRouter);
 app.use('/api/metrics', metricsRouter);
 app.use('/api/accounts', metricsRouter);
 app.use('/api/accounts', analyticsRouter);
@@ -301,7 +303,7 @@ app.get('/lead-forms/:slug', async (req, res, next) => {
 app.use((error, req, res, next) => {
   const status = error.status || 500;
   const hideInternalErrors = process.env.ERROR_DETAIL_MODE === 'internal' || process.env.NODE_ENV === 'production';
-  const exposeDetail = status < 500 || !hideInternalErrors;
+  const exposeDetail = status < 500 || !hideInternalErrors || error.code === 'SUPABASE_UNAVAILABLE';
   console.error('[request_error]', redactSensitivePayload({
     path: req.path,
     method: req.method,
@@ -325,7 +327,7 @@ if (enableInternalCron) {
   // 매분: 예약된 포스팅 업로드 + 성과 측정
   cron.schedule('* * * * *', async () => {
     await runCronJob('queue-and-metrics', async () => {
-      const processedQueue = await processDueQueue();
+      const processedQueue = await processCoreDueQueue();
       const metricJobs = await runDueMetricJobs();
       return { processedQueue, metricJobs };
     });

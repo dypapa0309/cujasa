@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { dbGet, dbList, dbUpdate } from '../services/supabaseService.js';
-import { addPostToQueue, createDailyQueue, processDueQueue, uploadQueueItem } from '../services/schedulerService.js';
+import { addPostToQueue } from '../services/schedulerService.js';
+import { createCoreDailyQueue, processCoreDueQueue, uploadCoreQueueItem } from '../services/cujasaCoreService.js';
 import { requireAccountAccessParam, requireQueueAccess } from '../middleware/accountAccess.js';
 import { assertUserCanOperate } from '../services/billingEntitlementService.js';
 import { decorateQueueRow, decorateQueueRows, postModeLabel } from '../services/queueErrorService.js';
@@ -54,7 +55,7 @@ router.post('/:accountId/create-daily-queue', requireAccountAccessParam(), async
   try {
     if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
     if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
-    res.status(201).json(await createDailyQueue(req.params.accountId));
+    res.status(201).json(await createCoreDailyQueue(req.params.accountId));
   } catch (e) { next(e); }
 });
 router.get('/:accountId/queue', requireAccountAccessParam(), async (req, res, next) => {
@@ -91,7 +92,7 @@ router.post('/:queueId/upload-now', requireQueueAccess, async (req, res, next) =
   try {
     if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
     if (req.user?.type === 'user') await assertUserCanStartTrialAction(req.user.userId);
-    res.json(await uploadQueueItem(req.params.queueId));
+    res.json(await uploadCoreQueueItem(req.params.queueId));
   } catch (e) { next(e); }
 });
 router.post('/:queueId/dismiss', requireQueueAccess, async (req, res, next) => {
@@ -102,7 +103,7 @@ router.post('/:queueId/dismiss', requireQueueAccess, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 router.post('/run', requireAdmin, async (req, res, next) => {
-  try { res.json({ processed: await processDueQueue() }); } catch (e) { next(e); }
+  try { res.json({ processed: await processCoreDueQueue() }); } catch (e) { next(e); }
 });
 
 // 큐 아이템 상세 (글 내용 + 상품 + 트래킹 링크)
