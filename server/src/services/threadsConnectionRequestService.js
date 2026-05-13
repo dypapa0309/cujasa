@@ -13,6 +13,13 @@ function displayHandle(value = '') {
   return handle ? `@${handle}` : '';
 }
 
+async function syncAccountHandle(accountId, handle) {
+  const nextHandle = displayHandle(handle);
+  if (!accountId || !nextHandle) return null;
+  const [updated] = await dbUpdate('accounts', { id: accountId }, { account_handle: nextHandle });
+  return updated || null;
+}
+
 async function notifyThreadsRequest(row, { user, account } = {}) {
   const text = [
     '[CUJASA Threads 연결 요청]',
@@ -70,7 +77,7 @@ export async function requestThreadsConnection({ userId, accountId, threadsHandl
     throw error;
   }
 
-  await dbUpdate('accounts', { id: accountId }, { account_handle: handle }).catch(() => []);
+  await syncAccountHandle(accountId, handle);
   const active = existing
     .filter((row) => ['requested', 'meta_registered', 'customer_action_required'].includes(row.status))
     .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0];
@@ -130,6 +137,10 @@ export async function updateThreadsConnectionRequest(id, patch = {}, actor = {})
     next.threads_handle = displayHandle(patch.threadsHandle ?? patch.threads_handle);
   }
   const [updated] = await dbUpdate('threads_connection_requests', { id }, next);
+  const handleToSync = next.threads_handle || current.threads_handle || '';
+  if (handleToSync && (next.threads_handle || next.status === 'customer_action_required' || next.status === 'connected')) {
+    await syncAccountHandle(current.account_id, handleToSync);
+  }
   await logActivity({
     account_id: current.account_id,
     action: 'threads_connection_request_updated',
@@ -149,5 +160,6 @@ export async function markThreadsConnectionRequestConnected(accountId) {
     status: 'connected',
     connected_at: new Date().toISOString()
   });
+  await syncAccountHandle(accountId, target.threads_handle);
   return updated || target;
 }

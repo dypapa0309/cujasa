@@ -199,11 +199,6 @@ export default function LoginPage({ onLogin }) {
                   </div>
                 )}
 
-                {coreDegraded ? (
-                  <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-sm font-bold leading-relaxed text-amber-50">
-                    현재 데이터베이스 연결이 지연되고 있습니다. 관리자 로그인은 계속 시도할 수 있고, 고객 로그인/회원가입은 DB 복구 후 정상화됩니다.
-                  </div>
-                ) : null}
                 {error ? <div className="mt-4 rounded-2xl border border-white/10 bg-black/40 p-3 text-sm font-bold text-zinc-200">{error}</div> : null}
                 <button disabled={busy || (mode === 'register' && coreDegraded)} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-950 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60">
                   {busy ? '확인 중' : mode === 'login' ? '로그인' : '무료로 시작하기'}

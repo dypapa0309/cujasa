@@ -274,7 +274,7 @@ export default function AdminSetupPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="font-semibold text-slate-900">{request.account?.name || request.account_id}</div>
-                      <div className="text-xs text-slate-400">{request.account?.account_handle || '-'}</div>
+                      <div className="text-xs text-slate-400">{request.account?.account_handle || request.threads_handle || '-'}</div>
                     </td>
                     <td className="px-4 py-3 font-bold text-slate-700">{request.threads_handle}</td>
                     <td className="px-4 py-3 text-xs text-slate-500">{request.request_memo || '-'}</td>

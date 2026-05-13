@@ -558,8 +558,12 @@ router.get('/users', async (req, res, next) => {
       const accounts = await Promise.all(ua.map((x) => dbGet('accounts', { id: x.account_id })));
       const redactedAccounts = redactAccounts(accounts.filter(Boolean)).map((account) => {
         const request = latestThreadsRequestByAccount.get(account.id);
+        const requestedHandle = request?.threads_handle || '';
+        const displayHandle = account.account_handle || requestedHandle || '';
         return {
           ...account,
+          account_handle: displayHandle,
+          requested_threads_handle: requestedHandle,
           latest_threads_connection_request: request ? {
             id: request.id,
             status: request.status,
@@ -572,7 +576,7 @@ router.get('/users', async (req, res, next) => {
             updated_at: request.updated_at
           } : null,
           threads_connection_diagnostics: {
-            handle: account.account_handle || '',
+            handle: displayHandle,
             hasToken: Boolean(account.has_threads_access_token),
             tokenStatus: account.threads_token_status || null,
             threadsUserId: account.threads_user_id || null,

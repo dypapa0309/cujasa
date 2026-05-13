@@ -408,14 +408,14 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
             toast(payload.run.result?.message || '오늘은 수익화 가능한 상품 링크 후보가 없어 업로드하지 않았습니다.', 'info');
           }
           setPipelineRunning(false);
-        } else if (payload.run.status === 'failed') {
+        } else if (payload.run.status === 'failed' || payload.run.status === 'expired') {
           const result = payload.run.result || {};
           const nextResult = {
             ok: false,
             status: 'error',
-            code: result.code || 'PIPELINE_FAILED',
+            code: result.code || (payload.run.status === 'expired' ? 'PIPELINE_EXPIRED' : 'PIPELINE_FAILED'),
             stage: result.stage || 'pipeline',
-            message: payload.run.errorMessage || result.message || result.error || '예약 작업 중 오류가 발생했습니다.',
+            message: payload.run.errorMessage || result.message || result.error || (payload.run.status === 'expired' ? '예약 작업 진행이 오래 멈춰 중단 처리했습니다. 다시 실행해주세요.' : '예약 작업 중 오류가 발생했습니다.'),
             blocking: result.blocking || []
           };
           setPipelineResult(nextResult);
