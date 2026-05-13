@@ -107,6 +107,7 @@ export default function App() {
   const [accountSettingsOpenId, setAccountSettingsOpenId] = useState('');
   const [currentUser, setCurrentUser] = useState(null); // { type, email, maxAccounts? }
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [authMaintenance, setAuthMaintenance] = useState(null);
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId) || accounts[0];
   const isAdmin = currentUser?.type === 'admin';
   const tabs = isAdmin ? adminTabs : userTabs;
@@ -117,10 +118,30 @@ export default function App() {
     if (!rows.some((row) => row.id === selectedAccountId)) setSelectedAccountId(rows[0]?.id || '');
   };
 
+  const isDatabaseUnavailable = (error) => error?.code === 'SUPABASE_UNAVAILABLE' || error?.status === 503;
+
+  const holdMaintenanceState = (error) => {
+    setAuthMaintenance({
+      code: error?.code || 'SUPABASE_UNAVAILABLE',
+      message: error?.message || '현재 데이터베이스 연결이 지연되고 있습니다. 잠시 후 다시 시도해주세요.'
+    });
+    setAccounts([]);
+    setSelectedAccountId('');
+    return null;
+  };
+
+  const loadAccountsOrHold = () => loadAccounts().then((result) => {
+    setAuthMaintenance(null);
+    return result;
+  }).catch((error) => {
+    if (isDatabaseUnavailable(error)) return holdMaintenanceState(error);
+    throw error;
+  });
+
   const applyAuthResult = (result) => {
         if (result.type === 'admin') {
           setCurrentUser({ type: 'admin', email: result.admin?.email });
-          return loadAccounts();
+          return loadAccountsOrHold();
         }
         if (result.type === 'user') {
           setCurrentUser({
@@ -131,11 +152,11 @@ export default function App() {
             products: normalizeProducts(result.user?.products),
             billing: result.user?.billing || null
           });
-          return loadAccounts();
+          return loadAccountsOrHold();
         }
         if (result.devBypass === true) {
           setCurrentUser({ type: 'admin', email: 'dev-local' });
-          return loadAccounts();
+          return loadAccountsOrHold();
         }
         setAuthToken('');
         setCurrentUser(null);
@@ -151,7 +172,21 @@ export default function App() {
 
   useEffect(() => {
     reloadCurrentUser()
-      .catch(() => {
+      .catch((error) => {
+        if (isDatabaseUnavailable(error)) {
+          if (error.type === 'user' || error.user) {
+            setCurrentUser({
+              type: 'user',
+              email: error.user?.email,
+              username: error.user?.username,
+              maxAccounts: error.user?.maxAccounts,
+              products: normalizeProducts(error.user?.products),
+              billing: error.user?.billing || null
+            });
+          }
+          holdMaintenanceState(error);
+          return;
+        }
         setAuthToken('');
         setCurrentUser(null);
         setAccounts([]);
@@ -162,6 +197,27 @@ export default function App() {
 
   if (checkingAuth) {
     return <div className="grid min-h-screen place-items-center text-sm text-slate-500">인증 상태 확인 중</div>;
+  }
+
+  if (authMaintenance && (!currentUser || accounts.length === 0)) {
+    return (
+      <ToastProvider>
+        <GlobalApiLoadingBar />
+        <CoreMaintenanceScreen
+          message={authMaintenance.message}
+          currentUser={currentUser}
+          onRetry={() => {
+            setCheckingAuth(true);
+            reloadCurrentUser().finally(() => setCheckingAuth(false));
+          }}
+          onLogout={() => {
+            setAuthToken('');
+            setCurrentUser(null);
+            setAuthMaintenance(null);
+          }}
+        />
+      </ToastProvider>
+    );
   }
 
   if (!currentUser && !getAuthToken()) {
@@ -273,6 +329,33 @@ export default function App() {
         </main>
       </div>
     </ToastProvider>
+  );
+}
+
+function CoreMaintenanceScreen({ message, currentUser, onRetry, onLogout }) {
+  return (
+    <div className="grid min-h-screen place-items-center bg-slate-950 px-5 text-white">
+      <div className="w-full max-w-lg rounded-3xl border border-amber-300/30 bg-white/10 p-6 shadow-2xl shadow-black/40">
+        <div className="text-sm font-black text-amber-200">CUJASA 코어 점검</div>
+        <h1 className="mt-2 text-2xl font-black">데이터베이스 연결을 복구 중입니다</h1>
+        <p className="mt-3 text-sm leading-relaxed text-slate-200">
+          {message || '현재 데이터베이스 연결이 지연되고 있습니다. 로그인 세션은 유지되며 잠시 후 다시 시도해주세요.'}
+        </p>
+        {currentUser?.email && (
+          <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-slate-300">
+            세션 유지 중: <span className="font-bold text-white">{currentUser.email}</span>
+          </div>
+        )}
+        <div className="mt-5 flex gap-2">
+          <button type="button" onClick={onRetry} className="flex-1 rounded-xl bg-white px-4 py-3 text-sm font-black text-slate-950">
+            다시 확인
+          </button>
+          <button type="button" onClick={onLogout} className="rounded-xl border border-white/15 px-4 py-3 text-sm font-bold text-slate-200">
+            로그아웃
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

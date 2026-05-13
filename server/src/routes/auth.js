@@ -88,6 +88,24 @@ router.get('/me', async (req, res, next) => {
     if (user.type === 'admin') {
       return res.json({ type: 'admin', admin: { email: user.email }, authConfigured: true });
     }
+    if (req.authDegraded || user.dbUnavailable) {
+      return res.status(503).json({
+        type: 'user',
+        degraded: true,
+        code: 'SUPABASE_UNAVAILABLE',
+        message: '현재 데이터베이스 연결이 지연되고 있습니다. 로그인 세션은 유지되며 잠시 후 다시 시도해주세요.',
+        user: {
+          email: user.email,
+          username: user.username || null,
+          userId: user.userId,
+          maxAccounts: user.maxAccounts,
+          allowedAccountIds: [],
+          products: fallbackProductsFromToken(user),
+          billing: null
+        },
+        authConfigured: true
+      });
+    }
     const entitlement = await withAuthDetailTimeout('me entitlement refresh', refreshUserEntitlement(user.userId), null);
     const products = await withAuthDetailTimeout('me products refresh', listUserProducts(user.userId), fallbackProductsFromToken(user));
     return res.json({

@@ -26,6 +26,10 @@ const publicRoutes = [
   { method: 'POST', path: '/api/public/checkout/toss/success' }
 ];
 
+function isDbUnavailableError(error = {}) {
+  return error?.code === 'SUPABASE_UNAVAILABLE' || error?.status === 503;
+}
+
 function isPublicRoute(req) {
   if (req.method === 'GET' && /^\/api\/public\/lead-forms\/[^/]+$/.test(req.path)) return true;
   if (req.method === 'POST' && /^\/api\/public\/lead-forms\/[^/]+\/submissions$/.test(req.path)) return true;
@@ -84,8 +88,10 @@ export async function requireAuth(req, res, next) {
         ? cached.value
         : await (async () => {
           await withAuthContextFallback('entitlement refresh', refreshUserEntitlement(payload.userId), null);
-          const [appUser, userAccounts, products] = await Promise.all([
-            dbGet('users', { id: payload.userId }).catch(() => null),
+          const [userLookup, userAccounts, products] = await Promise.all([
+            dbGet('users', { id: payload.userId })
+              .then((user) => ({ user, error: null }))
+              .catch((error) => ({ user: null, error })),
             dbList('user_accounts', { user_id: payload.userId }).catch((error) => {
               console.warn('[auth-context] user_accounts lookup failed', error?.message || error);
               return [];
@@ -93,7 +99,8 @@ export async function requireAuth(req, res, next) {
             withAuthContextFallback('product grants', listUserProducts(payload.userId), [])
           ]);
           const value = {
-            user: appUser,
+            user: userLookup.user,
+            userLookupError: userLookup.error || null,
             allowedAccountIds: userAccounts.map((ua) => ua.account_id).filter(Boolean),
             products
           };
@@ -102,7 +109,30 @@ export async function requireAuth(req, res, next) {
           }
           return value;
         })();
-      if (!context.user) return res.status(401).json({ error: 'Unauthorized' });
+      if (!context.user) {
+        if (isDbUnavailableError(context.userLookupError)) {
+          if (req.path === '/api/auth/me') {
+            req.authDegraded = true;
+            req.user = {
+              type: 'user',
+              userId: payload.userId,
+              email: payload.sub,
+              username: payload.username || null,
+              maxAccounts: payload.maxAccounts ?? 2,
+              allowedAccountIds: [],
+              products: context.products || [],
+              dbUnavailable: true
+            };
+            res.setHeader('X-Auth-Context-Duration-Ms', String(Date.now() - startedAt));
+            return next();
+          }
+          return res.status(503).json({
+            error: '현재 데이터베이스 연결이 지연되고 있습니다. 잠시 후 다시 시도해주세요.',
+            code: 'SUPABASE_UNAVAILABLE'
+          });
+        }
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
       if (context.user.status === 'suspended') return res.status(403).json({ error: 'Account suspended' });
       if (context.user.archived_at) return res.status(403).json({ error: 'Account archived' });
       req.user = {
