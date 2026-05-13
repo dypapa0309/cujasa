@@ -163,7 +163,12 @@ export async function createManualPayment({ userId, productId, amount, paidAt, m
 }
 
 export async function expireDueEntitlements({ now = new Date() } = {}) {
-  const users = await dbList('users');
+  const users = await dbList('users', { plan: 'monthly' }, {
+    select: 'id,plan,billing_status,paid_until',
+    in: { billing_status: ['active', 'past_due'] },
+    lt: { paid_until: now.toISOString() },
+    limit: Math.max(100, Number(process.env.BILLING_EXPIRE_BATCH_LIMIT || 1000))
+  });
   const expired = [];
   for (const user of users) {
     const updated = await expireUserEntitlement(user, { now });

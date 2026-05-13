@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { DEFAULT_PRODUCT_ID, productById } from '../config/products.js';
-import { grantUserProduct, isAuthConfigured, listAvailableProducts, listUserProducts, loginAdmin, loginUser, registerFreeUser, shouldBypassAuth } from '../services/authService.js';
+import { grantUserProduct, isAdminLoginCandidate, isAuthConfigured, listAvailableProducts, listUserProducts, loginAdmin, loginUser, registerFreeUser, shouldBypassAuth } from '../services/authService.js';
 import { createRateLimit } from '../middleware/rateLimit.js';
 import { clearAuthContextCache } from '../middleware/auth.js';
 import { completeThreadsOAuth, createThreadsAuthUrl, recordThreadsOAuthFailure } from '../services/threadsOAuthService.js';
@@ -63,12 +63,8 @@ router.post('/register', loginRateLimit, async (req, res, next) => {
 
 router.post('/login', loginRateLimit, async (req, res, next) => {
   try {
-    if (isAuthConfigured()) {
-      try {
-        return res.json(loginAdmin(req.body.email, req.body.password));
-      } catch (adminErr) {
-        if (adminErr.status !== 401) throw adminErr;
-      }
+    if (isAdminLoginCandidate(req.body.email)) {
+      return res.json(loginAdmin(req.body.email, req.body.password));
     }
     const result = await loginUser(req.body.email, req.body.password);
     if (result.type === 'user') {

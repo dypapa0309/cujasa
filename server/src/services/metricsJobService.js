@@ -2,6 +2,8 @@ import { dbGet, dbInsert, dbList, dbUpdate, supabase } from './supabaseService.j
 import { addHours, iso } from '../utils/date.js';
 import { recordPatternPerformanceForPost } from './trendReferenceLearningService.js';
 
+const METRIC_JOB_BATCH_LIMIT = Math.max(1, Number(process.env.METRIC_JOB_BATCH_LIMIT || 30));
+
 export async function createMetricJobs(queue) {
   const snapshots = [{ type: '24h', hours: 24 }, { type: '72h', hours: 72 }, { type: '7d', hours: 168 }];
   const jobs = [];
@@ -22,8 +24,12 @@ export async function createMetricJobs(queue) {
 }
 
 export async function runDueMetricJobs() {
-  const jobs = await dbList('post_metrics_jobs', { status: 'pending' });
-  const due = jobs.filter((job) => new Date(job.scheduled_at) <= new Date());
+  const due = await dbList('post_metrics_jobs', { status: 'pending' }, {
+    lte: { scheduled_at: new Date().toISOString() },
+    order: 'scheduled_at',
+    ascending: true,
+    limit: METRIC_JOB_BATCH_LIMIT
+  });
   for (const job of due) await runMetricJob(job.id);
   return due.length;
 }

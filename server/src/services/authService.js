@@ -47,6 +47,14 @@ function parseExtraAdminCredentials() {
     .filter((entry) => entry?.login && entry.passwordHash);
 }
 
+export function isAdminLoginCandidate(email = '') {
+  if (!isAuthConfigured()) return false;
+  const login = String(email || '').trim().toLowerCase();
+  if (!login) return false;
+  const primaryLogin = process.env.ADMIN_EMAIL.trim().toLowerCase();
+  return login === primaryLogin || parseExtraAdminCredentials().some((credential) => credential.login === login);
+}
+
 function makeToken(payload) {
   const header = base64url({ alg: 'HS256', typ: 'JWT' });
   const body = base64url({

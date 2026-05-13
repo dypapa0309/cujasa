@@ -5,6 +5,11 @@ import { isRealCoupangProduct } from '../utils/productQuality.js';
 
 const ACTIVE_QUEUE_STATUSES = new Set(['scheduled', 'posting', 'retry']);
 const PROBLEM_QUEUE_STATUSES = new Set(['failed', 'retry', 'manual_required']);
+const OPS_HEALTH_ACCOUNT_LIMIT = Math.max(100, Number(process.env.OPS_HEALTH_ACCOUNT_LIMIT || 500));
+const OPS_HEALTH_QUEUE_LIMIT = Math.max(500, Number(process.env.OPS_HEALTH_QUEUE_LIMIT || 2000));
+const OPS_HEALTH_TOPIC_LIMIT = Math.max(500, Number(process.env.OPS_HEALTH_TOPIC_LIMIT || 3000));
+const OPS_HEALTH_PRODUCT_LIMIT = Math.max(500, Number(process.env.OPS_HEALTH_PRODUCT_LIMIT || 3000));
+const OPS_HEALTH_SELECTION_LIMIT = Math.max(500, Number(process.env.OPS_HEALTH_SELECTION_LIMIT || 3000));
 
 function accountLabel(account = {}) {
   return `${account.name || '이름 없음'} ${account.account_handle || ''}`.trim();
@@ -30,11 +35,35 @@ function selectedRealCountForAccount(account, topics, products, postProducts) {
 
 export async function buildOpsHealthSummary() {
   const [accounts, queue, topics, products, postProducts] = await Promise.all([
-    dbList('accounts'),
-    dbList('post_queue'),
-    dbList('topics'),
-    dbList('coupang_products'),
-    dbList('post_products')
+    dbList('accounts', {}, {
+      select: 'id,name,account_handle,status,automation_status,threads_access_token,threads_token_status,coupang_search_status,coupang_search_cooldown_until',
+      limit: OPS_HEALTH_ACCOUNT_LIMIT
+    }),
+    dbList('post_queue', {}, {
+      select: 'id,account_id,status,scheduled_at,updated_at',
+      in: { status: [...new Set([...ACTIVE_QUEUE_STATUSES, ...PROBLEM_QUEUE_STATUSES])] },
+      order: 'updated_at',
+      ascending: false,
+      limit: OPS_HEALTH_QUEUE_LIMIT
+    }),
+    dbList('topics', {}, {
+      select: 'id,account_id',
+      order: 'created_at',
+      ascending: false,
+      limit: OPS_HEALTH_TOPIC_LIMIT
+    }),
+    dbList('coupang_products', {}, {
+      select: 'id,account_id,product_id,product_name,product_url,partner_url,category_name,is_fallback,raw_data',
+      order: 'created_at',
+      ascending: false,
+      limit: OPS_HEALTH_PRODUCT_LIMIT
+    }),
+    dbList('post_products', {}, {
+      select: 'topic_id,product_id',
+      order: 'created_at',
+      ascending: false,
+      limit: OPS_HEALTH_SELECTION_LIMIT
+    })
   ]);
   const activeAccounts = accounts.filter((account) => account.status === 'active');
   const activeAccountIds = new Set(activeAccounts.map((account) => account.id));
