@@ -166,20 +166,28 @@ export async function expireDueEntitlements({ now = new Date() } = {}) {
   const users = await dbList('users');
   const expired = [];
   for (const user of users) {
-    if (user.plan !== 'monthly') continue;
-    if (!['active', 'past_due'].includes(user.billing_status)) continue;
-    if (!user.paid_until || new Date(user.paid_until).getTime() >= now.getTime()) continue;
-    const [updated] = await dbUpdate('users', { id: user.id }, { billing_status: 'past_due' });
-    const grants = await dbList('user_products', { user_id: user.id, product_id: CUJASA_PRODUCT_ID });
-    for (const grant of grants) await dbUpdate('user_products', { id: grant.id }, { status: 'expired' });
-    expired.push(updated || user);
+    const updated = await expireUserEntitlement(user, { now });
+    if (updated) expired.push(updated);
   }
   return expired;
 }
 
+async function expireUserEntitlement(userOrId, { now = new Date() } = {}) {
+  const user = typeof userOrId === 'string' ? await dbGet('users', { id: userOrId }) : userOrId;
+  if (!user) return null;
+  if (user.plan !== 'monthly') return null;
+  if (!['active', 'past_due'].includes(user.billing_status)) return null;
+  if (!user.paid_until || new Date(user.paid_until).getTime() >= now.getTime()) return null;
+  const [updated] = await dbUpdate('users', { id: user.id }, { billing_status: 'past_due' });
+  const grants = await dbList('user_products', { user_id: user.id, product_id: CUJASA_PRODUCT_ID });
+  for (const grant of grants) await dbUpdate('user_products', { id: grant.id }, { status: 'expired' });
+  return updated || { ...user, billing_status: 'past_due' };
+}
+
 export async function refreshUserEntitlement(userId) {
-  await expireDueEntitlements();
-  const user = await dbGet('users', { id: userId });
+  const existingUser = await dbGet('users', { id: userId });
+  const expiredUser = await expireUserEntitlement(existingUser);
+  const user = expiredUser || existingUser;
   const products = await dbList('user_products', { user_id: userId, product_id: CUJASA_PRODUCT_ID });
   const product = products[0] || null;
   const isExpired = user?.plan === 'monthly'

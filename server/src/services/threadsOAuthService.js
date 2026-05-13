@@ -189,7 +189,7 @@ export async function markPastTokenFailuresRetryable(accountId) {
   for (const row of targets) {
     await dbUpdate('post_queue', { id: row.id }, {
       error_category: 'retry_available',
-      error_message: row.error_message || 'Threads 재연결 후 재시도 가능'
+      error_message: 'Threads 재연결 후 재시도 가능'
     });
   }
   await autoHidePastTokenFailures(accountId, {

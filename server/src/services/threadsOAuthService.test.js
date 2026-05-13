@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { dbInsert } from './supabaseService.js';
-import { createThreadsAuthUrl } from './threadsOAuthService.js';
+import { normalizeQueueClassification } from './queueErrorService.js';
+import { dbGet, dbInsert } from './supabaseService.js';
+import { createThreadsAuthUrl, markPastTokenFailuresRetryable } from './threadsOAuthService.js';
 
 function restoreEnv(key, value) {
   if (value === undefined) delete process.env[key];
@@ -46,4 +47,38 @@ test('createThreadsAuthUrl requests reply permissions for link comments', async 
     restoreEnv('THREADS_APP_SECRET', previousSecret);
     restoreEnv('THREADS_REDIRECT_URI', previousRedirect);
   }
+});
+
+test('markPastTokenFailuresRetryable clears stale reply permission messages after reconnect', async () => {
+  const project = await dbInsert('projects', {
+    name: 'retry marker project',
+    type: 'coupang',
+    status: 'active'
+  });
+  const account = await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'retry marker account',
+    platform: 'threads',
+    account_handle: '@retry_marker',
+    status: 'active'
+  });
+  const queue = await dbInsert('post_queue', {
+    project_id: project.id,
+    account_id: account.id,
+    platform: 'threads',
+    scheduled_at: '2026-05-09T00:00:00.000Z',
+    status: 'manual_required',
+    error_category: 'reply_permission_required',
+    error_message: 'Threads reply container failed: {"error":{"message":"Application does not have permission for this action","code":10}}'
+  });
+
+  const count = await markPastTokenFailuresRetryable(account.id);
+  const saved = await dbGet('post_queue', { id: queue.id });
+  const classified = normalizeQueueClassification(saved);
+
+  assert.equal(count, 1);
+  assert.equal(saved.error_category, 'retry_available');
+  assert.equal(saved.error_message, 'Threads 재연결 후 재시도 가능');
+  assert.equal(classified.category, 'retry_available');
+  assert.equal(classified.severity, 'warn');
 });

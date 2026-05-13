@@ -8,9 +8,26 @@ import { cleanupOldQueueIssues } from './queueVisibilityService.js';
 
 const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const NON_FATAL_QUEUE_CATEGORIES = new Set(['reply_warning', 'reply_repair_blocked', 'reply_link_mode_required', 'content_blocked', 'retry_available', 'recheck_required']);
+const NON_FATAL_QUEUE_CATEGORIES = new Set([
+  'reply_warning',
+  'reply_repair_blocked',
+  'reply_link_mode_required',
+  'content_blocked',
+  'retry_available',
+  'recheck_required',
+  'instagram_preview_only'
+]);
 const REPLY_ATTENTION_CATEGORIES = new Set(['reply_warning', 'reply_repair_blocked', 'reply_permission_required']);
 const STALE_RUNNING_CATEGORY = 'pipeline_stuck';
+
+async function safeDbList(table, filters = {}, options = {}, fallback = []) {
+  try {
+    return await dbList(table, filters, options);
+  } catch (error) {
+    console.warn(`[operations] ${table} lookup failed`, error?.message || error);
+    return fallback;
+  }
+}
 
 function kstDayRange(date = new Date()) {
   const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -140,6 +157,11 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   const accountQueue = queue.filter((row) => row.account_id === account.id && !row.customer_hidden_at);
   const todayQueue = accountQueue.filter((row) => inRange(row.scheduled_at, start, end));
   const todayScheduled = todayQueue.filter((row) => row.status === 'scheduled').length;
+  const futureScheduledQueue = accountQueue
+    .filter((row) => row.status === 'scheduled' && new Date(row.scheduled_at || 0).getTime() >= Date.now())
+    .sort((a, b) => new Date(a.scheduled_at || 0) - new Date(b.scheduled_at || 0));
+  const upcomingScheduled = futureScheduledQueue.length;
+  const nextScheduledAt = futureScheduledQueue[0]?.scheduled_at || null;
   const todayPosted = accountQueue.filter((row) => row.status === 'posted' && inRange(row.posted_at || row.scheduled_at, start, end)).length;
   const problemQueue = accountQueue.filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status));
   const postedReplyAttentionQueue = accountQueue.filter((row) => row.status === 'posted' && REPLY_ATTENTION_CATEGORIES.has(row.error_category));
@@ -168,7 +190,9 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   if (coupang.status === 'error') pushProblem(problems, account, 'error', 'coupang', '쿠팡 API 키 누락', coupang.missing.join(', '));
   if (coupang.searchStatus === 'rate_limited') pushProblem(problems, account, 'warn', 'coupang_rate_limit', '쿠팡 검색 제한 중', coupang.cooldownUntil || '');
   if (coupang.searchStatus === 'api_error') pushProblem(problems, account, 'warn', 'coupang_api_error', '쿠팡 API 오류');
-  if (account.status === 'active' && todayScheduled === 0) pushProblem(problems, account, 'warn', 'no_schedule', '오늘 예약 없음');
+  if (account.status === 'active' && todayScheduled === 0 && upcomingScheduled === 0) {
+    pushProblem(problems, account, 'warn', 'no_schedule', '예약 없음');
+  }
   if (queueBreakdown.fatal > 0) {
     pushProblem(problems, account, 'error', 'queue_failed', queueBreakdown.replyPermissionRequired
       ? `댓글 권한 재연결 필요 ${queueBreakdown.replyPermissionRequired}건`
@@ -200,6 +224,15 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
         : runBlockers.some((problem) => problem.type === 'coupang') ? 'coupang_settings'
           : runBlockers.some((problem) => problem.type === 'queue_failed') ? 'queue_cleanup'
             : 'blocked';
+  const blockingCategory = runCategory === 'threads_reconnect'
+    ? 'customer_action_required'
+    : runCategory === 'queue_cleanup' || runCategory === STALE_RUNNING_CATEGORY
+      ? 'admin_cleanup_required'
+      : upcomingScheduled > 0
+        ? 'next_schedule_exists'
+        : runCategory === 'ready'
+          ? 'automation_possible'
+          : 'blocked';
 
   return {
     accountId: account.id,
@@ -210,10 +243,13 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
     automationStatus: account.automation_status,
     health: pipeline.status === 'running' ? 'running' : runBlockers.length ? 'error' : problems.length ? 'warn' : 'ok',
     runCategory,
+    blockingCategory,
     canRunNow: runCategory === 'ready' || runCategory === STALE_RUNNING_CATEGORY,
     threads,
     coupang,
     todayScheduled,
+    upcomingScheduled,
+    nextScheduledAt,
     todayPosted,
     failedCount: queueBreakdown.fatal,
     replyWarningCount: queueBreakdown.replyWarning,
@@ -286,13 +322,13 @@ function latestPipelineRunsByAccount(runs = []) {
 async function loadOperationContext() {
   const range = kstDayRange();
   const [accounts, queue, products, activityLogs, users, userAccounts, pipelineRuns] = await Promise.all([
-    dbList('accounts'),
-    dbList('post_queue'),
-    dbList('coupang_products'),
-    dbList('activity_logs', {}, { order: 'created_at', ascending: false, limit: 300 }),
-    dbList('users'),
-    dbList('user_accounts'),
-    dbList('pipeline_runs', {}, { order: 'started_at', ascending: false, limit: 1000 })
+    safeDbList('accounts'),
+    safeDbList('post_queue'),
+    safeDbList('coupang_products'),
+    safeDbList('activity_logs', {}, { order: 'created_at', ascending: false, limit: 300 }),
+    safeDbList('users'),
+    safeDbList('user_accounts'),
+    safeDbList('pipeline_runs', {}, { order: 'started_at', ascending: false, limit: 1000 })
   ]);
   return { ...range, accounts, queue, products, activityLogs, users, userAccounts, pipelineRuns };
 }
@@ -303,16 +339,62 @@ async function buildOperationAccountRows(context) {
   const pipelineRunsByAccountId = latestPipelineRunsByAccount(pipelineRuns);
   const activeAccounts = accounts.filter((account) => account.status === 'active');
 
-  return Promise.all(activeAccounts.map((account) => diagnoseAccountReadOnly(account, {
-    queue,
-    products,
-    activityLogs,
-    usersById,
-    userAccounts,
-    pipelineRunsByAccountId,
-    start,
-    end
-  })));
+  const rows = [];
+  for (const account of activeAccounts) {
+    try {
+      rows.push(await diagnoseAccountReadOnly(account, {
+        queue,
+        products,
+        activityLogs,
+        usersById,
+        userAccounts,
+        pipelineRunsByAccountId,
+        start,
+        end
+      }));
+    } catch (error) {
+      console.warn('[operations] account diagnosis failed', account.id, error?.message || error);
+      rows.push({
+        accountId: account.id,
+        accountName: account.name,
+        accountHandle: account.account_handle,
+        customer: '',
+        accountStatus: account.status,
+        automationStatus: account.automation_status,
+        health: 'error',
+        runCategory: 'blocked',
+        blockingCategory: 'admin_cleanup_required',
+        canRunNow: false,
+        threads: tokenState(account),
+        coupang: { status: 'warn', label: '상태 확인 실패', missing: [], searchStatus: null, cooldownUntil: null },
+        todayScheduled: 0,
+        upcomingScheduled: 0,
+        nextScheduledAt: null,
+        todayPosted: 0,
+        failedCount: 1,
+        replyWarningCount: 0,
+        replyRepairBlockedCount: 0,
+        retryAvailableCount: 0,
+        contentBlockedCount: 0,
+        queueBreakdown: { fatal: 1, byCategory: { dashboard_diagnosis_failed: 1 } },
+        mockCount: 0,
+        fallbackRatio: 0,
+        lastPostedAt: null,
+        lastActivity: null,
+        pipelineRun: null,
+        problems: [{
+          accountId: account.id,
+          accountName: account.name,
+          accountHandle: account.account_handle,
+          severity: 'error',
+          type: 'dashboard_diagnosis_failed',
+          label: '계정 진단 실패',
+          detail: error?.message || '운영 대시보드 진단 중 오류가 발생했습니다.'
+        }]
+      });
+    }
+  }
+  return rows;
 }
 
 export async function operationAccountRows() {
@@ -332,7 +414,10 @@ async function buildOperationSummary({ accounts = [], queue = [], rows = [], sta
     return rank[a.severity] - rank[b.severity];
   });
 
-  const dailyPipeline = await dailyPipelineStatus().catch(() => null);
+  const dailyPipeline = await dailyPipelineStatus().catch((error) => {
+    console.warn('[operations] daily pipeline status failed', error?.message || error);
+    return null;
+  });
   return {
     cards: {
       accountsTotal: accounts.length,

@@ -1,5 +1,6 @@
 const baseUrl = import.meta.env.VITE_API_BASE_URL || 'https://api.jasain.kr';
 const tokenKey = 'cujasa_admin_token';
+const defaultTimeoutMs = Number(import.meta.env.VITE_API_TIMEOUT_MS || 45000);
 let activeRequests = 0;
 let loadingTimer = null;
 let loadingVisible = false;
@@ -55,6 +56,11 @@ export function postEvent(path, body = {}) {
 
 async function request(path, options = {}) {
   beginRequest();
+  const { timeoutMs = defaultTimeoutMs, ...requestOptions } = options;
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller && timeoutMs > 0
+    ? globalThis.setTimeout(() => controller.abort(), timeoutMs)
+    : null;
   try {
     const token = getAuthToken();
     let res;
@@ -63,14 +69,18 @@ async function request(path, options = {}) {
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          ...(options.headers || {})
+          ...(requestOptions.headers || {})
         },
-        ...options,
-        body: options.body ? JSON.stringify(options.body) : undefined
+        ...requestOptions,
+        ...(controller && !requestOptions.signal ? { signal: controller.signal } : {}),
+        body: requestOptions.body ? JSON.stringify(requestOptions.body) : undefined
       });
     } catch (fetchError) {
-      const error = new Error('요청 연결이 끊겼습니다. 서버 작업 상태를 다시 확인하고 있습니다.');
-      error.code = 'NETWORK_REQUEST_FAILED';
+      const timedOut = fetchError?.name === 'AbortError';
+      const error = new Error(timedOut
+        ? '요청이 너무 오래 걸려 중단했습니다. 서버 상태를 확인한 뒤 다시 시도해주세요.'
+        : '요청 연결이 끊겼습니다. 서버 작업 상태를 다시 확인하고 있습니다.');
+      error.code = timedOut ? 'NETWORK_REQUEST_TIMEOUT' : 'NETWORK_REQUEST_FAILED';
       error.networkError = true;
       error.cause = fetchError;
       throw error;
@@ -101,6 +111,7 @@ async function request(path, options = {}) {
     if (res.status === 204) return null;
     return res.json();
   } finally {
+    if (timer) globalThis.clearTimeout(timer);
     endRequest();
   }
 }

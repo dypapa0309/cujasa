@@ -8,15 +8,53 @@ import { refreshUserEntitlement } from '../services/billingEntitlementService.js
 import { productMaintenancePayload, productServiceClosedInProduction } from '../utils/productAvailability.js';
 
 const loginRateLimit = createRateLimit({ scope: 'login', windowMs: 10 * 60 * 1000, maxRequests: 10 });
+const AUTH_DETAIL_TIMEOUT_MS = Number(process.env.AUTH_DETAIL_TIMEOUT_MS || 5000);
 
 const router = Router();
+
+function fallbackProductsFromToken(user = {}) {
+  return (Array.isArray(user.products) ? user.products : [])
+    .map((productId) => {
+      const product = productById(productId) || {};
+      return {
+        productId,
+        status: 'active',
+        role: 'customer',
+        name: product.name || productId,
+        description: product.description,
+        appUrl: product.appUrl,
+        landingUrl: product.landingUrl,
+        settingsSummary: {}
+      };
+    });
+}
+
+async function withAuthDetailTimeout(label, promise, fallback) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          console.warn(`[auth] ${label} timed out after ${AUTH_DETAIL_TIMEOUT_MS}ms`);
+          resolve(fallback);
+        }, AUTH_DETAIL_TIMEOUT_MS);
+      })
+    ]);
+  } catch (error) {
+    console.warn(`[auth] ${label} failed`, error?.message || error);
+    return fallback;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 router.post('/register', loginRateLimit, async (req, res, next) => {
   try {
     const result = await registerFreeUser(req.body || {});
-    const entitlement = await refreshUserEntitlement(result.userId);
-    result.products = await listUserProducts(result.userId);
-    result.billing = entitlement.billing;
+    const entitlement = await withAuthDetailTimeout('register entitlement refresh', refreshUserEntitlement(result.userId), null);
+    result.products = await withAuthDetailTimeout('register products refresh', listUserProducts(result.userId), result.products || []);
+    result.billing = entitlement?.billing || null;
     return res.status(201).json(result);
   } catch (error) {
     next(error);
@@ -34,9 +72,8 @@ router.post('/login', loginRateLimit, async (req, res, next) => {
     }
     const result = await loginUser(req.body.email, req.body.password);
     if (result.type === 'user') {
-      const entitlement = await refreshUserEntitlement(result.userId);
-      result.products = await listUserProducts(result.userId);
-      result.billing = entitlement.billing;
+      const entitlement = await withAuthDetailTimeout('login entitlement refresh', refreshUserEntitlement(result.userId), null);
+      result.billing = entitlement?.billing || null;
     }
     return res.json(result);
   } catch (error) {
@@ -51,17 +88,18 @@ router.get('/me', async (req, res, next) => {
     if (user.type === 'admin') {
       return res.json({ type: 'admin', admin: { email: user.email }, authConfigured: true });
     }
-    const entitlement = await refreshUserEntitlement(user.userId);
+    const entitlement = await withAuthDetailTimeout('me entitlement refresh', refreshUserEntitlement(user.userId), null);
+    const products = await withAuthDetailTimeout('me products refresh', listUserProducts(user.userId), fallbackProductsFromToken(user));
     return res.json({
       type: 'user',
       user: {
         email: user.email,
-        username: entitlement.user?.username || user.username || null,
+        username: entitlement?.user?.username || user.username || null,
         userId: user.userId,
-        maxAccounts: entitlement.user?.max_accounts ?? user.maxAccounts,
+        maxAccounts: entitlement?.user?.max_accounts ?? user.maxAccounts,
         allowedAccountIds: user.allowedAccountIds,
-        products: await listUserProducts(user.userId),
-        billing: entitlement.billing
+        products,
+        billing: entitlement?.billing || null
       },
       authConfigured: true
     });

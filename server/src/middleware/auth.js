@@ -3,6 +3,7 @@ import { dbGet, dbList } from '../services/supabaseService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
 
 const AUTH_CONTEXT_CACHE_TTL_MS = Math.max(0, Number(process.env.AUTH_CONTEXT_CACHE_TTL_MS || 30000));
+const AUTH_CONTEXT_DETAIL_TIMEOUT_MS = Math.max(1000, Number(process.env.AUTH_CONTEXT_DETAIL_TIMEOUT_MS || 5000));
 const userContextCache = new Map();
 
 export function clearAuthContextCache(userId = '') {
@@ -27,6 +28,26 @@ function isPublicRoute(req) {
   if (req.method === 'GET' && /^\/api\/public\/lead-forms\/[^/]+$/.test(req.path)) return true;
   if (req.method === 'POST' && /^\/api\/public\/lead-forms\/[^/]+\/submissions$/.test(req.path)) return true;
   return publicRoutes.some((route) => route.method === req.method && route.path === req.path);
+}
+
+async function withAuthContextFallback(label, promise, fallback) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          console.warn(`[auth-context] ${label} timed out after ${AUTH_CONTEXT_DETAIL_TIMEOUT_MS}ms`);
+          resolve(fallback);
+        }, AUTH_CONTEXT_DETAIL_TIMEOUT_MS);
+      })
+    ]);
+  } catch (error) {
+    console.warn(`[auth-context] ${label} failed`, error?.message || error);
+    return fallback;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function requireAuth(req, res, next) {
@@ -60,11 +81,14 @@ export async function requireAuth(req, res, next) {
       const context = cached && cached.expiresAt > Date.now()
         ? cached.value
         : await (async () => {
-          await refreshUserEntitlement(payload.userId);
+          await withAuthContextFallback('entitlement refresh', refreshUserEntitlement(payload.userId), null);
           const [appUser, userAccounts, products] = await Promise.all([
             dbGet('users', { id: payload.userId }).catch(() => null),
-            dbList('user_accounts', { user_id: payload.userId }),
-            listUserProducts(payload.userId)
+            dbList('user_accounts', { user_id: payload.userId }).catch((error) => {
+              console.warn('[auth-context] user_accounts lookup failed', error?.message || error);
+              return [];
+            }),
+            withAuthContextFallback('product grants', listUserProducts(payload.userId), [])
           ]);
           const value = {
             user: appUser,

@@ -195,6 +195,9 @@ export function normalizeQueueClassification(row = {}, options = {}) {
   const messageClassification = classifyQueueError(fallbackMessage);
   let category = row.error_category || messageClassification.category;
 
+  if (category === 'retry_available') {
+    return classificationForCategory(category, fallbackMessage);
+  }
   if (category === 'manual_required' && messageClassification.category !== 'manual_required') {
     category = messageClassification.category;
   }

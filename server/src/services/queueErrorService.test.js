@@ -24,7 +24,7 @@ test('normalizes posted reply permission warnings away from generic reply warnin
   assert.equal(classified.category, 'reply_permission_required');
 });
 
-test('normalizes stored retry_available code 10 failures as reply permission required', () => {
+test('honors stored retry_available even when the old message includes code 10', () => {
   const message = 'Threads reply container failed: {"error":{"message":"Application does not have permission for this action","code":10}}';
 
   const classified = normalizeQueueClassification({
@@ -33,8 +33,8 @@ test('normalizes stored retry_available code 10 failures as reply permission req
     error_message: message
   });
 
-  assert.equal(classified.category, 'reply_permission_required');
-  assert.equal(classified.severity, 'error');
+  assert.equal(classified.category, 'retry_available');
+  assert.equal(classified.severity, 'warn');
 });
 
 test('classifies invalid Threads reply target separately from retryable failures', () => {

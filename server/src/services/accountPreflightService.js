@@ -84,6 +84,7 @@ export async function preflightAccount(accountId, options = {}) {
 
   const checks = [];
   const allowInitialLinkDiscovery = Boolean(options.allowInitialLinkDiscovery || options.mode === 'start');
+  const skipMonetizationChecks = Boolean(options.skipMonetizationChecks || options.mode === 'automation_studio_no_link');
   let currentThreadsError = false;
   let currentThreadsOk = false;
   if (account.status !== 'active') {
@@ -160,56 +161,65 @@ export async function preflightAccount(accountId, options = {}) {
     checks.push(makeCheck('content_scope', 'error', '다룰 카테고리가 비어 있습니다', '설정 화면에서 콘텐츠 범위를 입력해주세요.'));
   }
 
-  const hasCoupang = account.coupang_access_key && account.coupang_secret_key && account.coupang_partner_id;
-  const lockHealth = await isCoupangSearchLockAvailable();
-  if (!lockHealth.available) {
+  if (skipMonetizationChecks) {
     checks.push(makeCheck(
-      'coupang_search_lock',
-      'error',
-      '쿠팡 검색 보호 락이 준비되지 않았습니다',
-      '운영 DB의 coupang_search_locks 테이블이 없어 쿠팡 검색과 자동화를 차단했습니다. 관리자에게 문의해주세요.',
-      'admin_apply_coupang_lock_migration'
-    ));
-  } else if (isCoupangCooldownActive(account)) {
-    checks.push(makeCheck(
-      'coupang_rate_limit',
-      'error',
-      '쿠팡 요청 제한 보호 중입니다',
-      `쿠팡 파트너스 요청 제한으로 자동화를 멈췄습니다. ${account.coupang_search_cooldown_until || '쿨다운 해제'} 이후 다시 시도해주세요.`,
-      'wait_coupang_cooldown'
-    ));
-  } else if (!hasCoupang) {
-    checks.push(makeCheck(
-      'COUPANG_CREDENTIALS_REQUIRED',
-      'error',
-      '쿠팡 API 설정이 필요합니다',
-      'CUJASA는 수익화 가능한 쿠팡 링크 글만 자동 업로드하므로 쿠팡 Access Key, Secret Key, Partner ID가 필요합니다.',
-      'configure_coupang'
-    ));
-  } else {
-    checks.push(makeCheck('coupang', 'ok', '쿠팡 API 설정 확인', '수익화 가능한 링크 글을 만들 수 있는 기본 설정이 있습니다.'));
-  }
-  const readiness = await getCoupangLinkReadiness(account.id);
-  if (readiness.selectedRealCount === 0) {
-    checks.push(makeCheck(
-      'real_coupang_links',
-      allowInitialLinkDiscovery ? 'warn' : 'error',
-      allowInitialLinkDiscovery ? '실상품 링크를 자동으로 확보합니다' : '실상품 링크 확보가 필요합니다',
-      allowInitialLinkDiscovery
-        ? '현재 선택된 실상품은 없지만 자동화 시작 과정에서 주제 생성 후 쿠팡 상품을 검색하고 연결합니다. 매칭된 링크 글만 예약합니다.'
-        : `현재 실상품 ${readiness.realProductCount}개, 선택된 실상품 ${readiness.selectedRealCount}개입니다. 상품 추천 결과에서 실제 쿠팡 상품을 먼저 검색하고 선택해야 예약이 가능합니다.`,
-      allowInitialLinkDiscovery ? 'initial_link_discovery' : 'select_real_coupang_product',
-      readiness
-    ));
-  } else {
-    checks.push(makeCheck(
-      'real_coupang_links',
+      'automation_studio_no_link',
       'ok',
-      '실상품 링크 확인',
-      `${readiness.selectedRealCount}개의 실제 쿠팡 상품 선택이 확인되었습니다. 상품 매칭이 완료된 글만 최대 5개까지 예약합니다.`,
-      null,
-      readiness
+      '오토메이션 스튜디오 no-link 게시',
+      '자체 제품/리드 캠페인 큐라 쿠팡 API와 실상품 링크 점검을 건너뜁니다.'
     ));
+  } else {
+    const hasCoupang = account.coupang_access_key && account.coupang_secret_key && account.coupang_partner_id;
+    const lockHealth = await isCoupangSearchLockAvailable();
+    if (!lockHealth.available) {
+      checks.push(makeCheck(
+        'coupang_search_lock',
+        'error',
+        '쿠팡 검색 보호 락이 준비되지 않았습니다',
+        '운영 DB의 coupang_search_locks 테이블이 없어 쿠팡 검색과 자동화를 차단했습니다. 관리자에게 문의해주세요.',
+        'admin_apply_coupang_lock_migration'
+      ));
+    } else if (isCoupangCooldownActive(account)) {
+      checks.push(makeCheck(
+        'coupang_rate_limit',
+        'error',
+        '쿠팡 요청 제한 보호 중입니다',
+        `쿠팡 파트너스 요청 제한으로 자동화를 멈췄습니다. ${account.coupang_search_cooldown_until || '쿨다운 해제'} 이후 다시 시도해주세요.`,
+        'wait_coupang_cooldown'
+      ));
+    } else if (!hasCoupang) {
+      checks.push(makeCheck(
+        'COUPANG_CREDENTIALS_REQUIRED',
+        'error',
+        '쿠팡 API 설정이 필요합니다',
+        'CUJASA는 수익화 가능한 쿠팡 링크 글만 자동 업로드하므로 쿠팡 Access Key, Secret Key, Partner ID가 필요합니다.',
+        'configure_coupang'
+      ));
+    } else {
+      checks.push(makeCheck('coupang', 'ok', '쿠팡 API 설정 확인', '수익화 가능한 링크 글을 만들 수 있는 기본 설정이 있습니다.'));
+    }
+    const readiness = await getCoupangLinkReadiness(account.id);
+    if (readiness.selectedRealCount === 0) {
+      checks.push(makeCheck(
+        'real_coupang_links',
+        allowInitialLinkDiscovery ? 'warn' : 'error',
+        allowInitialLinkDiscovery ? '실상품 링크를 자동으로 확보합니다' : '실상품 링크 확보가 필요합니다',
+        allowInitialLinkDiscovery
+          ? '현재 선택된 실상품은 없지만 자동화 시작 과정에서 주제 생성 후 쿠팡 상품을 검색하고 연결합니다. 매칭된 링크 글만 예약합니다.'
+          : `현재 실상품 ${readiness.realProductCount}개, 선택된 실상품 ${readiness.selectedRealCount}개입니다. 상품 추천 결과에서 실제 쿠팡 상품을 먼저 검색하고 선택해야 예약이 가능합니다.`,
+        allowInitialLinkDiscovery ? 'initial_link_discovery' : 'select_real_coupang_product',
+        readiness
+      ));
+    } else {
+      checks.push(makeCheck(
+        'real_coupang_links',
+        'ok',
+        '실상품 링크 확인',
+        `${readiness.selectedRealCount}개의 실제 쿠팡 상품 선택이 확인되었습니다. 상품 매칭이 완료된 글만 최대 5개까지 예약합니다.`,
+        null,
+        readiness
+      ));
+    }
   }
 
   if (options.includeQueue !== false) {
@@ -223,15 +233,16 @@ export async function preflightAccount(accountId, options = {}) {
       const first = normalizeQueueClassification(latest, { currentThreadsOk });
       const isReplyPermissionProblem = first?.category === 'reply_permission_required';
       const isReconnectProblem = ['threads_reconnect_required', 'reply_permission_required'].includes(first?.category);
-      const isPastReconnectProblem = ['retry_available', 'recheck_required'].includes(first?.category);
+      const isActiveReconnectProblem = isReconnectProblem && (currentThreadsError || (isReplyPermissionProblem && !currentThreadsOk));
+      const isPastReconnectProblem = ['retry_available', 'recheck_required'].includes(first?.category) || (isReconnectProblem && currentThreadsOk);
       checks.push(makeCheck(
         'recent_queue_errors',
-        (isReplyPermissionProblem || (isReconnectProblem && currentThreadsError)) ? 'error' : 'warn',
-        (isReconnectProblem && !currentThreadsError && !isReplyPermissionProblem) || isPastReconnectProblem ? '과거 업로드 실패 기록이 있습니다' : '최근 업로드 실패가 있습니다',
-        ((isReconnectProblem && !currentThreadsError && !isReplyPermissionProblem) || isPastReconnectProblem)
+        isActiveReconnectProblem ? 'error' : 'warn',
+        isPastReconnectProblem ? '과거 업로드 실패 기록이 있습니다' : '최근 업로드 실패가 있습니다',
+        isPastReconnectProblem
           ? '현재 Threads 연결은 정상입니다. 과거 실패 항목은 본문 게시 여부를 확인한 뒤 재시도하거나 정리할 수 있습니다.'
           : (first?.message || `${broken.length}개의 확인 필요한 포스팅이 있습니다.`),
-        (isReplyPermissionProblem || (isReconnectProblem && currentThreadsError)) ? 'reconnect_threads' : null
+        isActiveReconnectProblem ? 'reconnect_threads' : null
       ));
     }
   }
