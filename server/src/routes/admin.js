@@ -189,14 +189,15 @@ router.post('/operations/repair-threads-post-urls', async (req, res, next) => {
 router.post('/operations/cleanup-queue-errors', async (req, res, next) => {
   try {
     const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
-    res.json(await cleanupQueueErrors({ mode }));
+    res.json(await cleanupQueueErrors({ mode, limit: req.body?.limit || 500 }));
   } catch (e) { next(e); }
 });
 
 router.post('/operations/daily-pipeline/catch-up', async (req, res, next) => {
   try {
     res.json(await runDailyPipelineOnce({
-      triggeredBy: req.user?.email || req.user?.type || 'admin_catch_up'
+      triggeredBy: req.user?.email || req.user?.type || 'admin_catch_up',
+      mode: 'admin_recovery'
     }));
   } catch (e) { next(e); }
 });
@@ -215,7 +216,11 @@ router.post('/operations/recover-reply-link-mode-queues', async (req, res, next)
 
 router.post('/operations/repair-reply-link-failures', async (req, res, next) => {
   try {
-    res.json(await repairReplyLinkFailures({ accountId: req.body?.accountId || null }));
+    res.json(await repairReplyLinkFailures({
+      accountId: req.body?.accountId || null,
+      limit: req.body?.limit || 20,
+      dryRun: req.body?.mode !== 'apply'
+    }));
   } catch (e) { next(e); }
 });
 
@@ -491,11 +496,32 @@ router.patch('/setup-tasks/:id', async (req, res, next) => {
 router.get('/users', async (req, res, next) => {
   try {
     const users = await listUsers({ includeArchived: req.query?.includeArchived === '1' || req.query?.includeArchived === 'true' });
-    const threadsRequests = await dbList('threads_connection_requests', {}, { order: 'created_at', ascending: false }).catch(() => []);
+    const [threadsRequests, oauthLogs, queueRows] = await Promise.all([
+      dbList('threads_connection_requests', {}, { order: 'created_at', ascending: false }).catch(() => []),
+      dbList('activity_logs', {}, { order: 'created_at', ascending: false, limit: 500 }).catch(() => []),
+      dbList('post_queue', {}, { order: 'updated_at', ascending: false, limit: 500 }).catch(() => [])
+    ]);
     const latestThreadsRequestByAccount = new Map();
     for (const request of threadsRequests) {
       if (!request.account_id || latestThreadsRequestByAccount.has(request.account_id)) continue;
       latestThreadsRequestByAccount.set(request.account_id, request);
+    }
+    const oauthLogsByAccount = new Map();
+    for (const log of oauthLogs) {
+      if (!log.account_id || !['threads_oauth_started', 'threads_oauth_connected', 'threads_oauth_failed'].includes(log.action)) continue;
+      oauthLogsByAccount.set(log.account_id, [...(oauthLogsByAccount.get(log.account_id) || []), {
+        action: log.action,
+        level: log.level,
+        message: log.message,
+        code: log.payload?.code || null,
+        created_at: log.created_at
+      }].slice(0, 3));
+    }
+    const replyPermissionCountByAccount = new Map();
+    for (const row of queueRows) {
+      const text = `${row.error_category || ''} ${row.error_message || ''}`;
+      if (!/reply_permission_required|Application does not have permission|code"?\s*:\s*10|댓글 권한/i.test(text)) continue;
+      replyPermissionCountByAccount.set(row.account_id, (replyPermissionCountByAccount.get(row.account_id) || 0) + 1);
     }
     const result = await Promise.all(users.map(async (u) => {
       const [ua, products] = await Promise.all([
@@ -517,7 +543,15 @@ router.get('/users', async (req, res, next) => {
             connected_at: request.connected_at,
             created_at: request.created_at,
             updated_at: request.updated_at
-          } : null
+          } : null,
+          threads_connection_diagnostics: {
+            handle: account.account_handle || '',
+            hasToken: Boolean(account.has_threads_access_token),
+            tokenStatus: account.threads_token_status || null,
+            threadsUserId: account.threads_user_id || null,
+            recentOauth: oauthLogsByAccount.get(account.id) || [],
+            replyPermissionRequiredCount: replyPermissionCountByAccount.get(account.id) || 0
+          }
         };
       });
       return {

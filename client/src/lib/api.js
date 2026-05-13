@@ -1,4 +1,21 @@
-const baseUrl = import.meta.env.VITE_API_BASE_URL || 'https://api.jasain.kr';
+function resolveApiBaseUrl() {
+  const configured = import.meta.env.VITE_API_BASE_URL || 'https://api.jasain.kr';
+  if (typeof window === 'undefined') return configured;
+  const host = window.location.hostname;
+  const configuredUrl = (() => {
+    try {
+      return new URL(configured);
+    } catch {
+      return null;
+    }
+  })();
+  const isLocalApp = host === 'localhost' || host === '127.0.0.1';
+  const configuredLocalApi = configuredUrl && ['localhost', '127.0.0.1'].includes(configuredUrl.hostname);
+  if (!isLocalApp && configuredLocalApi) return 'https://api.jasain.kr';
+  return configured;
+}
+
+const baseUrl = resolveApiBaseUrl();
 const tokenKey = 'cujasa_admin_token';
 const defaultTimeoutMs = Number(import.meta.env.VITE_API_TIMEOUT_MS || 45000);
 let activeRequests = 0;

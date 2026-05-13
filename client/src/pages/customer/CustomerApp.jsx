@@ -44,6 +44,7 @@ function todayKstKey() {
 export default function CustomerApp({ accounts, currentUser, reloadAccounts, reloadCurrentUser, onLogout }) {
   const toast = useToast();
   const routingReadyRef = useRef(false);
+  const progressFailuresRef = useRef(0);
   const useWorkspaceShell = true;
   const searchParams = new URLSearchParams(window.location.search);
   const productParam = productById(searchParams.get('product'))?.id;
@@ -76,6 +77,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
   const [pipelineResult, setPipelineResult] = useState(null);
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const [pipelineProgress, setPipelineProgress] = useState(null);
+  const [pipelinePollingError, setPipelinePollingError] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newAccount, setNewAccount] = useState({ name: '', account_handle: '' });
@@ -83,6 +85,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
   const [trialStatus, setTrialStatus] = useState(null);
   const [setupStatus, setSetupStatus] = useState(null);
   const [requestingSetup, setRequestingSetup] = useState(false);
+  const [oauthReturn, setOauthReturn] = useState(null);
 
   const maxAccounts = currentUser?.maxAccounts ?? 2;
   const account = accounts[selectedIdx] ?? accounts[0];
@@ -125,7 +128,8 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
     const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     if (params.get('tab') === 'beta') return;
     const accountId = params.get('account') || account?.id || accounts[0]?.id || '';
-    const nextHash = `#tab=beta${accountId ? `&account=${encodeURIComponent(accountId)}` : ''}`;
+    const action = params.get('action') || '';
+    const nextHash = `#tab=beta${accountId ? `&account=${encodeURIComponent(accountId)}` : ''}${action ? `&action=${encodeURIComponent(action)}` : ''}`;
     window.history.replaceState(
       { jasainProduct: productParam || selectedProductId, tab: 'beta', accountId },
       '',
@@ -297,10 +301,16 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
       const nextIndex = accounts.findIndex((item) => item.id === accountId);
       if (nextIndex >= 0) setSelectedIdx(nextIndex);
     }
-    setTab('settings');
+    setTab('beta');
     if (threads === 'connected') {
       toast('Threads 연결이 완료됐습니다.', 'success');
-      if (accountId) sessionStorage.removeItem(`cujasa:threadsOAuthError:${accountId}`);
+      if (accountId) {
+        sessionStorage.removeItem(`cujasa:threadsOAuthError:${accountId}`);
+        sessionStorage.setItem(`cujasa:threadsOAuthSuccess:${accountId}`, JSON.stringify({
+          message: 'Threads 연결이 완료됐습니다.',
+          at: new Date().toISOString()
+        }));
+      }
     }
     if (threads === 'error') {
       const message = params.get('message') || 'Threads 연결에 실패했습니다.';
@@ -325,10 +335,11 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
     const nextSearch = params.toString();
     const nextAccountId = accountId || account?.id || accounts[0]?.id || '';
     window.history.replaceState(
-      { cujasa: true, tab: 'settings', accountId: nextAccountId },
+      { cujasa: true, tab: 'beta', accountId: nextAccountId, action: 'settings' },
       '',
-      `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}#tab=settings${nextAccountId ? `&account=${encodeURIComponent(nextAccountId)}` : ''}`
+      `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}#tab=beta${nextAccountId ? `&account=${encodeURIComponent(nextAccountId)}` : ''}&action=settings`
     );
+    setOauthReturn({ type: threads, accountId: nextAccountId, action: 'settings', at: Date.now() });
   }, [accounts, toast]);
 
   useEffect(() => {
@@ -384,6 +395,8 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
       try {
         const payload = await api.get(`/api/accounts/${account.id}/pipeline-run`);
         if (cancelled || !payload?.run) return;
+        progressFailuresRef.current = 0;
+        setPipelinePollingError(null);
         setPipelineProgress(payload.run.progress);
         if (payload.run.status === 'completed' || payload.run.status === 'skipped') {
           setPipelineResult(payload.run.result);
@@ -413,8 +426,15 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
           toast(nextResult.message, 'error');
           setPipelineRunning(false);
         }
-      } catch {
-        // Progress polling should never interrupt the actual pipeline request.
+      } catch (error) {
+        if (cancelled) return;
+        progressFailuresRef.current += 1;
+        if (progressFailuresRef.current >= 5) {
+          const message = '진행상태 조회가 반복 실패했습니다. 작업은 서버에서 계속될 수 있으니 잠시 후 새로고침해주세요.';
+          setPipelinePollingError(message);
+          setPipelineRunning(false);
+          toast(message, 'error');
+        }
       }
     };
 
@@ -429,6 +449,8 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
   const handlePipelineRunningChange = (isRunning, progress = null) => {
     setPipelineRunning(isRunning);
     if (isRunning) {
+      progressFailuresRef.current = 0;
+      setPipelinePollingError(null);
       setPipelineProgress(progress || {
         percent: 0,
         stage: 'starting',
@@ -440,7 +462,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
   };
 
   const addAccount = async (e) => {
-    e.preventDefault();
+    e?.preventDefault?.();
     if (guardDuringPipeline()) return;
     if (!newAccount.name.trim()) return;
     setAdding(true);
@@ -452,6 +474,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
         project_id: '00000000-0000-0000-0000-000000000001',
       });
       await reloadAccounts();
+      await reloadCurrentUser?.();
       await loadSetupStatus();
       setNewAccount({ name: '', account_handle: '' });
       setShowAddForm(false);
@@ -516,6 +539,21 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
             reloadAccounts={reloadAccounts}
             reloadCurrentUser={reloadCurrentUser}
             onSelectAccount={navigateAccount}
+            oauthReturn={oauthReturn}
+            accountCreation={{
+              canAdd,
+              count: accounts.length,
+              maxAccounts,
+              show: showAddForm,
+              adding,
+              draft: newAccount,
+              open: () => {
+                if (!guardDuringPipeline()) setShowAddForm(true);
+              },
+              close: () => setShowAddForm(false),
+              setDraft: setNewAccount,
+              submit: addAccount
+            }}
             pipelineResult={pipelineResult}
             onPipelineDone={(result) => { setPipelineResult(result); }}
             onPipelineRunningChange={handlePipelineRunningChange}
@@ -658,6 +696,13 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
       )}
       {announcement && (
         <AnnouncementModal announcement={announcement} onClose={closeAnnouncement} onHideToday={hideAnnouncementToday} dark={isBetaTab} />
+      )}
+      {pipelinePollingError && !pipelineRunning && (
+        <div className={`fixed left-4 right-4 bottom-24 z-40 mx-auto max-w-xl rounded-lg border px-4 py-3 text-sm shadow-lg ${
+          isBetaTab ? 'border-amber-500/30 bg-[#1f1b12] text-amber-100' : 'border-amber-200 bg-amber-50 text-amber-900'
+        }`}>
+          {pipelinePollingError}
+        </div>
       )}
       {pipelineRunning && <PipelineOverlay progress={pipelineProgress} dark={isBetaTab} />}
     </div>

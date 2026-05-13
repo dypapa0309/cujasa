@@ -180,6 +180,35 @@ test('repairReplyLinkFailures posts only the missing reply and marks queue poste
   }
 });
 
+test('repairReplyLinkFailures dry-run previews without posting or mutating queue', async () => {
+  const previousMock = process.env.MOCK_UPLOAD;
+  const previousBaseUrl = process.env.APP_BASE_URL;
+  const previousFetch = globalThis.fetch;
+  process.env.MOCK_UPLOAD = 'true';
+  process.env.APP_BASE_URL = 'https://app.example.test';
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'replytest' })
+  });
+
+  try {
+    const { account, queue } = await createReplyFailureQueue();
+    const result = await repairReplyLinkFailures({ accountId: account.id, dryRun: true });
+    const saved = await dbGet('post_queue', { id: queue.id });
+
+    assert.equal(result.dryRun, true);
+    assert.equal(result.wouldRepairCount, 1);
+    assert.equal(result.repairedCount, 0);
+    assert.equal(saved.status, 'manual_required');
+    assert.equal(saved.error_category, 'reply_warning');
+    assert.equal(saved.tracking_link_id, undefined);
+  } finally {
+    restoreEnv('MOCK_UPLOAD', previousMock);
+    restoreEnv('APP_BASE_URL', previousBaseUrl);
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('repairReplyLinkFailures marks posted reply warnings as blocked when threads post id is missing', async () => {
   const previousMock = process.env.MOCK_UPLOAD;
   const previousFetch = globalThis.fetch;
@@ -499,6 +528,15 @@ test('createDailyQueue blocks link drafts when active reply permission is still 
       rank: 1,
       fit_score: 90,
       recommendation_reason: '상황에 맞습니다.'
+    });
+    await dbInsert('posts', {
+      project_id: account.project_id,
+      account_id: account.id,
+      topic_id: null,
+      content_type: '일상형',
+      body: '오늘은 정리 루틴을 가볍게 점검해보는 날이에요. 여러분은 어디부터 시작하세요?',
+      risk_level: 'low',
+      status: 'draft'
     });
 
     const queued = await createDailyQueue(account.id, { skipPreflight: true });

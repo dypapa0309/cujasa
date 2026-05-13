@@ -24,6 +24,10 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const REPLY_REPAIR_MAX_ATTEMPTS = 3;
 const REPLY_LINK_FAILURE_BLOCK_WINDOW_MS = Math.max(60 * 1000, Number(process.env.REPLY_LINK_FAILURE_BLOCK_WINDOW_MS || 6 * 60 * 60 * 1000));
 const REPLY_LINK_FAILURE_BLOCK_THRESHOLD = Math.max(0, Number(process.env.REPLY_LINK_FAILURE_BLOCK_THRESHOLD || 3));
+const QUEUE_PROCESS_BATCH_LIMIT = Math.max(1, Number(process.env.QUEUE_PROCESS_BATCH_LIMIT || 30));
+const QUEUE_PROCESS_MAX_RUN_MS = Math.max(10_000, Number(process.env.QUEUE_PROCESS_MAX_RUN_MS || 60_000));
+const REPLY_REPAIR_BATCH_LIMIT = Math.max(1, Number(process.env.REPLY_REPAIR_BATCH_LIMIT || 20));
+const REPLY_REPAIR_LOOKUP_LIMIT = Math.max(50, Number(process.env.REPLY_REPAIR_LOOKUP_LIMIT || 300));
 
 function kstDayRange(date = new Date()) {
   const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -550,7 +554,8 @@ export async function createDailyQueue(accountId, options = {}) {
   const candidateWithLink = withLink.slice(0, total);
   const primaryWithLink = reply.ok ? candidateWithLink : [];
   const selectedIds = new Set(primaryWithLink.map((post) => post.id));
-  const remainingSlots = Math.max(0, total - primaryWithLink.length);
+  const linkBlockedByReplyReadiness = !reply.ok && candidateWithLink.length > 0;
+  const remainingSlots = linkBlockedByReplyReadiness ? 0 : Math.max(0, total - primaryWithLink.length);
   const primaryNoLink = withoutLink
     .filter((post, index, list) => list.findIndex((row) => row.id === post.id) === index)
     .filter((post) => !selectedIds.has(post.id))
@@ -652,7 +657,11 @@ export async function createDailyQueue(accountId, options = {}) {
 }
 
 export async function recoverStalePostingQueue() {
-  const posting = await dbList('post_queue', { status: 'posting' });
+  const posting = await dbList('post_queue', { status: 'posting' }, {
+    order: 'updated_at',
+    ascending: true,
+    limit: 100
+  });
   const cutoff = Date.now() - QUEUE_POSTING_STALE_MS;
   let recovered = 0;
   for (const row of posting) {
@@ -687,19 +696,35 @@ export async function recoverStalePostingQueue() {
   return recovered;
 }
 
-export async function repairReplyLinkFailures({ accountId = null } = {}) {
+export async function repairReplyLinkFailures({
+  accountId = null,
+  dryRun = false,
+  limit = REPLY_REPAIR_BATCH_LIMIT
+} = {}) {
+  const cappedLimit = Math.max(1, Math.min(Number(limit) || REPLY_REPAIR_BATCH_LIMIT, 100));
+  const queueLookupLimit = Math.max(cappedLimit * 5, REPLY_REPAIR_LOOKUP_LIMIT);
   const [queues, accounts] = await Promise.all([
-    dbList('post_queue'),
-    dbList('accounts')
+    accountId
+      ? dbList('post_queue', { account_id: accountId }, { order: 'updated_at', ascending: false, limit: queueLookupLimit })
+      : dbList('post_queue', {}, {
+        order: 'updated_at',
+        ascending: false,
+        limit: queueLookupLimit,
+        in: { status: ['posted', 'failed', 'retry', 'manual_required'] }
+      }),
+    accountId
+      ? dbList('accounts', { id: accountId }, { limit: 1 })
+      : dbList('accounts', { status: 'active' }, { limit: 500 })
   ]);
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
   const targets = queues.filter((queue) => {
     if (accountId && queue.account_id !== accountId) return false;
     return canRepairReplyFailureQueue(queue, accountsById.get(queue.account_id));
-  });
+  }).slice(0, cappedLimit);
   const repaired = [];
   const failed = [];
   const skipped = [];
+  const wouldRepair = [];
 
   for (const queue of targets) {
     const account = accountsById.get(queue.account_id);
@@ -715,7 +740,11 @@ export async function repairReplyLinkFailures({ accountId = null } = {}) {
     if (!post || !threadsPostId) {
       const reason = !post ? 'post_missing' : 'threads_post_id_missing';
       skipped.push({ queueId: queue.id, reason });
-      await markReplyRepairBlocked(queue, reason);
+      if (!dryRun) await markReplyRepairBlocked(queue, reason);
+      continue;
+    }
+    if (post.account_id && post.account_id !== queue.account_id) {
+      skipped.push({ queueId: queue.id, reason: 'cross_account_reply_not_allowed' });
       continue;
     }
 
@@ -735,7 +764,7 @@ export async function repairReplyLinkFailures({ accountId = null } = {}) {
         const { product } = await getFirstLinkableProductForTopic(post.topic_id);
         if (!product || !isLinkableCoupangProduct(product)) {
           skipped.push({ queueId: queue.id, reason: 'linkable_product_missing' });
-          await markReplyRepairBlocked(queue, 'linkable_product_missing');
+          if (!dryRun) await markReplyRepairBlocked(queue, 'linkable_product_missing');
           continue;
         }
         repairStage = 'tracking_link';
@@ -743,12 +772,25 @@ export async function repairReplyLinkFailures({ accountId = null } = {}) {
       }
       if (!trackingLink) {
         skipped.push({ queueId: queue.id, reason: 'tracking_link_missing' });
-        await markReplyRepairBlocked(queue, 'tracking_link_missing');
+        if (!dryRun) await markReplyRepairBlocked(queue, 'tracking_link_missing');
         continue;
       }
       const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
       const linkMode = String(process.env.THREADS_COUPANG_LINK_MODE || 'direct').toLowerCase();
       const linkUrl = linkMode === 'tracking' ? `${baseUrl}/r/${trackingLink.code}` : trackingLink.destination_url;
+      if (dryRun) {
+        wouldRepair.push({
+          queueId: queue.id,
+          accountId: queue.account_id,
+          postId: queue.post_id,
+          postUrl: queue.post_url,
+          threadsPostId,
+          trackingLinkId: trackingLink.id,
+          linkMode,
+          linkUrl
+        });
+        continue;
+      }
       repairStage = 'reply_upload';
       await uploadReplyOnly({ account, postId: threadsPostId, text: buildReplyText(linkUrl) });
       let updatedRows;
@@ -784,7 +826,11 @@ export async function repairReplyLinkFailures({ accountId = null } = {}) {
     } catch (error) {
       if (repairStage !== 'reply_upload') {
         skipped.push({ queueId: queue.id, reason: `${repairStage}_failed`, message: error.message });
-        await markReplyRepairBlocked(queue, `${repairStage}_failed`, error.message);
+        if (!dryRun) await markReplyRepairBlocked(queue, `${repairStage}_failed`, error.message);
+        continue;
+      }
+      if (dryRun) {
+        failed.push({ queueId: queue.id, status: queue.status, retryCount: Number(queue.retry_count || 0), error: error.message });
         continue;
       }
       const retry = Number(queue.retry_count || 0) + 1;
@@ -827,38 +873,65 @@ export async function repairReplyLinkFailures({ accountId = null } = {}) {
 
   return {
     ok: failed.length === 0,
+    dryRun,
     targetCount: targets.length,
+    wouldRepairCount: wouldRepair.length,
     repairedCount: repaired.length,
     failedCount: failed.length,
     skippedCount: skipped.length,
+    wouldRepair,
     repaired,
     failed,
     skipped
   };
 }
 
-export async function processDueQueue() {
+export async function processDueQueue({
+  limit = QUEUE_PROCESS_BATCH_LIMIT,
+  maxRunMs = QUEUE_PROCESS_MAX_RUN_MS,
+  repairReplies = false
+} = {}) {
+  const startedAt = Date.now();
+  const cappedLimit = Math.max(1, Math.min(Number(limit) || QUEUE_PROCESS_BATCH_LIMIT, 100));
   await recoverStalePostingQueue();
   await recoverReplyLinkModeRequiredQueues();
-  await repairReplyLinkFailures();
+  if (repairReplies) {
+    await repairReplyLinkFailures({ dryRun: false, limit: Math.min(10, cappedLimit) });
+  }
+  const nowIso = new Date().toISOString();
   const [scheduled, retrying] = await Promise.all([
-    dbList('post_queue', { status: 'scheduled' }),
-    dbList('post_queue', { status: 'retry' })
+    dbList('post_queue', { status: 'scheduled' }, {
+      lte: { scheduled_at: nowIso },
+      order: 'scheduled_at',
+      ascending: true,
+      limit: cappedLimit
+    }),
+    dbList('post_queue', { status: 'retry' }, {
+      lte: { scheduled_at: nowIso },
+      order: 'scheduled_at',
+      ascending: true,
+      limit: cappedLimit
+    })
   ]);
   const rows = [...scheduled, ...retrying].filter((row) => (row.platform || 'threads') === 'threads');
   const activeAccounts = await dbList('accounts', { status: 'active' });
   const activeAccountIds = new Set(activeAccounts.filter(isAutomationRunning).map((account) => account.id));
-  const due = rows.filter((row) => activeAccountIds.has(row.account_id) && new Date(row.scheduled_at) <= new Date());
+  const due = rows
+    .filter((row) => activeAccountIds.has(row.account_id) && new Date(row.scheduled_at) <= new Date())
+    .slice(0, cappedLimit);
+  let processed = 0;
   for (const row of due) {
+    if (Date.now() - startedAt > maxRunMs) break;
     try {
       await uploadQueueItem(row.id);
+      processed += 1;
     } catch (error) {
       if (error.code !== 'QUEUE_ALREADY_CLAIMED') {
         console.error('[processDueQueue] queue item failed', { queueId: row.id, error: error.message });
       }
     }
   }
-  return due.length;
+  return processed;
 }
 
 export async function rescheduleTodayQueue({ accountId = null } = {}) {
@@ -928,10 +1001,18 @@ export async function rescheduleTodayQueue({ accountId = null } = {}) {
   };
 }
 
-export async function recoverReplyLinkModeRequiredQueues({ accountId = null } = {}) {
+export async function recoverReplyLinkModeRequiredQueues({ accountId = null, limit = 100 } = {}) {
+  const cappedLimit = Math.max(1, Math.min(Number(limit) || 100, 500));
   const [queues, accounts] = await Promise.all([
-    dbList('post_queue'),
-    dbList('accounts')
+    accountId
+      ? dbList('post_queue', { account_id: accountId }, { order: 'updated_at', ascending: false, limit: cappedLimit })
+      : dbList('post_queue', {}, {
+        order: 'updated_at',
+        ascending: false,
+        limit: cappedLimit,
+        in: { status: ['manual_required', 'failed'] }
+      }),
+    accountId ? dbList('accounts', { id: accountId }, { limit: 1 }) : dbList('accounts', { status: 'active' }, { limit: 500 })
   ]);
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
   const nowIso = new Date().toISOString();

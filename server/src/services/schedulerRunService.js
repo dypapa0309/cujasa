@@ -10,7 +10,11 @@ export const DAILY_PIPELINE_JOB = 'daily-pipeline';
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAILY_PIPELINE_HOUR_KST = 2;
-const DEFAULT_DAILY_PIPELINE_STALE_MINUTES = 360;
+const DEFAULT_DAILY_PIPELINE_STALE_MINUTES = 30;
+const DEFAULT_DAILY_PIPELINE_MAX_RUN_MS = 45 * 60 * 1000;
+const DEFAULT_DAILY_PIPELINE_CONTINUATION_MAX_RUN_MS = 25 * 60 * 1000;
+const DEFAULT_DAILY_PIPELINE_PER_ACCOUNT_MAX_MS = 12 * 60 * 1000;
+const DEFAULT_DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS = 3 * 60 * 1000;
 
 function positiveNumber(value, fallback) {
   const parsed = Number(value);
@@ -21,6 +25,22 @@ const DAILY_PIPELINE_STALE_MS = positiveNumber(
   process.env.DAILY_PIPELINE_STALE_MINUTES,
   DEFAULT_DAILY_PIPELINE_STALE_MINUTES
 ) * 60 * 1000;
+const DAILY_PIPELINE_MAX_RUN_MS = positiveNumber(
+  process.env.DAILY_PIPELINE_MAX_RUN_MS,
+  DEFAULT_DAILY_PIPELINE_MAX_RUN_MS
+);
+const DAILY_PIPELINE_CONTINUATION_MAX_RUN_MS = positiveNumber(
+  process.env.DAILY_PIPELINE_CONTINUATION_MAX_RUN_MS,
+  DEFAULT_DAILY_PIPELINE_CONTINUATION_MAX_RUN_MS
+);
+const DAILY_PIPELINE_PER_ACCOUNT_MAX_MS = positiveNumber(
+  process.env.DAILY_PIPELINE_PER_ACCOUNT_MAX_MS,
+  DEFAULT_DAILY_PIPELINE_PER_ACCOUNT_MAX_MS
+);
+const DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS = positiveNumber(
+  process.env.DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS,
+  DEFAULT_DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS
+);
 
 function now() {
   return new Date();
@@ -39,8 +59,19 @@ export function hasDailyPipelineWindowPassed(date = now()) {
   return shifted.getUTCHours() >= DAILY_PIPELINE_HOUR_KST;
 }
 
-function summarizePipelineResults(results = []) {
-  const rows = Array.isArray(results) ? results : [];
+function schedulerRunSummary(run) {
+  return run?.summary && typeof run.summary === 'object' ? run.summary : {};
+}
+
+function schedulerProgress(run) {
+  const summary = schedulerRunSummary(run);
+  return summary.progress && typeof summary.progress === 'object' ? summary.progress : {};
+}
+
+function summarizePipelineResults(pipeline = []) {
+  const rows = Array.isArray(pipeline) ? pipeline : (Array.isArray(pipeline?.results) ? pipeline.results : []);
+  const pending = Array.isArray(pipeline?.pending) ? pipeline.pending : [];
+  const skipped = Array.isArray(pipeline?.skipped) ? pipeline.skipped : [];
   const reconnectRequiredRows = rows.filter((row) => {
     const text = [
       row.status,
@@ -60,8 +91,14 @@ function summarizePipelineResults(results = []) {
   }, {});
   return {
     total: rows.length,
+    pipelineStatus: Array.isArray(pipeline) ? 'completed' : (pipeline.status || (pending.length ? 'partial' : 'completed')),
+    processed: Array.isArray(pipeline?.processed) ? pipeline.processed.length : rows.length,
+    pending,
+    pendingCount: pending.length,
+    durationMs: pipeline?.durationMs ?? null,
     ok: rows.filter((row) => row.ok === true || row.status === 'ok').length,
     skipped: skippedRows.length,
+    skippedAccounts: skipped.length,
     reconnectRequired: reconnectRequiredRows.length,
     skippedOther: Math.max(0, skippedRows.length - reconnectRequiredRows.filter((row) => row.status === 'skipped').length),
     noLinkCandidates: rows.filter((row) => row.status === 'no_link_candidates').length,
@@ -86,23 +123,52 @@ function isDuplicateSchedulerRunError(error) {
 
 function isStaleSchedulerRun(run, date = now()) {
   if (!run || run.status !== 'running') return false;
-  const lastSeen = new Date(run.finished_at || run.started_at).getTime();
+  const progress = schedulerProgress(run);
+  const lastSeen = new Date(progress.updatedAt || run.finished_at || run.started_at).getTime();
   return Number.isFinite(lastSeen) && date.getTime() - lastSeen > DAILY_PIPELINE_STALE_MS;
 }
 
-async function startSchedulerRun({ jobName, runDateKst, triggeredBy }) {
+async function startSchedulerRun({ jobName, runDateKst, triggeredBy, allowPartialResume = false }) {
   const existing = await dbGet('scheduler_runs', { job_name: jobName, run_date_kst: runDateKst }).catch(() => null);
   if (existing) {
+    const existingSummary = schedulerRunSummary(existing);
     if (isStaleSchedulerRun(existing)) {
       const [run] = await dbUpdate('scheduler_runs', { id: existing.id }, {
         status: 'running',
         triggered_by: triggeredBy,
         started_at: now().toISOString(),
         finished_at: null,
-        summary: {},
+        summary: {
+          ...existingSummary,
+          recoveredStaleAt: now().toISOString(),
+          progress: {
+            ...schedulerProgress(existing),
+            updatedAt: now().toISOString(),
+            stage: 'recovered_stale'
+          }
+        },
         error_message: null
       });
       return { run, acquired: true, recoveredStale: true };
+    }
+    if (allowPartialResume && existing.status === 'partial' && (existingSummary.pending || []).length > 0) {
+      const [run] = await dbUpdate('scheduler_runs', { id: existing.id }, {
+        status: 'running',
+        triggered_by: triggeredBy,
+        started_at: now().toISOString(),
+        finished_at: null,
+        summary: {
+          ...existingSummary,
+          resumedPartialAt: now().toISOString(),
+          progress: {
+            ...schedulerProgress(existing),
+            updatedAt: now().toISOString(),
+            stage: 'resumed_partial'
+          }
+        },
+        error_message: null
+      });
+      return { run, acquired: true, resumedPartial: true };
     }
     return { run: existing, acquired: false };
   }
@@ -113,7 +179,15 @@ async function startSchedulerRun({ jobName, runDateKst, triggeredBy }) {
       status: 'running',
       triggered_by: triggeredBy,
       started_at: now().toISOString(),
-      summary: {}
+      summary: {
+        progress: {
+          updatedAt: now().toISOString(),
+          stage: 'started',
+          processed: 0,
+          pending: 0,
+          skipped: 0
+        }
+      }
     });
     return { run, acquired: true };
   } catch (error) {
@@ -134,6 +208,25 @@ async function finishSchedulerRun(runId, status, patch = {}) {
   return updated;
 }
 
+async function updateSchedulerRunProgress(runId, patch = {}) {
+  const run = await dbGet('scheduler_runs', { id: runId });
+  const summary = schedulerRunSummary(run);
+  const progress = schedulerProgress(run);
+  const updatedAt = now().toISOString();
+  const [updated] = await dbUpdate('scheduler_runs', { id: runId }, {
+    summary: {
+      ...summary,
+      heartbeatAt: updatedAt,
+      progress: {
+        ...progress,
+        ...patch,
+        updatedAt
+      }
+    }
+  });
+  return updated;
+}
+
 export async function getSchedulerRun(jobName, runDateKst = kstDateString()) {
   return dbGet('scheduler_runs', { job_name: jobName, run_date_kst: runDateKst });
 }
@@ -148,6 +241,12 @@ export async function dailyPipelineStatus(date = now()) {
   const run = await getSchedulerRun(DAILY_PIPELINE_JOB, runDateKst).catch(() => null);
   const windowPassed = hasDailyPipelineWindowPassed(date);
   const stale = isStaleSchedulerRun(run, date);
+  const summary = schedulerRunSummary(run);
+  const progress = schedulerProgress(run);
+  const startedAt = run?.started_at ? new Date(run.started_at).getTime() : 0;
+  const finishedAt = run?.finished_at ? new Date(run.finished_at).getTime() : 0;
+  const durationMs = summary.durationMs ?? (finishedAt && startedAt ? finishedAt - startedAt : (run?.status === 'running' && startedAt ? date.getTime() - startedAt : null));
+  const pendingCount = summary.pendingCount ?? (Array.isArray(summary.pending) ? summary.pending.length : 0);
   return {
     jobName: DAILY_PIPELINE_JOB,
     runDateKst,
@@ -155,27 +254,64 @@ export async function dailyPipelineStatus(date = now()) {
     missing: windowPassed && !run,
     stale,
     status: stale ? 'stale' : (run?.status || (windowPassed ? 'missing' : 'pending')),
+    durationMs,
+    heartbeatAt: progress.updatedAt || summary.heartbeatAt || null,
+    pendingCount,
+    progress,
     run: run ? {
       id: run.id,
       status: run.status,
       triggeredBy: run.triggered_by || null,
       startedAt: run.started_at,
       finishedAt: run.finished_at,
-      summary: run.summary || {},
+      durationMs,
+      heartbeatAt: progress.updatedAt || summary.heartbeatAt || null,
+      pendingCount,
+      summary,
       errorMessage: run.error_message || null
     } : null
   };
 }
 
-export async function runDailyPipelineOnce({ triggeredBy = 'scheduler', runDateKst = kstDateString() } = {}) {
-  const { run, acquired, recoveredStale = false } = await startSchedulerRun({
+function dailyPipelineRunOptions(mode = 'scheduled', options = {}) {
+  const continuation = mode === 'continuation';
+  return {
+    maxRunMs: positiveNumber(
+      options.maxRunMs,
+      continuation ? DAILY_PIPELINE_CONTINUATION_MAX_RUN_MS : DAILY_PIPELINE_MAX_RUN_MS
+    ),
+    maxAccounts: options.maxAccounts != null
+      ? Math.max(0, Number(options.maxAccounts))
+      : positiveNumber(process.env.DAILY_PIPELINE_MAX_ACCOUNTS, Number.MAX_SAFE_INTEGER),
+    perAccountMaxMs: positiveNumber(options.perAccountMaxMs, DAILY_PIPELINE_PER_ACCOUNT_MAX_MS),
+    coupangWaitBudgetMs: positiveNumber(options.coupangWaitBudgetMs, DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS),
+    skipFutureScheduled: options.skipFutureScheduled !== false,
+    deferOnCoupangThrottle: options.deferOnCoupangThrottle !== false
+  };
+}
+
+export async function runDailyPipelineOnce({
+  triggeredBy = 'scheduler',
+  runDateKst = kstDateString(),
+  mode = 'scheduled',
+  maxRunMs,
+  maxAccounts,
+  perAccountMaxMs,
+  coupangWaitBudgetMs,
+  accountIds,
+  skipFutureScheduled,
+  deferOnCoupangThrottle
+} = {}) {
+  const allowPartialResume = ['continuation', 'admin_recovery'].includes(mode);
+  const { run, acquired, recoveredStale = false, resumedPartial = false } = await startSchedulerRun({
     jobName: DAILY_PIPELINE_JOB,
     runDateKst,
-    triggeredBy
+    triggeredBy,
+    allowPartialResume
   });
   if (!acquired) {
     return {
-      ok: run?.status === 'completed',
+      ok: run?.status === 'completed' || run?.status === 'partial',
       duplicate: true,
       status: run?.status || 'unknown',
       run,
@@ -184,40 +320,104 @@ export async function runDailyPipelineOnce({ triggeredBy = 'scheduler', runDateK
     };
   }
 
+  const previousSummary = schedulerRunSummary(run);
+  const previousPending = Array.isArray(previousSummary.pending) ? previousSummary.pending : [];
+  const resumedAccountIds = allowPartialResume && previousPending.length
+    ? previousPending.map((item) => item.accountId).filter(Boolean)
+    : null;
+  const effectiveOptions = dailyPipelineRunOptions(mode, {
+    maxRunMs,
+    maxAccounts,
+    perAccountMaxMs,
+    coupangWaitBudgetMs,
+    skipFutureScheduled,
+    deferOnCoupangThrottle
+  });
+  const runStartedAt = Date.now();
+
   await logActivity({
     action: 'scheduler_daily_pipeline_started',
     level: 'info',
-    message: `${runDateKst} daily-pipeline ${recoveredStale ? 'stale 재시작' : '시작'}`,
-    payload: { triggeredBy, recoveredStale }
+    message: `${runDateKst} daily-pipeline ${recoveredStale ? 'stale 재시작' : resumedPartial ? 'partial 이어받기' : '시작'}`,
+    payload: { triggeredBy, recoveredStale, resumedPartial, mode, options: effectiveOptions }
   }).catch(() => {});
 
   try {
+    await updateSchedulerRunProgress(run.id, {
+      mode,
+      stage: 'maintenance',
+      processed: 0,
+      pending: previousPending.length,
+      skipped: 0,
+      total: null
+    }).catch(() => {});
     const expiredPipelines = await expireStalePipelineRuns();
-    const replyRepair = await repairReplyLinkFailures();
-    const pipeline = await runFullPipeline({ requestedBy: triggeredBy });
+    const replyRepair = await repairReplyLinkFailures({ dryRun: true, limit: 50 });
+    const pipeline = await runFullPipeline({
+      requestedBy: triggeredBy,
+      accountIds: Array.isArray(accountIds) && accountIds.length ? accountIds : resumedAccountIds,
+      maxRunMs: effectiveOptions.maxRunMs,
+      maxAccounts: effectiveOptions.maxAccounts,
+      perAccountMaxMs: effectiveOptions.perAccountMaxMs,
+      coupangWaitBudgetMs: effectiveOptions.coupangWaitBudgetMs,
+      skipFutureScheduled: effectiveOptions.skipFutureScheduled,
+      deferOnCoupangThrottle: effectiveOptions.deferOnCoupangThrottle,
+      onProgress: (progress) => updateSchedulerRunProgress(run.id, {
+        ...progress,
+        mode
+      }).catch(() => {})
+    });
+    await updateSchedulerRunProgress(run.id, {
+      mode,
+      stage: pipeline.status === 'partial' ? 'partial' : 'pipeline_completed',
+      processed: pipeline.processed?.length || 0,
+      pending: pipeline.pending?.length || 0,
+      skipped: pipeline.skipped?.length || 0,
+      total: pipeline.total || 0
+    }).catch(() => {});
     const cleanup = await cleanupUnusedPipelineArtifacts({ mode: 'apply' });
     const oldIssues = await cleanupOldQueueIssues({ mode: 'apply' });
+    const finishedAt = now().toISOString();
     const summary = {
       ...summarizePipelineResults(pipeline),
+      mode,
+      options: effectiveOptions,
       expiredPipelines: expiredPipelines.length,
       replyRepair,
       cleanup,
       oldIssues,
-      completedAt: now().toISOString()
+      completedAt: finishedAt,
+      durationMs: Date.now() - runStartedAt,
+      heartbeatAt: finishedAt
     };
-    const updated = await finishSchedulerRun(run.id, 'completed', { summary, error_message: null });
+    const status = summary.pendingCount > 0 || pipeline.status === 'partial' ? 'partial' : 'completed';
+    const updated = await finishSchedulerRun(run.id, status, { summary, error_message: null });
     await logActivity({
-      action: 'scheduler_daily_pipeline_completed',
+      action: status === 'partial' ? 'scheduler_daily_pipeline_partial' : 'scheduler_daily_pipeline_completed',
       level: 'info',
-      message: `${runDateKst} daily-pipeline 완료`,
+      message: `${runDateKst} daily-pipeline ${status === 'partial' ? '부분 완료' : '완료'}`,
       payload: summary
     }).catch(() => {});
-    return { ok: true, duplicate: false, recoveredStale, status: 'completed', run: updated, summary };
+    return {
+      ok: status === 'completed',
+      duplicate: false,
+      recoveredStale,
+      resumedPartial,
+      status,
+      run: updated,
+      summary,
+      processed: summary.processed,
+      pending: summary.pending,
+      skipped: summary.skipped,
+      durationMs: summary.durationMs
+    };
   } catch (error) {
     const summary = {
       failedAt: now().toISOString(),
       message: error.message,
-      code: error.code || null
+      code: error.code || null,
+      mode,
+      durationMs: Date.now() - runStartedAt
     };
     const updated = await finishSchedulerRun(run.id, 'failed', {
       summary,

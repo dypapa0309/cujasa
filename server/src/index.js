@@ -44,6 +44,9 @@ import { getPublicLeadForm } from './services/automationStudioService.js';
 const app = express();
 const port = process.env.PORT || 3000;
 const runningCronJobs = new Set();
+const enableInternalCron = process.env.ENABLE_INTERNAL_CRON !== 'false';
+const enableStartupDailyCatchUp = process.env.ENABLE_STARTUP_DAILY_CATCH_UP === 'true'
+  || (process.env.ENABLE_STARTUP_DAILY_CATCH_UP !== 'false' && process.env.NODE_ENV !== 'production');
 const allowedOrigins = new Set([
   ...(process.env.CLIENT_BASE_URL || '').split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean),
   'https://jasain.kr',
@@ -318,55 +321,75 @@ app.use((error, req, res, next) => {
   });
 });
 
-// 매분: 예약된 포스팅 업로드 + 성과 측정
-cron.schedule('* * * * *', async () => {
-  await runCronJob('queue-and-metrics', async () => {
-    const processedQueue = await processDueQueue();
-    const metricJobs = await runDueMetricJobs();
-    return { processedQueue, metricJobs };
+if (enableInternalCron) {
+  // 매분: 예약된 포스팅 업로드 + 성과 측정
+  cron.schedule('* * * * *', async () => {
+    await runCronJob('queue-and-metrics', async () => {
+      const processedQueue = await processDueQueue();
+      const metricJobs = await runDueMetricJobs();
+      return { processedQueue, metricJobs };
+    });
   });
-});
 
-// 매일 새벽 2시: 전체 파이프라인 자동 실행 (주제→상품→콘텐츠→큐 등록)
-cron.schedule('0 2 * * *', async () => {
-  await runCronJob('daily-pipeline', async () => {
-    return runDailyPipelineOnce({ triggeredBy: 'node_cron' });
+  // 매일 새벽 2시: 전체 파이프라인 자동 실행 (주제→상품→콘텐츠→큐 등록)
+  cron.schedule('0 2 * * *', async () => {
+    await runCronJob('daily-pipeline', async () => {
+      return runDailyPipelineOnce({ triggeredBy: 'node_cron', mode: 'scheduled' });
+    });
+  }, { timezone: 'Asia/Seoul' });
+
+  // 새벽 2:30~5:30: 2시 실행이 시간 예산으로 partial 종료된 경우 남은 계정을 이어 처리
+  cron.schedule('30 2-5 * * *', async () => {
+    await runCronJob('daily-pipeline-continuation', async () => {
+      const status = await dailyPipelineStatus();
+      if (!['partial', 'stale'].includes(status.status)) {
+        return { skipped: true, status: status.status, pendingCount: status.pendingCount || 0 };
+      }
+      return runDailyPipelineOnce({
+        triggeredBy: 'node_cron_continuation',
+        mode: 'continuation',
+        runDateKst: status.runDateKst
+      });
+    });
+  }, { timezone: 'Asia/Seoul' });
+
+  // 매일 새벽 3시: Threads long-lived token 만료 전 갱신
+  cron.schedule('0 3 * * *', async () => {
+    await runCronJob('threads-token-refresh', async () => refreshExpiringThreadsTokens());
   });
-}, { timezone: 'Asia/Seoul' });
 
-// 매일 새벽 3시: Threads long-lived token 만료 전 갱신
-cron.schedule('0 3 * * *', async () => {
-  await runCronJob('threads-token-refresh', async () => refreshExpiringThreadsTokens());
-});
-
-// 매시간: 월결제 만료 고객 자동 차단
-cron.schedule('17 * * * *', async () => {
-  await runCronJob('billing-expire', async () => {
-    const expired = await expireDueEntitlements();
-    return { expiredCount: expired.length };
+  // 매시간: 월결제 만료 고객 자동 차단
+  cron.schedule('17 * * * *', async () => {
+    await runCronJob('billing-expire', async () => {
+      const expired = await expireDueEntitlements();
+      return { expiredCount: expired.length };
+    });
   });
-});
 
-// 매일 오전 8시(KST): 운영 위험 상태 요약 알림
-cron.schedule('0 8 * * *', async () => {
-  await runCronJob('daily-ops-healthcheck', async () => runDailyOpsHealthCheck());
-}, { timezone: 'Asia/Seoul' });
+  // 매일 오전 8시(KST): 운영 위험 상태 요약 알림
+  cron.schedule('0 8 * * *', async () => {
+    await runCronJob('daily-ops-healthcheck', async () => runDailyOpsHealthCheck());
+  }, { timezone: 'Asia/Seoul' });
+}
 
 async function runStartupDailyPipelineCatchUp() {
   const status = await dailyPipelineStatus();
-  if (!status.missing) return null;
+  if (!status.missing && !['partial', 'stale'].includes(status.status)) return null;
   return runCronJob('daily-pipeline-startup-catch-up', async () => runDailyPipelineOnce({
     triggeredBy: 'startup_catch_up',
-    runDateKst: status.runDateKst
+    runDateKst: status.runDateKst,
+    mode: status.missing ? 'scheduled' : 'continuation'
   }));
 }
 
 app.listen(port, () => {
   console.log(`JASAIN API running on http://localhost:${port}`);
   console.log('[threads reply link mode]', JSON.stringify(replyLinkModeStatus()));
-  setTimeout(() => {
-    runStartupDailyPipelineCatchUp().catch((error) => {
-      console.error('[startup daily-pipeline catch-up] failed', error);
-    });
-  }, 3000);
+  if (enableStartupDailyCatchUp) {
+    setTimeout(() => {
+      runStartupDailyPipelineCatchUp().catch((error) => {
+        console.error('[startup daily-pipeline catch-up] failed', error);
+      });
+    }, 3000);
+  }
 });

@@ -19,12 +19,22 @@ const NON_FATAL_QUEUE_CATEGORIES = new Set([
 ]);
 const REPLY_ATTENTION_CATEGORIES = new Set(['reply_warning', 'reply_repair_blocked', 'reply_permission_required']);
 const STALE_RUNNING_CATEGORY = 'pipeline_stuck';
+const OPERATION_QUEUE_LIMIT = Math.max(100, Number(process.env.OPERATION_QUEUE_LIMIT || 2000));
+const OPERATION_PRODUCT_LIMIT = Math.max(100, Number(process.env.OPERATION_PRODUCT_LIMIT || 2000));
+const OPERATION_PIPELINE_RUN_LIMIT = Math.max(100, Number(process.env.OPERATION_PIPELINE_RUN_LIMIT || 300));
 
-async function safeDbList(table, filters = {}, options = {}, fallback = []) {
+async function safeDbList(table, filters = {}, options = {}, fallback = [], loadErrors = null) {
   try {
     return await dbList(table, filters, options);
   } catch (error) {
     console.warn(`[operations] ${table} lookup failed`, error?.message || error);
+    if (Array.isArray(loadErrors)) {
+      loadErrors.push({
+        table,
+        message: error?.message || String(error),
+        code: error?.code || null
+      });
+    }
     return fallback;
   }
 }
@@ -321,16 +331,26 @@ function latestPipelineRunsByAccount(runs = []) {
 
 async function loadOperationContext() {
   const range = kstDayRange();
+  const loadErrors = [];
   const [accounts, queue, products, activityLogs, users, userAccounts, pipelineRuns] = await Promise.all([
-    safeDbList('accounts'),
-    safeDbList('post_queue'),
-    safeDbList('coupang_products'),
-    safeDbList('activity_logs', {}, { order: 'created_at', ascending: false, limit: 300 }),
-    safeDbList('users'),
-    safeDbList('user_accounts'),
-    safeDbList('pipeline_runs', {}, { order: 'started_at', ascending: false, limit: 1000 })
+    safeDbList('accounts', {}, { limit: 500 }, [], loadErrors),
+    safeDbList('post_queue', {}, {
+      order: 'updated_at',
+      ascending: false,
+      limit: OPERATION_QUEUE_LIMIT
+    }, [], loadErrors),
+    safeDbList('coupang_products', {}, {
+      select: 'id,account_id,is_fallback,created_at,updated_at',
+      order: 'updated_at',
+      ascending: false,
+      limit: OPERATION_PRODUCT_LIMIT
+    }, [], loadErrors),
+    safeDbList('activity_logs', {}, { order: 'created_at', ascending: false, limit: 300 }, [], loadErrors),
+    safeDbList('users', {}, { limit: 1000 }, [], loadErrors),
+    safeDbList('user_accounts', {}, { limit: 2000 }, [], loadErrors),
+    safeDbList('pipeline_runs', {}, { order: 'started_at', ascending: false, limit: OPERATION_PIPELINE_RUN_LIMIT }, [], loadErrors)
   ]);
-  return { ...range, accounts, queue, products, activityLogs, users, userAccounts, pipelineRuns };
+  return { ...range, accounts, queue, products, activityLogs, users, userAccounts, pipelineRuns, loadErrors };
 }
 
 async function buildOperationAccountRows(context) {
@@ -401,7 +421,7 @@ export async function operationAccountRows() {
   return buildOperationAccountRows(await loadOperationContext());
 }
 
-async function buildOperationSummary({ accounts = [], queue = [], rows = [], start, end }) {
+async function buildOperationSummary({ accounts = [], queue = [], rows = [], start, end, loadErrors = [] }) {
   const range = start && end ? { start, end } : kstDayRange();
   start = range.start;
   end = range.end;
@@ -419,6 +439,8 @@ async function buildOperationSummary({ accounts = [], queue = [], rows = [], sta
     return null;
   });
   return {
+    degraded: loadErrors.length > 0,
+    loadErrors,
     cards: {
       accountsTotal: accounts.length,
       accountsActive: accounts.filter((account) => account.status === 'active').length,
@@ -460,13 +482,20 @@ async function buildOperationSummary({ accounts = [], queue = [], rows = [], sta
 export async function operationSummary() {
   const context = await loadOperationContext();
   const rows = await buildOperationAccountRows(context);
-  return buildOperationSummary({ accounts: context.accounts, queue: context.queue, rows, start: context.start, end: context.end });
+  return buildOperationSummary({ accounts: context.accounts, queue: context.queue, rows, start: context.start, end: context.end, loadErrors: context.loadErrors });
 }
 
 export async function operationDashboard() {
   const context = await loadOperationContext();
   const rows = await buildOperationAccountRows(context);
-  const summary = await buildOperationSummary({ accounts: context.accounts, queue: context.queue, rows, start: context.start, end: context.end });
+  const summary = await buildOperationSummary({
+    accounts: context.accounts,
+    queue: context.queue,
+    rows,
+    start: context.start,
+    end: context.end,
+    loadErrors: context.loadErrors
+  });
   const dailyResultsByAccountId = new Map((summary.dailyPipeline?.run?.summary?.results || [])
     .filter((result) => result.accountId)
     .map((result) => [result.accountId, result]));
@@ -481,12 +510,17 @@ export async function operationDashboard() {
 
 export async function operationEvents({ type = 'queue_problems', limit = 200 } = {}) {
   const { start, end } = kstDayRange();
+  const loadErrors = [];
   const [accounts, queue, rows, users, userAccounts] = await Promise.all([
-    dbList('accounts'),
-    dbList('post_queue'),
+    safeDbList('accounts', {}, { limit: 500 }, [], loadErrors),
+    safeDbList('post_queue', {}, {
+      order: 'updated_at',
+      ascending: false,
+      limit: OPERATION_QUEUE_LIMIT
+    }, [], loadErrors),
     operationAccountRows(),
-    dbList('users'),
-    dbList('user_accounts')
+    safeDbList('users', {}, { limit: 1000 }, [], loadErrors),
+    safeDbList('user_accounts', {}, { limit: 2000 }, [], loadErrors)
   ]);
   const activeAccountIds = new Set(accounts.filter((account) => account.status === 'active').map((account) => account.id));
   const accountsById = new Map(accounts.map((account) => [account.id, account]));
@@ -614,6 +648,8 @@ export async function operationEvents({ type = 'queue_problems', limit = 200 } =
   const cappedLimit = Math.max(1, Math.min(Number(limit) || 200, 500));
   return {
     type,
+    degraded: loadErrors.length > 0,
+    loadErrors,
     count: events.length,
     events: events.slice(0, cappedLimit)
   };
@@ -630,8 +666,14 @@ function runCategoryLabelForEvent(category) {
   })[category] || '상태 확인 필요';
 }
 
-export async function cleanupQueueErrors({ mode = 'dry-run' } = {}) {
-  const rows = await dbList('post_queue');
+export async function cleanupQueueErrors({ mode = 'dry-run', limit = 500 } = {}) {
+  const cappedLimit = Math.max(1, Math.min(Number(limit) || 500, 1000));
+  const rows = await dbList('post_queue', {}, {
+    order: 'updated_at',
+    ascending: false,
+    limit: cappedLimit,
+    in: { status: QUEUE_PROBLEM_STATUSES }
+  });
   const targets = rows
     .filter((row) => QUEUE_PROBLEM_STATUSES.includes(row.status))
     .map((row) => ({
@@ -674,7 +716,7 @@ export async function cleanupQueueErrors({ mode = 'dry-run' } = {}) {
 
 export async function normalizeOperations({ accountId = null } = {}) {
   const expired = await expireStalePipelineRuns(accountId || null);
-  const repairedReplies = await repairReplyLinkFailures({ accountId });
+  const repairedReplies = await repairReplyLinkFailures({ accountId, dryRun: true, limit: 50 });
   const oldIssues = await cleanupOldQueueIssues({
     mode: 'apply',
     accountId,
@@ -688,6 +730,7 @@ export async function normalizeOperations({ accountId = null } = {}) {
     accountId,
     expiredPipelineCount: expired.length,
     repairedReplyCount: repairedReplies.repairedCount || 0,
+    repairableReplyCount: repairedReplies.wouldRepairCount || 0,
     failedReplyRepairCount: repairedReplies.failedCount || 0,
     skippedReplyRepairCount: repairedReplies.skippedCount || 0,
     oldIssues,

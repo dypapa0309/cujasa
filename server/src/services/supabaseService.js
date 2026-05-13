@@ -7,6 +7,10 @@ export const supabase = hasSupabase
   ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY)
   : null;
 
+const DB_CIRCUIT_BREAKER_MS = Math.max(0, Number(process.env.DB_CIRCUIT_BREAKER_MS || 60_000));
+let dbCircuitOpenUntil = 0;
+let dbCircuitReason = '';
+
 const now = () => new Date().toISOString();
 const projectId = randomUUID();
 const accountIds = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
@@ -377,6 +381,28 @@ const tables = {
 };
 
 const matches = (row, filters) => Object.entries(filters).every(([key, value]) => row[key] === value);
+const advancedFilterKeys = ['gte', 'lte', 'gt', 'lt', 'neq', 'in'];
+const compareValues = (left, right) => {
+  const leftTime = Date.parse(left);
+  const rightTime = Date.parse(right);
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) return leftTime - rightTime;
+  if (typeof left === 'number' && typeof right === 'number') return left - right;
+  return String(left ?? '').localeCompare(String(right ?? ''));
+};
+const matchesAdvancedFilters = (row, options = {}) => advancedFilterKeys.every((operator) => {
+  const clauses = options[operator] || {};
+  return Object.entries(clauses).every(([key, value]) => {
+    const rowValue = row[key];
+    if (operator === 'in') return Array.isArray(value) ? value.includes(rowValue) : false;
+    if (operator === 'neq') return rowValue !== value;
+    const compared = compareValues(rowValue, value);
+    if (operator === 'gte') return compared >= 0;
+    if (operator === 'lte') return compared <= 0;
+    if (operator === 'gt') return compared > 0;
+    if (operator === 'lt') return compared < 0;
+    return true;
+  });
+});
 const sortRows = (rows, column, ascending = true) => [...rows].sort((a, b) => {
   const av = a[column] ?? '';
   const bv = b[column] ?? '';
@@ -424,19 +450,63 @@ function stampUpdate(table, patch) {
     : { ...patch };
 }
 
+function isTransientSupabaseFailure(error = {}) {
+  const message = String(error.message || error || '');
+  return /522: Connection timed out|Connection timed out|Cloudflare|fetch failed|network timeout|timeout/i.test(message);
+}
+
+function unavailableDbError(reason = '') {
+  const error = new Error('Database is temporarily unavailable. Please retry shortly.');
+  error.status = 503;
+  error.code = 'SUPABASE_UNAVAILABLE';
+  error.reason = reason || dbCircuitReason || null;
+  return error;
+}
+
+function assertDbCircuitClosed() {
+  if (!supabase || DB_CIRCUIT_BREAKER_MS <= 0) return;
+  if (Date.now() < dbCircuitOpenUntil) throw unavailableDbError();
+}
+
+function markDbCircuit(error) {
+  if (!supabase || DB_CIRCUIT_BREAKER_MS <= 0 || !isTransientSupabaseFailure(error)) return;
+  dbCircuitOpenUntil = Date.now() + DB_CIRCUIT_BREAKER_MS;
+  dbCircuitReason = String(error.message || error || '').slice(0, 240);
+}
+
+function normalizeDbError(error) {
+  markDbCircuit(error);
+  if (isTransientSupabaseFailure(error)) {
+    const next = unavailableDbError(String(error.message || error || '').slice(0, 240));
+    next.cause = error;
+    return next;
+  }
+  return error;
+}
+
 export async function dbList(table, filters = {}, options = {}) {
   if (supabase) {
+    assertDbCircuitClosed();
     let q = supabase.from(table).select(options.select || '*');
     Object.entries(filters).forEach(([key, value]) => {
       q = value === null ? q.is(key, null) : q.eq(key, value);
     });
+    Object.entries(options.gte || {}).forEach(([key, value]) => { q = q.gte(key, value); });
+    Object.entries(options.lte || {}).forEach(([key, value]) => { q = q.lte(key, value); });
+    Object.entries(options.gt || {}).forEach(([key, value]) => { q = q.gt(key, value); });
+    Object.entries(options.lt || {}).forEach(([key, value]) => { q = q.lt(key, value); });
+    Object.entries(options.neq || {}).forEach(([key, value]) => { q = q.neq(key, value); });
+    Object.entries(options.in || {}).forEach(([key, value]) => { q = q.in(key, Array.isArray(value) ? value : [value]); });
+    if (options.or) q = q.or(options.or);
     if (options.order) q = q.order(options.order, { ascending: options.ascending ?? false });
     if (options.limit) q = q.limit(options.limit);
     const { data, error } = await q;
-    if (error) throw error;
+    if (error) throw normalizeDbError(error);
     return data;
   }
-  let rows = (tables[table] || []).filter((row) => matches(row, filters));
+  let rows = (tables[table] || [])
+    .filter((row) => matches(row, filters))
+    .filter((row) => matchesAdvancedFilters(row, options));
   if (options.order) rows = sortRows(rows, options.order, options.ascending ?? false);
   if (options.limit) rows = rows.slice(0, options.limit);
   return rows;
@@ -451,8 +521,9 @@ export async function dbInsert(table, payload) {
   const rows = Array.isArray(payload) ? payload : [payload];
   const stamped = rows.map((row) => ({ id: row.id || randomUUID(), created_at: row.created_at || now(), ...row }));
   if (supabase) {
+    assertDbCircuitClosed();
     const { data, error } = await supabase.from(table).insert(stamped).select();
-    if (error) throw error;
+    if (error) throw normalizeDbError(error);
     return Array.isArray(payload) ? data : data[0];
   }
   tables[table].push(...stamped);
@@ -462,8 +533,9 @@ export async function dbInsert(table, payload) {
 export async function dbUpdate(table, filters, patch) {
   const stamped = stampUpdate(table, patch);
   if (supabase) {
+    assertDbCircuitClosed();
     const { data, error } = await supabase.from(table).update(stamped).match(filters).select();
-    if (error) throw error;
+    if (error) throw normalizeDbError(error);
     return data;
   }
   const rows = tables[table] || [];
@@ -479,8 +551,9 @@ export async function dbUpdate(table, filters, patch) {
 
 export async function dbDelete(table, filters) {
   if (supabase) {
+    assertDbCircuitClosed();
     const { error } = await supabase.from(table).delete().match(filters);
-    if (error) throw error;
+    if (error) throw normalizeDbError(error);
     return true;
   }
   tables[table] = (tables[table] || []).filter((row) => !matches(row, filters));
@@ -517,6 +590,14 @@ export async function safeLogActivity(payload) {
   try {
     return await logActivity(payload);
   } catch (error) {
+    if (/user_id.*activity_logs|activity_logs.*user_id/i.test(error?.message || '')) {
+      const { user_id, userId, ...withoutUserId } = payload || {};
+      try {
+        return await logActivity(withoutUserId);
+      } catch {
+        // Fall through to the compact warning below.
+      }
+    }
     console.warn('[activity_logs] failed to write log', error?.message || error);
     return null;
   }
