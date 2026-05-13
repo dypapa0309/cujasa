@@ -5,6 +5,7 @@ import { adminActivityLabel, adminActivityMessage, normalizeQueueClassification 
 import { dailyPipelineStatus } from './schedulerRunService.js';
 import { processDueQueue, repairReplyLinkFailures } from './schedulerService.js';
 import { cleanupOldQueueIssues } from './queueVisibilityService.js';
+import { cleanupOldActivityLogs } from './activityLogCleanupService.js';
 
 const QUEUE_PROBLEM_STATUSES = ['failed', 'retry', 'manual_required'];
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -720,9 +721,10 @@ export async function normalizeOperations({ accountId = null } = {}) {
   const oldIssues = await cleanupOldQueueIssues({
     mode: 'apply',
     accountId,
-    hideAfterDays: 7,
-    deleteAfterHiddenDays: 3
+    hideAfterDays: 1,
+    deleteAfterHiddenDays: 1
   });
+  const oldActivityLogs = accountId ? null : await cleanupOldActivityLogs({ mode: 'apply' });
   const processedQueue = await processDueQueue();
   const dashboard = await operationDashboard();
   return {
@@ -734,6 +736,7 @@ export async function normalizeOperations({ accountId = null } = {}) {
     failedReplyRepairCount: repairedReplies.failedCount || 0,
     skippedReplyRepairCount: repairedReplies.skippedCount || 0,
     oldIssues,
+    oldActivityLogs,
     processedQueue,
     remainingQueueProblems: dashboard.summary?.cards?.queueProblems ?? 0,
     remainingPipelineStuck: dashboard.summary?.issueBreakdown?.pipelineStuck ?? 0,

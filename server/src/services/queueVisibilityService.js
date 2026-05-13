@@ -6,8 +6,8 @@ const CUSTOMER_DISMISSIBLE_STATUSES = new Set(['failed', 'retry', 'manual_requir
 const CUSTOMER_ATTENTION_POSTED_CATEGORIES = new Set(['reply_warning', 'reply_repair_blocked', 'reply_permission_required']);
 const PAST_TOKEN_CATEGORIES = new Set(['threads_reconnect_required', 'reply_permission_required', 'retry_available', 'recheck_required']);
 const DEFAULT_RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
-const AUTO_HIDE_ISSUE_DAYS = Math.max(1, Number(process.env.QUEUE_ISSUE_AUTO_HIDE_DAYS || 7));
-const DELETE_HIDDEN_ISSUE_DAYS = Math.max(1, Number(process.env.QUEUE_ISSUE_DELETE_AFTER_HIDE_DAYS || 3));
+const AUTO_HIDE_ISSUE_DAYS = Math.max(1, Number(process.env.QUEUE_ISSUE_AUTO_HIDE_DAYS || 1));
+const DELETE_HIDDEN_ISSUE_DAYS = Math.max(1, Number(process.env.QUEUE_ISSUE_DELETE_AFTER_HIDE_DAYS || 1));
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 function startOfTodayKst(date = new Date()) {

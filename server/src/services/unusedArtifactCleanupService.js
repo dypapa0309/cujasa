@@ -1,6 +1,6 @@
 import { dbDelete, dbList, safeLogActivity } from './supabaseService.js';
 
-const DEFAULT_RETENTION_DAYS = Math.max(1, Number(process.env.UNUSED_ARTIFACT_RETENTION_DAYS || 7));
+const DEFAULT_RETENTION_DAYS = Math.max(1, Number(process.env.UNUSED_ARTIFACT_RETENTION_DAYS || 2));
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 function cutoffFor(retentionDays = DEFAULT_RETENTION_DAYS) {

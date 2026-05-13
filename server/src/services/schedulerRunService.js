@@ -2,6 +2,7 @@ import { dbGet, dbInsert, dbList, dbUpdate, logActivity } from './supabaseServic
 import { runFullPipeline } from './pipelineService.js';
 import { cleanupOldQueueIssues } from './queueVisibilityService.js';
 import { cleanupUnusedPipelineArtifacts } from './unusedArtifactCleanupService.js';
+import { cleanupOldActivityLogs } from './activityLogCleanupService.js';
 import { sendOpsAlert } from './notificationService.js';
 import { expireStalePipelineRuns } from './pipelineRunService.js';
 import { repairReplyLinkFailures } from './schedulerService.js';
@@ -377,6 +378,7 @@ export async function runDailyPipelineOnce({
     }).catch(() => {});
     const cleanup = await cleanupUnusedPipelineArtifacts({ mode: 'apply' });
     const oldIssues = await cleanupOldQueueIssues({ mode: 'apply' });
+    const oldActivityLogs = await cleanupOldActivityLogs({ mode: 'apply' });
     const finishedAt = now().toISOString();
     const summary = {
       ...summarizePipelineResults(pipeline),
@@ -386,6 +388,7 @@ export async function runDailyPipelineOnce({
       replyRepair,
       cleanup,
       oldIssues,
+      oldActivityLogs,
       completedAt: finishedAt,
       durationMs: Date.now() - runStartedAt,
       heartbeatAt: finishedAt

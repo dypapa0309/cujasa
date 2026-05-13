@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ChevronRight, X } from 'lucide-react';
+import { ChevronRight, X } from 'lucide-react';
 import { api, setAuthToken } from '../lib/api.js';
 import { CURRENT_PRODUCT, PRODUCTS, productById } from '../config/products.js';
 
 const inputClass = 'w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-700 outline-none focus:border-white/30';
 const labelClass = 'grid gap-2 text-sm font-bold text-zinc-300';
-const emergencyNotice = '최근 메타의 무작위 계정 날리기 이슈로 인해 같은 계정 내 댓글 작업이 아닌 타 계정끼리 쿠팡링크를 남겨주는 업데이트를 진행 중입니다. 작업은 14일 목요일 완료 예정입니다. 안정적인 계정 운영을 위해 최선을 다하겠습니다. 감사합니다.';
 const spreadMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_SPREAD_BETA !== 'true';
 const infludexMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_INFLUDEX_BETA !== 'true';
 
@@ -160,17 +159,6 @@ export default function LoginPage({ onLogin }) {
 
         <main className="flex min-h-screen items-center justify-center px-5 py-10">
           <div className="w-full max-w-[420px]">
-              <div className="mb-4 rounded-[24px] border border-amber-300/25 bg-amber-500/10 p-4 shadow-2xl shadow-black/30">
-                <div className="flex items-start gap-3">
-                  <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-amber-300/15 text-amber-200">
-                    <AlertTriangle size={18} />
-                  </div>
-                  <div>
-                    <div className="text-sm font-black text-amber-100">긴급 점검 안내</div>
-                    <p className="mt-2 text-xs font-semibold leading-relaxed text-amber-50/80">{emergencyNotice}</p>
-                  </div>
-                </div>
-              </div>
               <form onSubmit={mode === 'login' ? submit : submitRegister} className="rounded-[28px] border border-white/10 bg-[#191919] p-5 shadow-2xl shadow-black/40">
                 <div className="flex items-center justify-between gap-3">
                   <div>
