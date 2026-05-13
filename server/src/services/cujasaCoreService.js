@@ -10,6 +10,7 @@ import {
 
 const HEALTH_QUEUE_LIMIT = Math.max(1, Math.min(Number(process.env.CORE_HEALTH_QUEUE_LIMIT || 50), 200));
 const HEALTH_ACCOUNT_LIMIT = Math.max(1, Math.min(Number(process.env.CORE_HEALTH_ACCOUNT_LIMIT || 100), 500));
+const HEALTH_PROBE_TIMEOUT_MS = Math.max(1000, Number(process.env.CORE_HEALTH_PROBE_TIMEOUT_MS || 3000));
 
 function startedProbe(name) {
   const startedAt = Date.now();
@@ -28,13 +29,28 @@ function dbStatusFromError(error = {}) {
 
 async function probe(name, fn) {
   const done = startedProbe(name);
+  let timer = null;
   try {
-    return done('ok', { data: await fn() });
+    return done('ok', {
+      data: await Promise.race([
+        fn(),
+        new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            const error = new Error(`Core health probe timed out after ${HEALTH_PROBE_TIMEOUT_MS}ms`);
+            error.status = 503;
+            error.code = 'SUPABASE_UNAVAILABLE';
+            reject(error);
+          }, HEALTH_PROBE_TIMEOUT_MS);
+        })
+      ])
+    });
   } catch (error) {
     return done(dbStatusFromError(error), {
       code: error.code || null,
       message: error.message || String(error)
     });
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
