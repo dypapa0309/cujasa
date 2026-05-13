@@ -10,6 +10,7 @@ import {
   listAutomationCampaignLeads,
   listAutomationCampaigns,
   regenerateAutomationCampaignAssets,
+  rewriteAutomationAsset,
   runAutomationCampaign,
   stopAutomationCampaign,
   updateAutomationAsset,
@@ -26,7 +27,7 @@ function adminOnly(req, res, next) {
 router.use(adminOnly);
 
 router.get('/campaigns', async (req, res, next) => {
-  try { res.json(await listAutomationCampaigns()); } catch (e) { next(e); }
+  try { res.json(await listAutomationCampaigns({ summaryOnly: true })); } catch (e) { next(e); }
 });
 
 router.get('/analytics', async (req, res, next) => {
@@ -75,6 +76,10 @@ router.patch('/campaigns/:campaignId/assets/:assetId', async (req, res, next) =>
 
 router.post('/campaigns/:campaignId/assets/:assetId/expand', async (req, res, next) => {
   try { res.status(201).json(await expandAutomationAsset(req.params.campaignId, req.params.assetId, req.body, req.user)); } catch (e) { next(e); }
+});
+
+router.post('/campaigns/:campaignId/assets/:assetId/rewrite', async (req, res, next) => {
+  try { res.json(await rewriteAutomationAsset(req.params.campaignId, req.params.assetId, req.user)); } catch (e) { next(e); }
 });
 
 router.delete('/campaigns/:campaignId/assets/:assetId', async (req, res, next) => {

@@ -33,6 +33,18 @@ function assetStatusLabel(status) {
   }[status] || status;
 }
 
+function queueStatusLabel(status) {
+  return {
+    scheduled: '예약됨',
+    posting: '게시 중',
+    posted: '게시됨',
+    failed: '실패',
+    retry: '재시도',
+    manual_required: '수동 확인',
+    skipped: '제외됨'
+  }[status] || status;
+}
+
 function platformLabel(platform) {
   return platform === 'instagram' ? 'Instagram' : 'Threads';
 }
@@ -65,13 +77,38 @@ function conversionDestinationLabel(value) {
 }
 
 function previewCopyForForm(form) {
-  if (form.primaryMessage?.trim()) return form.primaryMessage.trim();
+  const variants = previewCopyVariantsForForm(form);
+  if (variants.length) return variants[0];
   const product = form.productName?.trim() || '쿠자사';
   if (form.objectiveType === 'lead') return `${product} 자동화가 궁금하다면 ${form.leadOffer || '무료 안내'}부터 받아보세요.`;
   if (form.objectiveType === 'consultation') return `${product} 도입이 고민된다면 지금 운영 상황부터 가볍게 상담해보세요.`;
   if (form.objectiveType === 'save_follow') return `${product} 자동화가 필요할 때 다시 보려고 저장해두세요.`;
   if (form.objectiveType === 'awareness') return `${product}로 상품 찾기, 글 생성, 예약 운영을 한 번에 줄여보세요.`;
   return `${product} 소개 페이지에서 자동화 흐름을 바로 확인해보세요.`;
+}
+
+function previewMessageConcept(value) {
+  return String(value || '')
+    .trim()
+    .replace(/수익\s*창출|수익창출/g, '수익화 운영')
+    .replace(/수익\s*보장|무조건\s*수익|100%\s*수익|자동으로\s*돈\s*벌(?:기)?/g, '수익화 운영')
+    .replace(/[.!?。]+$/g, '')
+    .replace(/\s*(합니다|해요|한다|하다|입니다|이에요|예요|됩니다|된다|되다)$/g, '')
+    .replace(/\s*(돕는다|돕습니다|도와요)$/g, '돕는 흐름')
+    .replace(/\s+/g, ' ')
+    .slice(0, 42);
+}
+
+function previewCopyVariantsForForm(form) {
+  const concept = previewMessageConcept(form.primaryMessage);
+  if (!concept) return [];
+  const product = form.productName?.trim() || '쿠자사';
+  const audience = String(form.targetAudience || '').split(/[,/·|]/).map((item) => item.trim()).filter(Boolean)[0] || '운영자';
+  return [
+    `${concept}이 목표라면 ${product}로 상품 선정부터 예약까지 흐름을 잡아보세요.`,
+    `매번 손으로 반복하던 ${concept}, ${product}로 글 생성과 예약을 나눠서 줄여보세요.`,
+    `${audience}에게는 ${product}처럼 ${concept} 흐름을 꾸준히 돌릴 운영 루틴이 필요합니다.`
+  ];
 }
 
 function qualityScore(asset) {
@@ -232,6 +269,20 @@ export default function AutomationStudioPage({ accounts = [] }) {
   }, [accounts]);
 
   useEffect(() => {
+    if (!selectedId) return undefined;
+    let cancelled = false;
+    api.get(`/api/admin/automation-studio/campaigns/${selectedId}`)
+      .then((detail) => {
+        if (cancelled) return;
+        setCampaigns((rows) => rows.some((row) => row.id === detail.id)
+          ? rows.map((row) => row.id === detail.id ? detail : row)
+          : [detail, ...rows]);
+      })
+      .catch(console.error);
+    return () => { cancelled = true; };
+  }, [selectedId]);
+
+  useEffect(() => {
     const applyLocationState = () => {
       const params = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
       const view = params.get('view');
@@ -348,6 +399,18 @@ export default function AutomationStudioPage({ accounts = [] }) {
       const next = await api.patch(`/api/admin/automation-studio/campaigns/${campaignId}/assets/${assetId}`, patch);
       setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
       setSelectedId(next.id);
+    } finally {
+      setUpdatingId('');
+    }
+  };
+
+  const rewriteAsset = async (campaignId, assetId) => {
+    setUpdatingId(`rewrite:${assetId}`);
+    try {
+      const next = await api.post(`/api/admin/automation-studio/campaigns/${campaignId}/assets/${assetId}/rewrite`, {});
+      setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
+      setSelectedId(next.id);
+      loadAnalytics(next.id).catch(console.error);
     } finally {
       setUpdatingId('');
     }
@@ -527,13 +590,13 @@ export default function AutomationStudioPage({ accounts = [] }) {
 
         {activeView === 'detail' && (
           <div className="p-5">
-            <CampaignDetail campaign={selected} selectedPlatform={selectedPlatform} onRun={runCampaign} onRegenerateAssets={regenerateCampaignAssets} onStop={stopCampaign} onDeleteCampaign={deleteCampaign} onDeleteSet={deleteSet} onUpdateAsset={updateAsset} onUpdateCampaignNote={updateCampaignNote} onUpdateCampaignImage={updateCampaignImage} updatingId={updatingId} />
+            <CampaignDetail campaign={selected} selectedPlatform={selectedPlatform} onRun={runCampaign} onRegenerateAssets={regenerateCampaignAssets} onStop={stopCampaign} onDeleteCampaign={deleteCampaign} onDeleteSet={deleteSet} onUpdateAsset={updateAsset} onRewriteAsset={rewriteAsset} onUpdateCampaignNote={updateCampaignNote} onUpdateCampaignImage={updateCampaignImage} updatingId={updatingId} />
           </div>
         )}
 
         {activeView === 'assets' && (
           <div className="p-5">
-            <AssetsReviewWorkspace campaign={selected} selectedPlatform={selectedPlatform} onSelectPlatform={(platform) => navigateWorkspace({ view: 'assets', platform })} onUpdateAsset={updateAsset} onBulkApprove={bulkApproveAssets} onDeleteAsset={deleteAsset} updatingId={updatingId} />
+            <AssetsReviewWorkspace campaign={selected} selectedPlatform={selectedPlatform} onSelectPlatform={(platform) => navigateWorkspace({ view: 'assets', platform })} onUpdateAsset={updateAsset} onRewriteAsset={rewriteAsset} onBulkApprove={bulkApproveAssets} onDeleteAsset={deleteAsset} updatingId={updatingId} />
           </div>
         )}
 
@@ -812,8 +875,8 @@ function CreateCampaignWizard({ accounts, form, update, selectedAccount, saving,
                         <input className={inputClass} value={form.proofPoint} onChange={(event) => update('proofPoint', event.target.value)} placeholder="예: 상품 찾기, 글 생성, 예약까지 자동화" />
                       </label>
                     </div>
-                    <label className={labelClass}>핵심 문구 직접 지정
-                      <input className={inputClass} value={form.primaryMessage} onChange={(event) => update('primaryMessage', event.target.value)} placeholder="비워두면 목표/제품 기준으로 자동 생성" />
+                    <label className={labelClass}>핵심 메시지 방향
+                      <input className={inputClass} value={form.primaryMessage} onChange={(event) => update('primaryMessage', event.target.value)} placeholder="예: 자동화로 수익화 운영을 돕는다" />
                     </label>
                     <label className={labelClass}>주의/컴플라이언스 메모
                       <input className={inputClass} value={form.complianceNote} onChange={(event) => update('complianceNote', event.target.value)} placeholder="예: 수익 보장 표현 금지" />
@@ -864,6 +927,7 @@ function CreateCampaignWizard({ accounts, form, update, selectedAccount, saving,
 
 function CreatePreview({ form }) {
   const copy = previewCopyForForm(form);
+  const variants = previewCopyVariantsForForm(form);
   const product = form.productName || '제품명';
   const fields = form.objectiveType === 'lead' ? (form.leadFields || []) : [];
   return (
@@ -879,6 +943,14 @@ function CreatePreview({ form }) {
             <span className="rounded-md bg-white px-2 py-1">{conversionDestinationLabel(form.conversionDestination)}</span>
           </div>
         </div>
+        {variants.length > 1 && (
+          <div className="mt-3 rounded-lg bg-slate-50 p-3">
+            <div className="text-[11px] font-black text-slate-500">실제 생성 시 여러 문구로 변형됩니다.</div>
+            <div className="mt-2 grid gap-1 text-xs font-bold leading-relaxed text-slate-600">
+              {variants.slice(0, 3).map((variant) => <div key={variant}>{variant}</div>)}
+            </div>
+          </div>
+        )}
       </div>
       <div className="rounded-lg border border-slate-200 p-4">
         <div className="mb-3 inline-flex items-center gap-2 text-sm font-black text-slate-900"><Image size={16} /> Instagram 카드 미리보기</div>
@@ -1130,7 +1202,7 @@ function ChannelScopeTabs({ value, onChange, counts = {} }) {
   );
 }
 
-function AssetsReviewWorkspace({ campaign, selectedPlatform = 'all', onSelectPlatform, onUpdateAsset, onBulkApprove, onDeleteAsset, updatingId }) {
+function AssetsReviewWorkspace({ campaign, selectedPlatform = 'all', onSelectPlatform, onUpdateAsset, onRewriteAsset, onBulkApprove, onDeleteAsset, updatingId }) {
   const [reviewFilter, setReviewFilter] = useState('all');
   if (!campaign) return <EmptyWorkspace label="소재를 검수할 캠페인을 선택하세요." />;
   const allAssets = campaign.assets || [];
@@ -1187,20 +1259,22 @@ function AssetsReviewWorkspace({ campaign, selectedPlatform = 'all', onSelectPla
           campaignId={campaign.id}
           assets={threadsAssets}
           queues={campaign.queues}
-          queueLinks={campaign.queueLinks}
-          onUpdateAsset={onUpdateAsset}
-          onDeleteAsset={onDeleteAsset}
-          updatingId={updatingId}
-        />}
+            queueLinks={campaign.queueLinks}
+            onUpdateAsset={onUpdateAsset}
+            onRewriteAsset={onRewriteAsset}
+            onDeleteAsset={onDeleteAsset}
+            updatingId={updatingId}
+          />}
         {selectedPlatform !== 'threads' && <InstagramColumn
           campaignId={campaign.id}
           assets={instagramAssets}
           queues={campaign.queues}
-          queueLinks={campaign.queueLinks}
-          onUpdateAsset={onUpdateAsset}
-          onDeleteAsset={onDeleteAsset}
-          updatingId={updatingId}
-        />}
+            queueLinks={campaign.queueLinks}
+            onUpdateAsset={onUpdateAsset}
+            onRewriteAsset={onRewriteAsset}
+            onDeleteAsset={onDeleteAsset}
+            updatingId={updatingId}
+          />}
       </div>
     </div>
   );
@@ -1247,17 +1321,23 @@ function ScheduleWorkspace({ campaign, selectedPlatform = 'all', onSelectPlatfor
                 <th className="px-4 py-3">소재</th>
                 <th className="px-4 py-3">예약 시간</th>
                 <th className="px-4 py-3">업로드 정책</th>
+                <th className="px-4 py-3">진단</th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan="5" className="px-4 py-8 text-center text-slate-500">생성된 예약 큐가 없습니다.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan="6" className="px-4 py-8 text-center text-slate-500">생성된 예약 큐가 없습니다.</td></tr>}
               {rows.map(({ queue, asset }) => (
                 <tr key={queue.id} className="border-b border-slate-100">
                   <td className="px-4 py-3 font-bold text-slate-700">{platformLabel(queue.platform)}</td>
-                  <td className="px-4 py-3"><span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-black text-slate-600">{assetStatusLabel(queue.status)}</span></td>
+                  <td className="px-4 py-3"><span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-black text-slate-600">{queueStatusLabel(queue.status)}</span></td>
                   <td className="max-w-xl px-4 py-3 text-slate-700">{asset?.metadata?.caption || asset?.body || asset?.title || '-'}</td>
                   <td className="px-4 py-3 text-slate-500">{formatDate(queue.scheduled_at)}</td>
-                  <td className="px-4 py-3 text-xs font-bold text-slate-500">{queue.platform === 'instagram' ? '수동 대기/미리보기' : 'Threads 예약 흐름'}</td>
+                  <td className="px-4 py-3 text-xs font-bold text-slate-500">{queue.platform === 'instagram' ? '자동 게시 안 됨 · 수동 업로드 전용' : 'Threads 자동 게시 흐름'}</td>
+                  <td className="max-w-sm px-4 py-3 text-xs leading-relaxed text-slate-500">
+                    {queue.error_category && <div className="font-black text-amber-700">{queue.error_category}</div>}
+                    {queue.error_message && <div className="mt-1">{queue.error_message}</div>}
+                    {!queue.error_category && !queue.error_message && <span className="text-slate-400">-</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1525,7 +1605,7 @@ function StatusBadge({ status }) {
   return <span className={`rounded-md px-2 py-1 text-xs font-black ${tone}`}>{statusLabel(status)}</span>;
 }
 
-function CampaignDetail({ campaign, selectedPlatform = 'all', onRun, onRegenerateAssets, onStop, onDeleteCampaign, onDeleteSet, onUpdateAsset, onUpdateCampaignNote, onUpdateCampaignImage, updatingId }) {
+function CampaignDetail({ campaign, selectedPlatform = 'all', onRun, onRegenerateAssets, onStop, onDeleteCampaign, onDeleteSet, onUpdateAsset, onRewriteAsset, onUpdateCampaignNote, onUpdateCampaignImage, updatingId }) {
   if (!campaign) {
     return <div className="rounded-lg border border-slate-200 bg-white p-8 text-sm text-slate-500">캠페인을 선택하세요.</div>;
   }
@@ -1625,6 +1705,7 @@ function CampaignDetail({ campaign, selectedPlatform = 'all', onRun, onRegenerat
             queues={campaign.queues}
             queueLinks={campaign.queueLinks}
             onUpdateAsset={onUpdateAsset}
+            onRewriteAsset={onRewriteAsset}
             updatingId={updatingId}
           />}
           {selectedPlatform !== 'threads' && <InstagramColumn
@@ -1633,6 +1714,7 @@ function CampaignDetail({ campaign, selectedPlatform = 'all', onRun, onRegenerat
             queues={campaign.queues}
             queueLinks={campaign.queueLinks}
             onUpdateAsset={onUpdateAsset}
+            onRewriteAsset={onRewriteAsset}
             updatingId={updatingId}
           />}
         </div>
@@ -1718,6 +1800,7 @@ function CampaignDiagnosticsPanel({ campaign }) {
   const reliability = diagnostics.cujasaReliability;
   const checks = [
     ['목표/전환', `${objectiveLabel(diagnostics.objective || campaign.objective_type || 'click')} · ${diagnostics.destination || '-'}`],
+    ['계정', diagnostics.account ? `${diagnostics.account.status || '-'} · 자동화 ${diagnostics.account.automationStatus || 'paused'}` : '계정 없음'],
     ['이미지', diagnostics.media?.status || '이미지 없음'],
     ['소재', `Threads ${diagnostics.assets?.threads || 0}개 · Instagram ${diagnostics.assets?.instagram || 0}개`],
     ['예약 큐', `예약 ${diagnostics.queues?.scheduled || 0}개 · 확인 ${diagnostics.queues?.manualRequired || 0}개 · 실패 ${diagnostics.queues?.failed || 0}개`],
@@ -1734,7 +1817,7 @@ function CampaignDiagnosticsPanel({ campaign }) {
           {reliability?.status || '진단 대기'}
         </span>
       </div>
-      <div className="mt-4 grid gap-2 md:grid-cols-5">
+      <div className="mt-4 grid gap-2 md:grid-cols-6">
         {checks.map(([label, value]) => (
           <div key={label} className="rounded-lg bg-slate-50 px-3 py-3">
             <div className="text-[11px] font-black text-slate-400">{label}</div>
@@ -1830,7 +1913,7 @@ function queueForAsset(asset, queues = [], queueLinks = []) {
   return queues.find((row) => row.id === link?.queue_id) || null;
 }
 
-function AssetColumn({ title, icon, campaignId, assets, queues, queueLinks, onUpdateAsset, onDeleteAsset, updatingId }) {
+function AssetColumn({ title, icon, campaignId, assets, queues, queueLinks, onUpdateAsset, onRewriteAsset, onDeleteAsset, updatingId }) {
   return (
     <div className="rounded-lg border border-slate-200">
       <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 text-sm font-black text-slate-900">{icon}{title}</div>
@@ -1844,6 +1927,12 @@ function AssetColumn({ title, icon, campaignId, assets, queues, queueLinks, onUp
                 <div className="text-sm font-black text-slate-900">{asset.title}</div>
                 <div className="flex items-center gap-1">
                   <span className="rounded-md bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600">{assetStatusLabel(asset.review_status || asset.status)}</span>
+                  {onRewriteAsset && (
+                    <button type="button" onClick={() => onRewriteAsset(campaignId, asset.id)} disabled={updatingId === `rewrite:${asset.id}`}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50 disabled:opacity-50" title="랜덤 재작성">
+                      <RefreshCw size={14} />
+                    </button>
+                  )}
                   {onDeleteAsset && (
                     <button type="button" onClick={() => onDeleteAsset(campaignId, asset.id)} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50" title="소재 삭제">
                       <Trash2 size={14} />
@@ -1871,7 +1960,7 @@ function AssetColumn({ title, icon, campaignId, assets, queues, queueLinks, onUp
   );
 }
 
-function InstagramColumn({ campaignId, assets, queues, queueLinks, onUpdateAsset, onDeleteAsset, updatingId }) {
+function InstagramColumn({ campaignId, assets, queues, queueLinks, onUpdateAsset, onRewriteAsset, onDeleteAsset, updatingId }) {
   return (
     <div className="rounded-lg border border-slate-200">
       <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 text-sm font-black text-slate-900"><Image size={18} />Instagram 카드 미리보기</div>
@@ -1885,6 +1974,12 @@ function InstagramColumn({ campaignId, assets, queues, queueLinks, onUpdateAsset
                 <div className="inline-flex items-center gap-2 text-sm font-black text-slate-900"><SquareStack size={16} />{asset.title}</div>
                 <div className="flex items-center gap-1">
                   <span className="rounded-md bg-amber-50 px-2 py-1 text-[11px] font-bold text-amber-700">Graph API 제외</span>
+                  {onRewriteAsset && (
+                    <button type="button" onClick={() => onRewriteAsset(campaignId, asset.id)} disabled={updatingId === `rewrite:${asset.id}`}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50 disabled:opacity-50" title="랜덤 재작성">
+                      <RefreshCw size={14} />
+                    </button>
+                  )}
                   {onDeleteAsset && (
                     <button type="button" onClick={() => onDeleteAsset(campaignId, asset.id)} className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50" title="소재 삭제">
                       <Trash2 size={14} />

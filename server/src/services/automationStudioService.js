@@ -1,4 +1,5 @@
-import { dbGet, dbInsert, dbList, dbUpdate, logActivity } from './supabaseService.js';
+import { dbGet, dbInsert, dbList, dbUpdate, logActivity, supabase } from './supabaseService.js';
+import { AUTOMATION_RUNNING, setAutomationStatus } from './accountAutomationService.js';
 import { createDailySchedulePlan } from '../utils/randomSchedule.js';
 import { randomUUID } from 'node:crypto';
 import { prepareGeneratedPostBody } from '../utils/koreanContentQuality.js';
@@ -196,6 +197,28 @@ function audiencePrimary(value) {
   return clean(value).split(/[,/·|]/).map((item) => item.trim()).filter(Boolean)[0] || '바쁜 운영자';
 }
 
+function audiencePersona(value) {
+  const audience = audiencePrimary(value);
+  if (/^부업$/.test(audience)) return '부업을 시작하려는 분들';
+  if (/관심자$/.test(audience)) return audience.replace(/관심자$/, '관심 있는 분들');
+  if (/사람|분|운영자|셀러|고객|팀|브랜드|사업자|크리에이터|마케터/.test(audience)) return audience;
+  return `${audience}에 관심 있는 분들`;
+}
+
+function audienceCondition(value) {
+  const audience = audiencePersona(value);
+  return /(분|분들|사람|사람들|운영자|셀러|고객|팀|브랜드|사업자|크리에이터|마케터)$/.test(audience)
+    ? `${audience}이라면`
+    : `${audience}라면`;
+}
+
+function assetCopyValue(asset) {
+  if (!asset) return '';
+  return clean(asset.platform === 'instagram'
+    ? (asset.metadata?.caption || asset.body || asset.title)
+    : (asset.body || asset.title));
+}
+
 function productPromise(productName, objectiveType) {
   const name = clean(productName).toLowerCase();
   if (/쿠자사|cujasa/.test(name)) {
@@ -206,7 +229,7 @@ function productPromise(productName, objectiveType) {
       proof: '반복되는 상품 추천 콘텐츠 운영을 줄이고, 운영자는 계정과 성과만 보면 됩니다.',
       lines: [
         '쿠팡 파트너스 자동화 프로그램 만들었습니다. 상품 찾기, 글 생성, 예약까지 쿠자사로 줄여보세요.',
-        '쿠파스 자동화 프로그램 완성했습니다. 제휴 콘텐츠 운영을 매번 손으로 하지 않아도 됩니다.',
+        '쿠파스 자동화 프로그램 완성했습니다. 쿠자사로 제휴 콘텐츠 운영을 매번 손으로 하지 않아도 됩니다.',
         '자는 동안에도 예약 콘텐츠가 돌아가게, 쿠자사로 쿠팡 파트너스 운영을 자동화해보세요.',
         '쿠팡 파트너스 부업을 시작하고 싶다면, 쿠자사로 상품 추천 콘텐츠부터 자동화해보세요.',
         '상품 고르고 글 쓰고 예약하는 반복 작업, 쿠자사 하나로 줄일 수 있습니다.',
@@ -262,13 +285,66 @@ function objectiveCta(objectiveType) {
   }[objectiveType] || '자세히 보기';
 }
 
+function primaryMessageConcept(value) {
+  let concept = clean(value)
+    .replace(/cusa?ja|cujasa/ig, 'CUJASA')
+    .replace(/쿠자사|CUJASA/g, '')
+    .replace(/수익\s*창출|수익창출/g, '수익화 운영')
+    .replace(/수익\s*보장|무조건\s*수익|100%\s*수익|자동으로\s*돈\s*벌(?:기)?/g, '수익화 운영')
+    .replace(/\s*(으로|로)\s+/g, ' ')
+    .replace(/[.!?。]+$/g, '')
+    .replace(/\s*(해\s*보세요|해주세요|해\s*주세요|하세요|해요|합니다|한다|하다|입니다|이에요|예요|됩니다|된다|되다|하자)$/g, '')
+    .replace(/\s*(돕는다|돕습니다|도와요)$/g, '돕는 흐름')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const hasProfitSignal = /수익|수익화|부업|제휴|어필리에이트|파트너스/.test(concept);
+  const hasAutomationSignal = /자동화|자동|운영|예약/.test(concept);
+  if (hasProfitSignal && hasAutomationSignal) {
+    concept = '수익화 운영 자동화';
+  }
+  if (!concept) return '';
+  return compactSentence(concept, 42);
+}
+
+function seededAdLine(input, index) {
+  const operationSet = input.operationSet || {};
+  const concept = primaryMessageConcept(operationSet.primaryMessage);
+  if (!concept) return '';
+  const product = shortProductName(input.productName);
+  const audience = audiencePersona(input.targetAudience);
+  const audienceIf = audienceCondition(input.targetAudience);
+  const proof = clean(operationSet.proofPoint || input.targetGoal);
+  const proofPart = proof ? `${compactSentence(proof, 34)}까지` : '콘텐츠 생성과 예약까지';
+  const conceptTopic = concept.replace(/자동화$/, '').trim() || concept;
+  const lines = [
+    `${conceptTopic}이 목표라면 ${product}로 상품 선정부터 예약까지 흐름을 잡아보세요.`,
+    `매번 손으로 반복하던 ${conceptTopic} 작업, ${product}로 글 생성과 예약을 나눠서 줄여보세요.`,
+    `${audience}에게는 ${product}처럼 ${conceptTopic} 흐름을 꾸준히 돌릴 운영 루틴이 필요합니다.`,
+    `${conceptTopic} 흐름을 시작하고 싶다면 ${product}에서 콘텐츠 생성과 예약부터 가볍게 시작하세요.`,
+    `${product}는 ${conceptTopic} 흐름과 ${proofPart} 한 번에 운영할 수 있게 돕습니다.`,
+    `과장된 약속보다 꾸준한 운영이 먼저라면, ${product}로 ${concept} 기반을 잡아보세요.`,
+    `제휴 콘텐츠를 오래 돌리고 싶다면 ${product}로 ${conceptTopic} 작업을 자동화해보세요.`,
+    `${product}로 오늘 올릴 글부터 예약까지 묶어두고 ${conceptTopic} 흐름을 이어가세요.`,
+    `상품 찾기부터 예약까지 자주 막힌다면 ${product}로 ${conceptTopic} 루틴을 먼저 정리해보세요.`,
+    `${audienceIf} ${product}로 ${conceptTopic}에 필요한 반복 작업을 줄여보세요.`,
+    `처음부터 큰 약속을 하기보다, ${product}로 ${conceptTopic}을 꾸준히 운영할 구조를 만들어보세요.`,
+    `${proofPart} 이어가야 한다면 ${product}에서 ${conceptTopic} 소재를 여러 각도로 준비해보세요.`,
+    `${product}는 ${conceptTopic}을 한 번에 끝낸다고 말하기보다, 반복 운영 시간을 줄이는 데 집중합니다.`,
+    `매일 같은 글이 걱정된다면 ${product}로 ${conceptTopic} 문구와 예약 흐름을 나눠 관리해보세요.`,
+    `${conceptTopic}을 혼자 붙잡고 있기보다 ${product}로 생성, 검수, 예약을 한 번에 정리하세요.`,
+    `제휴 콘텐츠 운영을 오래 보려면 ${product}로 ${conceptTopic} 흐름부터 안정적으로 잡아보세요.`
+  ];
+  return compactSentence(lines[index % lines.length], 112);
+}
+
 function adLine(input, index) {
   const product = shortProductName(input.productName);
   const audience = audiencePrimary(input.targetAudience);
   const promise = productPromise(product, input.objectiveType);
   const cta = objectiveCta(input.objectiveType);
   const operationSet = input.operationSet || {};
-  if (operationSet.primaryMessage) return compactSentence(operationSet.primaryMessage, 112);
+  const seeded = seededAdLine(input, index);
+  if (seeded) return seeded;
   if (input.objectiveType === 'lead') {
     const offer = operationSet.leadOffer || '도입 안내';
     const lines = [
@@ -458,6 +534,25 @@ function buildInstagramAsset(input, index) {
       adCopy: line
     }
   };
+}
+
+function campaignAssetInput(campaign) {
+  return {
+    productName: campaign.product_name,
+    productUrl: campaign.product_url,
+    productPrice: campaign.product_price,
+    productImageUrl: campaign.product_image_url || campaign.generation_input?.productImageUrl,
+    objectiveType: campaign.objective_type || campaign.generation_input?.objectiveType || 'click',
+    targetGoal: campaign.target_goal,
+    targetAudience: campaign.target_audience,
+    accountHandle: campaign.account_handle,
+    operationSet: campaign.operation_set || campaign.generation_input?.operationSet || {}
+  };
+}
+
+function buildAutomationAssetForPlatform(input, platform, index, account = {}) {
+  const builder = platform === 'instagram' ? buildInstagramAsset : buildThreadsAsset;
+  return enhanceAutomationAsset(builder(input, index), input, account);
 }
 
 function splitCardLine(value) {
@@ -677,13 +772,15 @@ function scheduleTimes(campaign, count) {
   return times.slice(0, count);
 }
 
-async function enrichCampaign(row) {
-  const [allAssets, allLinks, leadFormRow] = await Promise.all([
-    dbList('automation_studio_assets', { campaign_id: row.id }, { order: 'created_at', ascending: true }),
+async function enrichCampaign(row, options = {}) {
+  const includeAssetImages = options.includeAssetImages !== false;
+  const [allLinks, leadFormRow, account] = await Promise.all([
     dbList('automation_studio_queue_links', { campaign_id: row.id }, { order: 'created_at', ascending: true }),
-    leadFormForCampaign(row.id)
+    leadFormForCampaign(row.id),
+    row.account_id ? dbGet('accounts', { id: row.account_id }).catch(() => null) : null
   ]);
   const currentGenerationId = row.summary?.currentGenerationId || row.generation_input?.currentGenerationId || null;
+  const allAssets = await listAutomationAssetsForCampaign(row, allLinks, currentGenerationId, { includeAssetImages });
   const assetsForGeneration = currentGenerationId
     ? allAssets.filter((asset) => asset.metadata?.generationId === currentGenerationId)
     : allAssets;
@@ -692,10 +789,10 @@ async function enrichCampaign(row) {
   const links = currentGenerationId
     ? allLinks.filter((link) => assetIds.has(link.asset_id))
     : allLinks;
-  const queues = (await Promise.all(links.map((link) => link.queue_id ? dbGet('post_queue', { id: link.queue_id }) : null))).filter(Boolean);
-  const clickRows = await dbList('click_events');
+  const queues = await listRowsByIds('post_queue', links.map((link) => link.queue_id).filter(Boolean));
   const queueIds = new Set(queues.map((queue) => queue.id));
   const trackingIds = new Set(queues.map((queue) => queue.tracking_link_id).filter(Boolean));
+  const clickRows = await listClicksForTrackingIds([...trackingIds]);
   const stats = {
     assets: assets.length,
     scheduled: queues.filter((queue) => queueIds.has(queue.id) && ['scheduled', 'manual_required', 'posting', 'retry'].includes(queue.status)).length,
@@ -715,9 +812,77 @@ async function enrichCampaign(row) {
     : [];
   const diagnostics = {
     ...campaignDiagnostics(row, assetsWithReview, queues, leadForm),
+    account: account ? {
+      status: account.status,
+      automationStatus: account.automation_status,
+      threadsTokenStatus: account.threads_token_status,
+      hasThreadsToken: Boolean(account.threads_access_token)
+    } : null,
     cujasaReliability: await accountReliabilitySummary(row.account_id)
   };
   return { ...row, assets: assetsWithReview, queueLinks: links, queues, stats, leadForm, leadSubmissions, diagnostics };
+}
+
+async function listAutomationAssetsForCampaign(row, allLinks = [], currentGenerationId = null, options = {}) {
+  const includeAssetImages = options.includeAssetImages !== false;
+  if (supabase && currentGenerationId) {
+    const imageSelect = includeAssetImages ? ',image_data_url' : '';
+    const baseSelect = `id,campaign_id,account_id,platform,asset_type,status,title,body,cta${imageSelect},metadata,created_at,updated_at`;
+    const preferredSelect = `${baseSelect},operation_note,reusable`;
+    const fetchCurrentAssets = async (select) => supabase
+      .from('automation_studio_assets')
+      .select(select)
+      .eq('campaign_id', row.id)
+      .eq('metadata->>generationId', currentGenerationId)
+      .order('created_at', { ascending: true });
+    let { data, error } = await fetchCurrentAssets(preferredSelect);
+    if (error && /operation_note|reusable|column/i.test(error.message || '')) {
+      ({ data, error } = await fetchCurrentAssets(baseSelect));
+    }
+    if (error) throw error;
+    return data || [];
+  }
+  const linkedAssetIds = allLinks.map((link) => link.asset_id).filter(Boolean);
+  return (await listRowsByIds('automation_studio_assets', linkedAssetIds, includeAssetImages ? '*' : 'id,campaign_id,account_id,platform,asset_type,status,title,body,cta,metadata,created_at,updated_at'))
+    .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+}
+
+async function listRowsByIds(table, ids = [], select = '*') {
+  const uniqueIds = [...new Set(ids.filter(Boolean))];
+  if (!uniqueIds.length) return [];
+  if (supabase) {
+    const rows = [];
+    for (let index = 0; index < uniqueIds.length; index += 100) {
+      const chunk = uniqueIds.slice(index, index + 100);
+      const { data, error } = await supabase.from(table).select(select).in('id', chunk);
+      if (error) throw error;
+      rows.push(...(data || []));
+    }
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return uniqueIds.map((id) => byId.get(id)).filter(Boolean);
+  }
+  return (await Promise.all(uniqueIds.map((id) => dbGet(table, { id }).catch(() => null)))).filter(Boolean);
+}
+
+async function listClicksForTrackingIds(trackingIds = []) {
+  const uniqueIds = [...new Set(trackingIds.filter(Boolean))];
+  if (!uniqueIds.length) return [];
+  if (supabase) {
+    const rows = [];
+    for (let index = 0; index < uniqueIds.length; index += 100) {
+      const chunk = uniqueIds.slice(index, index + 100);
+      const { data, error } = await supabase
+        .from('click_events')
+        .select('id,tracking_link_id,created_at')
+        .in('tracking_link_id', chunk);
+      if (error) throw error;
+      rows.push(...(data || []));
+    }
+    return rows;
+  }
+  const rows = await dbList('click_events');
+  const allowed = new Set(uniqueIds);
+  return rows.filter((row) => allowed.has(row.tracking_link_id));
 }
 
 function addMetric(map, key, patch = {}) {
@@ -736,13 +901,10 @@ function serializeMetricMap(map, limit = 30) {
 }
 
 export async function getAutomationStudioAnalytics({ campaignId = null } = {}) {
-  const campaigns = campaignId ? [await getAutomationCampaign(campaignId)] : await listAutomationCampaigns();
+  const campaigns = campaignId
+    ? [await getAutomationCampaign(campaignId, { includeAssetImages: false })]
+    : await listAutomationCampaigns({ includeAssetImages: false });
   const campaignIds = new Set(campaigns.map((campaign) => campaign.id));
-  const [clickRows, trackingLinks] = await Promise.all([
-    dbList('click_events'),
-    dbList('tracking_links').catch(() => [])
-  ]);
-  const trackingById = new Map(trackingLinks.map((link) => [link.id, link]));
   const campaignById = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
   const assetById = new Map();
   const queueRows = [];
@@ -760,6 +922,12 @@ export async function getAutomationStudioAnalytics({ campaignId = null } = {}) {
       if (queue.tracking_link_id) trackingToContext.set(queue.tracking_link_id, context);
     }
   }
+  const trackingIds = [...trackingToContext.keys()];
+  const [clickRows, trackingLinks] = await Promise.all([
+    listClicksForTrackingIds(trackingIds),
+    listRowsByIds('tracking_links', trackingIds).catch(() => [])
+  ]);
+  const trackingById = new Map(trackingLinks.map((link) => [link.id, link]));
 
   const clicks = clickRows
     .map((click) => {
@@ -884,19 +1052,42 @@ async function archiveCampaignGeneration(campaignId) {
   await dbUpdate('automation_studio_assets', { campaign_id: campaignId }, { status: 'stopped' }).catch(() => null);
 }
 
-export async function listAutomationCampaigns() {
+export async function listAutomationCampaigns(options = {}) {
   const rows = await dbList('automation_studio_campaigns', {}, { order: 'created_at', ascending: false });
-  return Promise.all(rows.filter((row) => !isDeletedCampaign(row)).map(enrichCampaign));
+  if (options.summaryOnly) return rows.filter((row) => !isDeletedCampaign(row)).map(summarizeCampaign);
+  return Promise.all(rows.filter((row) => !isDeletedCampaign(row)).map((row) => enrichCampaign(row, options)));
 }
 
-export async function getAutomationCampaign(id) {
+function summarizeCampaign(row) {
+  const generatedAssets = Number(row.summary?.generatedAssets || 0);
+  const queuedItems = Number(row.summary?.queuedItems || 0);
+  return {
+    ...row,
+    assets: [],
+    queues: [],
+    queueLinks: [],
+    stats: {
+      assets: generatedAssets,
+      scheduled: queuedItems,
+      posted: 0,
+      stopped: 0,
+      clicks: 0
+    },
+    diagnostics: {
+      ...campaignDiagnostics(row, [], [], null),
+      cujasaReliability: null
+    }
+  };
+}
+
+export async function getAutomationCampaign(id, options = {}) {
   const row = await dbGet('automation_studio_campaigns', { id });
   if (!row) {
     const error = new Error('Campaign not found');
     error.status = 404;
     throw error;
   }
-  return enrichCampaign(row);
+  return enrichCampaign(row, options);
 }
 
 export async function createAutomationCampaign(body, user = {}) {
@@ -969,27 +1160,37 @@ export async function runAutomationCampaign(id, user = {}) {
     error.status = 404;
     throw error;
   }
+  const account = await getRequiredAutomationAccount(campaign.account_id);
+  if (account.status !== 'active') {
+    const error = new Error(`Automation Studio account is ${account.status || 'missing'}; active account is required`);
+    error.status = 409;
+    error.code = 'ACCOUNT_NOT_ACTIVE';
+    throw error;
+  }
+  if (account.automation_status !== AUTOMATION_RUNNING) {
+    await setAutomationStatus(account.id, AUTOMATION_RUNNING);
+    await logActivity({
+      account_id: account.id,
+      project_id: account.project_id,
+      action: 'automation_studio_account_autostarted',
+      level: 'info',
+      message: 'Automation Studio campaign run enabled account automation.',
+      payload: { campaignId: campaign.id, previousAutomationStatus: account.automation_status || 'paused' }
+    }).catch(() => null);
+    account.automation_status = AUTOMATION_RUNNING;
+  }
   await archiveCampaignGeneration(campaign.id);
   await ensureLeadFormForCampaign(campaign, user).catch(() => null);
-  const account = await getRequiredAutomationAccount(campaign.account_id);
   const generationId = randomUUID();
   const platforms = normalizePlatforms(campaign.platforms);
   const perPlatformCount = Math.max(1, campaign.days * clampInt(campaign.daily_post_max, 1, MAX_DAILY, 1));
-  const input = {
-    productName: campaign.product_name,
-    productUrl: campaign.product_url,
-    productPrice: campaign.product_price,
-    productImageUrl: campaign.product_image_url || campaign.generation_input?.productImageUrl,
-    objectiveType: campaign.objective_type || campaign.generation_input?.objectiveType || 'click',
-    targetGoal: campaign.target_goal,
-    targetAudience: campaign.target_audience,
-    accountHandle: campaign.account_handle,
-    operationSet: campaign.operation_set || campaign.generation_input?.operationSet || {}
-  };
+  const input = campaignAssetInput(campaign);
+  const variantOffset = Math.floor(Math.random() * 997);
   const generated = [];
   for (let index = 0; index < perPlatformCount; index += 1) {
-    if (platforms.includes('threads')) generated.push(enhanceAutomationAsset(buildThreadsAsset(input, index), input, account));
-    if (platforms.includes('instagram')) generated.push(enhanceAutomationAsset(buildInstagramAsset(input, index), input, account));
+    const variantIndex = index + variantOffset;
+    if (platforms.includes('threads')) generated.push(buildAutomationAssetForPlatform(input, 'threads', variantIndex, account));
+    if (platforms.includes('instagram')) generated.push(buildAutomationAssetForPlatform(input, 'instagram', variantIndex, account));
   }
   let assets;
   try {
@@ -1086,7 +1287,8 @@ export async function runAutomationCampaign(id, user = {}) {
       generatedAssets: assets.length,
       queuedItems: queueLinks.length,
       currentGenerationId: generationId,
-      requestedBy: user.email || user.type || 'admin'
+      requestedBy: user.email || user.type || 'admin',
+      copyVariantOffset: variantOffset
     }
   });
   await logActivity({
@@ -1122,6 +1324,141 @@ export async function listAutomationCampaignLeads(campaignId) {
   if (!leadForm) return { leadForm: null, submissions: [] };
   const submissions = await dbList('automation_studio_lead_submissions', { form_id: leadForm.id }, { order: 'created_at', ascending: false }).catch(() => []);
   return { leadForm: serializeLeadForm(leadForm), submissions };
+}
+
+async function syncRewrittenAssetTargets(campaign, asset, link) {
+  const queue = link?.queue_id ? await dbGet('post_queue', { id: link.queue_id }).catch(() => null) : null;
+  if (queue && ['posted', 'posting'].includes(queue.status)) {
+    const error = new Error('이미 게시 중이거나 게시 완료된 소재는 랜덤 재작성할 수 없습니다.');
+    error.status = 409;
+    error.code = 'ASSET_ALREADY_POSTED';
+    throw error;
+  }
+  if (link?.post_id) {
+    const trackingLink = queue?.tracking_link_id
+      ? await dbGet('tracking_links', { id: queue.tracking_link_id }).catch(() => null)
+      : null;
+    await dbUpdate('posts', { id: link.post_id }, {
+      body: trackingLink ? postBodyWithTracking(asset, trackingLink) : postBodyForAsset(asset),
+      risk_level: asset.metadata?.riskLevel || 'low',
+      status: asset.platform === 'instagram'
+        ? 'manual_required'
+        : (asset.metadata?.reviewStatus === 'needs_review' ? 'needs_review' : 'draft'),
+      metadata: {
+        source: 'automation_studio',
+        campaignId: campaign.id,
+        assetId: asset.id,
+        platform: asset.platform,
+        qualityScore: asset.metadata?.qualityScore,
+        qualityStatus: asset.metadata?.qualityStatus,
+        qualityWarnings: asset.metadata?.qualityWarnings || [],
+        rewrittenAt: asset.metadata?.rewrittenAt || null,
+        uploadPolicy: asset.platform === 'instagram' ? 'preview_only_no_graph_api' : 'threads_queue_flow',
+        ...(trackingLink ? { trackingUrl: trackingUrlForLink(trackingLink), trackingLinkId: trackingLink.id } : {})
+      }
+    }).catch(() => null);
+  }
+  if (queue) {
+    const nextStatus = queueStatusForAsset(asset);
+    await dbUpdate('post_queue', { id: queue.id }, {
+      status: nextStatus,
+      error_message: asset.platform === 'instagram'
+        ? 'Instagram Graph API 업로드 제외: 미리보기/수동 대기 상태'
+        : (asset.metadata?.reviewStatus === 'needs_review' ? 'Automation Studio 품질 검수 필요' : null),
+      error_category: asset.platform === 'instagram'
+        ? 'instagram_preview_only'
+        : (asset.metadata?.reviewStatus === 'needs_review' ? 'automation_quality_review' : null)
+    }).catch(() => null);
+    await dbUpdate('automation_studio_queue_links', { id: link.id }, { status: nextStatus }).catch(() => null);
+  }
+}
+
+export async function rewriteAutomationAsset(campaignId, assetId, user = {}, options = {}) {
+  const campaign = await dbGet('automation_studio_campaigns', { id: campaignId });
+  if (!campaign) {
+    const error = new Error('Campaign not found');
+    error.status = 404;
+    throw error;
+  }
+  const asset = await dbGet('automation_studio_assets', { id: assetId });
+  if (!asset || asset.campaign_id !== campaignId) {
+    const error = new Error('Asset not found');
+    error.status = 404;
+    throw error;
+  }
+  const [link] = await dbList('automation_studio_queue_links', { asset_id: assetId }).catch(() => []);
+  const linkedQueue = link?.queue_id ? await dbGet('post_queue', { id: link.queue_id }).catch(() => null) : null;
+  if (linkedQueue && ['posted', 'posting'].includes(linkedQueue.status)) {
+    const error = new Error('이미 게시 중이거나 게시 완료된 소재는 랜덤 재작성할 수 없습니다.');
+    error.status = 409;
+    error.code = 'ASSET_ALREADY_POSTED';
+    throw error;
+  }
+  const account = campaign.account_id ? await dbGet('accounts', { id: campaign.account_id }).catch(() => null) : null;
+  const input = campaignAssetInput(campaign);
+  const currentCopy = assetCopyValue(asset);
+  const siblingCopies = Array.isArray(options.existingCopies)
+    ? new Set(options.existingCopies.map(clean).filter(Boolean))
+    : new Set((await dbList('automation_studio_assets', {
+      campaign_id: campaignId,
+      platform: asset.platform
+    }).catch(() => []))
+      .filter((item) => item.id !== asset.id && !item.metadata?.deletedAt && !['stopped', 'archived'].includes(item.status))
+      .map(assetCopyValue)
+      .filter(Boolean));
+  let rewritten = null;
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const variantIndex = Math.floor(Math.random() * 997) + attempt;
+    const candidate = buildAutomationAssetForPlatform(input, asset.platform, variantIndex, account || {});
+    const candidateCopy = assetCopyValue(candidate);
+    if (candidateCopy && candidateCopy !== currentCopy && !siblingCopies.has(candidateCopy)) {
+      rewritten = candidate;
+      break;
+    }
+  }
+  rewritten ||= buildAutomationAssetForPlatform(input, asset.platform, Math.floor(Math.random() * 997), account || {});
+  const metadata = {
+    ...(asset.metadata || {}),
+    ...(rewritten.metadata || {}),
+    generationId: asset.metadata?.generationId || campaign.summary?.currentGenerationId || null,
+    operationNote: asset.operation_note || asset.metadata?.operationNote || '',
+    reusable: Boolean(asset.reusable || asset.metadata?.reusable),
+    rewrittenAt: new Date().toISOString(),
+    rewrittenBy: user.email || user.type || 'admin',
+    previousCopy: compactSentence(currentCopy, 140)
+  };
+  const patch = {
+    title: rewritten.title,
+    body: rewritten.body,
+    cta: rewritten.cta,
+    image_data_url: rewritten.image_data_url || asset.image_data_url || null,
+    status: metadata.reviewStatus || 'queued',
+    metadata,
+    operation_note: asset.operation_note || '',
+    reusable: Boolean(asset.reusable)
+  };
+  let updated;
+  try {
+    [updated] = await dbUpdate('automation_studio_assets', { id: asset.id }, patch);
+  } catch (error) {
+    if (!/operation_note|reusable|image_data_url|status|schema cache|column|check constraint/i.test(error.message || '')) throw error;
+    [updated] = await dbUpdate('automation_studio_assets', { id: asset.id }, {
+      title: patch.title,
+      body: patch.body,
+      cta: patch.cta,
+      metadata
+    });
+  }
+  await syncRewrittenAssetTargets(campaign, { ...asset, ...patch, ...updated }, link);
+  await logActivity({
+    account_id: campaign.account_id,
+    project_id: campaign.project_id,
+    action: 'automation_studio_asset_rewritten',
+    message: `${asset.platform}:${asset.id}`,
+    payload: { campaignId, assetId, platform: asset.platform }
+  }).catch(() => null);
+  if (options.returnDetail === false) return { ok: true, asset: updated || { ...asset, ...patch } };
+  return getAutomationCampaign(campaignId);
 }
 
 export async function updateAutomationAsset(campaignId, assetId, body = {}, user = {}) {
@@ -1243,7 +1580,8 @@ export async function updateAutomationCampaign(campaignId, body = {}, user = {})
   const summary = {
     ...(campaign.summary || {}),
     nextActionNote,
-    ...(hasProductImageUrl ? { productImageUpdatedAt: new Date().toISOString() } : {}),
+    ...(hasProductImageUrl && productImageUrl ? { productImageUpdatedAt: new Date().toISOString(), productImageClearedAt: null } : {}),
+    ...(hasProductImageUrl && !productImageUrl ? { productImageClearedAt: new Date().toISOString() } : {}),
     lastUpdatedBy: user.email || user.type || 'admin',
     lastUpdatedAt: new Date().toISOString()
   };

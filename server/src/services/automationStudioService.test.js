@@ -12,13 +12,14 @@ import {
   getPublicLeadForm,
   listAutomationCampaignLeads,
   regenerateAutomationCampaignAssets,
+  rewriteAutomationAsset,
   runAutomationCampaign,
   stopAutomationCampaign,
   submitPublicLeadForm,
   updateAutomationAsset,
   updateAutomationCampaign
 } from './automationStudioService.js';
-import { dbGet, dbInsert, dbList } from './supabaseService.js';
+import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { processDueQueue, uploadQueueItem } from './schedulerService.js';
 
 async function createAccountFixture() {
@@ -93,6 +94,58 @@ test('automation studio creates assets and separated queue links for Threads and
   assert.equal(running.operation_set.audienceStage, 'warm');
   const trackedPost = await dbGet('posts', { id: running.queues.find((queue) => queue.tracking_link_id).post_id });
   assert.match(trackedPost.body, /\/r\//);
+});
+
+test('automation studio treats primaryMessage as a seed and generates varied copy', async () => {
+  const { account } = await createAccountFixture();
+  const campaign = await createAutomationCampaign({
+    accountId: account.id,
+    productName: '쿠자사',
+    productUrl: 'https://jasain.co.kr/cujasa',
+    objectiveType: 'click',
+    targetGoal: '쿠팡 파트너스 운영 자동화 소개',
+    targetAudience: '쿠팡파트너스 부업 관심자',
+    proofPoint: '상품 찾기, 글 생성, 예약까지 자동화',
+    primaryMessage: 'CUSAJA로 수익창출 자동화 하세요',
+    days: 2,
+    dailyPostMax: 3,
+    platforms: ['threads', 'instagram']
+  }, { type: 'admin', email: 'admin@example.com' });
+
+  const running = await runAutomationCampaign(campaign.id, { type: 'admin', email: 'admin@example.com' });
+  const threadsBodies = running.assets
+    .filter((asset) => asset.platform === 'threads')
+    .map((asset) => asset.body);
+  const instagramCaptions = running.assets
+    .filter((asset) => asset.platform === 'instagram')
+    .map((asset) => asset.metadata?.caption);
+
+  assert.equal(threadsBodies.length, 6);
+  assert.equal(new Set(threadsBodies).size, 6);
+  assert.equal(new Set(instagramCaptions).size, 6);
+  assert.ok(threadsBodies.every((body) => body !== 'CUSAJA로 수익창출 자동화 하세요'));
+  assert.ok(threadsBodies.every((body) => !/수익\s*창출|수익창출/.test(body)));
+  assert.ok(threadsBodies.every((body) => !/CUSAJA/.test(body)));
+  assert.ok(threadsBodies.some((body) => /수익화 운영|제휴 콘텐츠/.test(body)));
+});
+
+test('running an automation studio campaign enables paused account automation for admin run', async () => {
+  const { account } = await createAccountFixture();
+  await dbUpdate('accounts', { id: account.id }, { automation_status: 'paused' });
+  const campaign = await createAutomationCampaign({
+    accountId: account.id,
+    productName: '쿠자사',
+    targetGoal: '자체 제품 클릭 유도',
+    days: 1,
+    dailyPostMax: 1,
+    platforms: ['threads']
+  }, { type: 'admin' });
+
+  const running = await runAutomationCampaign(campaign.id, { type: 'admin' });
+  const updatedAccount = await dbGet('accounts', { id: account.id });
+
+  assert.equal(running.status, 'running');
+  assert.equal(updatedAccount.automation_status, 'running');
 });
 
 test('automation studio requires a real account before creating runnable campaigns', async () => {
@@ -239,7 +292,7 @@ test('rerunning a campaign archives stale assets and shows only the latest gener
   assert.ok(detail.assets.every((asset) => asset.metadata.generationId === secondRun.summary.currentGenerationId));
   assert.ok(detail.assets.every((asset) => !asset.body.includes('\n')));
   assert.ok(detail.assets.find((asset) => asset.platform === 'threads').body.length < 90);
-  assert.match(detail.assets.find((asset) => asset.platform === 'threads').body, /쿠팡 파트너스 자동화|쿠파스 자동화|예약 콘텐츠|제휴 콘텐츠/);
+  assert.match(detail.assets.find((asset) => asset.platform === 'threads').body, /쿠자사|CUJASA/);
   assert.ok(detail.queues.every((queue) => ['scheduled', 'manual_required'].includes(queue.status)));
 });
 
@@ -316,6 +369,35 @@ test('campaign and asset review metadata can be updated for internal operations'
   assert.equal(updatedAsset.reusable, true);
   assert.ok(updatedAsset.metadata.qualityScore >= 58);
   assert.equal(noted.next_action_note || noted.summary.nextActionNote, '클릭 낮으면 문제 제기형으로 재생성');
+});
+
+test('random rewrite updates an Automation Studio asset and its scheduled post', async () => {
+  const { account } = await createAccountFixture();
+  const campaign = await createAutomationCampaign({
+    accountId: account.id,
+    productName: 'CUJASA',
+    productUrl: 'https://jasain.kr/cujasa',
+    primaryMessage: '자동화로 수익창출',
+    targetGoal: '제휴 콘텐츠 운영 자동화',
+    days: 1,
+    dailyPostMax: 1,
+    platforms: ['threads']
+  }, { type: 'admin', email: 'admin@example.com' });
+  const running = await runAutomationCampaign(campaign.id, { type: 'admin', email: 'admin@example.com' });
+  const asset = running.assets.find((item) => item.platform === 'threads');
+  const link = running.queueLinks.find((item) => item.asset_id === asset.id);
+  const queue = running.queues.find((item) => item.id === link.queue_id);
+  const previousBody = asset.body;
+
+  const rewritten = await rewriteAutomationAsset(running.id, asset.id, { type: 'admin', email: 'admin@example.com' });
+  const nextAsset = rewritten.assets.find((item) => item.id === asset.id);
+  const nextQueue = await dbGet('post_queue', { id: queue.id });
+  const nextPost = await dbGet('posts', { id: queue.post_id });
+
+  assert.notEqual(nextAsset.body, previousBody);
+  assert.equal(nextQueue.status, 'scheduled');
+  assert.match(nextPost.body, new RegExp(nextAsset.body.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').slice(0, 24)));
+  assert.ok(nextAsset.metadata.rewrittenAt);
 });
 
 test('lead campaigns create public lead forms and collect submissions', async () => {
