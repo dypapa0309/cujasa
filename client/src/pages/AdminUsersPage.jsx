@@ -398,6 +398,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
       user.buyerName,
       user.username,
       user.email,
+      user.phone,
       user.plan,
       user.billing_status,
       setupStatusLabel(setupStatusByUser[user.id]),
@@ -443,7 +444,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
             className="rounded border border-line px-3 py-2"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="구매자명, 아이디, 이메일, Threads 계정명/핸들 검색"
+            placeholder="구매자명, 아이디, 이메일, 연락처, Threads 계정명/핸들 검색"
           />
         </label>
         <label className="mt-3 inline-flex items-center gap-2 text-xs font-bold text-slate-500">
@@ -536,6 +537,9 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                     <div className="font-semibold text-sm">{user.email}</div>
                     <div className="text-xs text-slate-400">
                       {[user.buyer_name || user.buyerName, user.username ? `ID ${user.username}` : '', planLabel(user)].filter(Boolean).join(' · ')}
+                    </div>
+                    <div className={`mt-0.5 text-xs font-semibold ${user.phone ? 'text-slate-600' : 'text-slate-300'}`}>
+                      연락처 {user.phone || '미입력'}
                     </div>
                   </div>
                   {setupTask && (
