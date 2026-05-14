@@ -60,6 +60,15 @@ export const PRODUCTS = [
     appUrl: 'https://app.jasain.kr',
     landingUrl: 'https://jasain.kr/sublog',
     status: 'active'
+  },
+  {
+    id: 'auvibot',
+    name: 'AUVIBOT',
+    description: '상품 쇼츠 생산 자동화',
+    supportLabel: '상품 영상 자동화',
+    appUrl: 'https://app.jasain.kr',
+    landingUrl: 'https://jasain.kr/auvibot',
+    status: 'active'
   }
 ];
 

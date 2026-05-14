@@ -37,6 +37,7 @@ import { ensureAccountBlog } from '../services/blogService.js';
 import { listThreadsConnectionRequests, updateThreadsConnectionRequest } from '../services/threadsConnectionRequestService.js';
 import { buildCujasaQueueDiagnostics, reclassifyQueueErrors, repairThreadsPostUrls } from '../services/queueReliabilityService.js';
 import { recoverCore } from '../services/cujasaCoreService.js';
+import { systemSettingsPayload, updateSystemSettings } from '../services/systemSettingsService.js';
 
 const router = Router();
 
@@ -47,12 +48,20 @@ const revealableProductSettingFields = new Set([
   'defaultTrackingCode'
 ]);
 
+
 function normalizeHandle(value) {
   return String(value || '').trim().replace(/^@/, '').toLowerCase();
 }
 
 function accountLabel(account) {
   return [account?.name, account?.account_handle].filter(Boolean).join(' · ');
+}
+
+function duplicateTestOwnerEmails() {
+  return new Set(String(process.env.THREADS_DUPLICATE_TEST_OWNER_EMAILS || '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean));
 }
 
 function isDbUnavailableError(error = {}) {
@@ -67,6 +76,21 @@ async function buildAccountConflicts() {
   ]);
   const activeAccounts = accounts.filter((account) => account.status === 'active');
   const usersById = new Map(users.map((user) => [user.id, user]));
+  const ownerIdsByAccountId = new Map();
+  userAccounts.forEach((link) => {
+    ownerIdsByAccountId.set(link.account_id, new Set([...(ownerIdsByAccountId.get(link.account_id) || []), link.user_id]));
+  });
+  const accountOwnerKey = (account) => [...(ownerIdsByAccountId.get(account.id) || [])].sort().join('|');
+  const sameOwnerGroup = (rows) => {
+    const keys = rows.map(accountOwnerKey).filter(Boolean);
+    return keys.length === rows.length && new Set(keys).size === 1;
+  };
+  const testDuplicateGroup = (rows) => {
+    const allowedEmails = duplicateTestOwnerEmails();
+    if (!allowedEmails.size) return false;
+    return rows.some((account) => [...(ownerIdsByAccountId.get(account.id) || [])]
+      .some((userId) => allowedEmails.has(String(usersById.get(userId)?.email || '').trim().toLowerCase())));
+  };
   const conflicts = [];
 
   const byThreadsUserId = new Map();
@@ -77,6 +101,7 @@ async function buildAccountConflicts() {
   });
   byThreadsUserId.forEach((rows, key) => {
     if (rows.length < 2) return;
+    if (sameOwnerGroup(rows) || testDuplicateGroup(rows)) return;
     conflicts.push({
       type: 'duplicate_threads_user_id',
       label: '같은 Threads 계정 중복 연결',
@@ -94,6 +119,7 @@ async function buildAccountConflicts() {
   });
   byHandle.forEach((rows, key) => {
     if (rows.length < 2) return;
+    if (sameOwnerGroup(rows) || testDuplicateGroup(rows)) return;
     conflicts.push({
       type: 'duplicate_account_handle',
       label: '같은 Threads 핸들 중복 등록',
@@ -134,6 +160,19 @@ router.use(adminOnly);
 
 router.get('/operations/summary', async (req, res, next) => {
   try { res.json(await operationSummary()); } catch (e) { next(e); }
+});
+
+router.get('/system-settings', async (req, res, next) => {
+  try {
+    res.json(await systemSettingsPayload());
+  } catch (e) { next(e); }
+});
+
+router.patch('/system-settings', async (req, res, next) => {
+  try {
+    const values = req.body?.values && typeof req.body.values === 'object' ? req.body.values : {};
+    res.json(await updateSystemSettings(values));
+  } catch (e) { next(e); }
 });
 
 router.get('/threads-connection-requests', async (req, res, next) => {
@@ -495,14 +534,16 @@ router.post('/account-misassignments/mark-ok', async (req, res, next) => {
 
 router.post('/accounts/:accountId/disconnect-threads', async (req, res, next) => {
   try {
-    const [updated] = await dbUpdate('accounts', { id: req.params.accountId }, {
+    const patch = {
       threads_access_token: null,
       threads_user_id: null,
       threads_token_expires_at: null,
       threads_token_status: 'not_connected',
       threads_connected_at: null,
       last_threads_refresh_at: null
-    });
+    };
+    if (req.body?.clearHandle === true) patch.account_handle = '';
+    const [updated] = await dbUpdate('accounts', { id: req.params.accountId }, patch);
     if (!updated) return res.status(404).json({ error: 'Account not found' });
     res.json(redactAccount(updated));
   } catch (e) { next(e); }

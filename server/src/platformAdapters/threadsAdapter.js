@@ -8,11 +8,18 @@ const THREADS_TEXT_LIMIT = 500;
 
 export function stripLinkCta(text) {
   return String(text || '')
+    .replace(/\[?광고\]?\s*/g, '')
+    .replace(/\(?\s*이\s*포스팅은\s*쿠팡\s*파트너스\s*활동의\s*일환으로\s*,?\s*이에\s*따른\s*일정액의\s*수수료를\s*제공받습니다\.?\s*\)?/g, '')
+    .replace(/필요한\s*사람만\s*봐\.?\s*삶의\s*질은\s*장비빨임?\.?/g, '')
+    .replace(/사[지쥐]마\s*구경만\s*(?:해|햐|하자|해봐)?[~\s]*/g, '')
+    .replace(/[🔗👇↓]+\s*/g, '')
+    .replace(/제품\s*정보\s*(?:요기|여기|아래|밑|댓글|확인|보기|링크|정보)*[~\s.!?]*/g, '')
     .split('\n')
     .map((line) => line
       .replace(/자세한\s*건\s*아래\s*링크\s*확인!?/g, '')
       .replace(/아래.*링크.*확인!?/g, '')
       .replace(/댓글.*링크.*확인!?/g, '')
+      .replace(/댓글\s*확인!?/g, '')
       .replace(/구매.*링크.*확인!?/g, '')
       .replace(/프로필.*링크.*확인!?/g, '')
       .replace(/링크\s*확인!?/g, '')
@@ -147,6 +154,131 @@ function threadsError(label, body) {
   return error;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function createThreadsContainer(token, payload) {
+  const containerRes = await fetch(`${THREADS_API}/me/threads`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, access_token: token })
+  });
+  if (!containerRes.ok) {
+    const err = await containerRes.text();
+    throw threadsError('Threads container create failed', err);
+  }
+  const { id: creationId } = await containerRes.json();
+  return creationId;
+}
+
+async function publishThreadsContainer(token, creationId) {
+  const publishRes = await fetch(`${THREADS_API}/me/threads_publish`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ creation_id: creationId, access_token: token })
+  });
+  if (!publishRes.ok) {
+    const err = await publishRes.text();
+    throw threadsError('Threads publish failed', err);
+  }
+  return publishRes.json();
+}
+
+function isReadyStatus(status = '') {
+  return ['FINISHED', 'PUBLISHED', 'READY'].includes(String(status || '').toUpperCase());
+}
+
+function isFailedStatus(status = '') {
+  return ['ERROR', 'EXPIRED', 'FAILED'].includes(String(status || '').toUpperCase());
+}
+
+async function waitForThreadsContainerReady(token, creationId, { attempts = 20, intervalMs = 3000 } = {}) {
+  let latest = {};
+  for (let index = 0; index < attempts; index += 1) {
+    if (index > 0 && intervalMs > 0) await sleep(intervalMs);
+    const params = new URLSearchParams({
+      fields: 'status,status_code',
+      access_token: token
+    });
+    const statusRes = await fetch(`${THREADS_API}/${creationId}?${params.toString()}`);
+    const text = await statusRes.text();
+    try { latest = text ? JSON.parse(text) : {}; } catch { latest = { raw: text }; }
+    if (!statusRes.ok || latest.error) {
+      throw threadsError('Threads media status failed', latest.error?.message || text || `HTTP ${statusRes.status}`);
+    }
+    const status = latest.status_code || latest.status;
+    if (isReadyStatus(status)) return latest;
+    if (isFailedStatus(status)) {
+      const error = new Error(`Threads media processing failed: ${status}`);
+      error.code = 'THREADS_MEDIA_PROCESSING_FAILED';
+      error.permanent = true;
+      error.status = latest;
+      throw error;
+    }
+  }
+  const error = new Error('Threads media processing timed out.');
+  error.code = 'THREADS_MEDIA_PROCESSING_TIMEOUT';
+  error.status = latest;
+  throw error;
+}
+
+function normalizeVideoPostText(text = '') {
+  return trimToThreadsLimit(String(text || '').trim());
+}
+
+export async function uploadVideoPost({ account, videoUrl, text = '', poll = {} }) {
+  const token = account?.threads_access_token;
+  const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+  const caption = normalizeVideoPostText(text);
+  if (!videoUrl || !/^https?:\/\//i.test(String(videoUrl))) {
+    const error = new Error('Threads video_url must be a public http(s) URL.');
+    error.code = 'THREADS_VIDEO_URL_REQUIRED';
+    error.permanent = true;
+    throw error;
+  }
+  if (!caption) {
+    const error = new Error('Threads video caption is required.');
+    error.code = 'THREADS_VIDEO_TEXT_REQUIRED';
+    error.permanent = true;
+    throw error;
+  }
+  const quality = inspectGeneratedPostText(caption, account);
+  if (!quality.publishable) {
+    const error = new Error('POST_BODY_QUALITY_BLOCKED: 계정 아이디 노출 또는 템플릿성 본문이 감지되어 업로드를 중단했습니다.');
+    error.code = 'POST_BODY_QUALITY_BLOCKED';
+    error.permanent = true;
+    error.quality = quality;
+    throw error;
+  }
+  if (process.env.MOCK_UPLOAD === 'true') {
+    const mockId = encodeURIComponent(videoUrl.split('/').pop() || Date.now());
+    console.log('[MOCK THREADS VIDEO UPLOAD]', { account: account?.name, videoUrl, text: caption });
+    return { postUrl: `${baseUrl}/mock/threads/${mockId}`, raw: { mock: true, mediaType: 'VIDEO', videoUrl, text: caption } };
+  }
+  if (!token) {
+    const error = new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');
+    error.code = 'THREADS_TOKEN_MISSING';
+    error.permanent = true;
+    throw error;
+  }
+
+  const creationId = await createThreadsContainer(token, {
+    media_type: 'VIDEO',
+    video_url: String(videoUrl),
+    text: caption
+  });
+  const mediaStatus = await waitForThreadsContainerReady(token, creationId, poll);
+  const { id: postId } = await publishThreadsContainer(token, creationId);
+  const postDetails = await fetchThreadDetails(token, postId);
+  const postUrl = buildThreadsPostUrl(account, postId, postDetails);
+  const urlStatus = threadsPostUrlStatus(postUrl);
+  return {
+    postUrl: urlStatus.trusted ? postUrl : null,
+    raw: { creationId, postId, postDetails, postUrlStatus: urlStatus, mediaStatus, mediaType: 'VIDEO', videoUrl }
+  };
+}
+
 export async function uploadPost({ account, post, cta, trackingLink, sponsoredReplyText = '' }) {
   const token = account.threads_access_token;
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
@@ -198,29 +330,11 @@ export async function uploadPost({ account, post, cta, trackingLink, sponsoredRe
     throw error;
   }
 
-  const containerRes = await fetch(`${THREADS_API}/me/threads`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ media_type: 'TEXT', text, access_token: token })
-  });
-  if (!containerRes.ok) {
-    const err = await containerRes.text();
-    throw threadsError('Threads container create failed', err);
-  }
-  const { id: creationId } = await containerRes.json();
+  const creationId = await createThreadsContainer(token, { media_type: 'TEXT', text });
 
-  await new Promise((resolve) => setTimeout(resolve, 3000));
+  await sleep(3000);
 
-  const publishRes = await fetch(`${THREADS_API}/me/threads_publish`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ creation_id: creationId, access_token: token })
-  });
-  if (!publishRes.ok) {
-    const err = await publishRes.text();
-    throw threadsError('Threads publish failed', err);
-  }
-  const { id: postId } = await publishRes.json();
+  const { id: postId } = await publishThreadsContainer(token, creationId);
   const postDetails = await fetchThreadDetails(token, postId);
   const postUrl = buildThreadsPostUrl(account, postId, postDetails);
   const urlStatus = threadsPostUrlStatus(postUrl);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck, CreditCard, Download, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, Plus, RefreshCw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, Clapperboard, ClipboardCheck, CreditCard, Download, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, Plus, RefreshCw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, Wand2, X } from 'lucide-react';
 import { api, postEvent } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 import { useToast } from '../../lib/toast.jsx';
@@ -32,7 +32,8 @@ const productPreviewActions = [
   { key: 'spread', label: 'SPREAD', icon: Sparkles, hint: '캠페인 운영과 제출물 확인을 줄이는 솔루션이에요.' },
   { key: 'polibot', label: 'POLIBOT', icon: ShieldCheck, hint: '보험 보장분석과 상품 추천을 정리하는 솔루션이에요.' },
   { key: 'infludex', label: 'INFLUDEX', icon: BarChart3, hint: '인스타그램 인플루언서를 카테고리와 등급으로 분석해요.' },
-  { key: 'sublog', label: 'SUBLOG', icon: CreditCard, hint: '매달 결제되는 구독 비용을 한눈에 정리해요.' }
+  { key: 'sublog', label: 'SUBLOG', icon: CreditCard, hint: '매달 결제되는 구독 비용을 한눈에 정리해요.' },
+  { key: 'auvibot', label: 'AUVIBOT', icon: Clapperboard, hint: '상품 영상 소싱부터 쇼츠 편집안까지 준비해요.' }
 ];
 
 const dexorActions = [
@@ -64,6 +65,14 @@ const sublogActions = [
   { key: 'sublog-dashboard', productId: 'sublog', label: '구독 대시보드', icon: CreditCard, hint: '매달 결제되는 구독 비용을 직접 등록하고 한눈에 봐요.' }
 ];
 
+const auvibotActions = [
+  { key: 'auvibot-run', productId: 'auvibot', label: '자동화 실행', icon: PlayCircle, hint: '랜덤 주제와 상품 후보를 발굴해 쇼츠 작업을 자동으로 만들어요.' },
+  { key: 'auvibot-settings', productId: 'auvibot', label: '설정 확인', icon: Settings, hint: 'Threads 연결, 게시 기준, 영상 스타일을 정해요.' },
+  { key: 'auvibot-video-learning', productId: 'auvibot', label: '인기영상 학습', icon: Plus, hint: '잘 되는 영상의 훅, 컷 템포, 자막 패턴을 학습해요.' },
+  { key: 'auvibot-posts', productId: 'auvibot', label: '포스팅 현황', icon: FileText, hint: '생성된 쇼츠, 렌더 대기, 업로드 큐 상태를 확인해요.' },
+  { key: 'auvibot-analytics', productId: 'auvibot', label: '성과 보기', icon: BarChart3, hint: '생성 수, 렌더 성공률, 조회/클릭 성과를 요약해요.' }
+];
+
 const workspaceActions = [
   { key: 'account-settings', label: '계정 설정', icon: UserCircle, hint: 'JASAIN 로그인 정보와 보유 솔루션을 확인해요.' },
   { key: 'billing', label: '결제', icon: CreditCard, hint: 'JASAIN 계정의 결제 상태와 이용권을 확인해요.' }
@@ -75,10 +84,11 @@ const productTaskActions = {
   spread: spreadActions,
   polibot: polibotActions,
   infludex: infludexActions,
-  sublog: sublogActions
+  sublog: sublogActions,
+  auvibot: auvibotActions
 };
 
-const actions = [...cujasaActions, ...workspaceActions, ...productPreviewActions, ...dexorActions, ...spreadActions, ...polibotActions, ...infludexActions, ...sublogActions];
+const actions = [...cujasaActions, ...workspaceActions, ...productPreviewActions, ...dexorActions, ...spreadActions, ...polibotActions, ...infludexActions, ...sublogActions, ...auvibotActions];
 const pendingSubscriptionKey = 'cujasa_pending_subscription';
 
 function isTrustedThreadsPostUrl(url = '') {
@@ -533,7 +543,7 @@ export default function CustomerBetaPage({
       : actionOrKey;
     if (!action) return;
 
-    const previewProductIds = ['dexor', 'spread', 'polibot', 'infludex', 'sublog'];
+    const previewProductIds = ['dexor', 'spread', 'polibot', 'infludex', 'sublog', 'auvibot'];
     const productId = action.productId || (previewProductIds.includes(action.key) ? action.key : '');
     const actionProduct = productById(productId);
     if (isProductInMaintenance(actionProduct)) {
@@ -721,7 +731,9 @@ export default function CustomerBetaPage({
         ? '“맛집 블로그 후보 분석해줘”, “등급 분석 열어줘”, “결과 다운로드”처럼 입력해보세요.'
         : selectedProduct.id === 'spread'
           ? '“인스타 캠페인 추천해줘”, “참여자 선정 열어줘”, “제출물 검수”처럼 입력해보세요.'
-          : '“쿠팡 API 어디에 넣어?”, “무료체험 몇 번?”, “Threads 연결 안돼”, “3040 여성 반말로 주방용품 포스팅”처럼 입력해보세요.';
+          : selectedProduct.id === 'auvibot'
+            ? '“오늘 차량/데스크 쪽으로만 돌려줘”, “뷰티 제외”, “밝은 영상 위주로”, “성과 좋은 훅으로 다시 만들어줘”처럼 입력해보세요.'
+            : '“쿠팡 API 어디에 넣어?”, “무료체험 몇 번?”, “Threads 연결 안돼”, “3040 여성 반말로 주방용품 포스팅”처럼 입력해보세요.';
     setMessages((prev) => [
       ...prev,
       {
@@ -1574,7 +1586,12 @@ function TaskDrawer(props) {
           {action.key === 'infludex-grade' && <InfludexGradePanel reloadCurrentUser={props.reloadCurrentUser} onOpenUpload={() => props.onOpenAction?.('infludex-upload')} />}
           {action.key === 'infludex-download' && <InfludexDownloadPanel onOpenUpload={() => props.onOpenAction?.('infludex-upload')} />}
           {action.key === 'sublog-dashboard' && <SublogPanel currentUser={props.currentUser} />}
-          {['dexor', 'spread', 'polibot', 'infludex', 'sublog'].includes(action.key) && <ProductPreview action={action} onStartProduct={props.onStartProduct} starting={props.startingProductId === action.key} />}
+          {action.key === 'auvibot-run' && <AuvibotPanel mode="run" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} />}
+          {action.key === 'auvibot-settings' && <AuvibotPanel mode="settings" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} />}
+          {action.key === 'auvibot-video-learning' && <AuvibotPanel mode="learning" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} />}
+          {action.key === 'auvibot-posts' && <AuvibotPanel mode="posts" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} />}
+          {action.key === 'auvibot-analytics' && <AuvibotPanel mode="analytics" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} />}
+          {['dexor', 'spread', 'polibot', 'infludex', 'sublog', 'auvibot'].includes(action.key) && <ProductPreview action={action} onStartProduct={props.onStartProduct} starting={props.startingProductId === action.key} />}
         </div>
       </aside>
     </div>
@@ -1864,6 +1881,11 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
     if (!account?.id) return;
     setConnectingThreads(true);
     try {
+      const nextHandle = String(form?.account_handle || '').trim();
+      if (nextHandle && nextHandle !== String(account.account_handle || '').trim()) {
+        await api.patch(`/api/accounts/${account.id}`, { account_handle: nextHandle });
+        await reloadAccounts?.();
+      }
       const payload = await api.get(`/api/auth/threads/start?accountId=${account.id}`);
       if (payload?.url) window.location.href = payload.url;
     } catch (err) {
@@ -1880,9 +1902,13 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
     }
     setRequestingThreads(true);
     try {
+      const nextHandle = String(form.account_handle || '').trim();
+      if (nextHandle !== String(account.account_handle || '').trim()) {
+        await api.patch(`/api/accounts/${account.id}`, { account_handle: nextHandle });
+      }
       const result = await api.post('/api/me/threads-connection-requests', {
         accountId: account.id,
-        threadsHandle: form.account_handle,
+        threadsHandle: nextHandle,
         requestMemo: threadsRequestMemo
       });
       setThreadsRequests((prev) => [result.request, ...prev.filter((row) => row.id !== result.request?.id)].filter(Boolean));
@@ -1970,6 +1996,10 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
 
       <CollapsiblePanel title="Threads 연결">
         <div className="grid gap-3 rounded-2xl bg-black/25 px-4 py-3">
+          <label className={labelClass}>
+            Threads 핸들
+            <input className={inputClass} value={form.account_handle} onChange={(event) => update('account_handle', event.target.value)} placeholder="@myhandle" />
+          </label>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-sm font-black text-zinc-100">{threadsStatusText}</div>
@@ -6283,8 +6313,633 @@ const productPreviewContent = {
     motto: '매달 새는 돈을 한눈에 봐요.',
     description: '매달 결제되는 구독 서비스를 직접 등록하고 월간, 연간, 하루 평균 비용을 정리해요.',
     cta: 'SUBLOG 시작하기'
+  },
+  auvibot: {
+    title: 'AUVIBOT',
+    subtitle: '상품 쇼츠 생산 자동화',
+    motto: '상품 입력부터 소싱, 컷 조합, 렌더링까지 한 흐름으로 묶어요.',
+    description: 'SNS 트렌드 패턴은 분석하고, 실제 영상은 권리 문제가 적은 소스와 자체 클립 라이브러리로 조합하는 쇼츠 제작 워크스페이스예요.',
+    cta: 'AUVIBOT 시작하기'
   }
 };
+
+const auvibotContent = {
+  run: {
+    title: '자동화 실행',
+    description: '사용자가 상품을 직접 정하지 않아도 랜덤 주제, 상품 후보, 영상 소스, 트렌드 훅을 묶어 쇼츠 작업을 자동으로 생성합니다.',
+    items: [
+      ['주제 발굴', '차량, 주방, 욕실, 데스크, 뷰티 같은 카테고리와 욕구 시드를 조합합니다.'],
+      ['상품 매칭', '쿠팡 상품 검색 결과에서 쇼츠로 만들기 쉬운 후보를 고릅니다.'],
+      ['소싱/편집', '상품에 맞는 영상 후보를 찾고 훅, 컷 순서, CTA까지 자동으로 구성합니다.']
+    ]
+  },
+  settings: {
+    title: '설정 확인',
+    description: '고객은 게시 기준과 영상 스타일만 정하고, 생성/소싱/렌더링 시스템은 JASAIN에서 관리합니다.',
+    items: [
+      ['상품 API', '쿠팡 파트너스 Access Key, Secret Key, Partner ID, Tracking Code가 필요합니다.'],
+      ['영상 소싱 API', 'Pexels, Pixabay 같은 안전한 소싱 API 키를 연결합니다.'],
+      ['생성/렌더링', 'OpenAI, TTS, BGM, FFmpeg 렌더 옵션과 저장 위치를 설정합니다.']
+    ]
+  },
+  learning: {
+    title: '인기영상 학습',
+    description: 'SNS 원본 영상을 복사하지 않고, 잘 되는 영상의 구조만 학습해 AUVIBOT 편집 규칙에 반영합니다.',
+    items: [
+      ['훅 패턴', '첫 1초에 반응을 만드는 문장 구조와 시선 흐름을 추출합니다.'],
+      ['컷 템포', '컷 길이, 자막 위치, CTA 타이밍을 패턴화합니다.'],
+      ['리스크 필터', '타인 얼굴, 목소리, 워터마크, 원본 재사용은 기본적으로 제외합니다.']
+    ]
+  },
+  posts: {
+    title: '포스팅 현황',
+    description: '자동화 실행으로 생성된 쇼츠 작업의 진행 상태를 확인하는 화면입니다.',
+    items: [
+      ['소싱 완료', '영상 후보가 모였지만 아직 편집안이 확정되지 않은 작업입니다.'],
+      ['렌더 대기', '타임라인과 자막이 준비되어 MP4 생성만 남은 작업입니다.'],
+      ['업로드 대기', '렌더 결과가 준비되어 Shorts, Reels, TikTok 큐로 보낼 수 있는 작업입니다.']
+    ]
+  },
+  analytics: {
+    title: '성과 보기',
+    description: 'AUVIBOT이 만든 쇼츠의 생성량, 렌더 성공률, 업로드 후 성과를 보고 다음 자동화 기준을 조정합니다.',
+    items: [
+      ['생성 성과', '오늘 생성된 작업 수, 렌더 성공률, 실패 사유를 요약합니다.'],
+      ['소스 성과', '어떤 카테고리와 영상 소스가 좋은 결과를 냈는지 추적합니다.'],
+      ['훅 성과', '조회수와 클릭을 기준으로 다음 훅 생성 규칙에 반영합니다.']
+    ]
+  }
+};
+
+function AuvibotThreadsConnection({ account, reloadAccounts }) {
+  const toast = useToast();
+  const [connecting, setConnecting] = useState(false);
+  const [savingHandle, setSavingHandle] = useState(false);
+  const [requestingThreads, setRequestingThreads] = useState(false);
+  const [threadsRequests, setThreadsRequests] = useState([]);
+  const [requestMemo, setRequestMemo] = useState('');
+  const [handleDraft, setHandleDraft] = useState(account?.account_handle || '');
+  const [oauthError, setOauthError] = useState(null);
+  const [oauthSuccess, setOauthSuccess] = useState(null);
+  const connected = Boolean(account?.has_threads_access_token);
+  const tokenFailed = account?.threads_token_status === 'refresh_failed';
+  const statusText = connected
+    ? tokenFailed ? '재연결 필요' : '연결됨'
+    : '미연결';
+  const statusClass = connected && !tokenFailed ? 'text-emerald-200' : 'text-amber-200';
+
+  useEffect(() => {
+    setHandleDraft(account?.account_handle || '');
+  }, [account?.id, account?.account_handle]);
+
+  useEffect(() => {
+    if (!account?.id || connected) {
+      setThreadsRequests([]);
+      return;
+    }
+    api.get(`/api/me/threads-connection-requests?accountId=${account.id}`)
+      .then((rows) => setThreadsRequests(Array.isArray(rows) ? rows : []))
+      .catch(() => setThreadsRequests([]));
+  }, [account?.id, connected]);
+
+  useEffect(() => {
+    if (!account?.id) {
+      setOauthError(null);
+      setOauthSuccess(null);
+      return;
+    }
+    try {
+      const rawError = sessionStorage.getItem(`cujasa:threadsOAuthError:${account.id}`);
+      const rawSuccess = sessionStorage.getItem(`cujasa:threadsOAuthSuccess:${account.id}`);
+      setOauthError(connected ? null : rawError ? JSON.parse(rawError) : null);
+      setOauthSuccess(rawSuccess ? JSON.parse(rawSuccess) : null);
+    } catch {
+      setOauthError(null);
+      setOauthSuccess(null);
+    }
+  }, [account?.id, connected]);
+
+  const activeThreadsRequest = threadsRequests
+    .filter((row) => row && !['connected', 'canceled'].includes(row.status))
+    .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))[0] || null;
+  const threadsOAuthReady = connected || activeThreadsRequest?.status === 'customer_action_required';
+  const actionLabel = connected
+    ? '다시 연결하기'
+    : threadsOAuthReady
+      ? '승인 후 연결'
+      : activeThreadsRequest
+        ? '요청 업데이트'
+        : '이 핸들로 연결 요청';
+
+  const saveHandle = async () => {
+    if (!account?.id) {
+      toast('먼저 계정을 추가해 주세요.', 'error');
+      return false;
+    }
+    const nextHandle = String(handleDraft || '').trim();
+    if (!nextHandle) {
+      toast('Threads 핸들을 입력해 주세요.', 'error');
+      return false;
+    }
+    if (nextHandle === String(account.account_handle || '').trim()) return true;
+    setSavingHandle(true);
+    try {
+      await api.patch(`/api/accounts/${account.id}`, { account_handle: nextHandle });
+      await reloadAccounts?.();
+      toast('Threads 핸들을 저장했어요.', 'success');
+      return true;
+    } catch (err) {
+      toast(err.message || 'Threads 핸들을 저장하지 못했어요.', 'error');
+      return false;
+    } finally {
+      setSavingHandle(false);
+    }
+  };
+
+  const requestThreadsRegistration = async () => {
+    if (!await saveHandle()) return;
+    setRequestingThreads(true);
+    try {
+      const result = await api.post('/api/me/threads-connection-requests', {
+        accountId: account.id,
+        threadsHandle: String(handleDraft || '').trim(),
+        requestMemo
+      });
+      setThreadsRequests((prev) => [result.request, ...prev.filter((row) => row.id !== result.request?.id)].filter(Boolean));
+      await reloadAccounts?.();
+      toast(result.alreadyExists ? '기존 Threads 등록 요청을 업데이트했어요.' : 'Threads 등록 요청을 보냈어요.', 'success');
+    } catch (err) {
+      toast(err.message || 'Threads 등록 요청을 보내지 못했어요.', 'error');
+    } finally {
+      setRequestingThreads(false);
+    }
+  };
+
+  const connectThreads = async () => {
+    if (!account?.id) {
+      toast('먼저 연결할 계정을 선택해 주세요.', 'error');
+      return;
+    }
+    if (!await saveHandle()) return;
+    setConnecting(true);
+    try {
+      sessionStorage.setItem('cujasa:threadsOAuthReturnAction', 'auvibot-settings');
+      sessionStorage.setItem('cujasa:threadsOAuthReturnProduct', 'auvibot');
+      const payload = await api.get(`/api/auth/threads/start?accountId=${account.id}`);
+      if (payload?.url) {
+        window.location.href = payload.url;
+        return;
+      }
+      throw new Error('Threads 연결 주소가 없습니다.');
+    } catch (err) {
+      setOauthError({ message: err.message || 'Threads 연결을 시작하지 못했어요.', code: 'THREADS_OAUTH_START_FAILED', at: new Date().toISOString() });
+      toast(err.message || 'Threads 연결을 시작하지 못했어요.', 'error');
+      setConnecting(false);
+    }
+  };
+
+  return (
+    <details className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3" open>
+      <summary className="cursor-pointer list-none">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="text-sm font-black text-zinc-100">Threads</div>
+            <span className={`rounded-full bg-white/[0.06] px-2 py-1 text-[10px] font-black ${statusClass}`}>{statusText}</span>
+          </div>
+          <ChevronDown size={16} className="shrink-0 text-zinc-500" />
+        </div>
+      </summary>
+      <div className="mt-4 grid gap-3">
+        <label className={labelClass}>
+          Threads 핸들
+          <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px]">
+            <input className={inputClass} value={handleDraft} onChange={(event) => setHandleDraft(event.target.value)} placeholder="@myhandle" />
+            <DarkButton type="button" variant="ghost" size="sm" className="h-full min-h-11 w-full justify-center whitespace-nowrap px-3" onClick={saveHandle} disabled={savingHandle || !account?.id}>
+              <CheckCircle2 size={15} />
+              {savingHandle ? '저장 중...' : '저장'}
+            </DarkButton>
+          </div>
+        </label>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-black text-zinc-100">{handleDraft || account?.account_handle || 'Threads 핸들 미입력'}</div>
+            {account?.threads_connected_at && (
+              <div className="mt-1 text-xs text-zinc-500">연결 {dateTime(account.threads_connected_at)}</div>
+            )}
+          </div>
+          <DarkButton
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={threadsOAuthReady ? connectThreads : requestThreadsRegistration}
+            disabled={connecting || requestingThreads || savingHandle || !account?.id}
+          >
+            <Link2 size={15} />
+            {connecting ? '이동 중...' : requestingThreads ? '요청 중...' : actionLabel}
+          </DarkButton>
+        </div>
+        {!connected && !threadsOAuthReady && (
+          <label className={labelClass}>
+            운영자에게 보낼 메모
+            <input className={inputClass} value={requestMemo} onChange={(event) => setRequestMemo(event.target.value)} placeholder="예: 이 핸들로 연결하고 싶어요" />
+          </label>
+        )}
+        {oauthSuccess?.message && <Notice tone="success">{oauthSuccess.message}</Notice>}
+        {oauthError?.message && (
+          <Notice tone="error">
+            {oauthError.message}{oauthError.code ? ` (${oauthError.code})` : ''}
+          </Notice>
+        )}
+        {!connected && threadsOAuthReady && (
+          <Notice>
+            Meta 등록이 완료됐습니다. Meta 웹 승인 초대를 수락한 뒤 연결을 마무리해 주세요.
+          </Notice>
+        )}
+        {connected && (
+          <DarkButton type="button" variant="ghost" size="sm" onClick={() => reloadAccounts?.()}>
+            <RefreshCw size={15} />
+            연결 상태 새로고침
+          </DarkButton>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function AuvibotAccountSetup({ account, accountCreation }) {
+  return (
+    <details className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3" open={!account?.id}>
+      <summary className="cursor-pointer list-none">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="text-sm font-black text-zinc-100">사용할 Threads 채널</div>
+            <span className="rounded-full bg-white/[0.06] px-2 py-1 text-[10px] font-black text-zinc-500">
+              {accountCreation?.count ?? 0}/{accountCreation?.maxAccounts ?? 2}
+            </span>
+          </div>
+          <ChevronDown size={16} className="shrink-0 text-zinc-500" />
+        </div>
+      </summary>
+      <div className="mt-4 grid gap-3">
+        {account?.id && (
+          <div className="rounded-2xl bg-black/25 px-4 py-3">
+            <div className="text-sm font-black text-zinc-100">{account.name || '선택된 계정'}</div>
+            <div className="mt-1 text-xs text-zinc-500">{account.account_handle || 'Threads 핸들 미입력'}</div>
+            <div className="mt-2 text-xs leading-relaxed text-zinc-600">
+              CUJASA에서 이미 쓰는 채널이면 AUVIBOT도 같은 Threads 연결을 공유합니다.
+            </div>
+          </div>
+        )}
+        {accountCreation?.show ? (
+          <BetaAccountAddForm accountCreation={accountCreation} />
+        ) : (
+          <DarkButton type="button" variant="ghost" size="sm" onClick={accountCreation?.open} disabled={!accountCreation?.canAdd || accountCreation?.adding}>
+            <Plus size={15} />
+            {accountCreation?.adding ? '추가 중...' : '새 채널 추가'}
+          </DarkButton>
+        )}
+        {!accountCreation?.canAdd && (
+          <Notice>
+            계정 한도에 도달했습니다. 추가 계정이 필요하면 요금제 또는 관리자 설정을 확인해야 합니다.
+          </Notice>
+        )}
+      </div>
+    </details>
+  );
+}
+
+const auvibotSettingsDefaults = {
+  dailyCount: '3',
+  uploadTime: '09:00',
+  autoPublish: 'review',
+  categories: '차량, 주방, 데스크',
+  excludedCategories: '의료, 금융, 민감 이슈',
+  captionStyle: 'bold',
+  voiceStyle: 'natural',
+  bgmStyle: 'bright',
+  sourceMode: 'safe',
+  trendIntensity: 'balanced',
+  forbiddenKeywords: ''
+};
+
+function auvibotSettingsKey(accountId = '') {
+  return `jasain:auvibot:settings:${accountId || 'default'}`;
+}
+
+function AuvibotCustomerSettings({ account, reloadAccounts }) {
+  const toast = useToast();
+  const [settings, setSettings] = useState(() => {
+    try {
+      return { ...auvibotSettingsDefaults, ...JSON.parse(localStorage.getItem(auvibotSettingsKey(account?.id)) || '{}') };
+    } catch {
+      return auvibotSettingsDefaults;
+    }
+  });
+  const [coupang, setCoupang] = useState({
+    coupang_access_key: '',
+    coupang_secret_key: '',
+    coupang_partner_id: '',
+    coupang_tracking_code: ''
+  });
+  const [saving, setSaving] = useState(false);
+  const [requestingSetup, setRequestingSetup] = useState(false);
+
+  useEffect(() => {
+    try {
+      setSettings({ ...auvibotSettingsDefaults, ...JSON.parse(localStorage.getItem(auvibotSettingsKey(account?.id)) || '{}') });
+    } catch {
+      setSettings(auvibotSettingsDefaults);
+    }
+  }, [account?.id]);
+
+  const update = (key, value) => setSettings((prev) => ({ ...prev, [key]: value }));
+  const updateCoupang = (key, value) => setCoupang((prev) => ({ ...prev, [key]: value }));
+  const save = async () => {
+    setSaving(true);
+    try {
+      localStorage.setItem(auvibotSettingsKey(account?.id), JSON.stringify(settings));
+      if (account?.id) {
+        await api.patch(`/api/accounts/${account.id}`, {
+          coupang_access_key: coupang.coupang_access_key,
+          coupang_secret_key: coupang.coupang_secret_key,
+          coupang_partner_id: coupang.coupang_partner_id,
+          coupang_tracking_code: coupang.coupang_tracking_code
+        });
+        setCoupang({
+          coupang_access_key: '',
+          coupang_secret_key: '',
+          coupang_partner_id: '',
+          coupang_tracking_code: ''
+        });
+        await reloadAccounts?.();
+      }
+      toast('AUVIBOT 설정을 저장했어요.', 'success');
+    } catch (err) {
+      toast(err.message || '설정을 저장하지 못했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+  const requestSetup = async () => {
+    setRequestingSetup(true);
+    try {
+      await api.post('/api/me/setup-request', {
+        accountId: account?.id || null,
+        message: 'AUVIBOT 상품/수익화 및 시스템 설정 확인 요청'
+      });
+      toast('관리자에게 셋업 요청을 보냈어요.', 'success');
+    } catch (err) {
+      toast(err.message || '셋업 요청을 보내지 못했어요.', 'error');
+    } finally {
+      setRequestingSetup(false);
+    }
+  };
+
+  return (
+    <div className="grid gap-3">
+      <details className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3" open>
+        <summary className="cursor-pointer list-none">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-black text-zinc-100">게시 설정</div>
+            <ChevronDown size={16} className="shrink-0 text-zinc-500" />
+          </div>
+        </summary>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <label className={labelClass}>
+            하루 게시 수
+            <select className={inputClass} value={settings.dailyCount} onChange={(event) => update('dailyCount', event.target.value)}>
+              <option value="1">1개</option>
+              <option value="3">3개</option>
+              <option value="5">5개</option>
+            </select>
+          </label>
+          <label className={labelClass}>
+            첫 게시 시간
+            <input className={inputClass} type="time" value={settings.uploadTime} onChange={(event) => update('uploadTime', event.target.value)} />
+          </label>
+          <label className={labelClass}>
+            게시 방식
+            <select className={inputClass} value={settings.autoPublish} onChange={(event) => update('autoPublish', event.target.value)}>
+              <option value="review">검수 후 게시</option>
+              <option value="auto">자동 게시</option>
+              <option value="draft">초안만 생성</option>
+            </select>
+          </label>
+          <label className={labelClass}>
+            트렌드 반영
+            <select className={inputClass} value={settings.trendIntensity} onChange={(event) => update('trendIntensity', event.target.value)}>
+              <option value="safe">낮게</option>
+              <option value="balanced">보통</option>
+              <option value="aggressive">높게</option>
+            </select>
+          </label>
+        </div>
+      </details>
+
+      <details className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3" open>
+        <summary className="cursor-pointer list-none">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-black text-zinc-100">쿠팡 파트너스</div>
+              <span className="rounded-full bg-white/[0.06] px-2 py-1 text-[10px] font-black text-zinc-500">
+                {account?.has_coupang_access_key && account?.has_coupang_secret_key ? '저장됨' : '필요'}
+              </span>
+            </div>
+            <ChevronDown size={16} className="shrink-0 text-zinc-500" />
+          </div>
+        </summary>
+        <div className="mt-4 grid gap-3">
+          <label className={labelClass}>
+            Access Key
+            <input className={inputClass} value={coupang.coupang_access_key} onChange={(event) => updateCoupang('coupang_access_key', event.target.value)} placeholder={account?.has_coupang_access_key ? '저장됨 - 변경 시에만 입력' : 'Access Key'} />
+          </label>
+          <label className={labelClass}>
+            Secret Key
+            <input className={inputClass} type="password" value={coupang.coupang_secret_key} onChange={(event) => updateCoupang('coupang_secret_key', event.target.value)} placeholder={account?.has_coupang_secret_key ? '저장됨 - 변경 시에만 입력' : 'Secret Key'} />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className={labelClass}>
+              Partner ID
+              <input className={inputClass} value={coupang.coupang_partner_id} onChange={(event) => updateCoupang('coupang_partner_id', event.target.value)} placeholder={account?.has_coupang_partner_id ? '저장됨 - 변경 시에만 입력' : 'Partner ID'} />
+            </label>
+            <label className={labelClass}>
+              Tracking Code
+              <input className={inputClass} value={coupang.coupang_tracking_code} onChange={(event) => updateCoupang('coupang_tracking_code', event.target.value)} placeholder={account?.has_coupang_tracking_code ? '저장됨 - 변경 시에만 입력' : 'Tracking Code'} />
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <details className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+        <summary className="cursor-pointer list-none">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-black text-zinc-100">상품/소싱 기준</div>
+            <ChevronDown size={16} className="shrink-0 text-zinc-500" />
+          </div>
+        </summary>
+        <div className="mt-4 grid gap-3">
+          <label className={labelClass}>
+            우선 카테고리
+            <input className={inputClass} value={settings.categories} onChange={(event) => update('categories', event.target.value)} />
+          </label>
+          <label className={labelClass}>
+            제외 카테고리
+            <input className={inputClass} value={settings.excludedCategories} onChange={(event) => update('excludedCategories', event.target.value)} />
+          </label>
+          <label className={labelClass}>
+            금지 키워드
+            <textarea className={`${inputClass} min-h-24 resize-none`} value={settings.forbiddenKeywords} onChange={(event) => update('forbiddenKeywords', event.target.value)} placeholder="한 줄에 하나씩 입력" />
+          </label>
+          <label className={labelClass}>
+            소싱 기준
+            <select className={inputClass} value={settings.sourceMode} onChange={(event) => update('sourceMode', event.target.value)}>
+              <option value="safe">안전 소스 우선</option>
+              <option value="product">상품 적합도 우선</option>
+              <option value="trend">트렌드 적합도 우선</option>
+            </select>
+          </label>
+        </div>
+      </details>
+
+      <details className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+        <summary className="cursor-pointer list-none">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm font-black text-zinc-100">영상 스타일</div>
+            <ChevronDown size={16} className="shrink-0 text-zinc-500" />
+          </div>
+        </summary>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <label className={labelClass}>
+            자막
+            <select className={inputClass} value={settings.captionStyle} onChange={(event) => update('captionStyle', event.target.value)}>
+              <option value="bold">크고 선명하게</option>
+              <option value="minimal">깔끔하게</option>
+              <option value="dynamic">움직임 있게</option>
+            </select>
+          </label>
+          <label className={labelClass}>
+            음성
+            <select className={inputClass} value={settings.voiceStyle} onChange={(event) => update('voiceStyle', event.target.value)}>
+              <option value="natural">자연스럽게</option>
+              <option value="bright">밝게</option>
+              <option value="none">음성 없음</option>
+            </select>
+          </label>
+          <label className={labelClass}>
+            BGM
+            <select className={inputClass} value={settings.bgmStyle} onChange={(event) => update('bgmStyle', event.target.value)}>
+              <option value="bright">밝은 분위기</option>
+              <option value="calm">차분한 분위기</option>
+              <option value="none">BGM 없음</option>
+            </select>
+          </label>
+        </div>
+      </details>
+
+      <details className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+        <summary className="cursor-pointer list-none">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-black text-zinc-100">JASAIN 관리 설정</div>
+              <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-black text-emerald-200">관리 중</span>
+            </div>
+            <ChevronDown size={16} className="shrink-0 text-zinc-500" />
+          </div>
+        </summary>
+        <div className="mt-4 grid gap-2">
+          {['AI 생성', '영상 소싱', '음성', '렌더링', '저장소'].map((item) => (
+            <div key={item} className="flex items-center justify-between rounded-2xl bg-black/25 px-4 py-3">
+              <span className="text-sm font-bold text-zinc-300">{item}</span>
+              <span className="text-xs font-black text-zinc-500">JASAIN 설정</span>
+            </div>
+          ))}
+          <DarkButton type="button" variant="ghost" size="sm" onClick={requestSetup} disabled={requestingSetup}>
+            <Settings size={15} />
+            {requestingSetup ? '요청 중...' : '관리자 셋업 요청'}
+          </DarkButton>
+        </div>
+      </details>
+
+      <DarkButton type="button" onClick={save} disabled={saving}>
+        <CheckCircle2 size={16} />
+        {saving ? '저장 중...' : '설정 저장'}
+      </DarkButton>
+    </div>
+  );
+}
+
+function AuvibotPanel({ mode = 'run', account, reloadAccounts, accountCreation }) {
+  const content = auvibotContent[mode] || auvibotContent.run;
+
+  return (
+    <PanelCard className="self-start">
+      <div className="text-xs font-black uppercase tracking-wide text-zinc-500">AUVIBOT</div>
+      <h2 className="mt-3 text-2xl font-black text-zinc-100">{content.title}</h2>
+      <p className="mt-3 text-sm leading-relaxed text-zinc-500">{content.description}</p>
+      {mode === 'run' && (
+        <div className="mt-5 grid gap-3 rounded-3xl border border-white/10 bg-black/25 p-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className={labelClass}>
+              생성 개수
+              <select className={inputClass} defaultValue="5">
+                <option value="3">3개</option>
+                <option value="5">5개</option>
+                <option value="10">10개</option>
+              </select>
+            </label>
+            <label className={labelClass}>
+              소싱 방식
+              <select className={inputClass} defaultValue="mixed">
+                <option value="mixed">섞어서</option>
+                <option value="product-first">상품 먼저</option>
+                <option value="trend-first">트렌드 먼저</option>
+              </select>
+            </label>
+            <label className={labelClass}>
+              품질 기준
+              <select className={inputClass} defaultValue="conversion">
+                <option value="conversion">전환 우선</option>
+                <option value="trend">트렌드 우선</option>
+                <option value="safe">안전 소스 우선</option>
+              </select>
+            </label>
+          </div>
+          <label className={labelClass}>
+            카테고리
+            <div className="flex flex-wrap gap-2">
+              {['전체', '차량', '주방', '욕실', '데스크', '뷰티', '수납', '청소'].map((category, index) => (
+                <span key={category} className={`rounded-full border px-3 py-1.5 text-xs font-black ${index === 0 ? 'border-white/25 bg-white text-zinc-950' : 'border-white/10 bg-white/[0.04] text-zinc-400'}`}>
+                  {category}
+                </span>
+              ))}
+            </div>
+          </label>
+          <DarkButton type="button">
+            <PlayCircle size={16} />
+            자동화 시작
+          </DarkButton>
+        </div>
+      )}
+      {mode === 'settings' && (
+        <div className="mt-5 grid gap-3">
+          <AuvibotAccountSetup account={account} accountCreation={accountCreation} />
+          <AuvibotThreadsConnection account={account} reloadAccounts={reloadAccounts} />
+          <AuvibotCustomerSettings account={account} reloadAccounts={reloadAccounts} />
+        </div>
+      )}
+      {mode !== 'settings' && (
+        <div className="mt-5 grid gap-3">
+          {content.items.map(([title, description]) => (
+            <div key={title} className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+              <div className="text-sm font-black text-zinc-100">{title}</div>
+              <div className="mt-1 text-xs leading-relaxed text-zinc-500">{description}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </PanelCard>
+  );
+}
 
 const sublogStorageKeyPrefix = 'jasain_sublog_subscriptions_v1';
 const sublogCategories = ['전체', 'AI', '영상', '음악', '생산성', '클라우드', '기타'];

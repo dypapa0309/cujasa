@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://jasain.kr/sitemap.xml

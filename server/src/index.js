@@ -41,13 +41,13 @@ import { redactSensitivePayload } from './services/redactionService.js';
 import { dailyPipelineStatus, runDailyPipelineOnce } from './services/schedulerRunService.js';
 import { replyLinkModeStatus } from './utils/replyLinkMode.js';
 import { getPublicLeadForm } from './services/automationStudioService.js';
+import { loadSystemSettingsIntoEnv } from './services/systemSettingsService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
 const runningCronJobs = new Set();
 const enableInternalCron = process.env.ENABLE_INTERNAL_CRON !== 'false';
-const enableStartupDailyCatchUp = process.env.ENABLE_STARTUP_DAILY_CATCH_UP === 'true'
-  || (process.env.ENABLE_STARTUP_DAILY_CATCH_UP !== 'false' && process.env.NODE_ENV !== 'production');
+const enableStartupDailyCatchUp = process.env.ENABLE_STARTUP_DAILY_CATCH_UP !== 'false';
 const allowedOrigins = new Set([
   ...(process.env.CLIENT_BASE_URL || '').split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean),
   'https://jasain.kr',
@@ -383,6 +383,10 @@ async function runStartupDailyPipelineCatchUp() {
     mode: status.missing ? 'scheduled' : 'continuation'
   }));
 }
+
+await loadSystemSettingsIntoEnv().catch((error) => {
+  console.warn('[system settings] failed to load persisted settings', error?.message || error);
+});
 
 app.listen(port, () => {
   console.log(`JASAIN API running on http://localhost:${port}`);

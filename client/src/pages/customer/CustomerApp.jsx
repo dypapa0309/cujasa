@@ -332,14 +332,18 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
     params.delete('accountId');
     params.delete('message');
     params.delete('code');
-    const nextSearch = params.toString();
     const nextAccountId = accountId || account?.id || accounts[0]?.id || '';
+    const returnAction = sessionStorage.getItem('cujasa:threadsOAuthReturnAction') || 'settings';
+    const returnProduct = sessionStorage.getItem('cujasa:threadsOAuthReturnProduct') || '';
+    sessionStorage.removeItem('cujasa:threadsOAuthReturnAction');
+    sessionStorage.removeItem('cujasa:threadsOAuthReturnProduct');
+    if (returnProduct) params.set('product', returnProduct);
     window.history.replaceState(
-      { cujasa: true, tab: 'beta', accountId: nextAccountId, action: 'settings' },
+      { cujasa: true, tab: 'beta', accountId: nextAccountId, action: returnAction },
       '',
-      `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}#tab=beta${nextAccountId ? `&account=${encodeURIComponent(nextAccountId)}` : ''}&action=settings`
+      `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}#tab=beta${nextAccountId ? `&account=${encodeURIComponent(nextAccountId)}` : ''}&action=${encodeURIComponent(returnAction)}`
     );
-    setOauthReturn({ type: threads, accountId: nextAccountId, action: 'settings', at: Date.now() });
+    setOauthReturn({ type: threads, accountId: nextAccountId, action: returnAction, at: Date.now() });
   }, [accounts, toast]);
 
   useEffect(() => {

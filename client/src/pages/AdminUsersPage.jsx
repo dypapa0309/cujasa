@@ -191,6 +191,11 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
 
   const connectThreads = async (account) => {
     try {
+      sessionStorage.setItem('cujasa:threadsOAuthAdminAccount', JSON.stringify({
+        accountId: account.id,
+        handle: account.account_handle || '',
+        at: new Date().toISOString()
+      }));
       const payload = await api.get(`/api/auth/threads/start?accountId=${account.id}`);
       if (payload?.url) window.location.href = payload.url;
     } catch (err) {
@@ -198,12 +203,16 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     }
   };
 
-  const disconnectThreads = async (accountId) => {
-    if (!confirm('이 계정의 Threads 연결을 해제하고 고객에게 다시 연결 요청할까요?')) return;
+  const disconnectThreads = async (accountId, options = {}) => {
+    const clearHandle = options.clearHandle === true;
+    const message = clearHandle
+      ? '이 계정의 Threads 연결과 핸들을 모두 비울까요? 테스트 계정에 같은 핸들을 연결할 때 사용합니다.'
+      : '이 계정의 Threads 연결을 해제하고 고객에게 다시 연결 요청할까요?';
+    if (!confirm(message)) return;
     try {
-      await api.post(`/api/admin/accounts/${accountId}/disconnect-threads`, {});
+      await api.post(`/api/admin/accounts/${accountId}/disconnect-threads`, { clearHandle });
       await load();
-      toast('Threads 연결을 해제했습니다.', 'success');
+      toast(clearHandle ? 'Threads 연결과 핸들을 비웠습니다.' : 'Threads 연결을 해제했습니다.', 'success');
     } catch (err) {
       toast(err.message || 'Threads 연결 해제에 실패했습니다.', 'error');
     }
@@ -329,13 +338,22 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
     }
   };
 
-  const setupStatusByUser = setupTasks.reduce((acc, task) => {
+  const setupTaskByUser = setupTasks.reduce((acc, task) => {
     if (!task?.user_id) return acc;
     const priority = { pending: 1, in_progress: 2, completed: 3, canceled: 0 };
     const current = acc[task.user_id];
-    if (!current || (priority[task.status] || 0) > (priority[current.status] || 0)) acc[task.user_id] = task.status;
+    const currentPriority = priority[current?.status] || 0;
+    const nextPriority = priority[task.status] || 0;
+    if (
+      !current
+      || nextPriority > currentPriority
+      || (nextPriority === currentPriority && new Date(task.created_at || 0) > new Date(current.created_at || 0))
+    ) {
+      acc[task.user_id] = task;
+    }
     return acc;
   }, {});
+  const setupStatusByUser = Object.fromEntries(Object.entries(setupTaskByUser).map(([userId, task]) => [userId, task.status]));
   const segmentDefinitions = [
     { key: 'all', label: '전체', description: '모든 회원' },
     { key: 'free', label: '무료회원', description: '무료 플랜' },
@@ -383,6 +401,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
       user.plan,
       user.billing_status,
       setupStatusLabel(setupStatusByUser[user.id]),
+      setupTaskByUser[user.id]?.source === 'customer_request' ? '고객요청 고객 요청 셋업요청 셋업 요청' : '',
       ...(user.accounts || []).flatMap((account) => [account.name, account.account_handle, account.threads_user_id])
     ].filter(Boolean).join(' ').toLowerCase();
     return haystack.includes(needle);
@@ -491,6 +510,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
             const unassigned = accounts.filter((a) => !assignedIds.includes(a.id));
             const grantedProductIds = user.products?.map((product) => product.productId) || [];
             const ungrantedProducts = products.filter((product) => !grantedProductIds.includes(product.id));
+            const setupTask = setupTaskByUser[user.id];
             return (
               <div key={user.id} className="rounded border border-line bg-white p-5">
                 <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -518,9 +538,14 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                       {[user.buyer_name || user.buyerName, user.username ? `ID ${user.username}` : '', planLabel(user)].filter(Boolean).join(' · ')}
                     </div>
                   </div>
-                  {setupStatusByUser[user.id] && (
-                    <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
-                      {setupStatusLabel(setupStatusByUser[user.id])}
+                  {setupTask && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-bold text-blue-700">
+                      <span>{setupStatusLabel(setupTask.status)}</span>
+                      {setupTask.source === 'customer_request' && (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-black text-amber-700">
+                          고객요청
+                        </span>
+                      )}
                     </span>
                   )}
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
@@ -624,6 +649,14 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                               {a.latest_threads_connection_request.admin_memo ? ` · ${a.latest_threads_connection_request.admin_memo}` : ''}
                             </div>
                           )}
+                          {a.threads_connection_diagnostics && (
+                            <div className="mt-1 rounded border border-slate-200 bg-white px-2 py-1 text-[11px] leading-relaxed text-slate-500">
+                              진단: 토큰 {a.threads_connection_diagnostics.hasToken ? '있음' : '없음'}
+                              {a.threads_connection_diagnostics.threadsUserId ? ` · Threads ID ${a.threads_connection_diagnostics.threadsUserId}` : ''}
+                              {a.threads_connection_diagnostics.replyPermissionRequiredCount > 0 ? ` · 댓글 권한 ${a.threads_connection_diagnostics.replyPermissionRequiredCount}건` : ''}
+                              {a.threads_connection_diagnostics.recentOauth?.[0] ? ` · 최근 ${oauthActionText(a.threads_connection_diagnostics.recentOauth[0])}` : ''}
+                            </div>
+                          )}
                           {a.blog_enabled && a.blog_public_url && (
                             <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-emerald-700">
                               <span className="font-semibold">자체 블로그</span>
@@ -636,7 +669,10 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                             </div>
                           )}
                           <div className="mt-1 text-[11px] leading-relaxed text-amber-600">
-                            Threads 연결은 고객 브라우저 Chrome/Safari에서 해당 계정으로 threads.net에 로그인한 상태로 진행해야 합니다.
+                            대리 연결은 현재 관리자 브라우저가 고객 Threads 계정으로 threads.net에 로그인된 상태에서만 성공합니다.
+                          </div>
+                          <div className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                            테스트 연결 전 Meta 앱 권한, 콜백 URL, 브라우저 로그인 계정이 맞는지 확인합니다.
                           </div>
                         </div>
                         <label className="grid gap-1 text-xs">
@@ -656,7 +692,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                           </button>
                         )}
                         <button onClick={() => connectThreads(a)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:border-gray-900 hover:text-gray-900">
-                          {a.has_threads_access_token ? '재연결' : 'Threads 연결'}
+                          {a.has_threads_access_token ? '권한 재확인' : '테스트 연결'}
                         </button>
                         <button onClick={() => unassignAccount(user.id, a.id)} className="rounded border border-line bg-white px-3 py-2 text-xs font-semibold text-red-500 hover:border-red-300">
                           해제
@@ -764,6 +800,15 @@ function connectionRequestText(request) {
   return [status, request?.threads_handle].filter(Boolean).join(' · ');
 }
 
+function oauthActionText(row) {
+  const action = ({
+    threads_oauth_started: '연결 시작',
+    threads_oauth_connected: '연결 성공',
+    threads_oauth_failed: '연결 실패'
+  })[row?.action] || row?.action || '기록 없음';
+  return [action, row?.code || row?.message, formatDateTime(row?.created_at)].filter(Boolean).join(' · ');
+}
+
 function formatDateTime(value) {
   if (!value) return '';
   try {
@@ -828,8 +873,12 @@ function ConflictPanel({ conflicts, onDisconnect }) {
                 <div key={account.id} className="flex flex-wrap items-center gap-2">
                   <span>{account.label || account.name}</span>
                   {(conflict.type === 'duplicate_threads_user_id' || conflict.type === 'duplicate_account_handle') && (
-                    <button type="button" onClick={() => onDisconnect(account.id)} className="rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-rose-500 hover:border-rose-300">
-                      Threads 해제
+                    <button
+                      type="button"
+                      onClick={() => onDisconnect(account.id, { clearHandle: conflict.type === 'duplicate_account_handle' })}
+                      className="rounded border border-line px-2 py-0.5 text-[11px] font-semibold text-rose-500 hover:border-rose-300"
+                    >
+                      {conflict.type === 'duplicate_account_handle' ? '핸들 비우기' : 'Threads 해제'}
                     </button>
                   )}
                 </div>

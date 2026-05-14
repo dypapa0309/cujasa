@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { buildPostText, buildReplyText, uploadPost } from './threadsAdapter.js';
+import { buildPostText, buildReplyText, uploadPost, uploadVideoPost } from './threadsAdapter.js';
 import { isTrustedThreadsPostUrl, threadsPostUrlStatus } from '../utils/threadsPostUrl.js';
 
 function restoreEnv(key, value) {
@@ -16,6 +16,15 @@ test('buildPostText never appends coupang links to the post body', () => {
 
   assert.match(body, /정리하다 보면/);
   assert.doesNotMatch(body, /link\.coupang|댓글 링크|광고/);
+});
+
+test('buildPostText strips legacy affiliate disclosure and product-info CTA', () => {
+  const body = buildPostText({
+    body: '봄이 왔으니 집 정리할 시간! 필요한 것들 쏙쏙 넣다 보면 집안이 확 달라져.\n\n(이 포스팅은 쿠팡 파트너스 활동의 일환으로, 이에 따른 일정액의 수수료를 제공받습니다) 사지마 구경만햐~🔗제품정보 요기아래 👇'
+  });
+
+  assert.match(body, /봄이 왔으니 집 정리할 시간/);
+  assert.doesNotMatch(body, /쿠팡\s*파트너스|수수료|사지마|구경만|제품\s*정보|요기아래|🔗|👇/);
 });
 
 test('buildReplyText includes disclosure and the link', () => {
@@ -174,6 +183,56 @@ test('uploadPost stores no postUrl when Threads permalink lookup returns only me
 
     assert.equal(uploaded.postUrl, null);
     assert.equal(uploaded.raw.postUrlStatus.status, 'missing');
+  } finally {
+    globalThis.fetch = previousFetch;
+    restoreEnv('MOCK_UPLOAD', previousMock);
+  }
+});
+
+test('uploadVideoPost requires a public video URL', async () => {
+  await assert.rejects(
+    uploadVideoPost({
+      account: { name: 'test', threads_access_token: 'token' },
+      videoUrl: '/local/render.mp4',
+      text: '오늘 테스트 영상입니다.'
+    }),
+    (error) => error.code === 'THREADS_VIDEO_URL_REQUIRED'
+  );
+});
+
+test('uploadVideoPost creates, waits, publishes, and returns permalink', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousMock = process.env.MOCK_UPLOAD;
+  delete process.env.MOCK_UPLOAD;
+  const requests = [];
+  const responses = [
+    { ok: true, json: async () => ({ id: 'creation-video-1' }), text: async () => '{}' },
+    { ok: true, json: async () => ({ status_code: 'FINISHED' }), text: async () => JSON.stringify({ status_code: 'FINISHED' }) },
+    { ok: true, json: async () => ({ id: 'post-video-1' }), text: async () => '{}' },
+    { ok: true, json: async () => ({ id: 'post-video-1', permalink: 'https://www.threads.net/@videotest/post/SHORTV1', shortcode: 'SHORTV1', username: 'videotest' }), text: async () => JSON.stringify({ id: 'post-video-1', permalink: 'https://www.threads.net/@videotest/post/SHORTV1', shortcode: 'SHORTV1', username: 'videotest' }) }
+  ];
+  globalThis.fetch = async (url, options = {}) => {
+    requests.push({ url: String(url), body: options.body ? JSON.parse(options.body) : null });
+    return responses.shift();
+  };
+
+  try {
+    const uploaded = await uploadVideoPost({
+      account: {
+        name: 'test',
+        account_handle: '@videotest',
+        threads_access_token: 'token'
+      },
+      videoUrl: 'https://cdn.example.com/render.mp4',
+      text: '오늘 테스트 영상입니다. 반응 기준을 확인합니다.',
+      poll: { attempts: 1, intervalMs: 0 }
+    });
+
+    assert.equal(requests[0].body.media_type, 'VIDEO');
+    assert.equal(requests[0].body.video_url, 'https://cdn.example.com/render.mp4');
+    assert.match(requests[1].url, /fields=status%2Cstatus_code|fields=status,status_code/);
+    assert.equal(uploaded.postUrl, 'https://www.threads.net/@videotest/post/SHORTV1');
+    assert.equal(uploaded.raw.mediaType, 'VIDEO');
   } finally {
     globalThis.fetch = previousFetch;
     restoreEnv('MOCK_UPLOAD', previousMock);

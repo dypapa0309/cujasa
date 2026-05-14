@@ -21,6 +21,32 @@ function normalizeThreadsHandle(value) {
   return String(value || '').trim().replace(/^@/, '').toLowerCase();
 }
 
+function duplicateTestOwnerEmails() {
+  return new Set(String(process.env.THREADS_DUPLICATE_TEST_OWNER_EMAILS || '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean));
+}
+
+async function duplicateAllowedForTestAccount(accountIdA, accountIdB) {
+  const allowedEmails = duplicateTestOwnerEmails();
+  if (!allowedEmails.size) return false;
+  const [rows, users] = await Promise.all([dbList('user_accounts'), dbList('users')]);
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  return rows
+    .filter((row) => row.account_id === accountIdA || row.account_id === accountIdB)
+    .some((row) => allowedEmails.has(String(usersById.get(row.user_id)?.email || '').trim().toLowerCase()));
+}
+
+async function accountsShareOwner(accountIdA, accountIdB) {
+  if (!accountIdA || !accountIdB) return false;
+  const rows = await dbList('user_accounts');
+  const ownersA = new Set(rows.filter((row) => row.account_id === accountIdA).map((row) => row.user_id).filter(Boolean));
+  const ownersB = new Set(rows.filter((row) => row.account_id === accountIdB).map((row) => row.user_id).filter(Boolean));
+  if (!ownersA.size || !ownersB.size) return false;
+  return [...ownersA].some((ownerId) => ownersB.has(ownerId));
+}
+
 function getConfig() {
   const appId = process.env.THREADS_APP_ID;
   const appSecret = process.env.THREADS_APP_SECRET;
@@ -257,7 +283,9 @@ export async function completeThreadsOAuth({ code, state }) {
   if (me.id) {
     const duplicate = (await dbList('accounts', { threads_user_id: me.id, status: 'active' }))
       .find((row) => row.id !== accountId);
-    if (duplicate) {
+    const sharedOwner = duplicate ? await accountsShareOwner(accountId, duplicate.id).catch(() => false) : false;
+    const testAllowed = duplicate ? await duplicateAllowedForTestAccount(accountId, duplicate.id).catch(() => false) : false;
+    if (duplicate && !sharedOwner && !testAllowed) {
       const duplicateHandle = duplicate.account_handle || duplicate.name || '다른 계정';
       const error = new Error(`이 Threads 계정은 이미 ${duplicateHandle}에 연결되어 있습니다. 기존 연결을 해제한 뒤 다시 시도해주세요.`);
       error.status = 409;

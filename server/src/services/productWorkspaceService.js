@@ -16,7 +16,7 @@ import {
   listPolibotDbKnowledgeSources
 } from './polibotKnowledgeDbService.js';
 
-const ALLOWED_PRODUCTS = new Set(['dexor', 'spread', 'polibot', 'infludex']);
+const ALLOWED_PRODUCTS = new Set(['dexor', 'spread', 'polibot', 'infludex', 'auvibot']);
 const DEFAULT_USAGE_LIMIT = 5;
 const UNLIMITED_TEST_EMAILS = new Set(['test1@test.com']);
 const UNLIMITED_USAGE_LIMIT = 999999;
@@ -385,6 +385,18 @@ function summarizeInfludexProduct({ product, grant } = {}) {
   return { health: 'empty', summary: '인스타그램 후보를 업로드하면 등급 분석을 시작할 수 있어요.', nextAction: '후보 업로드', actionKey: 'infludex-upload', usage };
 }
 
+function summarizeAuvibotProduct({ product, grant } = {}) {
+  const workspace = workspaceFromGrant(grant);
+  const usage = productUsageFromGrant(grant, product.id);
+  const jobs = Array.isArray(workspace.jobs) ? workspace.jobs : [];
+  const ready = jobs.filter((job) => ['ready', 'rendered', 'queued'].includes(job.status)).length;
+  const running = jobs.filter((job) => ['running', 'sourcing', 'editing', 'rendering'].includes(job.status)).length;
+  if (ready > 0) return { health: 'ready', summary: `${ready}개 쇼츠 작업이 포스팅 대기 중이에요.`, nextAction: '포스팅 현황', actionKey: 'auvibot-posts', usage };
+  if (running > 0) return { health: 'needs_setup', summary: `${running}개 자동화 작업이 진행 중이에요.`, nextAction: '포스팅 현황', actionKey: 'auvibot-posts', usage };
+  return { health: 'empty', summary: '자동화 시작을 누르면 랜덤 주제와 상품 후보를 발굴해요.', nextAction: '자동화 실행', actionKey: 'auvibot-run', usage };
+}
+
+
 function summarizeGrantedProduct({ product, grant } = {}) {
   const base = {
     productId: product.id,
@@ -400,6 +412,7 @@ function summarizeGrantedProduct({ product, grant } = {}) {
   if (product.id === 'spread') return { ...base, ...summarizeSpreadProduct({ product, grant }) };
   if (product.id === 'polibot') return { ...base, ...summarizePolibotProduct({ product, grant }) };
   if (product.id === 'infludex') return { ...base, ...summarizeInfludexProduct({ product, grant }) };
+  if (product.id === 'auvibot') return { ...base, ...summarizeAuvibotProduct({ product, grant }) };
   return { ...base, health: 'ready', summary: '제품을 사용할 수 있어요.', nextAction: `${product.name} 열기`, actionKey: product.id, usage: productUsageFromGrant(grant, product.id) };
 }
 
