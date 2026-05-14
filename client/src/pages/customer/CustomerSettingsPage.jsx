@@ -460,10 +460,15 @@ function ThreadsConnectModal({ account, connecting, onCancel, onConfirm }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 px-5">
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
-        <div className="text-lg font-black text-gray-900">Threads 계정 확인</div>
+        <div className="text-lg font-black text-gray-900">Threads 승인 후 연결</div>
         <div className="mt-3 grid gap-2 text-sm leading-relaxed text-gray-600">
           <p>지금 연결하려는 CUJASA 계정은 <strong>{account.name}</strong>입니다.</p>
-          <p>연결 버튼을 누르면 브라우저에서 threads.net이 열립니다. <strong>Chrome/Safari 브라우저</strong>에 <strong>{account.account_handle || '이 계정의 Threads 핸들'}</strong>로 로그인되어 있어야 합니다.</p>
+          <p>관리자가 Meta 개발자센터에 계정을 등록한 뒤에도, 고객이 <strong>Threads 계정의 웹 승인</strong>을 먼저 눌러야 연결이 완료됩니다.</p>
+          <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-3 text-xs font-semibold leading-relaxed text-amber-700">
+            <div>1. Chrome/Safari에서 threads.net에 <strong>{account.account_handle || '이 계정의 Threads 핸들'}</strong>로 로그인</div>
+            <div>2. 웹 Threads에서 계정 탭 → 웹 승인 → CUJASA Threads 수락</div>
+            <div>3. 승인 후 이 화면으로 돌아와 연결 진행</div>
+          </div>
           <p className="text-xs text-amber-600">Threads 앱만 로그인되어 있으면 연결되지 않을 수 있습니다. 모바일에서 Threads 앱이 자동으로 열리면 Chrome/Safari에서 threads.net에 먼저 로그인한 뒤 다시 진행해주세요.</p>
           <p className="text-xs text-gray-400">다른 Threads 계정이 뜨면 브라우저에서 로그아웃 후 올바른 계정으로 다시 로그인해주세요.</p>
         </div>
@@ -472,7 +477,7 @@ function ThreadsConnectModal({ account, connecting, onCancel, onConfirm }) {
             취소
           </button>
           <button type="button" onClick={onConfirm} disabled={connecting} className="flex-1 rounded-xl bg-gray-900 py-3 text-sm font-bold text-white disabled:opacity-50">
-            {connecting ? '이동 중...' : '확인하고 연결'}
+            {connecting ? '이동 중...' : '승인 확인 후 연결'}
           </button>
         </div>
       </div>

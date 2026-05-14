@@ -1767,6 +1767,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
   const [threadsRequestMemo, setThreadsRequestMemo] = useState('');
   const [requestingThreads, setRequestingThreads] = useState(false);
   const [requestingSetup, setRequestingSetup] = useState(false);
+  const [confirmingThreadsApproval, setConfirmingThreadsApproval] = useState(false);
   const [appliedDraftId, setAppliedDraftId] = useState(null);
   const [contentAdvancedOpen, setContentAdvancedOpen] = useState(false);
   const [blogDetailsOpen, setBlogDetailsOpen] = useState(false);
@@ -2016,7 +2017,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
               )}
             </div>
             {threadsOAuthReady ? (
-              <DarkButton variant="ghost" size="sm" onClick={connectThreads} disabled={connectingThreads}>
+              <DarkButton variant="ghost" size="sm" onClick={() => setConfirmingThreadsApproval(true)} disabled={connectingThreads}>
                 <Link2 size={15} />
                 {connectingThreads ? '이동 중...' : account?.has_threads_access_token ? '다시 연결' : '승인 후 연결'}
               </DarkButton>
@@ -2038,7 +2039,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
         </div>
         {!account?.has_threads_access_token && threadsOAuthReady && (
           <Notice>
-            Meta 등록이 완료됐어요. Meta 웹 승인 초대를 수락한 뒤 Threads 연결을 마무리해 주세요.
+            Meta 등록이 완료됐어요. Threads 계정의 웹 승인 화면에서 앱 접근을 승인한 뒤 연결을 마무리해 주세요.
           </Notice>
         )}
         {!account?.has_threads_access_token && threadsOAuthError?.message && (
@@ -2052,6 +2053,17 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
           </Notice>
         )}
       </CollapsiblePanel>
+      {confirmingThreadsApproval && (
+        <ThreadsWebApprovalModal
+          account={account}
+          connecting={connectingThreads}
+          onCancel={() => setConfirmingThreadsApproval(false)}
+          onConfirm={() => {
+            setConfirmingThreadsApproval(false);
+            connectThreads();
+          }}
+        />
+      )}
 
       <CollapsiblePanel title="운영 설정" defaultOpen={settingsDraft?.id === appliedDraftId}>
         <div className="grid gap-3">
@@ -6420,6 +6432,7 @@ const auvibotContent = {
 function AuvibotThreadsConnection({ account, reloadAccounts }) {
   const toast = useToast();
   const [connecting, setConnecting] = useState(false);
+  const [confirmingThreadsApproval, setConfirmingThreadsApproval] = useState(false);
   const [savingHandle, setSavingHandle] = useState(false);
   const [requestingThreads, setRequestingThreads] = useState(false);
   const [threadsRequests, setThreadsRequests] = useState([]);
@@ -6577,7 +6590,7 @@ function AuvibotThreadsConnection({ account, reloadAccounts }) {
             type="button"
             variant="ghost"
             size="sm"
-            onClick={threadsOAuthReady ? connectThreads : requestThreadsRegistration}
+            onClick={threadsOAuthReady ? () => setConfirmingThreadsApproval(true) : requestThreadsRegistration}
             disabled={connecting || requestingThreads || savingHandle || !account?.id}
           >
             <Link2 size={15} />
@@ -6598,7 +6611,7 @@ function AuvibotThreadsConnection({ account, reloadAccounts }) {
         )}
         {!connected && threadsOAuthReady && (
           <Notice>
-            Meta 등록이 완료됐습니다. Meta 웹 승인 초대를 수락한 뒤 연결을 마무리해 주세요.
+            Meta 등록이 완료됐습니다. Threads 계정의 웹 승인 화면에서 앱 접근을 승인한 뒤 연결을 마무리해 주세요.
           </Notice>
         )}
         {connected && (
@@ -6608,7 +6621,50 @@ function AuvibotThreadsConnection({ account, reloadAccounts }) {
           </DarkButton>
         )}
       </div>
+      {confirmingThreadsApproval && (
+        <ThreadsWebApprovalModal
+          account={account}
+          connecting={connecting}
+          onCancel={() => setConfirmingThreadsApproval(false)}
+          onConfirm={() => {
+            setConfirmingThreadsApproval(false);
+            connectThreads();
+          }}
+        />
+      )}
     </details>
+  );
+}
+
+function ThreadsWebApprovalModal({ account, connecting, onCancel, onConfirm }) {
+  const handle = account?.account_handle || '연결할 Threads 핸들';
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-5">
+      <div className="w-full max-w-md rounded-3xl border border-white/10 bg-zinc-950 p-6 shadow-2xl">
+        <div className="text-lg font-black text-zinc-50">Threads 웹 승인 확인</div>
+        <div className="mt-3 grid gap-3 text-sm leading-relaxed text-zinc-300">
+          <p>
+            관리자가 Meta 개발자센터에 계정을 등록한 뒤에도, <strong className="text-zinc-50">Threads 계정의 웹 승인</strong>을 먼저 눌러야 연결이 완료됩니다.
+          </p>
+          <div className="grid gap-2 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-xs font-bold leading-relaxed text-amber-100">
+            <div>1. Chrome/Safari에서 threads.net에 {handle}로 로그인</div>
+            <div>2. 웹 Threads에서 계정 탭 → 웹 승인 → CUJASA Threads 수락</div>
+            <div>3. 승인 후 이 화면으로 돌아와 연결 진행</div>
+          </div>
+          <p className="text-xs text-zinc-500">
+            Threads 앱만 로그인되어 있으면 실패할 수 있습니다. 다른 계정이 뜨면 브라우저에서 로그아웃한 뒤 올바른 계정으로 다시 로그인해 주세요.
+          </p>
+        </div>
+        <div className="mt-5 flex gap-2">
+          <DarkButton type="button" variant="ghost" className="flex-1 justify-center" onClick={onCancel} disabled={connecting}>
+            취소
+          </DarkButton>
+          <DarkButton type="button" className="flex-1 justify-center" onClick={onConfirm} disabled={connecting}>
+            {connecting ? '이동 중...' : '승인 확인 후 연결'}
+          </DarkButton>
+        </div>
+      </div>
+    </div>
   );
 }
 
