@@ -1152,6 +1152,7 @@ export async function processDueQueue({
   if (recoverMaintenance) {
     await recoverStalePostingQueue();
     await recoverReplyLinkModeRequiredQueues();
+    await enforceDailyQueueLimits();
   }
   if (repairReplies) {
     await repairReplyLinkFailures({ dryRun: false, limit: Math.min(10, cappedLimit) });
@@ -1193,6 +1194,84 @@ export async function processDueQueue({
     }
   }
   return processed;
+}
+
+export async function enforceDailyQueueLimits({ accountId = null, dryRun = false } = {}) {
+  const { start, end } = kstDayRange();
+  const [accounts, queue] = await Promise.all([
+    dbList('accounts'),
+    dbList('post_queue')
+  ]);
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
+  const queueByAccount = new Map();
+  for (const row of queue) {
+    if (accountId && row.account_id !== accountId) continue;
+    if (row.customer_hidden_at) continue;
+    if (!['scheduled', 'retry', 'posting', 'posted'].includes(row.status)) continue;
+    if (!inRange(row.posted_at || row.scheduled_at, start, end)) continue;
+    queueByAccount.set(row.account_id, [...(queueByAccount.get(row.account_id) || []), row]);
+  }
+
+  const results = [];
+  for (const [targetAccountId, rows] of queueByAccount.entries()) {
+    const account = accountsById.get(targetAccountId);
+    if (!account) continue;
+    const limit = dailyPostLimit(account);
+    const fixedRows = rows.filter((row) => ['posted', 'posting'].includes(row.status));
+    const pendingRows = rows
+      .filter((row) => ['scheduled', 'retry'].includes(row.status))
+      .sort((a, b) => new Date(a.scheduled_at || a.created_at || 0) - new Date(b.scheduled_at || b.created_at || 0));
+    const keepPendingCount = Math.max(0, limit - fixedRows.length);
+    const excessRows = pendingRows.slice(keepPendingCount);
+    if (!excessRows.length) continue;
+
+    const skipped = [];
+    if (!dryRun) {
+      for (const row of excessRows) {
+        const [updated] = await dbUpdate('post_queue', { id: row.id, status: row.status }, {
+          status: 'skipped',
+          error_category: 'daily_limit_exceeded',
+          error_message: 'DAILY_LIMIT_EXCEEDED: 오늘 예약 상한 초과로 자동 중지했습니다.'
+        });
+        if (!updated) continue;
+        if (row.post_id) await dbUpdate('posts', { id: row.post_id }, { status: 'draft' });
+        skipped.push(updated);
+      }
+      await logActivity({
+        account_id: targetAccountId,
+        project_id: account.project_id,
+        action: 'daily_queue_limit_enforced',
+        level: 'warn',
+        message: `오늘 예약 상한 초과분 ${skipped.length}개를 자동 중지했습니다.`,
+        payload: {
+          limit,
+          fixedCount: fixedRows.length,
+          pendingCount: pendingRows.length,
+          skippedQueueIds: skipped.map((row) => row.id)
+        }
+      }).catch(() => null);
+    }
+
+    results.push({
+      accountId: targetAccountId,
+      accountName: account.name,
+      limit,
+      fixedCount: fixedRows.length,
+      pendingCount: pendingRows.length,
+      excessCount: excessRows.length,
+      skippedCount: dryRun ? 0 : skipped.length,
+      excessQueueIds: excessRows.map((row) => row.id)
+    });
+  }
+
+  return {
+    ok: true,
+    dryRun,
+    accountCount: results.length,
+    excessCount: results.reduce((sum, row) => sum + row.excessCount, 0),
+    skippedCount: results.reduce((sum, row) => sum + row.skippedCount, 0),
+    results
+  };
 }
 
 export async function rescheduleTodayQueue({ accountId = null } = {}) {

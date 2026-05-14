@@ -3,7 +3,7 @@ import { expireStalePipelineRuns, latestPipelineRunReadOnly, pipelineStaleReason
 import { resolveCoupangCredentialsForAccount } from './coupangService.js';
 import { adminActivityLabel, adminActivityMessage, normalizeQueueClassification } from './queueErrorService.js';
 import { dailyPipelineStatus } from './schedulerRunService.js';
-import { processDueQueue, repairReplyLinkFailures } from './schedulerService.js';
+import { enforceDailyQueueLimits, processDueQueue, repairReplyLinkFailures } from './schedulerService.js';
 import { cleanupOldQueueIssues } from './queueVisibilityService.js';
 import { cleanupOldActivityLogs } from './activityLogCleanupService.js';
 
@@ -757,6 +757,7 @@ export async function normalizeOperations({ accountId = null } = {}) {
     deleteAfterHiddenDays: 1
   });
   const oldActivityLogs = accountId ? null : await cleanupOldActivityLogs({ mode: 'apply' });
+  const dailyQueueLimits = await enforceDailyQueueLimits({ accountId: accountId || null });
   const processedQueue = await processDueQueue();
   const dashboard = await operationDashboard();
   return {
@@ -769,6 +770,7 @@ export async function normalizeOperations({ accountId = null } = {}) {
     skippedReplyRepairCount: repairedReplies.skippedCount || 0,
     oldIssues,
     oldActivityLogs,
+    dailyQueueLimits,
     processedQueue,
     remainingQueueProblems: dashboard.summary?.cards?.queueProblems ?? 0,
     remainingPipelineStuck: dashboard.summary?.issueBreakdown?.pipelineStuck ?? 0,

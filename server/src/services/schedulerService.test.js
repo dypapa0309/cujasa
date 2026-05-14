@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
-import { createDailyQueue, recoverReplyLinkModeRequiredQueues, recoverStalePostingQueue, repairReplyLinkFailures, uploadQueueItem } from './schedulerService.js';
+import { createDailyQueue, enforceDailyQueueLimits, recoverReplyLinkModeRequiredQueues, recoverStalePostingQueue, repairReplyLinkFailures, uploadQueueItem } from './schedulerService.js';
 
 function restoreEnv(key, value) {
   if (value === undefined) delete process.env[key];
@@ -501,6 +501,70 @@ test('createDailyQueue only fills remaining slots for today', async () => {
   } finally {
     globalThis.fetch = previousFetch;
   }
+});
+
+test('enforceDailyQueueLimits skips excess pending queue and restores drafts', async () => {
+  const project = await dbInsert('projects', {
+    name: 'daily limit enforcement project',
+    type: 'coupang',
+    status: 'active'
+  });
+  const account = await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'daily limit enforcement account',
+    platform: 'threads',
+    account_handle: 'limit_enforced',
+    daily_post_max: 2,
+    active_time_windows: [{ start: '09:00', end: '23:00' }],
+    status: 'active',
+    automation_status: 'running'
+  });
+  const makeQueuedPost = async (index, status = 'scheduled') => {
+    const topic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: `상한 테스트 ${index}`,
+      angle: '테스트'
+    });
+    const post = await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: topic.id,
+      content_type: '정보제공형',
+      body: `상한 테스트용 글 ${index}. 초과 예약 자동 중지 검증입니다.`,
+      risk_level: 'low',
+      status: status === 'posted' ? 'posted' : 'queued'
+    });
+    const scheduledAt = new Date(Date.now() + index * 60 * 1000).toISOString();
+    return dbInsert('post_queue', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: topic.id,
+      post_id: post.id,
+      platform: 'threads',
+      scheduled_at: scheduledAt,
+      posted_at: status === 'posted' ? scheduledAt : null,
+      status,
+      post_mode: 'no_link',
+      retry_count: 0
+    });
+  };
+
+  await makeQueuedPost(0, 'posted');
+  await makeQueuedPost(1, 'scheduled');
+  const excessScheduled = await makeQueuedPost(2, 'scheduled');
+  const excessRetry = await makeQueuedPost(3, 'retry');
+
+  const result = await enforceDailyQueueLimits({ accountId: account.id });
+  const queues = await dbList('post_queue', { account_id: account.id });
+  const posts = await dbList('posts', { account_id: account.id });
+
+  assert.equal(result.excessCount, 2);
+  assert.equal(result.skippedCount, 2);
+  assert.equal(queues.find((row) => row.id === excessScheduled.id).status, 'skipped');
+  assert.equal(queues.find((row) => row.id === excessRetry.id).status, 'skipped');
+  assert.equal(posts.find((row) => row.id === excessScheduled.post_id).status, 'draft');
+  assert.equal(posts.find((row) => row.id === excessRetry.post_id).status, 'draft');
 });
 
 test('createDailyQueue rejects drafts similar to recently queued account posts', async () => {

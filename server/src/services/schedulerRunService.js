@@ -5,7 +5,7 @@ import { cleanupUnusedPipelineArtifacts } from './unusedArtifactCleanupService.j
 import { cleanupOldActivityLogs } from './activityLogCleanupService.js';
 import { sendOpsAlert } from './notificationService.js';
 import { expireStalePipelineRuns } from './pipelineRunService.js';
-import { repairReplyLinkFailures } from './schedulerService.js';
+import { enforceDailyQueueLimits, repairReplyLinkFailures } from './schedulerService.js';
 
 export const DAILY_PIPELINE_JOB = 'daily-pipeline';
 
@@ -363,6 +363,7 @@ export async function runDailyPipelineOnce({
       total: null
     }).catch(() => {});
     const expiredPipelines = await expireStalePipelineRuns();
+    const dailyQueueLimits = await enforceDailyQueueLimits();
     const replyRepair = await repairReplyLinkFailures({ dryRun: true, limit: 50 });
     const pipeline = await runFullPipeline({
       requestedBy: triggeredBy,
@@ -395,6 +396,7 @@ export async function runDailyPipelineOnce({
       mode,
       options: effectiveOptions,
       expiredPipelines: expiredPipelines.length,
+      dailyQueueLimits,
       replyRepair,
       cleanup,
       oldIssues,

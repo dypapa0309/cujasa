@@ -2,7 +2,7 @@ create table if not exists scheduler_runs (
   id uuid primary key default gen_random_uuid(),
   job_name text not null,
   run_date_kst date not null,
-  status text not null default 'running' check (status in ('running', 'completed', 'failed')),
+  status text not null default 'running' check (status in ('running', 'completed', 'partial', 'failed')),
   triggered_by text,
   started_at timestamptz not null default now(),
   finished_at timestamptz,
