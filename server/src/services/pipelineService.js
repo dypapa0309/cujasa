@@ -70,6 +70,9 @@ function createNoQueueMessage(diagnostics = {}) {
   if (diagnostics.reasonCode === 'NO_SCHEDULE_TIMES') {
     return '오늘 예약 가능한 시간이 없어 예약을 만들지 못했습니다. 운영 시간과 예약 개수를 확인해주세요.';
   }
+  if (diagnostics.reasonCode === 'DAILY_LIMIT_REACHED') {
+    return '오늘 예약 상한이 이미 채워져 추가 예약을 만들지 않았습니다.';
+  }
   if (diagnostics.reasonCode === 'COUPANG_RATE_LIMIT') {
     return '쿠팡 요청 제한 보호 중이라 예약을 만들지 않았습니다. 쿨다운 해제 후 다시 시도해주세요.';
   }
@@ -270,9 +273,11 @@ export async function runPipelineForAccount(accountId, options = {}) {
     result.queueDiagnostics = queued.diagnostics || null;
     if (queued.length === 0) {
       const message = createNoQueueMessage(queued.diagnostics);
-      const noLinkCandidateDay = queued.diagnostics?.reasonCode === 'NO_REAL_COUPANG_LINKS';
-      result.ok = noLinkCandidateDay;
-      result.status = noLinkCandidateDay ? 'no_link_candidates' : 'error';
+      const nonErrorNoQueueReason = ['NO_REAL_COUPANG_LINKS', 'DAILY_LIMIT_REACHED'].includes(queued.diagnostics?.reasonCode);
+      result.ok = nonErrorNoQueueReason;
+      result.status = queued.diagnostics?.reasonCode === 'DAILY_LIMIT_REACHED'
+        ? 'daily_limit_reached'
+        : (nonErrorNoQueueReason ? 'no_link_candidates' : 'error');
       result.code = queued.diagnostics?.reasonCode || 'NO_QUEUE_CREATED';
       result.message = message;
       result.error = message;
@@ -288,16 +293,19 @@ export async function runPipelineForAccount(accountId, options = {}) {
         code: result.code,
         message
       });
-      await finishPipelineRun(run.id, noLinkCandidateDay ? 'skipped' : 'failed', { result, error_message: noLinkCandidateDay ? null : message });
+      await finishPipelineRun(run.id, nonErrorNoQueueReason ? 'skipped' : 'failed', { result, error_message: nonErrorNoQueueReason ? null : message });
+      const emptyQueueAction = queued.diagnostics?.reasonCode === 'DAILY_LIMIT_REACHED'
+        ? 'pipeline_skipped_daily_limit_reached'
+        : (nonErrorNoQueueReason ? 'pipeline_skipped_no_link_candidates' : 'pipeline_queue_empty');
       await logActivity({
         account_id: account.id,
         project_id: account.project_id,
-        action: noLinkCandidateDay ? 'pipeline_skipped_no_link_candidates' : 'pipeline_queue_empty',
-        level: noLinkCandidateDay ? 'info' : 'warn',
+        action: emptyQueueAction,
+        level: nonErrorNoQueueReason ? 'info' : 'warn',
         message,
         payload: result.queueDiagnostics
       });
-      if (!noLinkCandidateDay && !['COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE'].includes(result.queueDiagnostics?.reasonCode)) {
+      if (!nonErrorNoQueueReason && !['COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE'].includes(result.queueDiagnostics?.reasonCode)) {
         await sendOpsAlert('pipeline_queue_empty', {
           title: '파이프라인 예약 생성 0개',
           account,

@@ -41,6 +41,12 @@ function inRange(value, start, end) {
   return time >= start.getTime() && time < end.getTime();
 }
 
+function dailyPostLimit(account = {}) {
+  const raw = Number(account.daily_post_max ?? 5);
+  const fallback = Number.isFinite(raw) ? raw : 5;
+  return Math.min(5, Math.max(0, fallback));
+}
+
 function isLinkableCoupangProduct(product = {}) {
   return isRealCoupangProduct(product);
 }
@@ -738,11 +744,19 @@ export async function createDailyQueue(accountId, options = {}) {
   }
 
   const { start, end } = kstDayRange();
-  const spacingQueues = (await dbList('post_queue', { account_id: accountId }))
+  const activeTodayQueues = (await dbList('post_queue', { account_id: accountId }))
     .filter((row) => ['scheduled', 'retry', 'posting', 'posted'].includes(row.status))
+    .filter((row) => inRange(row.posted_at || row.scheduled_at, start, end));
+  const spacingQueues = activeTodayQueues
     .map((row) => row.posted_at || row.scheduled_at)
-    .filter((value) => inRange(value, start, end));
-  const schedulePlan = createDailySchedulePlan(account, new Date(), { blockedTimes: spacingQueues });
+    .filter(Boolean);
+  const dailyLimit = dailyPostLimit(account);
+  const remainingDailySlots = Math.max(0, dailyLimit - activeTodayQueues.length);
+  const schedulePlan = createDailySchedulePlan(
+    { ...account, daily_post_max: remainingDailySlots },
+    new Date(),
+    { blockedTimes: spacingQueues }
+  );
   const scheduleTimes = schedulePlan.times;
   const times = trialStatus?.plan === 'free'
     ? scheduleTimes.slice(0, Math.max(0, Number(trialStatus.remaining ?? scheduleTimes.length)))
@@ -828,6 +842,9 @@ export async function createDailyQueue(accountId, options = {}) {
     trialPlan: trialStatus?.plan || null,
     trialRemaining: trialStatus?.remaining ?? null,
     uncappedScheduleCount: scheduleTimes.length,
+    dailyLimit,
+    existingTodayQueueCount: activeTodayQueues.length,
+    remainingDailySlots,
     blockedScheduleCount: spacingQueues.length,
     schedulePlan: visibleSchedulePlan,
     productRepairAttempts: repairOutcomes.length,
@@ -854,7 +871,7 @@ export async function createDailyQueue(accountId, options = {}) {
 
   diagnostics.blockedLinkPosts = blockedLinkPosts;
 
-  if (total === 0) diagnostics.reasonCode = 'NO_SCHEDULE_TIMES';
+  if (total === 0) diagnostics.reasonCode = remainingDailySlots <= 0 ? 'DAILY_LIMIT_REACHED' : 'NO_SCHEDULE_TIMES';
   else if (allDrafts.length === 0) diagnostics.reasonCode = 'NO_DRAFT_POSTS';
   else if (queueableDrafts.length === 0 && historyRejected.length > 0) diagnostics.reasonCode = 'RECENT_DUPLICATE_DRAFTS_REJECTED';
   else if (repairOutcomes.some((row) => row.reasonCode === 'COUPANG_RATE_LIMIT')) diagnostics.reasonCode = 'COUPANG_RATE_LIMIT';

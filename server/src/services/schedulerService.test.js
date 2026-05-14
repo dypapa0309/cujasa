@@ -412,6 +412,97 @@ test('createDailyQueue uses balanced link and no-link mix', async () => {
   }
 });
 
+test('createDailyQueue only fills remaining slots for today', async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'remaining-slots' })
+  });
+
+  try {
+    const project = await dbInsert('projects', {
+      name: 'remaining slots project',
+      type: 'coupang',
+      status: 'active'
+    });
+    const account = await dbInsert('accounts', {
+      project_id: project.id,
+      name: 'remaining slots account',
+      platform: 'threads',
+      account_handle: 'remaining_slots',
+      target_audience: '생활 관심 고객',
+      content_scope: '생활 꿀팁',
+      forbidden_topics: [],
+      forbidden_words: [],
+      daily_post_max: 3,
+      active_time_windows: [{ start: '09:00', end: '23:00' }],
+      min_interval_minutes: 90,
+      link_post_ratio: 0,
+      no_link_post_ratio: 1,
+      status: 'active',
+      automation_status: 'running',
+      threads_access_token: 'token',
+      threads_link_delivery_mode: 'reply',
+      coupang_access_key: 'access',
+      coupang_secret_key: 'secret',
+      coupang_partner_id: 'partner',
+      coupang_search_status: 'ok'
+    });
+    const existingTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '이미 예약된 생활 팁',
+      angle: '기존 예약'
+    });
+    const existingPost = await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: existingTopic.id,
+      content_type: '정보제공형',
+      body: '이미 오늘 예약된 글입니다. 오늘 예약 상한 계산에 포함되어야 합니다.',
+      risk_level: 'low',
+      status: 'queued'
+    });
+    await dbInsert('post_queue', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: existingTopic.id,
+      post_id: existingPost.id,
+      platform: 'threads',
+      scheduled_at: new Date().toISOString(),
+      status: 'scheduled',
+      post_mode: 'no_link',
+      retry_count: 0
+    });
+    for (let index = 0; index < 4; index += 1) {
+      const topic = await dbInsert('topics', {
+        project_id: project.id,
+        account_id: account.id,
+        title: `추가 생활 팁 ${index}`,
+        angle: '추가 예약'
+      });
+      await dbInsert('posts', {
+        project_id: project.id,
+        account_id: account.id,
+        topic_id: topic.id,
+        content_type: index % 2 === 0 ? '공감형' : '정보제공형',
+        body: `오늘 남은 슬롯에만 들어가야 하는 생활 팁 ${index}. 이미 잡힌 예약을 넘기면 안 됩니다.`,
+        risk_level: 'low',
+        status: 'draft'
+      });
+    }
+
+    const queued = await createDailyQueue(account.id, { skipPreflight: true });
+
+    assert.equal(queued.length, 2);
+    assert.equal(queued.diagnostics.dailyLimit, 3);
+    assert.equal(queued.diagnostics.existingTodayQueueCount, 1);
+    assert.equal(queued.diagnostics.remainingDailySlots, 2);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('createDailyQueue rejects drafts similar to recently queued account posts', async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
@@ -532,7 +623,7 @@ test('createDailyQueue prefers underused content formats when questions are over
       content_scope: '생활용품',
       forbidden_topics: [],
       forbidden_words: [],
-      daily_post_max: 1,
+      daily_post_max: 3,
       active_time_windows: [{ start: '09:00', end: '23:00' }],
       min_interval_minutes: 90,
       link_post_ratio: 0,

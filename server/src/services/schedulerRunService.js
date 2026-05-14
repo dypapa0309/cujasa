@@ -129,6 +129,15 @@ function isStaleSchedulerRun(run, date = now()) {
   return Number.isFinite(lastSeen) && date.getTime() - lastSeen > DAILY_PIPELINE_STALE_MS;
 }
 
+function schedulerPublicStatus(run, date = now()) {
+  if (!run) return hasDailyPipelineWindowPassed(date) ? 'missing' : 'pending';
+  if (isStaleSchedulerRun(run, date)) return 'stale';
+  const summary = schedulerRunSummary(run);
+  const pendingCount = summary.pendingCount ?? (Array.isArray(summary.pending) ? summary.pending.length : 0);
+  if (run.status === 'completed' && pendingCount > 0) return 'partial';
+  return run.status;
+}
+
 async function startSchedulerRun({ jobName, runDateKst, triggeredBy, allowPartialResume = false }) {
   const existing = await dbGet('scheduler_runs', { job_name: jobName, run_date_kst: runDateKst }).catch(() => null);
   if (existing) {
@@ -152,7 +161,7 @@ async function startSchedulerRun({ jobName, runDateKst, triggeredBy, allowPartia
       });
       return { run, acquired: true, recoveredStale: true };
     }
-    if (allowPartialResume && existing.status === 'partial' && (existingSummary.pending || []).length > 0) {
+    if (allowPartialResume && ['partial', 'completed'].includes(existing.status) && (existingSummary.pending || []).length > 0) {
       const [run] = await dbUpdate('scheduler_runs', { id: existing.id }, {
         status: 'running',
         triggered_by: triggeredBy,
@@ -254,7 +263,7 @@ export async function dailyPipelineStatus(date = now()) {
     windowPassed,
     missing: windowPassed && !run,
     stale,
-    status: stale ? 'stale' : (run?.status || (windowPassed ? 'missing' : 'pending')),
+    status: schedulerPublicStatus(run, date),
     durationMs,
     heartbeatAt: progress.updatedAt || summary.heartbeatAt || null,
     pendingCount,
@@ -311,10 +320,11 @@ export async function runDailyPipelineOnce({
     allowPartialResume
   });
   if (!acquired) {
+    const status = schedulerPublicStatus(run);
     return {
-      ok: run?.status === 'completed' || run?.status === 'partial',
+      ok: status === 'completed' || status === 'partial',
       duplicate: true,
-      status: run?.status || 'unknown',
+      status,
       run,
       summary: run?.summary || {},
       message: '이미 오늘 2시 자동 실행 기록이 있습니다.'
@@ -394,7 +404,8 @@ export async function runDailyPipelineOnce({
       heartbeatAt: finishedAt
     };
     const status = summary.pendingCount > 0 || pipeline.status === 'partial' ? 'partial' : 'completed';
-    const updated = await finishSchedulerRun(run.id, status, { summary, error_message: null });
+    const storedStatus = status === 'partial' ? 'completed' : status;
+    const updated = await finishSchedulerRun(run.id, storedStatus, { summary, error_message: null });
     await logActivity({
       action: status === 'partial' ? 'scheduler_daily_pipeline_partial' : 'scheduler_daily_pipeline_completed',
       level: 'info',
@@ -407,7 +418,7 @@ export async function runDailyPipelineOnce({
       recoveredStale,
       resumedPartial,
       status,
-      run: updated,
+      run: { ...updated, status },
       summary,
       processed: summary.processed,
       pending: summary.pending,
