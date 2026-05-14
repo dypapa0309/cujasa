@@ -115,12 +115,64 @@ function queueQualityIssue(post = {}) {
   return null;
 }
 
-function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), requireLink = false } = {}) {
+function normalizeContentType(value = '') {
+  const text = String(value || '').trim();
+  if (/질문|논쟁|debate|question/i.test(text)) return '질문형';
+  if (/체크|list|check/i.test(text)) return '체크리스트형';
+  if (/문제|해결|solution/i.test(text)) return '문제 해결형';
+  if (/일상|daily/i.test(text)) return '일상형';
+  if (/공감|empathy/i.test(text)) return '공감형';
+  if (/정보|팁|guide|info/i.test(text)) return '정보제공형';
+  return text || '기타';
+}
+
+function formatCountsFromHistory(history = []) {
+  const counts = new Map();
+  for (const item of history) {
+    const type = normalizeContentType(item.post?.content_type || item.queue?.content_type || '');
+    if (!type || type === '기타') continue;
+    counts.set(type, (counts.get(type) || 0) + 1);
+  }
+  return counts;
+}
+
+function contentTypeOverused(type, counts = new Map(), selected = []) {
+  const normalized = normalizeContentType(type);
+  if (!normalized || normalized === '기타') return false;
+  const recentCount = counts.get(normalized) || 0;
+  const selectedCount = selected.filter((item) => normalizeContentType(item.post.content_type) === normalized).length;
+  if (['질문형', '공감형'].includes(normalized)) return recentCount + selectedCount >= 2;
+  return recentCount + selectedCount >= 3;
+}
+
+function formatAlternativeAvailable(posts = [], post, counts = new Map(), selected = []) {
+  const currentType = normalizeContentType(post.content_type);
+  return posts.some((candidate) => candidate.id !== post.id
+    && normalizeContentType(candidate.content_type) !== currentType
+    && !contentTypeOverused(candidate.content_type, counts, selected));
+}
+
+function sortDraftsForFormatBalance(posts = [], counts = new Map()) {
+  return [...posts].sort((a, b) => {
+    const aCount = counts.get(normalizeContentType(a.content_type)) || 0;
+    const bCount = counts.get(normalizeContentType(b.content_type)) || 0;
+    if (aCount !== bCount) return aCount - bCount;
+    const aQuestion = normalizeContentType(a.content_type) === '질문형' ? 1 : 0;
+    const bQuestion = normalizeContentType(b.content_type) === '질문형' ? 1 : 0;
+    if (aQuestion !== bQuestion) return aQuestion - bQuestion;
+    return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+  });
+}
+
+function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), requireLink = false, recentFormatCounts = new Map() } = {}) {
   const selected = [];
   const usedTopicIds = new Set();
   const usedProductIds = new Set();
   const rejected = [];
-  const candidates = posts.filter((post) => !requireLink || topicProducts.has(post.topic_id));
+  const candidates = sortDraftsForFormatBalance(
+    posts.filter((post) => !requireLink || topicProducts.has(post.topic_id)),
+    recentFormatCounts
+  );
 
   for (const post of candidates) {
     if (selected.length >= times.length) break;
@@ -136,6 +188,10 @@ function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), 
     }
     if (product?.id && usedProductIds.has(product.id)) {
       rejected.push({ postId: post.id, topicId: post.topic_id, productId: product.id, reason: 'duplicate_product' });
+      continue;
+    }
+    if (contentTypeOverused(post.content_type, recentFormatCounts, selected) && formatAlternativeAvailable(candidates, post, recentFormatCounts, selected)) {
+      rejected.push({ postId: post.id, topicId: post.topic_id, contentType: post.content_type, reason: 'format_overused' });
       continue;
     }
     const similar = selected.find((item) => bodySimilarity(item.post.body, post.body) >= 0.8);
@@ -154,6 +210,7 @@ function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), 
       if (selected.some((item) => item.post.id === post.id)) continue;
       const issue = queueQualityIssue(post);
       if (issue) continue;
+      if (contentTypeOverused(post.content_type, recentFormatCounts, selected) && formatAlternativeAvailable(candidates, post, recentFormatCounts, selected)) continue;
       const similar = selected.find((item) => bodySimilarity(item.post.body, post.body) >= 0.95);
       if (similar) continue;
       selected.push({ post, postMode: requireLink ? 'link' : 'no_link' });
@@ -699,6 +756,7 @@ export async function createDailyQueue(accountId, options = {}) {
   const total = times.length;
   const repairOutcomes = [];
   const recentHistory = await recentAccountQueueHistory(accountId, { days: Number(options.historyDays || 7) });
+  const recentFormatCounts = formatCountsFromHistory(recentHistory);
   const historyRejected = [];
   const queueableDrafts = [];
   for (const post of allDrafts) {
@@ -713,7 +771,7 @@ export async function createDailyQueue(accountId, options = {}) {
   const withoutLink = queueableDrafts.filter((p) => !productsPerTopic.has(p.topic_id));
 
   const linkSelection = reply.ok
-    ? selectQueueDrafts({ posts: withLink, times, topicProducts: primaryProductByTopic, requireLink: true })
+    ? selectQueueDrafts({ posts: withLink, times, topicProducts: primaryProductByTopic, requireLink: true, recentFormatCounts })
     : { selected: [], rejected: [] };
   const candidateWithLink = withLink.slice(0, total);
   const primaryWithLink = linkSelection.selected.map((item) => item.post);
@@ -726,7 +784,8 @@ export async function createDailyQueue(accountId, options = {}) {
       .filter((post) => !selectedIds.has(post.id)),
     times: times.slice(0, remainingSlots),
     topicProducts: primaryProductByTopic,
-    requireLink: false
+    requireLink: false,
+    recentFormatCounts
   });
   const primaryNoLink = noLinkSelection.selected.map((item) => item.post);
   const linkCount = candidateWithLink.length;
@@ -776,6 +835,9 @@ export async function createDailyQueue(accountId, options = {}) {
     sponsoredCommentCount: drafts.filter((row) => row.postMode === 'sponsored_comment').length,
     qualityRejectedCount: linkSelection.rejected.length + noLinkSelection.rejected.length,
     qualityRejected: linkSelection.rejected.concat(noLinkSelection.rejected).slice(0, 10),
+    formatRejectedCount: linkSelection.rejected.concat(noLinkSelection.rejected).filter((row) => row.reason === 'format_overused').length,
+    recentFormatCounts: Object.fromEntries(recentFormatCounts),
+    selectedContentTypes: drafts.map((row) => row.post.content_type || ''),
     historyRejectedCount: historyRejected.length,
     historyRejected: historyRejected.slice(0, 10),
     repairOutcomes: repairOutcomes.map((row) => ({

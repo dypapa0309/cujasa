@@ -510,6 +510,112 @@ test('createDailyQueue rejects drafts similar to recently queued account posts',
   }
 });
 
+test('createDailyQueue prefers underused content formats when questions are overused', async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'formatbalance' })
+  });
+
+  try {
+    const project = await dbInsert('projects', {
+      name: 'format balance project',
+      type: 'coupang',
+      status: 'active'
+    });
+    const account = await dbInsert('accounts', {
+      project_id: project.id,
+      name: 'format balance account',
+      platform: 'threads',
+      account_handle: 'formatbalance',
+      target_audience: '살림 관심 고객',
+      content_scope: '생활용품',
+      forbidden_topics: [],
+      forbidden_words: [],
+      daily_post_max: 1,
+      active_time_windows: [{ start: '09:00', end: '23:00' }],
+      min_interval_minutes: 90,
+      link_post_ratio: 0,
+      no_link_post_ratio: 1,
+      status: 'active',
+      automation_status: 'running',
+      threads_access_token: 'token',
+      threads_link_delivery_mode: 'reply',
+      coupang_access_key: 'access',
+      coupang_secret_key: 'secret',
+      coupang_partner_id: 'partner',
+      coupang_search_status: 'ok'
+    });
+    for (let index = 0; index < 2; index += 1) {
+      const topic = await dbInsert('topics', {
+        project_id: project.id,
+        account_id: account.id,
+        title: `최근 질문형 ${index}`,
+        angle: '선택 질문'
+      });
+      const post = await dbInsert('posts', {
+        project_id: project.id,
+        account_id: account.id,
+        topic_id: topic.id,
+        content_type: '질문형',
+        body: `최근 질문형 본문 ${index}. 여러분은 정리할 때 어디부터 시작하세요?`,
+        risk_level: 'low',
+        status: 'posted'
+      });
+      await dbInsert('post_queue', {
+        project_id: project.id,
+        account_id: account.id,
+        topic_id: topic.id,
+        post_id: post.id,
+        platform: 'threads',
+        scheduled_at: new Date().toISOString(),
+        posted_at: new Date().toISOString(),
+        status: 'posted',
+        post_mode: 'no_link'
+      });
+    }
+
+    const questionTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '새 질문 후보',
+      angle: '선택 질문'
+    });
+    await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: questionTopic.id,
+      content_type: '질문형',
+      body: '새 수납용품을 고를 때 여러분은 꺼내기 쉬운 쪽을 먼저 보세요, 보기 깔끔한 쪽을 먼저 보세요?',
+      risk_level: 'low',
+      status: 'draft'
+    });
+    const infoTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '수납함 고르는 기준',
+      angle: '정보 제공'
+    });
+    const infoPost = await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: infoTopic.id,
+      content_type: '체크리스트형',
+      body: '수납함은 크기보다 열고 닫는 위치가 먼저예요. 침대 밑이면 낮은 손잡이, 선반 위면 가벼운 재질처럼 꺼내는 동선부터 맞추면 덜 방치돼요.',
+      risk_level: 'low',
+      status: 'draft'
+    });
+
+    const queued = await createDailyQueue(account.id, { skipPreflight: true });
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].post_id, infoPost.id);
+    assert.equal(queued.diagnostics.recentFormatCounts['질문형'], 2);
+    assert.equal(queued.diagnostics.selectedContentTypes[0], '체크리스트형');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('createDailyQueue keeps product-linked drafts when only old reply warnings need review', async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
