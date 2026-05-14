@@ -33,8 +33,8 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
   const [eventModal, setEventModal] = useState(null);
   const [eventLoading, setEventLoading] = useState(false);
 
-  const load = async () => {
-    const dashboard = await api.get('/api/admin/operations/dashboard');
+  const load = async ({ refresh = false } = {}) => {
+    const dashboard = await api.get(`/api/admin/operations/dashboard${refresh ? '?refresh=1' : ''}`);
     setSummary(dashboard.summary || null);
     setRows(dashboard.rows || []);
   };
@@ -51,7 +51,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
   const refresh = async () => {
     setRefreshing(true);
     try {
-      await load();
+      await load({ refresh: true });
       loadRiskPanels().catch(() => {});
       toast('대시보드를 새로고침했습니다.', 'success');
     } catch {
@@ -94,7 +94,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
       if (result.status === 'accepted') {
         setRunSummaryModal(null);
         toast(result.message || '전체 자동화 실행을 시작했습니다.', 'success');
-        await load();
+        await load({ refresh: true });
         return;
       }
       const ok = result.results?.filter((r) => r.status === 'ok').length ?? 0;
@@ -104,7 +104,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
       const total = result.results?.length ?? 0;
       setRunSummaryModal({ results: result.results || [] });
       toast(`전체 자동화 완료: 성공 ${ok}개 · 스킵 ${skipped}개 · 재연결 필요 ${reconnect}개 · 실패 ${failed}개 / ${total}개`, failed || reconnect ? 'info' : 'success');
-      await load();
+      await load({ refresh: true });
     } catch (err) {
       toast(err.message || '전체 자동화 실행에 실패했습니다.', 'error');
     } finally {
@@ -125,7 +125,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
       toast(result.alreadyRunning
         ? `${row.accountName} 예약 작업을 이미 확인 중입니다.`
         : (result.message || `${row.accountName} 자동화를 켜고 예약 작업을 시작했습니다.`), 'success');
-      await load();
+      await load({ refresh: true });
     } catch (err) {
       toast(err.message || '자동화 실행에 실패했습니다.', 'error');
     } finally {
@@ -144,7 +144,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
       }
       const applied = await api.post('/api/admin/operations/cleanup-queue-errors', { mode: 'apply' });
       toast(`실패 큐 ${applied.updated}건을 분류했습니다.`, 'success');
-      await load();
+      await load({ refresh: true });
     } catch (err) {
       toast(err.message || '실패 큐 정리에 실패했습니다.', 'error');
     } finally {
@@ -163,7 +163,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
         `파이프라인 정리 ${result.expiredPipelineCount || 0}건`,
         `처리 예약 ${result.processedQueue || 0}건`
       ].join(' · '), result.failedReplyRepairCount ? 'info' : 'success');
-      await load();
+      await load({ refresh: true });
     } catch (err) {
       toast(err.message || '운영 정상화에 실패했습니다.', 'error');
     } finally {
@@ -179,7 +179,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
       toast(result.duplicate
         ? '오늘 2시 자동 실행 기록이 이미 있습니다.'
         : '오늘 2시 자동 실행 보정을 시작/완료했습니다.', result.ok ? 'success' : 'info');
-      await load();
+      await load({ refresh: true });
     } catch (err) {
       toast(err.message || '자동 실행 보정에 실패했습니다.', 'error');
     } finally {
@@ -192,7 +192,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
     try {
       const result = await api.post('/api/admin/operations/reschedule-today-queue', {});
       toast(`오늘 예약 ${result.updatedCount || 0}건을 09-23시 랜덤 분산으로 재배치했습니다.`, 'success');
-      await load();
+      await load({ refresh: true });
     } catch (err) {
       toast(err.message || '오늘 예약 재배치에 실패했습니다.', 'error');
     } finally {
@@ -299,14 +299,16 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
             {reschedulingToday ? <Spinner /> : <RefreshCw size={16} />}
             오늘 예약 재분산
           </button>
-          {(summary?.dailyPipeline?.missing || summary?.dailyPipeline?.stale) && (
+          {(summary?.dailyPipeline?.missing || summary?.dailyPipeline?.stale || summary?.dailyPipeline?.status === 'partial') && (
             <button
               onClick={catchUpDailyPipeline}
               disabled={catchingUpDaily}
               className="inline-flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800 disabled:opacity-50"
             >
               {catchingUpDaily ? <Spinner /> : <Clock3 size={16} />}
-              {summary?.dailyPipeline?.stale ? '멈춘 2시 실행 재시작' : '오늘 2시 실행 보정'}
+              {summary?.dailyPipeline?.status === 'partial'
+                ? '남은 2시 실행 이어하기'
+                : summary?.dailyPipeline?.stale ? '멈춘 2시 실행 재시작' : '오늘 2시 실행 보정'}
             </button>
           )}
         </div>
@@ -330,7 +332,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
           value={dailyPipelineLabel(summary?.dailyPipeline)}
           hint={dailyPipelineHint(summary?.dailyPipeline)}
           tone={dailyPipelineTone(summary?.dailyPipeline)}
-          onClick={(summary?.dailyPipeline?.missing || summary?.dailyPipeline?.stale) ? catchUpDailyPipeline : undefined}
+          onClick={(summary?.dailyPipeline?.missing || summary?.dailyPipeline?.stale || summary?.dailyPipeline?.status === 'partial') ? catchUpDailyPipeline : undefined}
         />
         <OpsCard label="오늘 예약" value={summary?.cards?.scheduledToday ?? 0} hint={`오늘 업로드 완료 ${summary?.cards?.postedToday ?? 0}개`} tone="ok" onClick={() => openEvents('scheduled_today', '오늘 예약/업로드')} />
         <OpsCard label="실패/검토" value={summary?.cards?.queueProblems ?? 0} hint={`큐 정리 ${summary?.issueBreakdown?.queueCleanup ?? 0}개 · 확인 ${summary?.issueBreakdown?.pipelineStuck ?? 0}개`} tone={(summary?.cards?.queueProblems ?? 0) > 0 || (summary?.issueBreakdown?.pipelineStuck ?? 0) > 0 ? 'error' : 'ok'} onClick={() => openEvents('queue_problems', '실패/검토 항목')} />
@@ -430,7 +432,12 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
                     {row.coupang.missing?.length > 0 && <div className="mt-1 text-xs text-slate-400">{row.coupang.missing.join(', ')}</div>}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="font-semibold">예약 {row.todayScheduled} · 완료 {row.todayPosted}</div>
+                    <div className="font-semibold">오늘 예약 {row.todayScheduled} · 완료 {row.todayPosted}</div>
+                    {Number(row.upcomingScheduled || 0) > Number(row.todayScheduled || 0) && (
+                      <div className="mt-0.5 text-xs text-slate-400">
+                        다음 예약 {row.upcomingScheduled}개{row.nextScheduledAt ? ` · ${dateTime(row.nextScheduledAt)}` : ''}
+                      </div>
+                    )}
                     <div className="text-xs text-slate-400">실패/검토 {row.failedCount} · 댓글경고 {row.replyWarningCount || 0} · 복구불가 {row.replyRepairBlockedCount || 0} · 테스트 {row.mockCount}</div>
                     <div className="mt-1 flex flex-wrap gap-1">
                       <StatusPill status={row.automationStatus === 'running' ? 'ok' : 'warn'} label={`자동화 ${row.automationStatus === 'running' ? '실행중' : '중지됨'}`} />
@@ -530,6 +537,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
 }
 
 function buildAccountFilterCounts(rows) {
+  const hasNoScheduledQueue = (row) => Number(row.todayScheduled || 0) === 0 && Number(row.upcomingScheduled || 0) === 0 && row.accountStatus === 'active';
   return {
     all: rows.length,
     ok: rows.filter((row) => row.health === 'ok').length,
@@ -538,7 +546,7 @@ function buildAccountFilterCounts(rows) {
     running: rows.filter((row) => row.health === 'running' || isPipelineRunActive(row)).length,
     threads_reconnect: rows.filter((row) => row.runCategory === 'threads_reconnect' || row.threads?.status === 'error').length,
     coupang_settings: rows.filter((row) => row.runCategory === 'coupang_settings' || row.coupang?.status === 'error').length,
-    no_schedule: rows.filter((row) => Number(row.todayScheduled || 0) === 0 && row.accountStatus === 'active').length,
+    no_schedule: rows.filter(hasNoScheduledQueue).length,
     failed_review: rows.filter((row) => Number(row.failedCount || 0) > 0 || Number(row.retryAvailableCount || 0) > 0 || Number(row.replyWarningCount || 0) > 0 || Number(row.replyRepairBlockedCount || 0) > 0 || Number(row.contentBlockedCount || 0) > 0).length,
     pipeline_check: rows.filter((row) => row.runCategory === 'pipeline_stuck' || ['stuck', 'failed', 'expired'].includes(row.pipelineRun?.status)).length
   };
@@ -564,20 +572,21 @@ function buildAccountFilters(counts) {
     { key: 'running', label: '실행 중', count: counts.running || 0 },
     { key: 'threads_reconnect', label: 'Threads 재연결', count: counts.threads_reconnect || 0 },
     { key: 'coupang_settings', label: '쿠팡 설정', count: counts.coupang_settings || 0 },
-    { key: 'no_schedule', label: '오늘 예약 없음', count: counts.no_schedule || 0 },
+    { key: 'no_schedule', label: '예약 없음', count: counts.no_schedule || 0 },
     { key: 'failed_review', label: '실패/검토', count: counts.failed_review || 0 },
     { key: 'pipeline_check', label: '파이프라인 확인', count: counts.pipeline_check || 0 }
   ];
 }
 
 function matchesAccountFilter(row, filter) {
+  const hasNoScheduledQueue = Number(row.todayScheduled || 0) === 0 && Number(row.upcomingScheduled || 0) === 0 && row.accountStatus === 'active';
   if (filter === 'ok') return row.health === 'ok';
   if (filter === 'warn') return row.health === 'warn';
   if (filter === 'error') return row.health === 'error';
   if (filter === 'running') return row.health === 'running' || isPipelineRunActive(row);
   if (filter === 'threads_reconnect') return row.runCategory === 'threads_reconnect' || row.threads?.status === 'error';
   if (filter === 'coupang_settings') return row.runCategory === 'coupang_settings' || row.coupang?.status === 'error';
-  if (filter === 'no_schedule') return Number(row.todayScheduled || 0) === 0 && row.accountStatus === 'active';
+  if (filter === 'no_schedule') return hasNoScheduledQueue;
   if (filter === 'failed_review') {
     return Number(row.failedCount || 0) > 0
       || Number(row.retryAvailableCount || 0) > 0
@@ -882,6 +891,7 @@ function dailyPipelineLabel(dailyPipeline) {
   if (dailyPipeline.missing) return '누락';
   if (dailyPipeline.stale || dailyPipeline.status === 'stale') return '멈춤';
   if (dailyPipeline.status === 'completed') return '성공';
+  if (dailyPipeline.status === 'partial') return '부분 완료';
   if (dailyPipeline.status === 'running') return '실행중';
   if (dailyPipeline.status === 'failed') return '실패';
   return '대기';
@@ -890,7 +900,7 @@ function dailyPipelineLabel(dailyPipeline) {
 function dailyPipelineTone(dailyPipeline) {
   if (!dailyPipeline) return 'warn';
   if (dailyPipeline.missing || dailyPipeline.stale || dailyPipeline.status === 'stale' || dailyPipeline.status === 'failed') return 'error';
-  if (dailyPipeline.status === 'running' || dailyPipeline.status === 'pending') return 'warn';
+  if (dailyPipeline.status === 'running' || dailyPipeline.status === 'pending' || dailyPipeline.status === 'partial') return 'warn';
   return 'ok';
 }
 
@@ -899,12 +909,19 @@ function dailyPipelineHint(dailyPipeline) {
   if (dailyPipeline.missing) return '오늘 02:00 실행 기록 없음';
   if (dailyPipeline.stale || dailyPipeline.status === 'stale') return '02:00 실행이 오래 멈춤, 재시작 필요';
   const summary = dailyPipeline.run?.summary || {};
+  if (dailyPipeline.status === 'partial') {
+    return `처리 ${summary.processed || 0} · 남은 계정 ${dailyPipeline.pendingCount || summary.pendingCount || 0} · 이어 실행 대기`;
+  }
   if (dailyPipeline.status === 'completed') {
     const reconnect = summary.reconnectRequired || 0;
     const skippedOther = summary.skippedOther ?? Math.max(0, (summary.skipped || 0) - reconnect);
     return `대상 ${summary.total || 0} · 예약 성공 ${summary.ok || 0} · 재연결 필요 ${reconnect} · 기타 스킵 ${skippedOther} · 시스템 오류 ${summary.error || 0}`;
   }
-  if (dailyPipeline.status === 'running') return '현재 자동 실행 중';
+  if (dailyPipeline.status === 'running') {
+    const progress = dailyPipeline.progress || summary.progress || {};
+    const account = progress.currentAccountName ? ` · ${progress.currentAccountName}` : '';
+    return `현재 자동 실행 중${account} · 처리 ${progress.processed || 0} · 보류 ${progress.pending || 0}`;
+  }
   if (dailyPipeline.status === 'failed') return dailyPipeline.run?.errorMessage || '자동 실행 실패';
   return 'KST 02:00 대기';
 }

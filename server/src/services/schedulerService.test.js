@@ -412,6 +412,104 @@ test('createDailyQueue uses balanced link and no-link mix', async () => {
   }
 });
 
+test('createDailyQueue rejects drafts similar to recently queued account posts', async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'recenthistory' })
+  });
+
+  try {
+    const project = await dbInsert('projects', {
+      name: 'recent history project',
+      type: 'coupang',
+      status: 'active'
+    });
+    const account = await dbInsert('accounts', {
+      project_id: project.id,
+      name: 'recent history account',
+      platform: 'threads',
+      account_handle: 'recenthistory',
+      target_audience: '살림 관심 고객',
+      content_scope: '주방용품',
+      forbidden_topics: [],
+      forbidden_words: [],
+      daily_post_max: 2,
+      active_time_windows: [{ start: '09:00', end: '23:00' }],
+      min_interval_minutes: 90,
+      link_post_ratio: 0,
+      no_link_post_ratio: 1,
+      status: 'active',
+      automation_status: 'running',
+      threads_access_token: 'token',
+      threads_link_delivery_mode: 'reply',
+      coupang_access_key: 'access',
+      coupang_secret_key: 'secret',
+      coupang_partner_id: 'partner',
+      coupang_search_status: 'ok'
+    });
+    const oldTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '최근 올린 주방 정리',
+      angle: '놓는 자리'
+    });
+    const oldPost = await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: oldTopic.id,
+      content_type: '공감형',
+      body: '주방용품은 사기 전에 어디에 둘지 먼저 떠올리면 덜 후회돼요. 설거지 후 바로 둘 자리와 물 빠짐을 같이 보면 오래 쓰게 됩니다.',
+      risk_level: 'low',
+      status: 'posted'
+    });
+    await dbInsert('post_queue', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: oldTopic.id,
+      post_id: oldPost.id,
+      platform: 'threads',
+      scheduled_at: new Date().toISOString(),
+      posted_at: new Date().toISOString(),
+      status: 'posted',
+      post_mode: 'no_link'
+    });
+
+    await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: oldTopic.id,
+      content_type: '공감형',
+      body: '주방용품은 사기 전에 어디에 둘지 먼저 떠올리면 덜 후회돼요. 설거지 후 바로 둘 자리와 물 빠짐을 같이 보면 오래 쓰게 됩니다.',
+      risk_level: 'low',
+      status: 'draft'
+    });
+    const freshTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '환기 잘 되는 음식물통 고르기',
+      angle: '냄새 관리'
+    });
+    const freshPost = await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: freshTopic.id,
+      content_type: '체크리스트형',
+      body: '음식물통은 뚜껑이 잘 닫히는지보다 비울 때 손이 덜 가는지가 더 중요해요. 작은 주방이면 입구 크기와 봉투 교체 방식부터 보는 편이 편합니다.',
+      risk_level: 'low',
+      status: 'draft'
+    });
+
+    const queued = await createDailyQueue(account.id, { skipPreflight: true });
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].post_id, freshPost.id);
+    assert.equal(queued.diagnostics.historyRejectedCount, 1);
+    assert.equal(queued.diagnostics.queueableDraftPosts, 1);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('createDailyQueue keeps product-linked drafts when only old reply warnings need review', async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => ({
@@ -569,15 +667,15 @@ test('createDailyQueue resumes link drafts after Threads reconnect supersedes re
     const topic = await dbInsert('topics', {
       project_id: account.project_id,
       account_id: account.id,
-      title: '생활 수납',
-      angle: '꺼내기 쉬운 수납'
+      title: '재연결 후 욕실 정리',
+      angle: '물기 관리'
     });
     const post = await dbInsert('posts', {
       project_id: account.project_id,
       account_id: account.id,
       topic_id: topic.id,
       content_type: '질문형',
-      body: '집 정리할 때 수납 기준은 은근 갈리죠. 꺼내기 쉬운 쪽이에요, 보기 깔끔한 쪽이에요?',
+      body: '욕실 정리는 물기 남는 자리를 먼저 보면 훨씬 덜 번거로워요. 발매트 주변과 세면대 옆을 먼저 말리는 쪽이에요, 한 번에 몰아서 청소하는 쪽이에요?',
       risk_level: 'low',
       status: 'draft'
     });

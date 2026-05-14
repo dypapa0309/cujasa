@@ -163,6 +163,51 @@ function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), 
   return { selected, rejected };
 }
 
+async function recentAccountQueueHistory(accountId, { days = 7, limit = 300 } = {}) {
+  const cutoff = Date.now() - Math.max(1, days) * ONE_DAY_MS;
+  const queue = (await dbList('post_queue', { account_id: accountId }, {
+    order: 'updated_at',
+    ascending: false,
+    limit
+  })).filter((row) => {
+    if (row.customer_hidden_at) return false;
+    if (!['scheduled', 'posting', 'posted', 'retry'].includes(row.status)) return false;
+    const time = new Date(row.posted_at || row.scheduled_at || row.updated_at || row.created_at || 0).getTime();
+    return time && time >= cutoff;
+  });
+  const postIds = [...new Set(queue.map((row) => row.post_id).filter(Boolean))];
+  const posts = new Map();
+  for (const postId of postIds) {
+    const post = await dbGet('posts', { id: postId }).catch(() => null);
+    if (post) posts.set(postId, post);
+  }
+  return queue.map((row) => ({
+    queue: row,
+    post: posts.get(row.post_id) || null
+  }));
+}
+
+function historicalQueueIssue(post = {}, history = []) {
+  if (!post?.id) return null;
+  const body = String(post.body || '').trim();
+  for (const item of history) {
+    if (item.queue?.post_id === post.id) {
+      return { reason: 'post_already_queued_recently', queueId: item.queue.id };
+    }
+    if (post.topic_id && item.queue?.topic_id === post.topic_id) {
+      return { reason: 'topic_already_queued_recently', queueId: item.queue.id };
+    }
+    const historicalBody = item.post?.body || '';
+    if (body && historicalBody && normalizeBodyForComparison(body) === normalizeBodyForComparison(historicalBody)) {
+      return { reason: 'body_already_queued_recently', queueId: item.queue.id };
+    }
+    if (body && historicalBody && bodySimilarity(body, historicalBody) >= 0.88) {
+      return { reason: 'body_too_similar_to_recent_queue', queueId: item.queue.id };
+    }
+  }
+  return null;
+}
+
 function isReplyLinkModeRequiredQueue(row = {}) {
   const value = `${row.error_category || ''} ${row.error_message || ''}`;
   return /REPLY_LINK_MODE_REQUIRED/i.test(value);
@@ -493,6 +538,17 @@ export async function addPostToQueue(postId, scheduledAt = null, options = {}) {
     error.status = 422;
     throw error;
   }
+  const existingQueue = (await dbList('post_queue', { post_id: post.id }, {
+    order: 'updated_at',
+    ascending: false,
+    limit: 20
+  })).find((row) => ['scheduled', 'posting', 'posted', 'retry', 'manual_required'].includes(row.status));
+  if (existingQueue) {
+    const error = new Error('Post already exists in the upload queue.');
+    error.status = 409;
+    error.code = 'POST_ALREADY_QUEUED';
+    throw error;
+  }
   const status = post.status === 'manual_required' || post.risk_level === 'high' ? 'manual_required' : 'scheduled';
   const requestedPostMode = ['link', 'no_link', 'sponsored_comment'].includes(options.postMode)
     ? options.postMode
@@ -642,8 +698,19 @@ export async function createDailyQueue(accountId, options = {}) {
   };
   const total = times.length;
   const repairOutcomes = [];
-  const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
-  const withoutLink = allDrafts.filter((p) => !productsPerTopic.has(p.topic_id));
+  const recentHistory = await recentAccountQueueHistory(accountId, { days: Number(options.historyDays || 7) });
+  const historyRejected = [];
+  const queueableDrafts = [];
+  for (const post of allDrafts) {
+    const issue = historicalQueueIssue(post, recentHistory);
+    if (issue) {
+      historyRejected.push({ postId: post.id, topicId: post.topic_id, ...issue });
+      continue;
+    }
+    queueableDrafts.push(post);
+  }
+  const withLink = queueableDrafts.filter((p) => productsPerTopic.has(p.topic_id));
+  const withoutLink = queueableDrafts.filter((p) => !productsPerTopic.has(p.topic_id));
 
   const linkSelection = reply.ok
     ? selectQueueDrafts({ posts: withLink, times, topicProducts: primaryProductByTopic, requireLink: true })
@@ -687,8 +754,9 @@ export async function createDailyQueue(accountId, options = {}) {
     requiredLinkCount: linkCount,
     requiredNoLinkCount: noLinkCount,
     availableDraftPosts: allDrafts.length,
+    queueableDraftPosts: queueableDrafts.length,
     availableLinkPosts: withLink.length,
-    availableNoLinkPosts: allDrafts.length - withLink.length,
+    availableNoLinkPosts: queueableDrafts.length - withLink.length,
     selectedLinkPosts: primaryWithLink.length,
     selectedNoLinkPosts: primaryNoLink.length,
     linkShortage,
@@ -708,6 +776,8 @@ export async function createDailyQueue(accountId, options = {}) {
     sponsoredCommentCount: drafts.filter((row) => row.postMode === 'sponsored_comment').length,
     qualityRejectedCount: linkSelection.rejected.length + noLinkSelection.rejected.length,
     qualityRejected: linkSelection.rejected.concat(noLinkSelection.rejected).slice(0, 10),
+    historyRejectedCount: historyRejected.length,
+    historyRejected: historyRejected.slice(0, 10),
     repairOutcomes: repairOutcomes.map((row) => ({
       postId: row.postId,
       topicId: row.topicId,
@@ -724,6 +794,7 @@ export async function createDailyQueue(accountId, options = {}) {
 
   if (total === 0) diagnostics.reasonCode = 'NO_SCHEDULE_TIMES';
   else if (allDrafts.length === 0) diagnostics.reasonCode = 'NO_DRAFT_POSTS';
+  else if (queueableDrafts.length === 0 && historyRejected.length > 0) diagnostics.reasonCode = 'RECENT_DUPLICATE_DRAFTS_REJECTED';
   else if (repairOutcomes.some((row) => row.reasonCode === 'COUPANG_RATE_LIMIT')) diagnostics.reasonCode = 'COUPANG_RATE_LIMIT';
   else if (diagnostics.productRepairFallbacks > 0) diagnostics.reasonCode = 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
   else if (!reply.ok && candidateWithLink.length > 0 && drafts.length === 0) diagnostics.reasonCode = reply.code || 'REPLY_LINK_BLOCKED';

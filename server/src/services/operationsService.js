@@ -23,6 +23,12 @@ const STALE_RUNNING_CATEGORY = 'pipeline_stuck';
 const OPERATION_QUEUE_LIMIT = Math.max(100, Number(process.env.OPERATION_QUEUE_LIMIT || 2000));
 const OPERATION_PRODUCT_LIMIT = Math.max(100, Number(process.env.OPERATION_PRODUCT_LIMIT || 2000));
 const OPERATION_PIPELINE_RUN_LIMIT = Math.max(100, Number(process.env.OPERATION_PIPELINE_RUN_LIMIT || 300));
+const OPERATION_DASHBOARD_CACHE_TTL_MS = Math.max(0, Number(process.env.OPERATION_DASHBOARD_CACHE_TTL_MS || 30000));
+let operationDashboardCache = null;
+
+export function clearOperationDashboardCache() {
+  operationDashboardCache = null;
+}
 
 async function safeDbList(table, filters = {}, options = {}, fallback = [], loadErrors = null) {
   try {
@@ -486,7 +492,7 @@ export async function operationSummary() {
   return buildOperationSummary({ accounts: context.accounts, queue: context.queue, rows, start: context.start, end: context.end, loadErrors: context.loadErrors });
 }
 
-export async function operationDashboard() {
+async function buildOperationDashboardPayload() {
   const context = await loadOperationContext();
   const rows = await buildOperationAccountRows(context);
   const summary = await buildOperationSummary({
@@ -507,6 +513,32 @@ export async function operationDashboard() {
       dailyPipelineResult: dailyResultsByAccountId.get(row.accountId) || null
     }))
   };
+}
+
+export async function operationDashboard({ forceRefresh = false } = {}) {
+  const now = Date.now();
+  if (!forceRefresh && operationDashboardCache && operationDashboardCache.expiresAt > now) {
+    return operationDashboardCache.payload;
+  }
+
+  const startedAt = Date.now();
+  const payload = await buildOperationDashboardPayload();
+  const durationMs = Date.now() - startedAt;
+  if (durationMs >= Number(process.env.OPERATION_DASHBOARD_SLOW_LOG_MS || 1200)) {
+    console.warn('[operations] dashboard load slow', {
+      durationMs,
+      accounts: payload.rows?.length || 0,
+      queue: payload.summary?.queue?.total || null,
+      loadErrors: payload.summary?.loadErrors?.length || 0
+    });
+  }
+  if (OPERATION_DASHBOARD_CACHE_TTL_MS > 0) {
+    operationDashboardCache = {
+      payload,
+      expiresAt: Date.now() + OPERATION_DASHBOARD_CACHE_TTL_MS
+    };
+  }
+  return payload;
 }
 
 export async function operationEvents({ type = 'queue_problems', limit = 200 } = {}) {

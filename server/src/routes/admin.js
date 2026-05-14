@@ -12,7 +12,7 @@ import {
 } from '../services/authService.js';
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
 import { hashPassword } from '../utils/password.js';
-import { cleanupQueueErrors, normalizeOperations, operationAccountRows, operationDashboard, operationEvents, operationSummary } from '../services/operationsService.js';
+import { cleanupQueueErrors, clearOperationDashboardCache, normalizeOperations, operationAccountRows, operationDashboard, operationEvents, operationSummary } from '../services/operationsService.js';
 import { runDailyPipelineOnce } from '../services/schedulerRunService.js';
 import { buildOpsHealthSummary, runDailyOpsHealthCheck } from '../services/opsHealthService.js';
 import { cleanupUnusedPipelineArtifacts } from '../services/unusedArtifactCleanupService.js';
@@ -192,7 +192,7 @@ router.get('/operations/accounts', async (req, res, next) => {
 });
 
 router.get('/operations/dashboard', async (req, res, next) => {
-  try { res.json(await operationDashboard()); } catch (e) { next(e); }
+  try { res.json(await operationDashboard({ forceRefresh: req.query?.refresh === '1' })); } catch (e) { next(e); }
 });
 
 router.get('/operations/events', async (req, res, next) => {
@@ -212,75 +212,93 @@ router.get('/operations/cujasa-queue-diagnostics/:accountId', async (req, res, n
 
 router.post('/operations/reclassify-queue-errors', async (req, res, next) => {
   try {
-    res.json(await reclassifyQueueErrors({
+    const result = await reclassifyQueueErrors({
       accountId: req.body?.accountId || null,
       limit: req.body?.limit || 250,
       dryRun: req.body?.mode !== 'apply'
-    }));
+    });
+    if (req.body?.mode === 'apply') clearOperationDashboardCache();
+    res.json(result);
   } catch (e) { next(e); }
 });
 
 router.post('/operations/repair-threads-post-urls', async (req, res, next) => {
   try {
-    res.json(await repairThreadsPostUrls({
+    const result = await repairThreadsPostUrls({
       accountId: req.body?.accountId || null,
       limit: req.body?.limit || 250,
       dryRun: req.body?.mode !== 'apply'
-    }));
+    });
+    if (req.body?.mode === 'apply') clearOperationDashboardCache();
+    res.json(result);
   } catch (e) { next(e); }
 });
 
 router.post('/operations/cleanup-queue-errors', async (req, res, next) => {
   try {
     const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
-    res.json(await cleanupQueueErrors({ mode, limit: req.body?.limit || 500 }));
+    const result = await cleanupQueueErrors({ mode, limit: req.body?.limit || 500 });
+    if (mode === 'apply') clearOperationDashboardCache();
+    res.json(result);
   } catch (e) { next(e); }
 });
 
 router.post('/operations/daily-pipeline/catch-up', async (req, res, next) => {
   try {
-    res.json(await runDailyPipelineOnce({
+    const result = await runDailyPipelineOnce({
       triggeredBy: req.user?.email || req.user?.type || 'admin_catch_up',
       mode: 'admin_recovery'
-    }));
+    });
+    clearOperationDashboardCache();
+    res.json(result);
   } catch (e) { next(e); }
 });
 
 router.post('/operations/reschedule-today-queue', async (req, res, next) => {
   try {
-    res.json(await rescheduleTodayQueue({ accountId: req.body?.accountId || null }));
+    const result = await rescheduleTodayQueue({ accountId: req.body?.accountId || null });
+    clearOperationDashboardCache();
+    res.json(result);
   } catch (e) { next(e); }
 });
 
 router.post('/operations/recover-reply-link-mode-queues', async (req, res, next) => {
   try {
-    res.json(await recoverReplyLinkModeRequiredQueues({ accountId: req.body?.accountId || null }));
+    const result = await recoverReplyLinkModeRequiredQueues({ accountId: req.body?.accountId || null });
+    clearOperationDashboardCache();
+    res.json(result);
   } catch (e) { next(e); }
 });
 
 router.post('/operations/repair-reply-link-failures', async (req, res, next) => {
   try {
-    res.json(await repairReplyLinkFailures({
+    const result = await repairReplyLinkFailures({
       accountId: req.body?.accountId || null,
       limit: req.body?.limit || 20,
       dryRun: req.body?.mode !== 'apply'
-    }));
+    });
+    if (req.body?.mode === 'apply') clearOperationDashboardCache();
+    res.json(result);
   } catch (e) { next(e); }
 });
 
 router.post('/core/recover', async (req, res, next) => {
   try {
-    res.json(await recoverCore({
+    const result = await recoverCore({
       accountId: req.body?.accountId || null,
       limit: req.body?.limit || 20,
       mode: req.body?.mode === 'apply' ? 'apply' : 'dry-run'
-    }));
+    });
+    if (req.body?.mode === 'apply') clearOperationDashboardCache();
+    res.json(result);
   } catch (e) { next(e); }
 });
 
 router.post('/operations/normalize-operations', async (req, res, next) => {
   try {
-    res.json(await normalizeOperations({ accountId: req.body?.accountId || null }));
+    const result = await normalizeOperations({ accountId: req.body?.accountId || null });
+    clearOperationDashboardCache();
+    res.json(result);
   } catch (e) { next(e); }
 });
 
@@ -296,22 +314,26 @@ router.post('/operations/cleanup-unused-artifacts', async (req, res, next) => {
 router.post('/operations/cleanup-old-queue-issues', async (req, res, next) => {
   try {
     const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
-    res.json(await cleanupOldQueueIssues({
+    const result = await cleanupOldQueueIssues({
       mode,
       accountId: req.body?.accountId || null,
       hideAfterDays: Number(req.body?.hideAfterDays || 7),
       deleteAfterHiddenDays: Number(req.body?.deleteAfterHiddenDays || 3)
-    }));
+    });
+    if (mode === 'apply') clearOperationDashboardCache();
+    res.json(result);
   } catch (e) { next(e); }
 });
 
 router.post('/operations/accounts/:accountId/dismiss-past-queue-issues', async (req, res, next) => {
   try {
     const mode = req.body?.mode === 'apply' ? 'apply' : 'dry-run';
-    res.json(await dismissPastQueueIssuesForAccount(req.params.accountId, {
+    const result = await dismissPastQueueIssuesForAccount(req.params.accountId, {
       mode,
       reason: req.body?.reason || 'admin_past_issue_cleanup'
-    }));
+    });
+    if (mode === 'apply') clearOperationDashboardCache();
+    res.json(result);
   } catch (e) { next(e); }
 });
 
