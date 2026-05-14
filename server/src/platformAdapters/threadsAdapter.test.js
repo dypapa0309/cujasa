@@ -230,7 +230,7 @@ test('uploadVideoPost creates, waits, publishes, and returns permalink', async (
 
     assert.equal(requests[0].body.media_type, 'VIDEO');
     assert.equal(requests[0].body.video_url, 'https://cdn.example.com/render.mp4');
-    assert.match(requests[1].url, /fields=status%2Cstatus_code|fields=status,status_code/);
+    assert.match(requests[1].url, /fields=status/);
     assert.equal(uploaded.postUrl, 'https://www.threads.net/@videotest/post/SHORTV1');
     assert.equal(uploaded.raw.mediaType, 'VIDEO');
   } finally {

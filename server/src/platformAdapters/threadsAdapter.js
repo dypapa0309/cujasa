@@ -198,7 +198,7 @@ async function waitForThreadsContainerReady(token, creationId, { attempts = 20, 
   for (let index = 0; index < attempts; index += 1) {
     if (index > 0 && intervalMs > 0) await sleep(intervalMs);
     const params = new URLSearchParams({
-      fields: 'status,status_code',
+      fields: 'status',
       access_token: token
     });
     const statusRes = await fetch(`${THREADS_API}/${creationId}?${params.toString()}`);
