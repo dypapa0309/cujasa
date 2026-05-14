@@ -347,8 +347,8 @@ async function loadOperationContext() {
       limit: OPERATION_QUEUE_LIMIT
     }, [], loadErrors),
     safeDbList('coupang_products', {}, {
-      select: 'id,account_id,is_fallback,created_at,updated_at',
-      order: 'updated_at',
+      select: 'id,account_id,is_fallback,created_at',
+      order: 'created_at',
       ascending: false,
       limit: OPERATION_PRODUCT_LIMIT
     }, [], loadErrors),
