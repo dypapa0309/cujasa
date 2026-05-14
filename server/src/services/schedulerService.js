@@ -84,6 +84,85 @@ function calculateQueueModeCounts(total, account = {}, { allowLink = true } = {}
   return { linkCount, noLinkCount: total - linkCount };
 }
 
+function normalizeBodyForComparison(body = '') {
+  return String(body || '')
+    .replace(/\s+/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, '')
+    .trim()
+    .toLowerCase();
+}
+
+function bodySimilarity(a = '', b = '') {
+  const left = new Set(normalizeBodyForComparison(a).split(/\s+/).filter(Boolean));
+  const right = new Set(normalizeBodyForComparison(b).split(/\s+/).filter(Boolean));
+  if (!left.size || !right.size) return 0;
+  let intersection = 0;
+  for (const token of left) if (right.has(token)) intersection += 1;
+  return intersection / Math.max(left.size, right.size);
+}
+
+function queueQualityIssue(post = {}) {
+  const body = String(post.body || '').trim();
+  if (body.length < 20) return '본문이 너무 짧습니다.';
+  const blockedPatterns = [
+    /먹거리은|먹거리을|먹거리이|먹거리와/i,
+    /[가-힣]+ 등 정리 쉽게 하는 법/i,
+    /링크|댓글 링크|최저가|특가|구매/i,
+    /흐름이에요|흐름이야|도움이 됩니다|중요합니다|고려해야 합니다/i
+  ];
+  const matched = blockedPatterns.find((pattern) => pattern.test(body));
+  if (matched) return '고객 노출 전 다듬어야 하는 표현이 포함되어 있습니다.';
+  return null;
+}
+
+function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), requireLink = false } = {}) {
+  const selected = [];
+  const usedTopicIds = new Set();
+  const usedProductIds = new Set();
+  const rejected = [];
+  const candidates = posts.filter((post) => !requireLink || topicProducts.has(post.topic_id));
+
+  for (const post of candidates) {
+    if (selected.length >= times.length) break;
+    const product = topicProducts.get(post.topic_id) || null;
+    const issue = queueQualityIssue(post);
+    if (issue) {
+      rejected.push({ postId: post.id, topicId: post.topic_id, reason: 'quality_issue', message: issue });
+      continue;
+    }
+    if (usedTopicIds.has(post.topic_id)) {
+      rejected.push({ postId: post.id, topicId: post.topic_id, reason: 'duplicate_topic' });
+      continue;
+    }
+    if (product?.id && usedProductIds.has(product.id)) {
+      rejected.push({ postId: post.id, topicId: post.topic_id, productId: product.id, reason: 'duplicate_product' });
+      continue;
+    }
+    const similar = selected.find((item) => bodySimilarity(item.post.body, post.body) >= 0.8);
+    if (similar) {
+      rejected.push({ postId: post.id, topicId: post.topic_id, reason: 'similar_body', similarPostId: similar.post.id });
+      continue;
+    }
+    selected.push({ post, postMode: requireLink ? 'link' : 'no_link' });
+    usedTopicIds.add(post.topic_id);
+    if (product?.id) usedProductIds.add(product.id);
+  }
+
+  if (selected.length < times.length) {
+    for (const post of candidates) {
+      if (selected.length >= times.length) break;
+      if (selected.some((item) => item.post.id === post.id)) continue;
+      const issue = queueQualityIssue(post);
+      if (issue) continue;
+      const similar = selected.find((item) => bodySimilarity(item.post.body, post.body) >= 0.95);
+      if (similar) continue;
+      selected.push({ post, postMode: requireLink ? 'link' : 'no_link' });
+    }
+  }
+
+  return { selected, rejected };
+}
+
 function isReplyLinkModeRequiredQueue(row = {}) {
   const value = `${row.error_category || ''} ${row.error_message || ''}`;
   return /REPLY_LINK_MODE_REQUIRED/i.test(value);
@@ -109,6 +188,17 @@ function queueFailureTime(row = {}) {
 
 function accountReconnectTime(account = {}) {
   return new Date(account.threads_connected_at || account.last_threads_refresh_at || 0).getTime() || 0;
+}
+
+function isPastReplyIssueSuperseded(row = {}, account = {}) {
+  if (row.customer_hidden_at) return true;
+  const category = normalizeQueueClassification(row).category;
+  if (!['reply_warning', 'reply_permission_required', 'retry_available', 'recheck_required'].includes(category)) return false;
+  if (!account?.threads_access_token || account?.threads_token_status === 'refresh_failed') return false;
+  const failedAt = queueFailureTime(row);
+  if (!failedAt) return false;
+  const reconnectAt = accountReconnectTime(account);
+  return Boolean(reconnectAt && reconnectAt > failedAt) || Date.now() - failedAt > ONE_DAY_MS;
 }
 
 function replyPermissionSupersededByReconnect(row = {}, account = {}) {
@@ -213,7 +303,9 @@ async function replyLinkReadiness(account) {
     };
   }
   const queues = await dbList('post_queue', { account_id: account.id });
-  const failures = queues.filter(isReplyFailureQueue);
+  const failures = queues
+    .filter(isReplyFailureQueue)
+    .filter((row) => !isPastReplyIssueSuperseded(row, account));
   const permissionBlockers = failures.filter((row) => isActiveReplyPermissionBlocker(row, account));
   if (permissionBlockers.length > 0) {
     const reason = replyBlockReason(permissionBlockers);
@@ -517,6 +609,7 @@ export async function createDailyQueue(accountId, options = {}) {
   }
   const topicIds = [...new Set(allDrafts.map((p) => p.topic_id))];
   const productsPerTopic = new Set();
+  const primaryProductByTopic = new Map();
   for (const tid of topicIds) {
     const topic = await dbGet('topics', { id: tid });
     const pp = await dbList('post_products', { topic_id: tid });
@@ -525,6 +618,7 @@ export async function createDailyQueue(accountId, options = {}) {
       const match = product && topic ? evaluateProductTopicMatch(product, topic, account) : { linkable: false };
       if (isRealCoupangProduct(product) && match.linkable) {
         productsPerTopic.add(tid);
+        if (!primaryProductByTopic.has(tid)) primaryProductByTopic.set(tid, product);
         break;
       }
     }
@@ -551,15 +645,23 @@ export async function createDailyQueue(accountId, options = {}) {
   const withLink = allDrafts.filter((p) => productsPerTopic.has(p.topic_id));
   const withoutLink = allDrafts.filter((p) => !productsPerTopic.has(p.topic_id));
 
+  const linkSelection = reply.ok
+    ? selectQueueDrafts({ posts: withLink, times, topicProducts: primaryProductByTopic, requireLink: true })
+    : { selected: [], rejected: [] };
   const candidateWithLink = withLink.slice(0, total);
-  const primaryWithLink = reply.ok ? candidateWithLink : [];
+  const primaryWithLink = linkSelection.selected.map((item) => item.post);
   const selectedIds = new Set(primaryWithLink.map((post) => post.id));
   const linkBlockedByReplyReadiness = !reply.ok && candidateWithLink.length > 0;
   const remainingSlots = linkBlockedByReplyReadiness ? 0 : Math.max(0, total - primaryWithLink.length);
-  const primaryNoLink = withoutLink
+  const noLinkSelection = selectQueueDrafts({
+    posts: withoutLink
     .filter((post, index, list) => list.findIndex((row) => row.id === post.id) === index)
-    .filter((post) => !selectedIds.has(post.id))
-    .slice(0, remainingSlots);
+      .filter((post) => !selectedIds.has(post.id)),
+    times: times.slice(0, remainingSlots),
+    topicProducts: primaryProductByTopic,
+    requireLink: false
+  });
+  const primaryNoLink = noLinkSelection.selected.map((item) => item.post);
   const linkCount = candidateWithLink.length;
   const noLinkCount = remainingSlots;
   const linkShortage = 0;
@@ -604,6 +706,8 @@ export async function createDailyQueue(accountId, options = {}) {
     productRepairAttempts: repairOutcomes.length,
     productRepairFallbacks: repairOutcomes.filter((row) => row.finalMode === 'no_link').length,
     sponsoredCommentCount: drafts.filter((row) => row.postMode === 'sponsored_comment').length,
+    qualityRejectedCount: linkSelection.rejected.length + noLinkSelection.rejected.length,
+    qualityRejected: linkSelection.rejected.concat(noLinkSelection.rejected).slice(0, 10),
     repairOutcomes: repairOutcomes.map((row) => ({
       postId: row.postId,
       topicId: row.topicId,
@@ -624,6 +728,7 @@ export async function createDailyQueue(accountId, options = {}) {
   else if (diagnostics.productRepairFallbacks > 0) diagnostics.reasonCode = 'PRODUCT_REPAIR_FALLBACK_TO_NO_LINK';
   else if (!reply.ok && candidateWithLink.length > 0 && drafts.length === 0) diagnostics.reasonCode = reply.code || 'REPLY_LINK_BLOCKED';
   else if (!reply.ok && candidateWithLink.length > 0) diagnostics.reasonCode = 'LINK_POSTS_BLOCKED_REPLY_REVIEW_NEEDED';
+  else if (drafts.length === 0 && diagnostics.qualityRejectedCount > 0) diagnostics.reasonCode = 'QUALITY_FILTER_REJECTED_DRAFTS';
   else if (drafts.length === 0 && linkCount > 0) diagnostics.reasonCode = 'NO_REAL_COUPANG_LINKS';
   else if (drafts.length === 0) diagnostics.reasonCode = 'NO_QUEUEABLE_DRAFTS';
   else if (linkShortage > 0) diagnostics.reasonCode = 'PARTIAL_LINK_CANDIDATES';

@@ -66,7 +66,7 @@ const sublogActions = [
 ];
 
 const auvibotActions = [
-  { key: 'auvibot-run', productId: 'auvibot', label: '자동화 실행', icon: PlayCircle, hint: '랜덤 주제와 상품 후보를 발굴해 쇼츠 작업을 자동으로 만들어요.' },
+  { key: 'auvibot-run', productId: 'auvibot', label: '자동화 실행', icon: PlayCircle, hint: '영상 소싱, 상품 매칭, 렌더 작업을 시작해요.' },
   { key: 'auvibot-settings', productId: 'auvibot', label: '설정 확인', icon: Settings, hint: 'Threads 연결, 게시 기준, 영상 스타일을 정해요.' },
   { key: 'auvibot-video-learning', productId: 'auvibot', label: '인기영상 학습', icon: Plus, hint: '잘 되는 영상의 훅, 컷 템포, 자막 패턴을 학습해요.' },
   { key: 'auvibot-posts', productId: 'auvibot', label: '포스팅 현황', icon: FileText, hint: '생성된 쇼츠, 렌더 대기, 업로드 큐 상태를 확인해요.' },
@@ -864,11 +864,19 @@ export default function CustomerBetaPage({
                 </SidebarGroup>
               ) : (
                 <SidebarGroup label={`${selectedProduct.name} 상태`}>
-                  <div className="rounded-xl bg-black/20 px-3 py-3">
-                    <div className="text-xs font-bold text-zinc-500">남은 무료 사용</div>
-                    <div className="mt-1 text-2xl font-black text-zinc-100">{usageRemainingLabel(selectedProductUsage)}</div>
-                    <div className="mt-1 text-[11px] text-zinc-600">{usageSummaryLabel(selectedProductUsage)}</div>
-                  </div>
+                  {selectedProduct.id === 'auvibot' ? (
+                    <div className="rounded-xl bg-black/20 px-3 py-3">
+                      <div className="text-xs font-bold text-zinc-500">작업 상태</div>
+                      <div className="mt-1 text-sm font-black text-zinc-100">자동화 준비</div>
+                      <div className="mt-1 text-[11px] text-zinc-600">설정 확인 후 실행할 수 있어요.</div>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl bg-black/20 px-3 py-3">
+                      <div className="text-xs font-bold text-zinc-500">남은 사용</div>
+                      <div className="mt-1 text-2xl font-black text-zinc-100">{usageRemainingLabel(selectedProductUsage)}</div>
+                      <div className="mt-1 text-[11px] text-zinc-600">{usageSummaryLabel(selectedProductUsage)}</div>
+                    </div>
+                  )}
                 </SidebarGroup>
               )}
             </div>
@@ -1586,11 +1594,11 @@ function TaskDrawer(props) {
           {action.key === 'infludex-grade' && <InfludexGradePanel reloadCurrentUser={props.reloadCurrentUser} onOpenUpload={() => props.onOpenAction?.('infludex-upload')} />}
           {action.key === 'infludex-download' && <InfludexDownloadPanel onOpenUpload={() => props.onOpenAction?.('infludex-upload')} />}
           {action.key === 'sublog-dashboard' && <SublogPanel currentUser={props.currentUser} />}
-          {action.key === 'auvibot-run' && <AuvibotPanel mode="run" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} />}
-          {action.key === 'auvibot-settings' && <AuvibotPanel mode="settings" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} />}
-          {action.key === 'auvibot-video-learning' && <AuvibotPanel mode="learning" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} />}
-          {action.key === 'auvibot-posts' && <AuvibotPanel mode="posts" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} />}
-          {action.key === 'auvibot-analytics' && <AuvibotPanel mode="analytics" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} />}
+          {action.key === 'auvibot-run' && <AuvibotPanel mode="run" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} reloadCurrentUser={props.reloadCurrentUser} onOpenAction={props.onOpenAction} />}
+          {action.key === 'auvibot-settings' && <AuvibotPanel mode="settings" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} reloadCurrentUser={props.reloadCurrentUser} onOpenAction={props.onOpenAction} />}
+          {action.key === 'auvibot-video-learning' && <AuvibotPanel mode="learning" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} reloadCurrentUser={props.reloadCurrentUser} onOpenAction={props.onOpenAction} />}
+          {action.key === 'auvibot-posts' && <AuvibotPanel mode="posts" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} reloadCurrentUser={props.reloadCurrentUser} onOpenAction={props.onOpenAction} />}
+          {action.key === 'auvibot-analytics' && <AuvibotPanel mode="analytics" account={props.account} reloadAccounts={props.reloadAccounts} accountCreation={props.accountCreation} reloadCurrentUser={props.reloadCurrentUser} onOpenAction={props.onOpenAction} />}
           {['dexor', 'spread', 'polibot', 'infludex', 'sublog', 'auvibot'].includes(action.key) && <ProductPreview action={action} onStartProduct={props.onStartProduct} starting={props.startingProductId === action.key} />}
         </div>
       </aside>
@@ -1605,7 +1613,8 @@ function BetaRunPanel({
   reloadAccounts,
   reloadWorkspaceData,
   onPipelineDone,
-  onPipelineRunningChange
+  onPipelineRunningChange,
+  onOpenAction
 }) {
   const toast = useToast();
   const actionRef = useRef(false);
@@ -1643,7 +1652,8 @@ function BetaRunPanel({
   const setAutomation = async (nextStatus) => {
     if (!account?.id || actionRef.current) return;
     if (nextStatus === 'running' && trialBlocked) {
-      toast('무료 체험 포스팅 5회를 모두 사용했어요. 결제 후 계속 이용할 수 있어요.', 'error');
+      toast('무료 사용이 종료되었어요. 결제 후 계속 이용할 수 있어요.', 'error');
+      onOpenAction?.('billing');
       return;
     }
     actionRef.current = true;
@@ -1738,7 +1748,7 @@ function BetaRunPanel({
               ? '처리 중...'
               : automationRunning
                 ? <span className="inline-flex items-center justify-center gap-2"><PauseCircle size={18} /> 자동화 중지</span>
-                : trialBlocked ? '결제 후 계속하기' : '자동화 시작'}
+                : '자동화 시작'}
           </DarkButton>
         </div>
       </PanelCard>
@@ -1847,14 +1857,6 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
 
   const save = async () => {
     if (!account?.id || !form) return;
-    if (trialStatus?.plan === 'free' && trialStatus.blocked) {
-      toast('무료 체험 포스팅 5회를 모두 사용했어요. 결제 후 계속 이용할 수 있어요.', 'error');
-      return;
-    }
-    if (!form.target_audience.trim() || !form.content_scope.trim()) {
-      toast('타깃층과 다룰 카테고리를 입력해 주세요.', 'error');
-      return;
-    }
     setSaving(true);
     try {
       await api.patch(`/api/accounts/${account.id}`, {
@@ -1862,7 +1864,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
         blog_auto_publish_enabled: Boolean(account.blog_enabled && form.blog_auto_publish_enabled),
         daily_post_min: 0,
         daily_post_max: clampDailyPostCount(form.daily_post_max, 3),
-        active_time_windows: [{ start: form.first_upload_time || '09:00', end: form.first_upload_time || '09:00' }],
+        active_time_windows: [{ start: form.first_upload_time || '09:00', end: '23:00' }],
         forbidden_topics: form.forbidden_topics.split('\n').map((item) => item.trim()).filter(Boolean),
         forbidden_words: form.forbidden_words.split('\n').map((item) => item.trim()).filter(Boolean)
       });
@@ -1979,12 +1981,14 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
         </Notice>
       )}
 
+      <CujasaOnboardingChecklist account={account} form={form} activeThreadsRequest={activeThreadsRequest} />
+
       <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <div className="text-sm font-black text-zinc-100">설정이 어렵다면 맡겨주세요</div>
             <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-              데모/무료 체험 고객도 요청할 수 있어요. 접수되면 관리자 셋업 대기에 등록되고 담당자에게 알림이 갑니다.
+              접수되면 관리자 셋업 대기에 등록되고 담당자에게 알림이 갑니다.
             </p>
           </div>
           <DarkButton variant="ghost" size="sm" onClick={requestSetup} disabled={requestingSetup}>
@@ -2294,6 +2298,48 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
 
       <DarkButton onClick={save} disabled={saving}>{saving ? '저장 중...' : '설정 저장'}</DarkButton>
     </>
+  );
+}
+
+function CujasaOnboardingChecklist({ account, form, activeThreadsRequest }) {
+  const hasAccount = Boolean(account?.id);
+  const hasHandle = Boolean(String(form?.account_handle || account?.account_handle || '').trim());
+  const hasThreads = Boolean(account?.has_threads_access_token);
+  const hasThreadsRequest = Boolean(activeThreadsRequest && !['connected', 'canceled'].includes(activeThreadsRequest.status));
+  const hasCoupang = Boolean(account?.has_coupang_access_key && account?.has_coupang_secret_key && account?.has_coupang_partner_id);
+  const hasContent = Boolean(String(form?.target_audience || '').trim() && String(form?.content_scope || '').trim());
+  const steps = [
+    { key: 'account', label: '계정 만들기', done: hasAccount, meta: account?.name || '필요' },
+    { key: 'handle', label: 'Threads 핸들', done: hasHandle, meta: form?.account_handle || account?.account_handle || '미입력' },
+    { key: 'threads', label: 'Threads 연결', done: hasThreads, meta: hasThreads ? '연결됨' : hasThreadsRequest ? '요청 중' : '등록 필요' },
+    { key: 'coupang', label: '쿠팡 API', done: hasCoupang, meta: hasCoupang ? '저장됨' : '입력 필요' },
+    { key: 'content', label: '콘텐츠 기준', done: hasContent, meta: hasContent ? '입력됨' : '입력 필요' },
+    { key: 'run', label: '자동화 시작', done: hasAccount && hasThreads && hasCoupang && hasContent, meta: hasThreads && hasCoupang && hasContent ? '가능' : '대기' }
+  ];
+
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-black text-zinc-100">온보딩 체크리스트</div>
+          <div className="mt-1 text-xs text-zinc-500">이 순서대로 완료되면 자동화 실행을 바로 시작할 수 있어요.</div>
+        </div>
+        <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[10px] font-black text-zinc-400">
+          {steps.filter((step) => step.done).length}/{steps.length}
+        </span>
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {steps.map((step, index) => (
+          <div key={step.key} className={`rounded-2xl border px-3 py-3 ${step.done ? 'border-emerald-400/15 bg-emerald-400/10' : 'border-white/10 bg-white/[0.03]'}`}>
+            <div className="flex items-center gap-2">
+              {step.done ? <CheckCircle2 size={15} className="text-emerald-300" /> : <span className="grid h-5 w-5 place-items-center rounded-full bg-white/[0.06] text-[10px] font-black text-zinc-400">{index + 1}</span>}
+              <span className="text-xs font-black text-zinc-100">{step.label}</span>
+            </div>
+            <div className="mt-1 truncate text-xs text-zinc-500">{step.meta}</div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -4418,7 +4464,7 @@ function SpreadCampaignPanel({ assistantDraft, reloadCurrentUser }) {
             <label className={labelClass}>채널<input className={inputClass} value={draft.channel} onChange={(event) => update('channel', event.target.value)} placeholder="예: 블로그, Threads, 인스타그램" /></label>
             <label className={labelClass}>상품 유형<input className={inputClass} value={draft.product} onChange={(event) => update('product', event.target.value)} placeholder="예: 주방용품, 뷰티, 생활가전" /></label>
             <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '등록 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '캠페인 등록'}</DarkButton>
-            {usage.remaining <= 0 && <Notice>무료 사용 횟수를 모두 사용했어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
+            {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
           </div>
         </PanelCard>
       )}
@@ -4476,7 +4522,7 @@ function SpreadApplicantsPanel({ reloadCurrentUser }) {
           <label className={labelClass}>신청자 목록<textarea className={inputClass} rows="4" value={form.applicants} onChange={(event) => setForm((prev) => ({ ...prev, applicants: event.target.value }))} placeholder={'신청자 A\n신청자 B\n신청자 C'} /></label>
           <label className={labelClass}>선정 기준<textarea className={inputClass} rows="3" value={form.criteria} onChange={(event) => setForm((prev) => ({ ...prev, criteria: event.target.value }))} placeholder={'최근 활동성\n카테고리 적합도\n제출 가능 일정'} /></label>
           <DarkButton onClick={save} disabled={saving || usage.remaining <= 0 || !selectedCampaign}>{saving ? '정리 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '참여자 선정 정리'}</DarkButton>
-          {usage.remaining <= 0 && <Notice>무료 사용 횟수를 모두 사용했어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
+          {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
       <PanelCard title="참여자 선정">
@@ -4538,7 +4584,7 @@ function SpreadReviewPanel({ reloadCurrentUser }) {
           <label className={labelClass}>필수 키워드<textarea className={inputClass} rows="3" value={form.required} onChange={(event) => setForm((prev) => ({ ...prev, required: event.target.value }))} placeholder={'브랜드명\n제품명\n필수 해시태그'} /></label>
           <label className={labelClass}>금지 표현<textarea className={inputClass} rows="3" value={form.forbidden} onChange={(event) => setForm((prev) => ({ ...prev, forbidden: event.target.value }))} placeholder={'100% 보장\n치료\n과장 표현'} /></label>
           <DarkButton onClick={save} disabled={saving || usage.remaining <= 0 || !selectedCampaign}>{saving ? '검수 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '제출물 검수'}</DarkButton>
-          {usage.remaining <= 0 && <Notice>무료 사용 횟수를 모두 사용했어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
+          {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
       <PanelCard title="제출물 검수">
@@ -5006,7 +5052,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
             </div>
           )}
           <DarkButton onClick={save} disabled={saving || usage.remaining <= 0} className="w-full">{saving ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}</DarkButton>
-          {usage.remaining <= 0 && <Notice>남은 무료 사용 횟수가 없어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
+          {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
       <div className="grid min-w-0 gap-4">
@@ -5431,7 +5477,7 @@ function PolibotGenerateButton({ saving, canGenerate, usage, onGenerate }) {
       <DarkButton size="sm" onClick={onGenerate} disabled={!canGenerate}>
         {saving ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}
       </DarkButton>
-      {usage.remaining <= 0 && <Notice>남은 무료 사용 횟수가 없어요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
+      {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
     </div>
   );
 }
@@ -6868,8 +6914,54 @@ function AuvibotCustomerSettings({ account, reloadAccounts }) {
   );
 }
 
-function AuvibotPanel({ mode = 'run', account, reloadAccounts, accountCreation }) {
+function AuvibotPanel({ mode = 'run', account, reloadAccounts, accountCreation, reloadCurrentUser, onOpenAction }) {
   const content = auvibotContent[mode] || auvibotContent.run;
+  const toast = useToast();
+  const [running, setRunning] = useState(false);
+  const [workspace, setWorkspace] = useState(null);
+  const [loadingWorkspace, setLoadingWorkspace] = useState(false);
+
+  const loadWorkspace = useCallback(async () => {
+    setLoadingWorkspace(true);
+    try {
+      setWorkspace(await api.get('/api/product-workspace/auvibot'));
+    } catch (error) {
+      setWorkspace(null);
+    } finally {
+      setLoadingWorkspace(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mode === 'settings') return;
+    loadWorkspace();
+  }, [loadWorkspace, mode]);
+
+  const runAuvibot = async () => {
+    setRunning(true);
+    try {
+      await api.post('/api/product-workspace/auvibot/run', {
+        accountId: account?.id || null,
+        count: 5,
+        sourceMode: 'mixed',
+        quality: 'conversion',
+        category: '전체'
+      });
+      toast('AUVIBOT 자동화를 시작했어요.', 'success');
+      await loadWorkspace();
+    } catch (err) {
+      toast(err.message || 'AUVIBOT 자동화를 시작하지 못했어요. 설정 확인에서 셋업 상태를 먼저 확인해 주세요.', 'error');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const jobs = Array.isArray(workspace?.jobs) ? workspace.jobs : [];
+  const jobCounts = jobs.reduce((acc, job) => {
+    const status = job.status || 'queued';
+    acc[status] = (acc[status] || 0) + 1;
+    return acc;
+  }, {});
 
   return (
     <PanelCard className="self-start">
@@ -6877,51 +6969,44 @@ function AuvibotPanel({ mode = 'run', account, reloadAccounts, accountCreation }
       <h2 className="mt-3 text-2xl font-black text-zinc-100">{content.title}</h2>
       <p className="mt-3 text-sm leading-relaxed text-zinc-500">{content.description}</p>
       {mode === 'run' && (
-        <div className="mt-5 grid gap-3 rounded-3xl border border-white/10 bg-black/25 p-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <label className={labelClass}>
-              생성 개수
-              <select className={inputClass} defaultValue="5">
-                <option value="3">3개</option>
-                <option value="5">5개</option>
-                <option value="10">10개</option>
-              </select>
-            </label>
-            <label className={labelClass}>
-              소싱 방식
-              <select className={inputClass} defaultValue="mixed">
-                <option value="mixed">섞어서</option>
-                <option value="product-first">상품 먼저</option>
-                <option value="trend-first">트렌드 먼저</option>
-              </select>
-            </label>
-            <label className={labelClass}>
-              품질 기준
-              <select className={inputClass} defaultValue="conversion">
-                <option value="conversion">전환 우선</option>
-                <option value="trend">트렌드 우선</option>
-                <option value="safe">안전 소스 우선</option>
-              </select>
-            </label>
-          </div>
-          <label className={labelClass}>
-            카테고리
-            <div className="flex flex-wrap gap-2">
-              {['전체', '차량', '주방', '욕실', '데스크', '뷰티', '수납', '청소'].map((category, index) => (
-                <span key={category} className={`rounded-full border px-3 py-1.5 text-xs font-black ${index === 0 ? 'border-white/25 bg-white text-zinc-950' : 'border-white/10 bg-white/[0.04] text-zinc-400'}`}>
-                  {category}
-                </span>
-              ))}
+        <div className="mt-5 grid gap-3">
+          <div className="rounded-3xl border border-white/10 bg-black/25 p-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl bg-white/10 p-3 text-zinc-100">
+                <PlayCircle size={22} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-lg font-black text-zinc-100">자동화 중지됨</div>
+                <p className="mt-1 text-sm leading-relaxed text-zinc-500">
+                  자동화를 시작하면 영상 소싱, 상품 매칭, 편집 작업 큐를 생성해요.
+                </p>
+                <div className="mt-3 rounded-2xl bg-black/25 px-4 py-3 text-sm text-zinc-400">
+                  <span className="font-black text-zinc-100">{account?.name || '계정 없음'}</span>
+                  {account?.account_handle && <span className="ml-2 text-zinc-600">{account.account_handle}</span>}
+                </div>
+              </div>
             </div>
-          </label>
-          <DarkButton type="button">
-            <PlayCircle size={16} />
-            자동화 시작
-          </DarkButton>
+          </div>
+          <div className="rounded-3xl border border-white/10 bg-black/25 p-4">
+            <div className="text-sm font-black text-zinc-100">사전 점검</div>
+            <Notice>설정 확인에서 Threads, 쿠팡 API, 영상 스타일을 먼저 저장하면 자동화 실행이 가능합니다.</Notice>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <DarkButton type="button" variant="ghost" onClick={() => onOpenAction?.('auvibot-settings')}>
+                설정 확인
+              </DarkButton>
+              <DarkButton type="button" onClick={runAuvibot} disabled={running}>
+                {running ? '처리 중...' : '자동화 시작'}
+              </DarkButton>
+            </div>
+          </div>
         </div>
       )}
       {mode === 'settings' && (
         <div className="mt-5 grid gap-3">
+          <AuvibotOnboardingChecklist account={account} />
+          <Notice>
+            영상 소싱, 음성, 렌더링 키는 JASAIN 관리 설정에서 운영합니다. 고객은 Threads와 쿠팡 정보만 확인하면 됩니다.
+          </Notice>
           <AuvibotAccountSetup account={account} accountCreation={accountCreation} />
           <AuvibotThreadsConnection account={account} reloadAccounts={reloadAccounts} />
           <AuvibotCustomerSettings account={account} reloadAccounts={reloadAccounts} />
@@ -6929,6 +7014,44 @@ function AuvibotPanel({ mode = 'run', account, reloadAccounts, accountCreation }
       )}
       {mode !== 'settings' && (
         <div className="mt-5 grid gap-3">
+          {mode === 'posts' && (
+            <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-black text-zinc-100">작업 큐</div>
+                <button type="button" onClick={loadWorkspace} className="grid h-8 w-8 place-items-center rounded-full text-zinc-500 hover:bg-white/10 hover:text-zinc-100" aria-label="새로고침">
+                  <RefreshCw size={15} className={loadingWorkspace ? 'animate-spin' : ''} />
+                </button>
+              </div>
+              <div className="mt-3 grid gap-2">
+                {jobs.length === 0 && <div className="rounded-2xl bg-black/20 px-4 py-3 text-xs font-bold text-zinc-500">아직 접수된 작업이 없어요.</div>}
+                {jobs.slice(0, 10).map((job) => (
+                  <div key={job.id} className="flex items-center justify-between gap-3 rounded-2xl bg-black/20 px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-black text-zinc-200">{job.title || '자동 주제 쇼츠'}</div>
+                      <div className="mt-1 truncate text-xs text-zinc-500">{job.category || '전체'} · {job.sourceMode || 'mixed'} · {dateTime(job.createdAt)}</div>
+                    </div>
+                    <span className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1 text-[10px] font-black uppercase text-zinc-400">
+                      {job.status || 'queued'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {mode === 'analytics' && (
+            <div className="grid gap-3 sm:grid-cols-3">
+              {[
+                ['대기', jobCounts.queued || 0],
+                ['진행', jobCounts.running || 0],
+                ['완료', jobCounts.done || jobCounts.completed || 0]
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+                  <div className="text-xs font-black text-zinc-500">{label}</div>
+                  <div className="mt-2 text-2xl font-black text-zinc-100">{value}</div>
+                </div>
+              ))}
+            </div>
+          )}
           {content.items.map(([title, description]) => (
             <div key={title} className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
               <div className="text-sm font-black text-zinc-100">{title}</div>
@@ -6938,6 +7061,31 @@ function AuvibotPanel({ mode = 'run', account, reloadAccounts, accountCreation }
         </div>
       )}
     </PanelCard>
+  );
+}
+
+function AuvibotOnboardingChecklist({ account }) {
+  const hasThreads = Boolean(account?.has_threads_access_token);
+  const hasCoupang = Boolean(account?.has_coupang_access_key && account?.has_coupang_secret_key && account?.has_coupang_partner_id);
+  const steps = [
+    { key: 'threads', label: 'Threads 연결', done: hasThreads, meta: hasThreads ? '연결됨' : '필요' },
+    { key: 'coupang', label: '쿠팡 API', done: hasCoupang, meta: hasCoupang ? '저장됨' : '필요' },
+    { key: 'system', label: '영상 소싱/렌더 키', done: true, meta: 'JASAIN 관리' },
+    { key: 'review', label: '테스트 영상 검수', done: false, meta: '셋업 후 진행' }
+  ];
+
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      {steps.map((step, index) => (
+        <div key={step.key} className={`rounded-2xl border px-4 py-3 ${step.done ? 'border-emerald-400/15 bg-emerald-400/10' : 'border-white/10 bg-white/[0.03]'}`}>
+          <div className="flex items-center gap-2">
+            {step.done ? <CheckCircle2 size={15} className="text-emerald-300" /> : <span className="grid h-5 w-5 place-items-center rounded-full bg-white/[0.06] text-[10px] font-black text-zinc-400">{index + 1}</span>}
+            <span className="text-sm font-black text-zinc-100">{step.label}</span>
+          </div>
+          <div className="mt-1 text-xs text-zinc-500">{step.meta}</div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -7710,7 +7858,7 @@ function ProductUsageStrip({ usage }) {
   return (
     <div className="mb-4 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
       <div className="min-w-0">
-        <div className="text-xs font-black text-zinc-500">남은 무료 사용</div>
+        <div className="text-xs font-black text-zinc-500">남은 사용</div>
         <div className="mt-0.5 truncate text-sm font-bold text-zinc-300">{usageSummaryLabel(usage)}</div>
       </div>
       <div className="max-w-[42vw] shrink-0 truncate text-right text-xl font-black text-zinc-100 sm:max-w-[180px] sm:text-2xl">{usageRemainingLabel(usage)}</div>

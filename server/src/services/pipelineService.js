@@ -4,7 +4,7 @@ import { searchProductsForTopic } from './coupangService.js';
 import { selectProducts } from './productSelectionService.js';
 import { generatePosts } from './contentService.js';
 import { createDailyQueue } from './schedulerService.js';
-import { logActivity } from './supabaseService.js';
+import { dbList, logActivity } from './supabaseService.js';
 import { finishPipelineRun, getRunningPipeline, startPipelineRun, updatePipelineRunProgress } from './pipelineRunService.js';
 import { assertPreflightCanPublish, preflightAccount } from './accountPreflightService.js';
 import { assertAccountOwnerCanOperate } from './billingEntitlementService.js';
@@ -13,9 +13,36 @@ import { repairProductsForTopic } from './productRepairService.js';
 import { sendOpsAlert } from './notificationService.js';
 
 const PIPELINE_COUPANG_SEARCH_WAIT_BUDGET_MS = Math.max(0, Number(process.env.COUPANG_PIPELINE_SEARCH_WAIT_BUDGET_MS || 10 * 60 * 1000));
+const DEFERRED_COUPANG_THROTTLE = 'DEFERRED_COUPANG_THROTTLE';
+const PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED = 'PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED';
 
 export function hasLinkProductsForContentGeneration(selectedProducts) {
   return Array.isArray(selectedProducts) && selectedProducts.length > 0;
+}
+
+function hasCoupangThrottle(products = []) {
+  return (Array.isArray(products) ? products : []).some((product) => product?.raw_data?.code === 'COUPANG_SEARCH_THROTTLED');
+}
+
+function createPipelineControlError(code, message, status = 429) {
+  const error = new Error(message);
+  error.code = code;
+  error.status = status;
+  return error;
+}
+
+async function hasFutureScheduledQueue(accountId) {
+  const rows = await dbList('post_queue', { account_id: accountId });
+  const now = Date.now();
+  return rows.some((row) => row.status === 'scheduled' && new Date(row.scheduled_at || 0).getTime() >= now);
+}
+
+function normalizePreflightSkip(preflight) {
+  const first = preflight?.checks?.find((check) => check.status === 'error');
+  const text = [first?.key, first?.title, first?.message, first?.action].filter(Boolean).join(' ');
+  if (/reply_permission|댓글 권한|threads|재연결|access token|OAuth/i.test(text)) return 'threads_reconnect';
+  if (/coupang|쿠팡|Access Key|Secret Key|Partner ID|Tracking Code/i.test(text)) return 'coupang_settings';
+  return 'preflight_failed';
 }
 
 function createNoQueueMessage(diagnostics = {}) {
@@ -57,6 +84,21 @@ export async function runPipelineForAccount(accountId, options = {}) {
   const preflight = await preflightAccount(account.id, { allowInitialLinkDiscovery });
   assertPreflightCanPublish(preflight);
   const run = await startPipelineRun(account, options.requestedBy || 'manual');
+  const runStartedAt = Date.now();
+  const accountMaxRunMs = Math.max(0, Number(options.maxRunMs || 0));
+  const accountDeadlineAt = accountMaxRunMs > 0 ? runStartedAt + accountMaxRunMs : 0;
+  const coupangWaitBudgetMs = options.coupangWaitBudgetMs != null
+    ? Math.max(0, Number(options.coupangWaitBudgetMs))
+    : PIPELINE_COUPANG_SEARCH_WAIT_BUDGET_MS;
+  const deferOnCoupangThrottle = Boolean(options.deferOnCoupangThrottle);
+  const checkAccountBudget = () => {
+    if (!accountDeadlineAt || Date.now() < accountDeadlineAt) return;
+    throw createPipelineControlError(
+      PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED,
+      '계정별 자동 실행 시간 예산을 초과해 다음 continuation으로 넘깁니다.',
+      202
+    );
+  };
   const preflightWarnings = (preflight.checks || [])
     .filter((check) => check.status === 'warn')
     .map((check) => ({
@@ -83,6 +125,16 @@ export async function runPipelineForAccount(accountId, options = {}) {
       steps: result.steps,
       ...patch
     });
+    await options.onProgress?.({
+      accountId: account.id,
+      accountName: account.name,
+      stage: patch.stage || result.stage,
+      percent: patch.percent ?? result.percent,
+      label: patch.label || result.label,
+      topicsDone: patch.topicsDone ?? result.topicsDone ?? 0,
+      topicsTotal: patch.topicsTotal ?? result.topicsTotal ?? 0,
+      postsCreated: patch.postsCreated ?? result.postsCreated ?? 0
+    });
   };
   try {
     await progress({ percent: 5, stage: 'starting', label: '예약 작업을 준비하고 있습니다' });
@@ -97,8 +149,9 @@ export async function runPipelineForAccount(accountId, options = {}) {
     let totalPosts = 0;
     const totalTopics = Math.max(topics.length, 1);
     const coupangWaitStartedAt = Date.now();
-    const remainingCoupangWaitBudget = () => Math.max(0, PIPELINE_COUPANG_SEARCH_WAIT_BUDGET_MS - (Date.now() - coupangWaitStartedAt));
+    const remainingCoupangWaitBudget = () => Math.max(0, coupangWaitBudgetMs - (Date.now() - coupangWaitStartedAt));
     for (const [index, topic] of topics.entries()) {
+      checkAccountBudget();
       const basePercent = 25 + Math.round((index / totalTopics) * 55);
       try {
         await progress({
@@ -113,6 +166,13 @@ export async function runPipelineForAccount(accountId, options = {}) {
           waitForThrottle: true,
           throttleWaitBudgetMs: remainingCoupangWaitBudget()
         });
+        if (deferOnCoupangThrottle && hasCoupangThrottle(searchedProducts)) {
+          throw createPipelineControlError(
+            DEFERRED_COUPANG_THROTTLE,
+            '쿠팡 검색 간격 보호로 이번 자동 실행에서는 계정을 보류합니다.',
+            202
+          );
+        }
         if (searchedProducts.some((product) => ['COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE'].includes(product.raw_data?.code))) {
           const lockUnavailable = searchedProducts.some((product) => product.raw_data?.code === 'COUPANG_LOCK_UNAVAILABLE');
           const error = new Error(lockUnavailable
@@ -137,6 +197,13 @@ export async function runPipelineForAccount(accountId, options = {}) {
             waitForThrottle: true,
             throttleWaitBudgetMs: remainingCoupangWaitBudget()
           });
+          if (deferOnCoupangThrottle && repair.reasonCode === 'COUPANG_SEARCH_THROTTLED') {
+            throw createPipelineControlError(
+              DEFERRED_COUPANG_THROTTLE,
+              '쿠팡 검색 간격 보호로 이번 자동 실행에서는 계정을 보류합니다.',
+              202
+            );
+          }
           if (repair.reasonCode === 'COUPANG_RATE_LIMIT') {
             const error = new Error('쿠팡 요청 제한 보호 중이라 상품 복구와 예약 생성을 중단했습니다.');
             error.status = 429;
@@ -194,6 +261,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
     await progress({ percent: 85, stage: 'posts_done', label: `${totalPosts}개 콘텐츠를 준비했습니다`, topicsTotal: topics.length, topicsDone: topics.length, postsCreated: totalPosts });
 
     await progress({ percent: 90, stage: 'queue', label: '예약 큐에 등록하고 있습니다', topicsTotal: topics.length, topicsDone: topics.length, postsCreated: totalPosts });
+    checkAccountBudget();
     const queued = await createDailyQueue(account.id, { skipPreflight: allowInitialLinkDiscovery });
     result.steps.queued = queued.length;
     result.topicsCount = topics.length;
@@ -249,6 +317,31 @@ export async function runPipelineForAccount(accountId, options = {}) {
     result.message = `${queued.length}개 링크 예약이 완료됐습니다.`;
     await finishPipelineRun(run.id, 'completed', { result });
   } catch (err) {
+    if ([DEFERRED_COUPANG_THROTTLE, PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED].includes(err.code)) {
+      result.ok = null;
+      result.status = err.code === DEFERRED_COUPANG_THROTTLE ? 'deferred_coupang_throttle' : 'deferred_time_budget';
+      result.code = err.code;
+      result.message = err.message;
+      result.error = null;
+      result.percent = Math.max(Number(result.percent || 0), 1);
+      result.label = err.message;
+      await progress({
+        percent: result.percent,
+        stage: result.status,
+        label: err.message,
+        code: err.code,
+        message: err.message
+      });
+      await finishPipelineRun(run.id, 'skipped', { result, error_message: null });
+      await logActivity({
+        account_id: account.id,
+        project_id: account.project_id,
+        action: result.status,
+        level: 'info',
+        message: err.message
+      });
+      return result;
+    }
     const failedStage = result.stage || 'pipeline';
     result.ok = false;
     result.status = 'error';
@@ -275,50 +368,130 @@ export async function runPipelineForAccount(accountId, options = {}) {
 }
 
 export async function runFullPipeline(options = {}) {
-  const accounts = (await listAccounts()).filter(isAutomationRunning);
+  const startedAt = Date.now();
+  const maxRunMs = Math.max(0, Number(options.maxRunMs || 0));
+  const maxAccounts = Number.isFinite(Number(options.maxAccounts)) ? Math.max(0, Number(options.maxAccounts)) : Infinity;
+  const deadlineAt = maxRunMs > 0 ? startedAt + maxRunMs : 0;
+  const allAccounts = (await listAccounts()).filter(isAutomationRunning);
+  const accountIdFilter = Array.isArray(options.accountIds) && options.accountIds.length > 0 ? new Set(options.accountIds) : null;
+  const accounts = accountIdFilter
+    ? allAccounts.filter((account) => accountIdFilter.has(account.id))
+    : allAccounts;
   const results = [];
+  const pending = [];
+  const skipped = [];
+  const processed = [];
+  const isPastDeadline = () => deadlineAt > 0 && Date.now() >= deadlineAt;
+  const markPending = (account, reason = 'time_budget') => {
+    if (!pending.some((row) => row.accountId === account.id)) {
+      pending.push({ accountId: account.id, accountName: account.name, reason });
+    }
+  };
   for (const account of accounts) {
+    if (processed.length >= maxAccounts || isPastDeadline()) {
+      markPending(account, processed.length >= maxAccounts ? 'max_accounts' : 'max_run_budget');
+      continue;
+    }
+    await options.onProgress?.({
+      stage: 'account_starting',
+      currentAccountId: account.id,
+      currentAccountName: account.name,
+      processed: processed.length,
+      pending: pending.length,
+      skipped: skipped.length,
+      total: accounts.length
+    });
     const running = await getRunningPipeline(account.id);
     if (running) {
-      results.push({
+      const row = {
         accountId: account.id,
         accountName: account.name,
         status: 'skipped',
+        code: 'already_running',
         reason: 'already_running',
         pipelineRunId: running.id
-      });
+      };
+      results.push(row);
+      skipped.push(row);
+      processed.push(account.id);
       continue;
     }
     try {
+      if (options.skipFutureScheduled && await hasFutureScheduledQueue(account.id)) {
+        const row = {
+          accountId: account.id,
+          accountName: account.name,
+          status: 'skipped',
+          code: 'future_schedule_exists',
+          reason: 'future_schedule_exists'
+        };
+        results.push(row);
+        skipped.push(row);
+        processed.push(account.id);
+        continue;
+      }
       const preflight = await preflightAccount(account.id, { allowInitialLinkDiscovery: true });
       if (!preflight.canPublish) {
         const first = preflight.checks.find((check) => check.status === 'error');
-        results.push({
+        const row = {
           accountId: account.id,
           accountName: account.name,
           status: 'skipped',
+          code: normalizePreflightSkip(preflight),
           reason: first?.message || 'preflight_failed',
           preflight
-        });
+        };
+        results.push(row);
+        skipped.push(row);
+        processed.push(account.id);
         continue;
       }
-      results.push(await runPipelineForAccount(account.id, {
+      const result = await runPipelineForAccount(account.id, {
         requestedBy: options.requestedBy || 'full_pipeline',
-        allowInitialLinkDiscovery: true
-      }));
+        allowInitialLinkDiscovery: true,
+        maxRunMs: options.perAccountMaxMs,
+        coupangWaitBudgetMs: options.coupangWaitBudgetMs,
+        deferOnCoupangThrottle: options.deferOnCoupangThrottle,
+        onProgress: (progress) => options.onProgress?.({
+          ...progress,
+          currentAccountId: account.id,
+          currentAccountName: account.name,
+          processed: processed.length,
+          pending: pending.length,
+          skipped: skipped.length,
+          total: accounts.length
+        })
+      });
+      results.push(result);
+      if (['deferred_coupang_throttle', 'deferred_time_budget'].includes(result.status)) {
+        markPending(account, result.status);
+      }
+      processed.push(account.id);
     } catch (err) {
       if (err.status === 409) {
-        results.push({
+        const row = {
           accountId: account.id,
           accountName: account.name,
           status: 'skipped',
+          code: 'already_running',
           reason: 'already_running',
           error: err.message
-        });
+        };
+        results.push(row);
+        skipped.push(row);
+        processed.push(account.id);
         continue;
       }
       throw err;
     }
   }
-  return results;
+  return {
+    status: pending.length > 0 ? 'partial' : 'completed',
+    results,
+    processed,
+    pending,
+    skipped,
+    durationMs: Date.now() - startedAt,
+    total: accounts.length
+  };
 }

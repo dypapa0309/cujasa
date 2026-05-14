@@ -58,7 +58,7 @@ export default function CustomerRunPage({
   const setAutomation = async (nextStatus) => {
     if (!account?.id || actionRef.current) return;
     if (nextStatus === 'running' && trialBlocked) {
-      toast('무료 체험 포스팅 5회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
+      toast('무료 사용이 종료되었습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
       setTab?.('billing');
       return;
     }
@@ -136,7 +136,7 @@ export default function CustomerRunPage({
       onPipelineDone?.(pipelineResult);
     } catch (err) {
       if (err.code === 'FREE_TRIAL_LIMIT_REACHED' || err.upgradeRequired) {
-        toast('무료 체험 포스팅 5회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
+        toast('무료 사용이 종료되었습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
         setTab?.('billing');
         onPipelineRunningChange?.(false);
         return;
@@ -249,7 +249,7 @@ export default function CustomerRunPage({
               ? '처리 중...'
               : automationRunning
                 ? <span className="inline-flex items-center justify-center gap-2"><PauseCircle size={18} /> 자동화 중지</span>
-                : trialBlocked ? '결제하고 계속하기' : '자동화 시작'}
+                : '자동화 시작'}
           </button>
         </div>
       </div>

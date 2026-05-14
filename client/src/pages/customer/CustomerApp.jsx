@@ -605,7 +605,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
           </>
         ) : (
           <>
-            <SetupStatusCard setupStatus={setupStatus} setTab={navigateTab} onRequestSetup={requestSetup} requestingSetup={requestingSetup} />
+            <SetupStatusCard account={account} setupStatus={setupStatus} setTab={navigateTab} onRequestSetup={requestSetup} requestingSetup={requestingSetup} />
 
             {/* 계정 탭 */}
             <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1">
@@ -895,17 +895,42 @@ function PipelineOverlay({ progress, dark = false }) {
   );
 }
 
-function SetupStatusCard({ setupStatus, setTab, onRequestSetup, requestingSetup }) {
+function buildCustomerSetupSteps(account) {
+  const hasAccount = Boolean(account?.id);
+  const hasHandle = Boolean(String(account?.account_handle || '').trim());
+  const hasThreads = Boolean(account?.has_threads_access_token);
+  const hasCoupang = Boolean(account?.has_coupang_access_key && account?.has_coupang_secret_key && account?.has_coupang_partner_id);
+  const hasContent = Boolean(String(account?.target_audience || '').trim() && String(account?.content_scope || '').trim());
+  return [
+    { key: 'account', label: '계정 생성', done: hasAccount },
+    { key: 'handle', label: 'Threads 핸들 저장', done: hasHandle },
+    { key: 'threads', label: 'Threads 연결', done: hasThreads },
+    { key: 'coupang', label: '쿠팡 API 입력', done: hasCoupang },
+    { key: 'content', label: '콘텐츠 기준 입력', done: hasContent },
+    { key: 'run', label: '자동화 시작', done: hasAccount && hasThreads && hasCoupang && hasContent }
+  ];
+}
+
+function SetupStatusCard({ account, setupStatus, setTab, onRequestSetup, requestingSetup }) {
   if (!setupStatus || setupStatus.ready) return null;
   const items = [...(setupStatus.blocking || []), ...(setupStatus.warnings || [])].slice(0, 4);
-  if (!items.length) return null;
+  const steps = buildCustomerSetupSteps(account);
+  if (!items.length && steps.every((step) => step.done)) return null;
   return (
     <div className="mb-5 rounded-2xl border border-amber-100 bg-amber-50 px-5 py-4">
       <div className="flex items-start gap-3">
         <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-600" />
         <div className="min-w-0 flex-1">
-          <div className="font-black text-amber-900">셋업 확인이 필요합니다</div>
-          <div className="mt-1 grid gap-1.5">
+          <div className="font-black text-amber-900">시작 전 셋업을 확인해주세요</div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            {steps.map((step, index) => (
+              <div key={step.key} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-black ${step.done ? 'bg-white text-emerald-700' : 'bg-amber-100 text-amber-800'}`}>
+                {step.done ? <CheckCircle2 size={14} /> : <span className="grid h-4 w-4 place-items-center rounded-full bg-amber-200 text-[10px]">{index + 1}</span>}
+                <span>{step.label}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 grid gap-1.5">
             {items.map((entry) => (
               <div key={`${entry.code}-${entry.accountId || 'all'}`} className="text-xs leading-relaxed text-amber-800">
                 <span className="font-bold">{entry.title}</span>
@@ -943,7 +968,7 @@ function WaitingScreen({ setupStatus, onGoSettings, onGoBilling, onAddAccount, o
           <h2 className="text-xl font-black text-gray-900">셋업 상태 확인</h2>
         </div>
         <p className="text-sm leading-relaxed text-gray-500">
-          무료 체험은 고객님이 직접 설정을 완료하면 바로 사용할 수 있습니다. 아래 부족한 항목을 먼저 확인해주세요.
+          고객님이 직접 설정을 완료하면 바로 사용할 수 있습니다. 아래 부족한 항목을 먼저 확인해주세요.
         </p>
       </div>
       <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5">

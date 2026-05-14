@@ -53,6 +53,34 @@ test('dailyPipelineStatus marks old running records as stale', async () => {
   assert.equal(status.status, 'stale');
 });
 
+test('dailyPipelineStatus keeps fresh heartbeat records running', async () => {
+  await dbInsert('scheduler_runs', {
+    job_name: 'daily-pipeline',
+    run_date_kst: '2099-02-05',
+    status: 'running',
+    triggered_by: 'test',
+    started_at: '2099-02-04T17:00:00.000Z',
+    summary: {
+      progress: {
+        updatedAt: '2099-02-05T00:20:00.000Z',
+        stage: 'products',
+        currentAccountName: 'heartbeat test',
+        processed: 1,
+        pending: 0,
+        skipped: 0
+      }
+    }
+  });
+
+  const status = await dailyPipelineStatus(new Date('2099-02-05T00:30:00.000Z'));
+
+  assert.equal(status.runDateKst, '2099-02-05');
+  assert.equal(status.stale, false);
+  assert.equal(status.status, 'running');
+  assert.equal(status.heartbeatAt, '2099-02-05T00:20:00.000Z');
+  assert.equal(status.progress.currentAccountName, 'heartbeat test');
+});
+
 test('runDailyPipelineOnce restarts stale running records for the same KST day', async () => {
   const runDateKst = '2099-02-04';
   await dbInsert('scheduler_runs', {
@@ -71,4 +99,42 @@ test('runDailyPipelineOnce restarts stale running records for the same KST day',
   assert.equal(result.status, 'completed');
   assert.equal(result.run.run_date_kst, runDateKst);
   assert.equal(result.run.triggered_by, 'test_recovery');
+});
+
+test('runDailyPipelineOnce closes as partial when account budget leaves pending accounts', async () => {
+  const project = await dbInsert('projects', {
+    name: 'partial scheduler test',
+    type: 'coupang',
+    status: 'active'
+  });
+  const first = await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'partial account one',
+    platform: 'threads',
+    account_handle: '@partial-one',
+    automation_status: 'running',
+    status: 'active'
+  });
+  const second = await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'partial account two',
+    platform: 'threads',
+    account_handle: '@partial-two',
+    automation_status: 'running',
+    status: 'active'
+  });
+
+  const result = await runDailyPipelineOnce({
+    triggeredBy: 'test_partial',
+    runDateKst: '2099-02-06',
+    maxAccounts: 1,
+    mode: 'scheduled'
+  });
+
+  assert.equal(result.duplicate, false);
+  assert.equal(result.status, 'partial');
+  assert.equal(result.run.status, 'partial');
+  assert.equal(result.summary.pendingCount > 0, true);
+  assert.equal(result.summary.pending.some((row) => row.accountId === second.id), true);
+  assert.equal(result.summary.results.some((row) => row.accountId === first.id), true);
 });

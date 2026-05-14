@@ -13,7 +13,8 @@ import {
 import {
   getPolibotDbKnowledgeSummary,
   ingestPolibotKnowledge,
-  listPolibotDbKnowledgeSources
+  listPolibotDbKnowledgeSources,
+  searchPolibotCodeCandidates
 } from './polibotKnowledgeDbService.js';
 
 const ALLOWED_PRODUCTS = new Set(['dexor', 'spread', 'polibot', 'infludex', 'auvibot']);
@@ -393,9 +394,8 @@ function summarizeAuvibotProduct({ product, grant } = {}) {
   const running = jobs.filter((job) => ['running', 'sourcing', 'editing', 'rendering'].includes(job.status)).length;
   if (ready > 0) return { health: 'ready', summary: `${ready}개 쇼츠 작업이 포스팅 대기 중이에요.`, nextAction: '포스팅 현황', actionKey: 'auvibot-posts', usage };
   if (running > 0) return { health: 'needs_setup', summary: `${running}개 자동화 작업이 진행 중이에요.`, nextAction: '포스팅 현황', actionKey: 'auvibot-posts', usage };
-  return { health: 'empty', summary: '자동화 시작을 누르면 랜덤 주제와 상품 후보를 발굴해요.', nextAction: '자동화 실행', actionKey: 'auvibot-run', usage };
+  return { health: 'needs_setup', summary: '설정 확인 후 영상 자동화를 시작할 수 있어요.', nextAction: '자동화 실행', actionKey: 'auvibot-run', usage };
 }
-
 
 function summarizeGrantedProduct({ product, grant } = {}) {
   const base = {
@@ -702,7 +702,7 @@ async function updateWorkspaceAndConsume(userId, productId, patch) {
   const usageRoot = current.usage && typeof current.usage === 'object' ? current.usage : {};
   const usage = normalizeUsage({ ...current, unlimitedUsage: grant.unlimitedUsage }, productId);
   if (usage.remaining <= 0) {
-    const error = new Error('무료 사용 횟수를 모두 사용했습니다.');
+    const error = new Error('사용 가능 횟수가 남아 있지 않습니다.');
     error.status = 402;
     throw error;
   }
@@ -741,6 +741,42 @@ async function updateWorkspaceAndConsume(userId, productId, patch) {
   return withUsage(settings.workspace || next.workspace, settings, productId);
 }
 
+async function updateWorkspaceAndConsumeCount(userId, productId, patchBuilder, consumeCount = 1) {
+  const grant = await getGrant(userId, productId);
+  const current = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  const usageRoot = current.usage && typeof current.usage === 'object' ? current.usage : {};
+  const usage = normalizeUsage({ ...current, unlimitedUsage: grant.unlimitedUsage }, productId);
+  const count = Math.max(1, Number(consumeCount || 1));
+  if (!grant.unlimitedUsage && usage.remaining < count) {
+    const error = new Error('사용 가능 횟수가 부족합니다.');
+    error.status = 402;
+    error.remaining = usage.remaining;
+    throw error;
+  }
+  const workspace = current.workspace && typeof current.workspace === 'object' ? current.workspace : {};
+  const patch = typeof patchBuilder === 'function' ? patchBuilder(workspace, usage) : patchBuilder;
+  const next = {
+    ...current,
+    ...(grant.unlimitedUsage ? {} : {
+      usage: {
+        ...usageRoot,
+        [productId]: {
+          limit: usage.limit,
+          used: usage.used + count
+        }
+      }
+    }),
+    workspace: {
+      ...workspace,
+      ...patch,
+      updatedAt: now()
+    }
+  };
+  const [updated] = await dbUpdate('user_products', { user_id: userId, product_id: productId }, { settings: next });
+  const settings = updated?.settings || next;
+  return withUsage(settings.workspace || next.workspace, { ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);
+}
+
 export async function getProductWorkspace(userId, productId) {
   const grant = await getGrant(userId, productId);
   const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
@@ -769,6 +805,81 @@ export async function getProductWorkspace(userId, productId) {
     next.knowledgeDbSummary = await getPolibotDbKnowledgeSummary(userId);
   }
   return withUsage(next, { ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);
+}
+
+export async function startAuvibotAutomationRun(userId, input = {}) {
+  if (process.env.AUVIBOT_RENDER_WORKER_ENABLED !== 'true') {
+    const error = new Error('AUVIBOT 영상 렌더 자동화는 관리자 테스트 중입니다. 고객용 실행은 렌더 워커 배포 후 사용할 수 있습니다.');
+    error.status = 503;
+    error.code = 'AUVIBOT_RENDER_WORKER_NOT_READY';
+    throw error;
+  }
+  const grant = await getGrant(userId, 'auvibot');
+  const current = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  const usage = normalizeUsage({ ...current, unlimitedUsage: grant.unlimitedUsage }, 'auvibot');
+  const requestedCount = Math.max(1, Math.min(10, Number(input.count || 1)));
+  const count = grant.unlimitedUsage ? requestedCount : Math.min(requestedCount, usage.remaining);
+  if (count <= 0) {
+    const error = new Error('무료 사용이 종료되었습니다. 결제 후 계속 이용할 수 있습니다.');
+    error.status = 402;
+    error.code = 'AUVIBOT_FREE_USAGE_ENDED';
+    throw error;
+  }
+  const nowIso = now();
+  const sourceMode = ['mixed', 'product-first', 'trend-first'].includes(input.sourceMode) ? input.sourceMode : 'mixed';
+  const quality = ['conversion', 'trend', 'safe'].includes(input.quality) ? input.quality : 'conversion';
+  const category = String(input.category || '전체').trim() || '전체';
+  const workspace = await updateWorkspaceAndConsumeCount(userId, 'auvibot', (currentWorkspace = {}) => {
+    const jobs = Array.isArray(currentWorkspace.jobs) ? currentWorkspace.jobs : [];
+    const nextJobs = Array.from({ length: count }).map((_, index) => ({
+      id: `auvibot-${Date.now()}-${index}`,
+      status: 'queued',
+      sourceMode,
+      quality,
+      category,
+      createdAt: nowIso,
+      title: category === '전체' ? '자동 주제 쇼츠' : `${category} 쇼츠`
+    }));
+    return {
+      jobs: [...nextJobs, ...jobs].slice(0, 50),
+      lastRunAt: nowIso,
+      lastRun: {
+        sourceMode,
+        quality,
+        category,
+        requestedCount,
+        acceptedCount: count
+      }
+    };
+  }, count);
+  return {
+    ok: true,
+    status: 'queued',
+    workspace
+  };
+}
+
+export async function searchPolibotCoverageCodes(userId, params = {}) {
+  await getGrant(userId, 'polibot');
+  const query = String(params.query || params.q || '').trim();
+  const company = String(params.company || '').trim();
+  const coverage = String(params.coverage || '').trim();
+  const results = await searchPolibotCodeCandidates(userId, {
+    query,
+    company,
+    coverage,
+    limit: params.limit || 30
+  });
+  return {
+    query,
+    company,
+    coverage,
+    count: results.length,
+    results,
+    notice: results.length
+      ? '검수 상태가 함께 표시됩니다. 추천 가능 상태가 아닌 근거는 고객 제시 전 확인이 필요합니다.'
+      : '일치하는 코드 후보를 찾지 못했습니다. 보장명, 보험사, 숫자 코드를 바꿔 다시 검색해 주세요.'
+  };
 }
 
 export async function saveDexorCandidates(userId, { urls = '', fileName = '', targetCategory = '' } = {}) {

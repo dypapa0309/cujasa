@@ -16,7 +16,7 @@ function isUnlimitedTestUser(user) {
 }
 
 function blockedError(status) {
-  const error = new Error('무료 체험 포스팅 5회를 모두 사용했습니다.');
+  const error = new Error('무료 사용이 종료되었습니다. 결제 후 계속 이용할 수 있습니다.');
   error.status = 403;
   error.code = 'FREE_TRIAL_LIMIT_REACHED';
   error.limit = status.limit;
@@ -124,7 +124,7 @@ async function pauseFreeTrialUserAutomation(userId, sourceAccountId, status) {
     for (const row of queueRows.filter((item) => ['scheduled', 'retry'].includes(item.status))) {
       await dbUpdate('post_queue', { id: row.id }, {
         status: 'skipped',
-        error_message: '무료 체험 포스팅 5회 완료로 자동화가 중지되었습니다.'
+        error_message: '무료 사용 종료로 자동화가 중지되었습니다.'
       }).catch(() => []);
     }
   }
@@ -133,7 +133,7 @@ async function pauseFreeTrialUserAutomation(userId, sourceAccountId, status) {
     user_id: userId,
     action: 'free_trial_limit_reached_automation_paused',
     level: 'info',
-    message: '무료 체험 5회 업로드 완료로 자동화를 중지했습니다.',
+    message: '무료 사용 종료로 자동화를 중지했습니다.',
     payload: { limit: status.limit, used: status.used, accountIds }
   }).catch(() => null);
 }

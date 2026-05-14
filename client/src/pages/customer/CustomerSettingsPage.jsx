@@ -65,15 +65,7 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
   }, [account]);
 
   const save = async () => {
-    const trialBlocked = trialStatus?.plan === 'free' && trialStatus.blocked;
-    if (trialBlocked) {
-      toast('무료 체험 포스팅 5회를 모두 사용했습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
-      setTab?.('billing');
-      return;
-    }
     const errs = {};
-    if (!form.target_audience?.trim()) errs.target_audience = '타겟층을 입력해주세요.';
-    if (!form.content_scope?.trim()) errs.content_scope = '다룰 카테고리를 입력해주세요.';
     if (Object.keys(errs).length) { setErrors(errs); return; }
     setErrors({});
     setSaving(true);
@@ -83,7 +75,7 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
         ...accountPatch,
         daily_post_min: 0,
         daily_post_max: clampDailyPostCount(form.daily_post_max, 3),
-        active_time_windows: [{ start: first_upload_time || '09:00', end: first_upload_time || '09:00' }],
+        active_time_windows: [{ start: first_upload_time || '09:00', end: '23:00' }],
         forbidden_topics: form.forbidden_topics.split('\n').map((s) => s.trim()).filter(Boolean),
         forbidden_words: form.forbidden_words.split('\n').map((s) => s.trim()).filter(Boolean),
       });
@@ -154,8 +146,6 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
       계정 설정을 불러오는 중입니다.
     </div>
   );
-
-  const trialBlocked = trialStatus?.plan === 'free' && trialStatus.blocked;
 
   return (
     <div className="grid gap-5">
@@ -353,18 +343,18 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
             onChange={(e) => setForm((p) => ({ ...p, first_upload_time: e.target.value }))}
             className={`${input} text-center font-bold`}
           />
-          <p className="text-xs text-gray-400 mt-2">하루 여러 개를 예약하면 이 시각부터 일정 간격으로 배치됩니다.</p>
+          <p className="text-xs text-gray-400 mt-2">하루 여러 개를 예약하면 이 시각부터 23:00 사이에 랜덤 분산됩니다.</p>
         </Field>
         <div className="rounded-xl border border-gray-100 bg-gray-50 px-4 py-3 text-xs leading-relaxed text-gray-500">
           하루 최대 개수는 보장 수량이 아니라 상한입니다. 실제 쿠팡 상품 매칭이 완료된 콘텐츠가 있을 때만 예약됩니다.
         </div>
       </Section>
 
-      <button onClick={save} disabled={saving || trialBlocked}
+      <button onClick={save} disabled={saving}
         className={`w-full font-black py-4 rounded-2xl transition-all disabled:opacity-60 flex items-center justify-center gap-2 text-white
-          ${trialBlocked ? 'bg-gray-400 cursor-not-allowed' : 'bg-coupang hover:bg-coupang-dark'}`}>
+          bg-coupang hover:bg-coupang-dark`}>
         {saving && <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>}
-        {saving ? '저장 중...' : trialBlocked ? '무료 체험 종료' : '설정 저장'}
+        {saving ? '저장 중...' : '설정 저장'}
       </button>
       {errors.save && (
         <div className="rounded-2xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-700">

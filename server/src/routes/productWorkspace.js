@@ -7,6 +7,7 @@ import {
   resetDexorWorkspace,
   resetInfludexWorkspace,
   reviewSpreadSubmission,
+  searchPolibotCoverageCodes,
   saveInfludexCandidates,
   saveDexorCandidates,
   savePolibotCustomer,
@@ -16,6 +17,7 @@ import {
   savePolibotUpload,
   saveSpreadApplicants,
   saveSpreadCampaign,
+  startAuvibotAutomationRun,
   updateSpreadCampaignStatus
 } from '../services/productWorkspaceService.js';
 import { buildReferencePatternContext, ingestTrendReferencesForAccount } from '../services/trendReferenceLearningService.js';
@@ -52,6 +54,22 @@ router.get('/summary', async (req, res, next) => {
     res.json(await buildProductWorkspaceSummary({
       userId: user.userId,
       allowedAccountIds: user.allowedAccountIds || []
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/polibot/code-search', async (req, res, next) => {
+  try {
+    if (!requireWorkspaceServiceOpen(req, res, 'polibot')) return;
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await searchPolibotCoverageCodes(user.userId, {
+      query: req.query?.q || req.query?.query || '',
+      company: req.query?.company || '',
+      coverage: req.query?.coverage || '',
+      limit: req.query?.limit || 30
     }));
   } catch (error) {
     next(error);
@@ -141,6 +159,17 @@ router.post('/cujasa/content-preview', async (req, res, next) => {
       return res.status(403).json({ error: 'Access denied' });
     }
     res.json(await buildCujasaContentPreview(accountId, req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/auvibot/run', async (req, res, next) => {
+  try {
+    if (!requireWorkspaceServiceOpen(req, res, 'auvibot')) return;
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await startAuvibotAutomationRun(user.userId, req.body || {}));
   } catch (error) {
     next(error);
   }
