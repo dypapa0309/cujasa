@@ -575,6 +575,21 @@ function normalizeImportedCatalogStatus(status = '') {
   return 'review';
 }
 
+function importedReviewStatusFromPolibotStatus(status = '') {
+  const value = normalizeReviewStatus(status || 'review_needed');
+  if (value === 'recommendable') return 'confirmed';
+  if (value === 'excluded') return 'excluded';
+  if (value === 'conflict') return 'needs_review';
+  return 'needs_review';
+}
+
+function polibotStatusFromImportedStatus(status = '') {
+  const value = normalizeImportedCatalogStatus(status);
+  if (value === 'confirmed') return 'recommendable';
+  if (value === 'excluded') return 'excluded';
+  return 'review_needed';
+}
+
 function cleanCatalogProductName(value = '', company = '') {
   const companyText = String(company || '').replace(/\s+/g, '');
   const companyPattern = companyText
@@ -1124,6 +1139,50 @@ function rawCatalogRowForReview(row = {}) {
   };
 }
 
+function importedCatalogRowForReview(item = {}) {
+  const premiumRows = item.premiumExamples || item.premiumTableRows || [];
+  return {
+    id: item.id,
+    sourceId: item.sourceId || '',
+    scope: 'global',
+    userId: '',
+    status: polibotStatusFromImportedStatus(item.status),
+    importedStatus: item.status || '',
+    sourceSystem: item.sourceSystem || 'polibot_core',
+    imported: true,
+    readOnly: false,
+    company: item.company || '미분류',
+    productName: item.productName || '',
+    productGroup: item.productGroup || '',
+    coverageKeywords: item.coverageKeywords || [],
+    coverageDetails: item.coverageDetails || [],
+    premiumExample: item.premiumExample || '',
+    premiumExamples: premiumRows.slice(0, 8),
+    premiumConfidence: item.premiumConfidence || '',
+    ageRange: item.ageRange || '',
+    paymentTerm: item.paymentTerm || '',
+    renewalType: item.renewalType || '',
+    completeness: item.completeness || '',
+    autoConfirmScore: item.confidence || 0,
+    confidenceScore: item.confidence || 0,
+    effectiveMonth: item.evidenceMonth || '',
+    evidence: {
+      fileName: item.evidenceFile || '',
+      excerpt: item.disclosureMemo || ''
+    },
+    evidenceFile: item.evidenceFile || '',
+    conflictReasons: item.conflictReasons || [],
+    linkedBenefitGroups: item.linkedBenefitGroups || [],
+    linkConfidence: item.linkedBenefitGroups?.[0]?.linkConfidence || '',
+    linkScore: item.linkedBenefitGroups?.[0]?.linkScore || 0,
+    reviewNote: '',
+    reviewedAt: '',
+    reviewerId: '',
+    createdAt: '',
+    updatedAt: ''
+  };
+}
+
 function sourceRowForReview(row = {}) {
   const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
   return {
@@ -1158,6 +1217,46 @@ function sourceRowForReview(row = {}) {
     reviewerId: metadata.reviewerId || '',
     createdAt: row.created_at || '',
     updatedAt: row.updated_at || ''
+  };
+}
+
+function importedSourceRowForReview(source = {}) {
+  const analysisQuality = source.documentAnalysis?.analysisQuality || {};
+  return {
+    id: source.id,
+    scope: 'global',
+    userId: '',
+    status: source.knowledgeStatus === 'recommendable' ? 'recommendable' : 'review_needed',
+    importedStatus: source.knowledgeStatus || '',
+    sourceSystem: source.sourceSystem || 'polibot_core',
+    imported: true,
+    readOnly: true,
+    sourceChannel: source.sourceChannel || 'local_ingest',
+    fileName: source.fileName || '',
+    fileType: source.fileType || '',
+    fileSize: source.fileSize || 0,
+    month: source.month || '',
+    company: source.company || '미분류',
+    companies: source.companies || [],
+    productGroup: source.productGroup || '',
+    keywords: source.keywords || [],
+    productNames: source.productNames || [],
+    textSnippet: source.textSnippet || '',
+    privacyRiskScore: source.privacyRiskScore || 0,
+    privacyRiskLevel: source.privacyRiskLevel || 'none',
+    evidenceQualityScore: source.evidenceQualityScore || 0,
+    evidenceQualityLevel: source.evidenceQualityLevel || '',
+    evidenceQualityReasons: source.evidenceQualityReasons || [],
+    recommendationEligible: source.recommendationEligible !== false,
+    analysisQuality,
+    catalogItemCount: source.catalogItems?.length || 0,
+    premiumTableRowCount: analysisQuality.premiumTableRowCount || source.premiumTableRows?.length || 0,
+    coverageDetailCount: analysisQuality.coverageDetailCount || source.coverageDetails?.length || 0,
+    linkedBenefitGroupCount: analysisQuality.linkedBenefitGroupCount || source.linkedBenefitGroups?.length || 0,
+    storagePath: '',
+    reviewNote: '',
+    createdAt: source.uploadedAt || '',
+    updatedAt: source.uploadedAt || ''
   };
 }
 
@@ -1814,26 +1913,32 @@ export async function listPolibotKnowledgeReviewQueue({ status = 'all', scope = 
     selectedScope === 'user' ? [] : listImportedPolibotSources()
   ]);
   const importedCatalogItems = importedSources.flatMap((source) => source.catalogItems || []);
+  const importedSourceRows = selectedScope === 'user' ? [] : importedSources.map(importedSourceRowForReview);
+  const importedCatalogRows = selectedScope === 'user' ? [] : importedCatalogItems.map(importedCatalogRowForReview);
   const importedLatestMonth = importedSources.map((source) => source.month).filter(Boolean).sort().reverse()[0] || '';
   const statusFilter = selectedStatus === 'all' ? null : selectedStatus;
   const filteredSources = sourceRows
+    .map(sourceRowForReview)
+    .concat(importedSourceRows)
     .filter((row) => !statusFilter || row.status === statusFilter)
-    .slice(0, maxRows)
-    .map(sourceRowForReview);
+    .sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .slice(0, maxRows);
   const filteredCatalogItems = catalogRows
+    .map(rawCatalogRowForReview)
+    .concat(importedCatalogRows)
     .filter((row) => !statusFilter || row.status === statusFilter)
-    .slice(0, maxRows)
-    .map(rawCatalogRowForReview);
+    .sort((a, b) => String(b.effectiveMonth || '').localeCompare(String(a.effectiveMonth || '')) || Number(b.confidenceScore || 0) - Number(a.confidenceScore || 0))
+    .slice(0, maxRows);
   return {
     filters: { status: selectedStatus, scope: selectedScope, limit: maxRows },
     summary: {
-      sources: sourceRows.length,
-      catalogItems: catalogRows.length,
+      sources: sourceRows.length + importedSourceRows.length,
+      catalogItems: catalogRows.length + importedCatalogRows.length,
       importedSources: importedSources.length,
       importedCatalogItems: importedCatalogItems.length,
       latestMonth: importedLatestMonth || sourceRows.map((row) => row.month).filter(Boolean).sort().reverse()[0] || '',
-      sourceStatusCounts: countStatuses(sourceRows),
-      catalogStatusCounts: countStatuses(catalogRows),
+      sourceStatusCounts: countStatuses(sourceRows.map(sourceRowForReview).concat(importedSourceRows)),
+      catalogStatusCounts: countStatuses(catalogRows.map(rawCatalogRowForReview).concat(importedCatalogRows)),
       feedbackCounts: countStatuses(feedbackRows.map((row) => ({ status: row.rating }))),
       feedbackNeedsReview: feedbackRows.filter((row) => row.routed_to_review).length
     },
@@ -2036,6 +2141,25 @@ export async function runPolibotSourceOcr(id, { reviewerId = '' } = {}) {
 }
 
 export async function updatePolibotCatalogItemReview(id, { status, reviewNote = '', reviewerId = '' } = {}) {
+  if (String(id || '').startsWith('imported-catalog-')) {
+    const importedId = Number(String(id).replace(/^imported-catalog-/, ''));
+    if (!Number.isFinite(importedId)) {
+      const error = new Error('POLIBOT 이관 상품 후보 ID가 올바르지 않습니다.');
+      error.status = 400;
+      throw error;
+    }
+    const reviewStatus = importedReviewStatusFromPolibotStatus(status);
+    const [updated] = await dbUpdate('catalog_items', { id: importedId }, {
+      review_status: reviewStatus
+    });
+    importedSourceCache = null;
+    if (!updated) {
+      const error = new Error('POLIBOT 이관 상품 후보를 찾지 못했습니다.');
+      error.status = 404;
+      throw error;
+    }
+    return importedCatalogRowForReview(importedCatalogItemFromRow(updated, [], {}));
+  }
   const row = await dbGet('polibot_catalog_items', { id });
   if (!row) {
     const error = new Error('POLIBOT 상품 후보를 찾지 못했습니다.');

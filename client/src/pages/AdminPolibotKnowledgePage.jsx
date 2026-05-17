@@ -48,6 +48,15 @@ function StatusPill({ status }) {
   );
 }
 
+function SourceBadge({ item }) {
+  if (!item?.imported) return null;
+  return (
+    <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+      이관 DB
+    </span>
+  );
+}
+
 function SummaryCard({ label, value, icon: Icon, active, onClick }) {
   return (
     <button
@@ -316,12 +325,38 @@ export default function AdminPolibotKnowledgePage() {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill status={item.status} />
+                  <SourceBadge item={item} />
                   <span className="text-xs font-semibold text-slate-400">{item.scope === 'global' ? '공통' : '사용자'} · {item.effectiveMonth || '월 미확인'}</span>
                 </div>
                 <div className="mt-2 text-base font-black text-slate-950">{item.company} {item.productName}</div>
                 <div className="mt-1 text-sm text-slate-500">
                   {item.productGroup || '상품군 미확인'} · 보험료 {item.premiumExample || '없음'} · 가입연령 {item.ageRange || '없음'} · {item.renewalType || '갱신 정보 없음'}
                 </div>
+                {item.imported && (
+                  <div className="mt-2 grid gap-2 md:grid-cols-3">
+                    <div className="rounded-xl bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                      <span className="font-bold">연결 강도</span> {item.linkConfidence || '확인 필요'} · {item.linkScore || 0}점
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <span className="font-bold text-slate-800">담보</span> {(item.coverageDetails || item.coverageKeywords || []).length}개
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <span className="font-bold text-slate-800">보험료표</span> {(item.premiumExamples || []).length}개
+                    </div>
+                  </div>
+                )}
+                {item.coverageKeywords?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {item.coverageKeywords.slice(0, 8).map((keyword) => (
+                      <span key={keyword} className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">{keyword}</span>
+                    ))}
+                  </div>
+                )}
+                {item.premiumExamples?.length > 0 && (
+                  <div className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
+                    {item.premiumExamples.slice(0, 3).map((row) => [row.gender, row.age && `${row.age}세`, row.premium || row.amount].filter(Boolean).join(' · ')).join(' / ')}
+                  </div>
+                )}
                 {item.conflictReasons?.length > 0 && (
                   <div className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-semibold leading-relaxed text-red-700">
                     {item.conflictReasons.join(' · ')}
@@ -333,7 +368,8 @@ export default function AdminPolibotKnowledgePage() {
                 <textarea
                   value={reviewNotes[item.id] || item.reviewNote || ''}
                   onChange={(event) => setReviewNotes((prev) => ({ ...prev, [item.id]: event.target.value }))}
-                  placeholder="검수 메모"
+                  placeholder={item.imported ? '이관 DB 상태 변경은 반영되고, 메모는 POLIBOT 전용 후보에서 저장됩니다.' : '검수 메모'}
+                  disabled={item.readOnly}
                   className="min-h-16 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
                 />
                 <div className="grid grid-cols-2 gap-2">
@@ -366,12 +402,29 @@ export default function AdminPolibotKnowledgePage() {
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill status={source.status} />
+                  <SourceBadge item={source} />
                   <span className="text-xs font-semibold text-slate-400">{source.scope === 'global' ? '공통' : '사용자'} · {source.sourceChannel || '출처 미확인'} · {dateTime(source.createdAt)}</span>
                 </div>
                 <div className="mt-2 text-base font-black text-slate-950">{source.fileName}</div>
                 <div className="mt-1 text-sm text-slate-500">
                   품질 {source.evidenceQualityScore || 0}점 · 개인정보 위험 {source.privacyRiskScore || 0}점 · {source.company || '미분류'}
                 </div>
+                {source.imported && (
+                  <div className="mt-2 grid gap-2 md:grid-cols-4">
+                    <div className="rounded-xl bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                      <span className="font-bold">상품 후보</span> {source.catalogItemCount || 0}개
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <span className="font-bold text-slate-800">보험료표</span> {source.premiumTableRowCount || 0}개
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <span className="font-bold text-slate-800">담보근거</span> {source.coverageDetailCount || 0}개
+                    </div>
+                    <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                      <span className="font-bold text-slate-800">연결그룹</span> {source.linkedBenefitGroupCount || 0}개
+                    </div>
+                  </div>
+                )}
                 {source.textSnippet && <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-500">{source.textSnippet}</p>}
                 {(source.ocrStatus || source.ocrLastError) && (
                   <div className="mt-2 rounded-xl bg-violet-50 px-3 py-2 text-xs font-semibold leading-relaxed text-violet-700">
@@ -385,18 +438,19 @@ export default function AdminPolibotKnowledgePage() {
                 <textarea
                   value={reviewNotes[source.id] || source.reviewNote || ''}
                   onChange={(event) => setReviewNotes((prev) => ({ ...prev, [source.id]: event.target.value }))}
-                  placeholder="자료 메모"
+                  placeholder={source.readOnly ? '이관 원본은 원본 DB에서 관리됩니다.' : '자료 메모'}
+                  disabled={source.readOnly}
                   className="min-h-16 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
                 />
                 <select
-                  disabled={savingId === source.id}
+                  disabled={savingId === source.id || source.readOnly}
                   value={source.status}
                   onChange={(event) => updateSourceStatus(source, event.target.value)}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
                 >
                   {sourceStatuses.map((nextStatus) => <option key={nextStatus} value={nextStatus}>{statusLabels[nextStatus]}</option>)}
                 </select>
-                {source.status === 'ocr_needed' && (
+                {source.status === 'ocr_needed' && !source.readOnly && (
                   <button
                     type="button"
                     disabled={savingId === source.id}
