@@ -3,7 +3,7 @@ import { safeJsonParse } from '../utils/safeJsonParse.js';
 import { safeLogActivity } from './supabaseService.js';
 
 const client = process.env.OPENAI_API_KEY ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
-const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 20000);
+const OPENAI_TIMEOUT_MS = Number(process.env.OPENAI_TIMEOUT_MS || 45000);
 
 function resolveFallback(fallback) {
   return typeof fallback === 'function' ? fallback() : fallback;
@@ -48,7 +48,7 @@ export async function getJson(messages, fallback, options = {}) {
       model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
       messages,
       response_format: { type: 'json_object' },
-      temperature: 0.7
+      temperature: Number(options.temperature ?? process.env.OPENAI_TEMPERATURE ?? 0.7)
     }, { timeout: Number(options.timeoutMs || OPENAI_TIMEOUT_MS) });
     const parsed = safeJsonParse(response.choices[0]?.message?.content, null);
     if (!parsed) {

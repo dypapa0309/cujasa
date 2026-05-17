@@ -64,7 +64,12 @@ async function createPerformanceFixture() {
     body: '자취방 정리는 수납함을 사는 것보다 매일 다시 넣기 쉬운지가 더 갈리더라. 다들 어떤 기준으로 골라요?',
     risk_level: 'low',
     status: 'posted',
-    metadata: { engagementPattern: 'choice_tension' }
+    metadata: {
+      engagementPattern: 'choice_tension',
+      contentFormat: 'mini_poll',
+      contentGoal: 'reply',
+      lengthBucket: 'short'
+    }
   });
   for (let i = 0; i < 3; i += 1) {
     await dbInsert('click_events', {
@@ -89,6 +94,10 @@ test('buildAccountPerformanceSignals returns top clicked topics products and pos
   assert.equal(signals.topProducts[0].productId, product.id);
   assert.equal(signals.topProducts[0].productName, '접이식 수납함');
   assert.equal(signals.topPosts[0].postId, post.id);
+  assert.equal(signals.topPosts[0].contentFormat, 'mini_poll');
+  assert.equal(signals.topContentFormats[0].name, 'mini_poll');
+  assert.equal(signals.topContentGoals[0].name, 'reply');
+  assert.equal(signals.topLengthBuckets[0].name, 'short');
   assert.match(signals.guidance[0], /같은 제목 반복은 피하세요/);
 });
 
@@ -108,6 +117,8 @@ test('generation prompts include performance signals without removing guardrails
   assert.equal(productPayload.performanceSignals.topProducts[0].productId, product.id);
   assert.ok(productPayload.criteria.some((rule) => rule.includes('historically high-click products')));
   assert.equal(postPayload.performanceSignals.topPosts[0].topicTitle, topic.title);
+  assert.equal(postPayload.performanceSignals.topContentFormats[0].name, 'mini_poll');
   assert.ok(postPayload.rules.some((rule) => rule.includes('performanceSignals.topPosts')));
+  assert.ok(postPayload.rules.some((rule) => rule.includes('performanceSignals.topContentFormats')));
   assert.ok(postPayload.rules.some((rule) => rule.includes('Never write phrases like')));
 });

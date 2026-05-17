@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { getAccount } from './accountService.js';
 import { dbGet, dbInsert, dbList, dbUpdate, logActivity } from './supabaseService.js';
-import { extractTrendPatterns, generateTrendInspiredPosts, rankTrendSamples } from './trendPatternService.js';
+import { extractTrendPatterns, fetchTrendSamples, generateTrendInspiredPosts, rankTrendSamples } from './trendPatternService.js';
 import { scorePostEngagement } from '../utils/postEngagementScoring.js';
 import { evaluatePostQualityGate } from '../utils/postQualityGate.js';
 
@@ -15,6 +15,37 @@ function isMissingSchemaError(error) {
     || message.includes('does not exist')
     || message.includes('schema cache')
     || message.includes('could not find');
+}
+
+function legacyTrendPatternRow(row = {}) {
+  const {
+    quality_score,
+    analysis_profile,
+    preview_posts,
+    ...legacy
+  } = row;
+  return legacy;
+}
+
+function missingColumnName(error) {
+  const match = String(error?.message || '').match(/'([^']+)'\s+column/i);
+  return match?.[1] || '';
+}
+
+async function insertCompatibleTrendPatternRow(row = {}) {
+  let payload = { ...row };
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      return await dbInsert('trend_reference_patterns', payload);
+    } catch (error) {
+      if (!isMissingSchemaError(error)) throw error;
+      const column = missingColumnName(error);
+      if (!column || !(column in payload)) throw error;
+      const { [column]: _removed, ...nextPayload } = payload;
+      payload = nextPayload;
+    }
+  }
+  return dbInsert('trend_reference_patterns', payload);
 }
 
 function normalizeText(value = '') {
@@ -288,13 +319,15 @@ export async function saveAnonymousTrendPatternAssets(patterns = [], context = {
       if (existing) continue;
     }
     try {
-      rows.push(await dbInsert('trend_reference_patterns', row));
+      rows.push(await insertCompatibleTrendPatternRow(row));
     } catch (error) {
-      if (isMissingSchemaError(error)) {
-        console.warn('[trend_reference_patterns_unavailable]', error.message);
+      if (!isMissingSchemaError(error)) throw error;
+      try {
+        rows.push(await insertCompatibleTrendPatternRow(legacyTrendPatternRow(row)));
+      } catch (legacyError) {
+        console.warn('[trend_reference_patterns_unavailable]', legacyError.message);
         return rows;
       }
-      throw error;
     }
   }
   return rows;
@@ -436,6 +469,66 @@ export async function createAdminTrendPatternAssets({
     },
     rejectedUnsafeCount: Math.max(0, normalizedSamples.length - patterns.length)
   };
+}
+
+function trendRefreshQueries(accounts = [], limit = 8) {
+  const counts = new Map();
+  for (const account of accounts) {
+    if (account.status && account.status !== 'active') continue;
+    const scope = normalizeText(account.content_scope || '');
+    if (!scope) continue;
+    const key = scope
+      .split(/[,\n/|]+/)
+      .map((part) => part.trim())
+      .filter(Boolean)[0] || scope;
+    if (!key) continue;
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const ranked = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([query]) => query)
+    .slice(0, limit);
+  return ranked.length ? ranked : ['생활용품', '자취 정리', '주방용품'];
+}
+
+export async function refreshAnonymousTrendPatternAssets({
+  provider = process.env.TREND_SOURCE_PROVIDER || 'fixture',
+  since = process.env.TREND_SOURCE_SINCE || '24h',
+  limit = Number(process.env.TREND_SOURCE_LIMIT || 10),
+  queryLimit = Number(process.env.TREND_SOURCE_QUERY_LIMIT || 6),
+  useAi = process.env.TREND_SOURCE_USE_AI !== 'false'
+} = {}) {
+  const accounts = await dbList('accounts').catch(() => []);
+  const queries = trendRefreshQueries(accounts, queryLimit);
+  const results = [];
+  for (const query of queries) {
+    const source = await fetchTrendSamples({ provider, query, since, limit });
+    const patterns = await extractTrendPatterns(source.samples, { query, limit: 6, useAi });
+    const rows = await saveAnonymousTrendPatternAssets(patterns.filter(isSafePattern), {
+      category: query,
+      targetAudienceHint: '',
+      sourceType: source.usedFallback ? 'admin_seed' : 'text_paste',
+      qualityStatus: 'candidate'
+    });
+    results.push({
+      query,
+      provider: source.provider,
+      requestedProvider: source.requestedProvider || provider,
+      usedFallback: Boolean(source.usedFallback),
+      fallbackReason: source.fallbackReason || '',
+      sampleCount: source.samples.length,
+      patternCount: patterns.length,
+      savedCount: rows.length
+    });
+  }
+  const savedCount = results.reduce((sum, row) => sum + row.savedCount, 0);
+  await logActivity({
+    action: 'trend_reference_auto_refreshed',
+    level: 'info',
+    message: `트렌드 레퍼런스 자동 갱신: ${savedCount}개 저장`,
+    payload: { provider, since, limit, queryLimit, results }
+  }).catch(() => null);
+  return { provider, since, queryCount: queries.length, savedCount, results };
 }
 
 export async function ingestTrendReferencesForAccount(accountId, {

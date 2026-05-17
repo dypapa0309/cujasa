@@ -12,6 +12,7 @@ import {
   createAdminTrendPatternAssets,
   ingestTrendReferencesForAccount,
   recordPatternPerformanceForPost,
+  refreshAnonymousTrendPatternAssets,
   saveAnonymousTrendPatternAssets,
   updateTrendPatternQualityStatus
 } from './trendReferenceLearningService.js';
@@ -100,6 +101,19 @@ test('buildTrendInspiredContentPreview falls back to fixture provider', async ()
   assert.equal(preview.source.provider, 'fixture');
   assert.ok(preview.patterns.length > 0);
   assert.ok(preview.posts.length >= 5);
+});
+
+test('refreshAnonymousTrendPatternAssets stores safe fixture trend patterns', async () => {
+  const result = await refreshAnonymousTrendPatternAssets({
+    provider: 'fixture',
+    limit: 3,
+    queryLimit: 1,
+    useAi: false
+  });
+
+  assert.equal(result.queryCount, 1);
+  assert.ok(result.results[0].sampleCount > 0);
+  assert.ok(result.results[0].patternCount > 0);
 });
 
 test('anonymous learning off keeps customer references out of public assets', async () => {

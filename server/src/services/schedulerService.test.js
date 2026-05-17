@@ -347,8 +347,8 @@ test('createDailyQueue uses balanced link and no-link mix', async () => {
       daily_post_max: 5,
       active_time_windows: [{ start: '09:00', end: '23:00' }],
       min_interval_minutes: 90,
-      link_post_ratio: 0.67,
-      no_link_post_ratio: 0.33,
+      link_post_ratio: 0.8,
+      no_link_post_ratio: 0.2,
       status: 'active',
       automation_status: 'running',
       threads_access_token: 'token',
@@ -376,7 +376,7 @@ test('createDailyQueue uses balanced link and no-link mix', async () => {
         status: 'draft'
       });
       posts.push(post);
-      if (index < 3) {
+      if (index < 4) {
         const product = await dbInsert('coupang_products', {
           project_id: project.id,
           account_id: account.id,
@@ -403,10 +403,10 @@ test('createDailyQueue uses balanced link and no-link mix', async () => {
 
     const queued = await createDailyQueue(account.id, { skipPreflight: true });
     assert.equal(queued.length, 5);
-    assert.equal(queued.filter((row) => row.post_mode === 'link').length, 3);
-    assert.equal(queued.filter((row) => row.post_mode === 'no_link').length, 2);
-    assert.equal(queued.diagnostics.requiredLinkCount, 3);
-    assert.equal(queued.diagnostics.requiredNoLinkCount, 2);
+    assert.equal(queued.filter((row) => row.post_mode === 'link').length, 4);
+    assert.equal(queued.filter((row) => row.post_mode === 'no_link').length, 1);
+    assert.equal(queued.diagnostics.requiredLinkCount, 4);
+    assert.equal(queued.diagnostics.requiredNoLinkCount, 1);
   } finally {
     globalThis.fetch = previousFetch;
   }
@@ -1106,6 +1106,36 @@ test('uploadQueueItem publishes link queue instead of falling back to no-link wh
       status: 'scheduled',
       post_mode: 'link',
       retry_count: 0
+    });
+
+    const uploaded = await uploadQueueItem(queue.id);
+
+    assert.equal(uploaded.status, 'posted');
+    assert.equal(uploaded.post_mode, 'link');
+    assert.ok(uploaded.tracking_link_id);
+  } finally {
+    restoreEnv('MOCK_UPLOAD', previousMock);
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('uploadQueueItem upgrades no-link queue when a linkable Coupang product is attached', async () => {
+  const previousMock = process.env.MOCK_UPLOAD;
+  const previousFetch = globalThis.fetch;
+  process.env.MOCK_UPLOAD = 'true';
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'replytest' })
+  });
+
+  try {
+    const { queue } = await createRecoverableReplyQueue();
+    await dbUpdate('post_queue', { id: queue.id }, {
+      status: 'scheduled',
+      post_mode: 'no_link',
+      retry_count: 0,
+      error_message: null,
+      error_category: null
     });
 
     const uploaded = await uploadQueueItem(queue.id);

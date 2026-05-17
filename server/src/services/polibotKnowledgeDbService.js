@@ -4,6 +4,7 @@ import { extname } from 'node:path';
 import { dbGet, dbInsert, dbList, dbUpdate, safeLogActivity, supabase } from './supabaseService.js';
 import {
   buildPolibotCatalogItems,
+  extractPolibotCoverageCodes,
   extractPolibotKeywords,
   extractPolibotTextFromBuffer,
   inferPolibotFileType,
@@ -22,6 +23,7 @@ const KAKAO_TIME_PREFIX = /^\[?[^,\]\n]{1,30}\]?\s*(?:오전|오후)?\s*\d{1,2}:
 const OFFICIAL_SOURCE_SIGNAL = /상품비교|가입설계|보험료|현황|약관|요약서|제안서|보장분석|담보|플랜/i;
 const LOW_TRUST_SOURCE_CHANNELS = new Set(['kakao_txt']);
 const VALID_KNOWLEDGE_STATUSES = new Set(['recommendable', 'review_needed', 'excluded', 'ocr_needed', 'privacy_risk', 'conflict']);
+const SEARCHABLE_CODE_STATUSES = new Set(['recommendable', 'review_needed', 'conflict']);
 const OCR_IMAGE_MIME_TYPES = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -32,6 +34,10 @@ const OCR_IMAGE_MIME_TYPES = {
 const MAX_OCR_IMAGE_BYTES = 18 * 1024 * 1024;
 const MAX_STORAGE_UPLOAD_BYTES = 24 * 1024 * 1024;
 const POLIBOT_STORAGE_BUCKET = process.env.POLIBOT_STORAGE_BUCKET || 'polibot-knowledge';
+const CODE_SEARCH_CACHE_TTL_MS = 60 * 1000;
+const IMPORTED_SOURCE_CACHE_TTL_MS = 5 * 60 * 1000;
+const codeSearchCache = new Map();
+let importedSourceCache = null;
 
 function now() {
   return new Date().toISOString();
@@ -303,6 +309,7 @@ function splitTextChunks(text = '', sourceChannel = 'web_upload') {
 
 function sourceStatus({ fileType = '', text = '', normalizedSource = {} } = {}) {
   if (privacyRiskScore(text) >= 3) return 'privacy_risk';
+  if (fileType === 'hwp') return 'review_needed';
   const cleanText = String(text || normalizedSource.textSnippet || '').trim();
   if (fileType === 'image' && !cleanText) return 'ocr_needed';
   if (['pdf', 'ppt', 'pptx'].includes(fileType) && cleanText.length < 20) return 'ocr_needed';
@@ -429,7 +436,23 @@ function catalogRowFromItem({ item, sourceRow, jobId, scope, userId }) {
     metadata: {
       legacyId: item.id || '',
       cautionMemo: item.cautionMemo || '',
-      premiumConfidence: item.premiumConfidence || ''
+      premiumConfidence: item.premiumConfidence || '',
+      premiumCandidates: item.premiumCandidates || [],
+      premiumTableRows: item.premiumTableRows || [],
+      coverageDetails: item.coverageDetails || [],
+      coverageTableRows: item.coverageTableRows || [],
+      conditionDetails: item.conditionDetails || {},
+      conditionRules: item.conditionRules || item.conditionDetails?.conditionRules || {},
+      linkedBenefitGroups: item.linkedBenefitGroups || [],
+      evidenceAnchors: item.evidenceAnchors || [],
+      analysisQuality: {
+        premiumCandidateCount: Array.isArray(item.premiumCandidates) ? item.premiumCandidates.length : 0,
+        premiumTableRowCount: Array.isArray(item.premiumTableRows) ? item.premiumTableRows.length : 0,
+        coverageDetailCount: Array.isArray(item.coverageDetails) ? item.coverageDetails.length : 0,
+        coverageTableRowCount: Array.isArray(item.coverageTableRows) ? item.coverageTableRows.length : 0,
+        linkedBenefitGroupCount: Array.isArray(item.linkedBenefitGroups) ? item.linkedBenefitGroups.length : 0,
+        hasConditionDetails: Boolean(item.conditionDetails && Object.values(item.conditionDetails).some(Boolean))
+      }
     },
     parser_version: PARSER_VERSION,
     extractor_version: EXTRACTOR_VERSION,
@@ -507,14 +530,28 @@ function sourceFromDb(row = {}, catalogItems = []) {
 }
 
 function normalizeCatalogRow(row = {}) {
+  const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {};
+  const productName = cleanCatalogProductName(row.product_name || '', row.company);
+  const coverageKeywords = row.coverage_keywords || [];
+  const status = isCatalogNonProductName(productName, row.company)
+    ? 'excluded'
+    : row.status === 'recommendable' ? 'confirmed' : row.status === 'excluded' || row.status === 'conflict' ? 'excluded' : 'review';
   return {
     id: row.id,
     sourceId: row.source_id || '',
     company: row.company || '미분류',
-    productName: row.product_name || '',
-    productGroup: row.product_group || '종합 보장',
-    coverageKeywords: row.coverage_keywords || [],
+    productName,
+    productGroup: inferCatalogProductGroup({ productName, productGroup: row.product_group, coverageTags: coverageKeywords }),
+    coverageKeywords,
     premiumExample: row.premium_example || '',
+    premiumCandidates: metadata.premiumCandidates || [],
+    premiumTableRows: metadata.premiumTableRows || [],
+    coverageDetails: metadata.coverageDetails || [],
+    coverageTableRows: metadata.coverageTableRows || [],
+    conditionDetails: metadata.conditionDetails || {},
+    conditionRules: metadata.conditionRules || metadata.conditionDetails?.conditionRules || {},
+    linkedBenefitGroups: metadata.linkedBenefitGroups || [],
+    evidenceAnchors: metadata.evidenceAnchors || [],
     ageRange: row.age_range || '',
     paymentTerm: row.payment_term || '',
     renewalType: row.renewal_type || '',
@@ -524,11 +561,537 @@ function normalizeCatalogRow(row = {}) {
     excludedAudience: row.excluded_audience || [],
     completeness: row.completeness || '',
     confidence: row.confidence_score || row.auto_confirm_score || 0,
-    status: row.status === 'recommendable' ? 'confirmed' : row.status === 'excluded' || row.status === 'conflict' ? 'excluded' : 'review',
+    status,
     evidenceFile: row.evidence?.fileName || '',
     evidenceMonth: row.effective_month || '',
     conflictReasons: Array.isArray(row.metadata?.conflictReasons) ? row.metadata.conflictReasons : []
   };
+}
+
+function normalizeImportedCatalogStatus(status = '') {
+  const value = String(status || '').trim().toLowerCase();
+  if (['verified', 'approved', 'recommendable', 'confirmed', 'auto'].includes(value)) return 'confirmed';
+  if (['excluded', 'rejected', 'hidden'].includes(value)) return 'excluded';
+  return 'review';
+}
+
+function cleanCatalogProductName(value = '', company = '') {
+  const companyText = String(company || '').replace(/\s+/g, '');
+  const companyPattern = companyText
+    ? new RegExp(`^${companyText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*`, 'i')
+    : null;
+  return String(value || '')
+    .normalize('NFC')
+    .replace(/^(?:월호|실효|정상)\s+/g, '')
+    .replace(/^(?:대상\s*상품|추천\s*상품|상품명)\s*[:：]\s*/i, '')
+    .replace(/^[▶①-⑳⓵-⓾\-\s·:]+/g, '')
+    .replace(/\s+/g, ' ')
+    .replace(companyPattern || /^$/, '')
+    .trim();
+}
+
+function inferCatalogProductGroup({ productName = '', productGroup = '', itemType = '', coverageTags = [] } = {}) {
+  const text = [productName, productGroup, itemType, ...(Array.isArray(coverageTags) ? coverageTags : [])].join(' ');
+  if (/운전자|자동차|교통/.test(text)) return '운전자/상해';
+  if (/치매|간병|요양|장기요양/.test(text)) return '치매/간병';
+  if (/간편|유병|고지|355|335|333/.test(text)) return '간편/유병자';
+  if (/종신|사망|정기보험|상속/.test(text)) return '사망/종신';
+  if (/연금|노후|은퇴/.test(text)) return '연금/저축';
+  if (/실손|실비|의료비|통원/.test(text)) return '실손/의료비';
+  if (/뇌|심장|순환계|혈관|허혈|급성심근/.test(text)) return '뇌/심장';
+  if (/암|항암|표적|카티|CAR|유방암|갑상선/.test(text)) return '암';
+  if (/수술|입원|상해|골절|후유장해/.test(text)) return '수술/입원/상해';
+  if (/어린이|자녀|태아|키즈/.test(text)) return '어린이/자녀';
+  return productGroup || itemType || '종합 보장';
+}
+
+function isCatalogNonProductName(productName = '', company = '') {
+  const name = cleanCatalogProductName(productName);
+  if (!name || name.length < 3) return true;
+  const compact = name.replace(/\s+/g, '');
+  const companyCompact = String(company || '').replace(/\s+/g, '');
+  if (companyCompact && (compact === companyCompact || compact === companyCompact.replace(/생명|화재|손해보험|손보/g, ''))) return true;
+  if (/보험금\s*청구|보험금\s*서류|보험금\/해약환급금|보전\s*서류|고객센터|헬프데스크|전화\s*문의|필수\s*서류|유의사항|판매\s*원칙|금융소비자|개인정보|신용정보|청약|환전|해외송금|서비스|수수료|기준금리|시가총액|총\s*자산|가입고객|자료\s*:|보상하는|금리|계약\s*대출|확인서|외화보험상품|보험차익|보험\s*가입\s*기간|하였으며|보장\s*한도|보험\s*한도|보험\s*소식/i.test(name)) return true;
+  if (/비교|현황|전략상품|소식지?|간추린|가이드|자료|안내|기준|목록|요약|플랜\s*비교|일부상품\s*제외|대응\s*방안|제안하세요|제안가능|저렴|운영담보|동일|확대|축소/i.test(name)) return true;
+  if (/선택받는\s*이유|신청\s*및\s*취소|관한\s*사항|유의\s*사항|주요\s*내용|상품\s*특징|판매\s*포인트|이용\s*방법|청구\s*방법|예시|Case\s*\d+/i.test(name)) return true;
+  if (/^대\s+|^[가-힣]\.\s|^[①-⑳]\s/.test(name)) return true;
+  if (/란\s|이란|으로\s*인하여|하고\s*있는|할\s*수\s*있는|되어\s*있는|확인\s*필요|계약심사|연령제한|소외되고|고령자|유병력자|고객|피보험자|청약자|가입하는|보장하는|지급하는/i.test(name)) return true;
+  if (name.length > 42 && !/(?:보험|플랜|특약|담보)$/.test(name)) return true;
+  if (/^(?:보험료|보장|담보|합계|구분|대상|조건|정상|실효|월호)$/.test(name)) return true;
+  if (!/(보험|플랜|특약|담보|진단비|수술비|입원비|간병|치매|연금|종신|상해|실손|암|운전자)/.test(name)) return true;
+  return false;
+}
+
+function importedCatalogNameKind(productName = '', company = '') {
+  const name = cleanCatalogProductName(productName, company);
+  if (isCatalogNonProductName(name, company)) return 'document';
+  if (/특약|담보|진단비|수술비|입원비|입원일당|생활비|간병비|치료비/.test(name) && !/보험/.test(name)) return 'rider';
+  if (/플랜/.test(name) && !/보험/.test(name)) return 'plan';
+  if (/보험|종신|연금|운전자|치매|간병|실손|암/.test(name)) return 'product';
+  return 'plan';
+}
+
+function isImportedCatalogProductLike(row = {}) {
+  const productName = cleanCatalogProductName(row.product_name || '', row.company);
+  const kind = importedCatalogNameKind(productName, row.company);
+  return ['product', 'plan'].includes(kind);
+}
+
+function importedCoverageKeywords(value = []) {
+  const list = Array.isArray(value) ? value : [];
+  return [...new Set(list
+    .flatMap((item) => typeof item === 'string' ? item.split(/[,\s/]+/) : [])
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+  )].slice(0, 12);
+}
+
+function formatImportedPremium(value) {
+  const amount = Number(value || 0);
+  if (!Number.isFinite(amount) || amount <= 0) return '';
+  return `${Math.round(amount).toLocaleString('ko-KR')}원`;
+}
+
+function importedPremiumMatchScore(row = {}, premium = {}, productName = '', productGroup = '') {
+  let score = 0;
+  const label = String(premium.label || '');
+  const premiumProduct = cleanCatalogProductName(premium.product_name || '', premium.company);
+  if (premium.company && row.company && premium.company !== row.company) return 0;
+  const nameKind = importedCatalogNameKind(productName, row.company);
+  if (nameKind === 'document') return 0;
+  const exactCatalog = premium.catalog_item_id && premium.catalog_item_id === row.id;
+  const productMatched = premiumProduct && (productName.includes(premiumProduct) || premiumProduct.includes(productName));
+  const groupMatched = productGroup && label && polibotTextGroupMatch(label, productGroup);
+  const nameMatched = productName && label && polibotTextGroupMatch(label, productName);
+  if (!exactCatalog && !productMatched && !groupMatched && !nameMatched) return 0;
+  if (premium.catalog_item_id && premium.catalog_item_id === row.id) score += 120;
+  if (premium.company && premium.company === row.company) score += 20;
+  if (premium.document_id && row.document_id && premium.document_id === row.document_id) score += 28;
+  if (nameKind === 'product') score += 18;
+  if (nameKind === 'plan') score += 8;
+  if (nameKind === 'rider') score -= 12;
+  if (productMatched) score += 80;
+  if (groupMatched) score += 24;
+  if (nameMatched) score += 18;
+  if (Number.isFinite(Number(premium.source_page)) && Number.isFinite(Number(row.source_page))) {
+    const diff = Math.abs(Number(premium.source_page) - Number(row.source_page));
+    if (diff === 0) score += 24;
+    else if (diff <= 2) score += 12;
+    else if (diff > 6) score -= 16;
+  }
+  return score;
+}
+
+function polibotTextGroupMatch(left = '', right = '') {
+  const text = `${left} ${right}`;
+  const groups = [
+    /간편|유병|고지|355|335|333/,
+    /암|항암|유방암|갑상선/,
+    /치매|간병|요양|장기요양/,
+    /종신|사망|상속/,
+    /연금|노후|은퇴/,
+    /뇌|심장|혈관|허혈|심근/,
+    /실손|실비|의료비/,
+    /운전자|교통|자동차/,
+    /수술|입원|상해/
+  ];
+  const compactLeft = String(left || '').replace(/\s+/g, '');
+  const compactRight = String(right || '').replace(/\s+/g, '');
+  return groups.some((pattern) => pattern.test(left) && pattern.test(right))
+    || (compactRight.length >= 4 && compactLeft.includes(compactRight))
+    || (compactLeft.length >= 4 && compactRight.includes(compactLeft));
+}
+
+function documentPages(doc = {}) {
+  const pages = doc.document_data?.pages;
+  return Array.isArray(pages) ? pages : [];
+}
+
+function compactProductText(value = '') {
+  return String(value || '').replace(/\s+/g, '').replace(/[()（）\[\]{}·ㆍ\-_]/g, '').toLowerCase();
+}
+
+function productPageEvidence(doc = {}, productName = '') {
+  const compactName = compactProductText(productName);
+  if (!compactName || compactName.length < 4) return [];
+  doc.__productPageEvidenceCache = doc.__productPageEvidenceCache || new Map();
+  if (doc.__productPageEvidenceCache.has(compactName)) return doc.__productPageEvidenceCache.get(compactName);
+  const evidence = documentPages(doc)
+    .map((page) => {
+      const rawText = String(page.raw_text || '');
+      const compactRaw = compactProductText(rawText);
+      const direct = rawText.includes(productName) || compactRaw.includes(compactName);
+      const partial = compactName.length >= 10 && compactRaw.includes(compactName.slice(0, Math.min(12, compactName.length)));
+      return direct || partial ? {
+        page: Number(page.page),
+        rawText: rawText.slice(0, 1200),
+        products: Array.isArray(page.products) ? page.products : [],
+        coverage: Array.isArray(page.coverage) ? page.coverage : []
+      } : null;
+    })
+    .filter((item) => item && Number.isFinite(item.page));
+  doc.__productPageEvidenceCache.set(compactName, evidence);
+  return evidence;
+}
+
+function pageEvidencePremiumBoost(premium = {}, pageEvidence = []) {
+  const premiumPage = Number(premium.source_page);
+  if (!Number.isFinite(premiumPage) || !pageEvidence.length) return { score: 0, reason: '' };
+  const distances = pageEvidence.map((item) => Math.abs(Number(item.page) - premiumPage));
+  const minDistance = Math.min(...distances);
+  if (minDistance === 0) return { score: 80, reason: 'raw_page_product_match' };
+  if (minDistance === 1) return { score: 58, reason: 'adjacent_raw_page_product_match' };
+  if (minDistance <= 2) return { score: 38, reason: 'near_raw_page_product_match' };
+  return { score: 0, reason: '' };
+}
+
+function importedEvidenceText(pageEvidence = [], fallback = '') {
+  return [fallback, ...pageEvidence.map((item) => item.rawText || '')].join('\n');
+}
+
+function importedEvidenceAgeRange(text = '') {
+  const source = String(text || '');
+  const explicit = source.match(/(?:가입\s*연령|가입나이|보험\s*나이|연령)[^\d]{0,20}((?:만\s*)?\d{1,2}\s*세?\s*(?:~|-|부터|이상)\s*(?:만\s*)?\d{1,2}\s*세?)/);
+  if (explicit?.[1]) return explicit[1].replace(/\s+/g, ' ').trim();
+  const range = source.match(/(?:만\s*)?(\d{1,2})\s*세\s*(?:~|-)\s*(?:만\s*)?(\d{1,2})\s*세/);
+  if (range) return `${range[1]}~${range[2]}세`;
+  return '';
+}
+
+function importedEvidencePaymentTerm(text = '') {
+  return String(text || '').match(/\d{1,2}\s*년\s*납|전기납|일시납|월납|연납/)?.[0] || '';
+}
+
+function importedEvidenceRenewalType(text = '') {
+  const source = String(text || '');
+  if (/비갱신/.test(source)) return '비갱신';
+  if (/갱신형|갱신/.test(source)) return '갱신';
+  return '';
+}
+
+function matchedImportedPremiumRows(row = {}, premiumRows = [], productName = '', productGroup = '', doc = {}) {
+  const pageEvidence = productPageEvidence(doc, productName);
+  return premiumRows
+    .map((premium) => {
+      const baseScore = importedPremiumMatchScore(row, premium, productName, productGroup);
+      const pageBoost = pageEvidencePremiumBoost(premium, pageEvidence);
+      const sameDocument = premium.document_id && row.document_id && premium.document_id === row.document_id;
+      const matchScore = sameDocument ? Math.max(baseScore, pageBoost.score) : baseScore;
+      return {
+        ...premium,
+        matchScore,
+        matchReason: pageBoost.reason || (baseScore ? 'catalog_context' : '')
+      };
+    })
+    .filter((premium) => premium.matchScore >= 58)
+    .sort((a, b) => b.matchScore - a.matchScore)
+    .slice(0, 6);
+}
+
+function importedCatalogItemFromRow(row = {}, premiumRows = [], doc = {}) {
+  const confidence = Math.round(Math.max(Number(row.confidence || 0), Number(row.value_confidence || 0)) * 100);
+  const productName = cleanCatalogProductName(row.product_name || '', row.company);
+  const pageEvidence = productPageEvidence(doc, productName);
+  const evidenceText = importedEvidenceText(pageEvidence, row.source_excerpt || '');
+  const pageCoverageKeywords = [...new Set(pageEvidence.flatMap((item) => item.coverage || []))];
+  const coverageKeywords = [...new Set([
+    ...importedCoverageKeywords(row.coverage_tags),
+    ...pageCoverageKeywords
+  ].filter(Boolean))].slice(0, 12);
+  const productGroup = inferCatalogProductGroup({ productName, productGroup: row.product_group, itemType: row.item_type, coverageTags: coverageKeywords });
+  const matchedPremiums = matchedImportedPremiumRows(row, premiumRows, productName, productGroup, doc);
+  const matchedPremium = matchedPremiums[0];
+  const premium = row.premium || matchedPremium?.premium || 0;
+  const evidenceAgeRange = importedEvidenceAgeRange(evidenceText);
+  const evidencePaymentTerm = importedEvidencePaymentTerm(evidenceText);
+  const evidenceRenewalType = importedEvidenceRenewalType(evidenceText);
+  const hasCoreValues = row.product_name && row.company && (row.min_age || row.max_age || evidenceAgeRange || premium || row.renewal_type || evidenceRenewalType);
+  const status = isCatalogNonProductName(productName, row.company) ? 'excluded' : normalizeImportedCatalogStatus(row.review_status);
+  const premiumExamples = matchedPremiums.map((item) => ({
+    premium: formatImportedPremium(item.premium),
+    rawPremium: item.premium,
+    age: item.age || '',
+    gender: item.gender || '',
+    label: item.label || '',
+      sourcePage: item.source_page || '',
+      confidence: item.catalog_item_id === row.id ? 'catalog_item' : 'document_match',
+      matchScore: item.matchScore,
+      matchReason: item.matchReason || ''
+  })).filter((item) => item.premium);
+  const premiumTableRows = premiumExamples.map((item) => ({
+    amount: item.premium,
+    age: item.age,
+    gender: item.gender,
+    label: item.label,
+    sourcePage: item.sourcePage,
+    confidence: item.confidence,
+    score: item.matchScore
+  }));
+  const coverageDetails = coverageKeywords.map((keyword) => ({
+    category: inferCatalogProductGroup({ productName, productGroup, coverageTags: [keyword] }),
+    title: keyword,
+    amount: '',
+    company: row.company || '',
+    productName,
+    excerpt: row.source_excerpt || '',
+    confidence: 'catalog_tag'
+  }));
+  const hasExactPremium = Boolean(row.premium) || matchedPremiums.some((item) => item.catalog_item_id === row.id);
+  const hasRawSamePagePremium = matchedPremiums.some((item) => item.matchReason === 'raw_page_product_match' && Number(item.matchScore || 0) >= 80);
+  const hasDocumentPremium = premiumTableRows.length > 0;
+  const hasCoverage = coverageDetails.length > 0;
+  const linkScore = Math.min(100, 35 + (hasDocumentPremium ? 25 : 0) + Math.min(25, coverageDetails.length * 5) + (row.min_age || row.max_age || row.renewal_type ? 15 : 0) + (hasExactPremium || hasRawSamePagePremium ? 15 : 0));
+  const linkConfidence = (hasExactPremium || hasRawSamePagePremium) && hasCoverage
+    ? 'strong'
+    : hasDocumentPremium && hasCoverage ? 'usable' : 'weak';
+  const linkedBenefitGroups = [{
+    key: `${row.id}-catalog`,
+    productName,
+    plan: row.product_group || productGroup || '공통',
+    premiums: premiumTableRows.map((premiumRow) => ({
+      amount: premiumRow.amount,
+      age: premiumRow.age,
+      gender: premiumRow.gender,
+      label: premiumRow.label,
+      confidence: premiumRow.confidence
+    })),
+    coverages: coverageDetails,
+    conditions: {
+      ageRange: row.min_age || row.max_age ? `${row.min_age || ''}~${row.max_age || ''}세` : evidenceAgeRange,
+      paymentTerm: evidencePaymentTerm,
+      renewalType: row.renewal_type || evidenceRenewalType,
+      disclosureMemo: row.source_excerpt || pageEvidence[0]?.rawText || '',
+      reductionMemo: '',
+      conditionRules: {}
+    },
+    sourceSections: row.source_excerpt ? [{ title: productName, sectionType: 'product', excerpt: row.source_excerpt }] : [],
+    linkedSummary: [
+      row.product_group || productGroup,
+      premiumTableRows[0]?.amount && `보험료 ${premiumTableRows[0].amount}`,
+      coverageDetails.length && `담보 ${coverageDetails.length}개`,
+      (row.min_age || row.max_age || evidenceAgeRange) && `가입연령 ${row.min_age || evidenceAgeRange ? '' : ''}${row.min_age || row.max_age ? `${row.min_age || ''}~${row.max_age || ''}세` : evidenceAgeRange}`,
+      row.renewal_type || evidenceRenewalType
+    ].filter(Boolean).join(' · '),
+    linkScore,
+    linkConfidence
+  }];
+  return {
+    id: `imported-catalog-${row.id}`,
+    sourceId: row.document_id ? `imported-doc-${row.document_id}` : '',
+    company: row.company || '미분류',
+    productName,
+    productGroup,
+    coverageKeywords,
+    premiumExample: formatImportedPremium(premium),
+    premiumConfidence: row.premium ? 'exact' : matchedPremium?.catalog_item_id === row.id ? 'catalog_item' : matchedPremium ? 'document_match' : 'none',
+    premiumExamples,
+    premiumTableRows,
+    ageRange: row.min_age || row.max_age ? `${row.min_age || ''}~${row.max_age || ''}세` : evidenceAgeRange,
+    paymentTerm: evidencePaymentTerm,
+    renewalType: row.renewal_type || evidenceRenewalType,
+    disclosureMemo: row.source_excerpt || pageEvidence[0]?.rawText || '',
+    reductionMemo: '',
+    coverageDetails,
+    coverageTableRows: coverageDetails,
+    linkedBenefitGroups,
+    conditionRules: {
+      ageRules: row.min_age || row.max_age ? [`${row.min_age || ''}~${row.max_age || ''}세`] : [evidenceAgeRange].filter(Boolean),
+      paymentTerms: [evidencePaymentTerm].filter(Boolean),
+      underwritingTypes: /간편|유병|고지|무심사|무고지|표준/.test(`${row.product_name || ''} ${row.product_group || ''} ${row.source_excerpt || ''}`)
+        ? [...new Set([
+          /간편|유병|고지/.test(`${row.product_name || ''} ${row.product_group || ''} ${row.source_excerpt || ''}`) && '간편/유병자',
+          /무심사|무고지/.test(`${row.product_name || ''} ${row.product_group || ''} ${row.source_excerpt || ''}`) && '무심사/무고지',
+          /표준/.test(`${row.product_name || ''} ${row.product_group || ''} ${row.source_excerpt || ''}`) && '표준심사'
+        ].filter(Boolean))]
+        : [],
+      waitingPeriods: /면책|감액|부담보|보장\s*개시/.test(row.source_excerpt || '') ? [row.source_excerpt] : []
+    },
+    targetAudience: [row.customer_type].filter(Boolean),
+    excludedAudience: [],
+    completeness: hasCoreValues ? '충분' : '보통',
+    confidence: confidence || (status === 'confirmed' ? 90 : 70),
+    status,
+    evidenceFile: row.source_filename || '',
+    evidenceMonth: row.effective_month || '',
+    conflictReasons: []
+  };
+}
+
+function importedPremiumReferences(doc = {}, premiumRows = []) {
+  return premiumRows
+    .filter((row) => row.document_id === doc.id && row.premium)
+    .map((row) => {
+      const productName = cleanCatalogProductName(row.product_name || '', row.company);
+      return {
+        id: `imported-premium-${row.id}`,
+        documentId: row.document_id || '',
+        catalogItemId: row.catalog_item_id || '',
+        company: row.company || '',
+        productName,
+        premium: formatImportedPremium(row.premium),
+        rawPremium: row.premium,
+        age: row.age || '',
+        gender: row.gender || '',
+        label: row.label || '',
+        sourcePage: row.source_page || '',
+        confidence: row.catalog_item_id ? 'catalog_item' : productName ? 'product_name' : 'document_reference',
+        linkStatus: row.catalog_item_id ? 'linked' : productName ? 'product_named' : 'unlinked_document_table'
+      };
+    })
+    .filter((item) => item.premium)
+    .slice(0, 40);
+}
+
+function importedDocumentAnalysis(doc = {}, items = [], premiumReferences = []) {
+  const coverageDetails = items.flatMap((item) => (item.coverageDetails?.length ? item.coverageDetails : (item.coverageKeywords || []).map((keyword) => ({
+    category: inferCatalogProductGroup({ productName: item.productName, productGroup: item.productGroup, coverageTags: [keyword] }),
+    title: keyword,
+    amount: '',
+    company: item.company || '',
+    productName: item.productName || '',
+    excerpt: item.disclosureMemo || ''
+  })))).slice(0, 80);
+  const premiumTableRows = [
+    ...items.flatMap((item) => item.premiumTableRows || []),
+    ...premiumReferences.map((item) => ({
+      amount: item.premium,
+      age: item.age || '',
+      gender: item.gender || '',
+      label: item.label || '',
+      sourcePage: item.sourcePage || '',
+      confidence: item.confidence || 'document_reference'
+    }))
+  ].slice(0, 120);
+  const linkedBenefitGroups = items.flatMap((item) => item.linkedBenefitGroups || []).slice(0, 80);
+  const conditionDetails = {
+    ageRanges: [...new Set(items.map((item) => item.ageRange).filter(Boolean))].slice(0, 12),
+    renewalTypes: [...new Set(items.map((item) => item.renewalType).filter(Boolean))].slice(0, 8),
+    disclosureMemos: [...new Set(items.map((item) => item.disclosureMemo).filter(Boolean))].slice(0, 12),
+    underwritingTypes: [...new Set(items.flatMap((item) => item.conditionRules?.underwritingTypes || []))].slice(0, 8),
+    waitingPeriods: [...new Set(items.flatMap((item) => item.conditionRules?.waitingPeriods || []))].slice(0, 8)
+  };
+  return {
+    premiumCandidates: premiumReferences,
+    premiumTableRows,
+    coverageDetails,
+    coverageTableRows: coverageDetails.filter((item) => item.confidence === 'catalog_tag' || item.confidence === 'coverage_table_row'),
+    conditionDetails,
+    linkedBenefitGroups,
+    analysisQuality: {
+      premiumCandidateCount: premiumReferences.length,
+      premiumTableRowCount: premiumTableRows.length,
+      linkedPremiumCount: premiumReferences.filter((item) => item.linkStatus === 'linked').length,
+      coverageDetailCount: coverageDetails.length,
+      coverageTableRowCount: coverageDetails.length,
+      linkedBenefitGroupCount: linkedBenefitGroups.length,
+      strongLinkedBenefitGroupCount: linkedBenefitGroups.filter((item) => item.linkConfidence === 'strong').length,
+      productCandidateCount: items.length,
+      hasConditionDetails: Boolean(conditionDetails.ageRanges.length || conditionDetails.renewalTypes.length || conditionDetails.disclosureMemos.length || conditionDetails.underwritingTypes.length)
+    },
+    source: doc.filename || ''
+  };
+}
+
+function importedSourceFromDocument(doc = {}, catalogRows = [], premiumRows = []) {
+  const items = catalogRows.map((row) => importedCatalogItemFromRow(row, premiumRows, doc))
+    .filter((item) => item.productName);
+  const premiumReferences = importedPremiumReferences(doc, premiumRows);
+  const documentAnalysis = importedDocumentAnalysis(doc, items, premiumReferences);
+  const companies = [...new Set(items.map((item) => item.company).filter((item) => item && item !== '미분류'))].slice(0, 12);
+  const productGroups = [...new Set(items.map((item) => item.productGroup).filter(Boolean))].slice(0, 8);
+  const keywords = [...new Set(items.flatMap((item) => item.coverageKeywords || []))].slice(0, 20);
+  return {
+    id: `imported-doc-${doc.id}`,
+    dbSourceId: `imported-doc-${doc.id}`,
+    fileName: doc.filename || '',
+    month: doc.year_month || items.find((item) => item.evidenceMonth)?.evidenceMonth || '',
+    fileType: inferPolibotFileType(doc.filename || ''),
+    companies,
+    company: companies[0] || '미분류',
+    productGroup: productGroups[0] || '종합 보장',
+    keywords,
+    productNames: [...new Set(items.map((item) => item.productName).filter(Boolean))].slice(0, 30),
+    textSnippet: String(doc.filename || '').slice(0, 400),
+    redactedSnippet: '',
+    catalogItems: items,
+    premiumReferences,
+    documentAnalysis,
+    premiumTableRows: documentAnalysis.premiumTableRows,
+    coverageDetails: documentAnalysis.coverageDetails,
+    coverageTableRows: documentAnalysis.coverageTableRows,
+    conditionDetails: documentAnalysis.conditionDetails,
+    linkedBenefitGroups: documentAnalysis.linkedBenefitGroups,
+    scope: 'global',
+    sourceChannel: 'local_ingest',
+    knowledgeStatus: items.some((item) => item.status === 'confirmed') ? 'recommendable' : 'review_needed',
+    recommendationEligible: items.some((item) => item.status === 'confirmed'),
+    privacyRiskScore: 0,
+    privacyRiskLevel: 'none',
+    evidenceQualityScore: items.some((item) => item.status === 'confirmed') ? 86 : 68,
+    evidenceQualityLevel: 'imported_catalog',
+    evidenceQualityReasons: ['추출 카탈로그 DB에서 불러온 검증 자료'],
+    uploadedAt: doc.created_at || '',
+    sourceSystem: 'polibot_core'
+  };
+}
+
+async function listImportedPolibotSources() {
+  if (importedSourceCache && Date.now() - importedSourceCache.createdAt < IMPORTED_SOURCE_CACHE_TTL_MS) {
+    return importedSourceCache.value;
+  }
+  const [docs, catalogRows, premiumRows] = await Promise.all([
+    dbList('parsed_documents', {}, {
+      select: 'id,filename,year_month,created_at,document_data',
+      order: 'created_at',
+      ascending: false,
+      limit: 500
+    }).catch(() => []),
+    listImportedCatalogRows(),
+    dbList('premium_examples', {}, {
+      select: 'id,document_id,catalog_item_id,company,product_name,premium,age,gender,label,source_page',
+      order: 'created_at',
+      ascending: false,
+      limit: 5000
+    }).catch(() => [])
+  ]);
+  if (!docs.length || !catalogRows.length) return [];
+  const catalogByDocument = catalogRows.reduce((acc, row) => {
+    if (!row.document_id) return acc;
+    acc[row.document_id] = acc[row.document_id] || [];
+    acc[row.document_id].push(row);
+    return acc;
+  }, {});
+  const value = docs
+    .map((doc) => importedSourceFromDocument(doc, catalogByDocument[doc.id] || [], premiumRows))
+    .filter((source) => source.catalogItems.length > 0)
+    .sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')));
+  importedSourceCache = { createdAt: Date.now(), value };
+  return value;
+}
+
+async function listImportedCatalogRows() {
+  const select = 'id,document_id,product_name,company,product_group,item_type,customer_type,coverage_tags,min_age,max_age,premium,renewal_type,effective_month,source_filename,source_excerpt,source_page,confidence,value_confidence,review_status,updated_at';
+  if (!supabase) {
+    return dbList('catalog_items', {}, {
+      select,
+      order: 'updated_at',
+      ascending: false,
+      limit: 3000
+    }).catch(() => []);
+  }
+  const pageSize = 1000;
+  const rows = [];
+  for (let from = 0; from < 5000; from += pageSize) {
+    const { data, error } = await supabase
+      .from('catalog_items')
+      .select(select)
+      .order('updated_at', { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < pageSize) break;
+  }
+  return rows;
 }
 
 function rawCatalogRowForReview(row = {}) {
@@ -691,7 +1254,7 @@ async function insertSourceRecord({ userId, scope, sourceChannel, job, file, nor
     file_type: fileType,
     file_size: Number(file.size || normalizedSource.size || 0),
     file_hash: fileHash,
-    text_hash: textHash,
+    text_hash: textHash || null,
     storage_path: file.storagePath || '',
     month: normalizedSource.month || '',
     company: normalizedSource.company || '미분류',
@@ -962,6 +1525,9 @@ export async function ingestPolibotKnowledge({
       message: `${normalizedScope}/${normalizedChannel} ${summary.insertedSources}개 저장, ${summary.duplicateSources}개 중복`,
       payload: { ...summary, scope: normalizedScope, sourceChannel: normalizedChannel, jobId: job?.id }
     });
+    if (!dryRun && (summary.insertedSources > 0 || summary.insertedChunks > 0 || summary.insertedCatalogItems > 0)) {
+      clearPolibotCodeSearchCache(normalizedScope === 'global' ? '' : userId);
+    }
     return {
       job: { ...job, summary },
       summary,
@@ -983,8 +1549,8 @@ export async function listPolibotDbKnowledgeSources(userId = '') {
   const userSources = userId
     ? await dbList('polibot_knowledge_sources', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 500 }).catch(() => [])
     : [];
+  const importedSources = await listImportedPolibotSources();
   const sourceRows = [...globalSources, ...userSources];
-  if (!sourceRows.length) return [];
   const catalogRows = [
     ...await dbList('polibot_catalog_items', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []),
     ...(userId ? await dbList('polibot_catalog_items', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []) : [])
@@ -997,11 +1563,170 @@ export async function listPolibotDbKnowledgeSources(userId = '') {
   }, {});
   return sourceRows
     .map((row) => sourceFromDb(row, catalogBySource[row.id] || []))
+    .concat(importedSources)
     .sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')));
 }
 
+function normalizeSearchText(value = '') {
+  return String(value || '').normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function codeSearchTerms(query = '') {
+  return normalizeSearchText(query)
+    .split(/[,\s+/]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function codeSearchScore(candidate = {}, { query = '', company = '', coverage = '' } = {}) {
+  const normalizedQuery = normalizeSearchText(query);
+  const terms = codeSearchTerms(query);
+  const code = String(candidate.code || '');
+  const context = candidate.searchText || normalizeSearchText(candidate.context || '');
+  let score = Number(candidate.confidence || 0);
+  if (normalizedQuery && code === normalizedQuery) score += 90;
+  if (normalizedQuery && code.includes(normalizedQuery) && code !== normalizedQuery) score += 35;
+  terms.forEach((term) => {
+    if (term && context.includes(term)) score += 16;
+  });
+  if (company && (candidate.companies || []).includes(company)) score += 30;
+  if (coverage && (candidate.coverageKeywords || []).some((keyword) => keyword.includes(coverage) || coverage.includes(keyword))) score += 28;
+  if (candidate.status === 'recommendable') score += 18;
+  if (candidate.status === 'conflict') score -= 10;
+  if (candidate.sourceStatus === 'privacy_risk') score -= 80;
+  if (candidate.sourceStatus === 'ocr_needed') score -= 40;
+  score += Math.min(12, Math.round(Number(candidate.evidenceQualityScore || 0) / 10));
+  return score;
+}
+
+function candidateMatchesSearch(candidate = {}, params = {}) {
+  const { query = '', company = '', coverage = '' } = params;
+  const normalizedQuery = normalizeSearchText(query);
+  const terms = codeSearchTerms(query);
+  const haystack = candidate.searchText || '';
+  if (company && !(candidate.companies || []).includes(company)) return false;
+  if (coverage && !(candidate.coverageKeywords || []).some((keyword) => keyword.includes(coverage) || coverage.includes(keyword))) return false;
+  if (!normalizedQuery) return true;
+  if (candidate.code === normalizedQuery) return true;
+  return terms.every((term) => haystack.includes(term));
+}
+
+function normalizeCodeCandidate({ item, source, chunk, catalog } = {}) {
+  const sourceMetadata = source?.metadata && typeof source.metadata === 'object' ? source.metadata : {};
+  const sourceCompanies = Array.isArray(source?.companies) ? source.companies : [];
+  const itemCompanies = Array.isArray(item?.companies) ? item.companies : [];
+  const catalogCompany = catalog?.company || '';
+  const companies = [...new Set([...itemCompanies, ...sourceCompanies, catalogCompany].filter(Boolean))].slice(0, 8);
+  const coverageKeywords = [...new Set([
+    ...(Array.isArray(item?.coverageKeywords) ? item.coverageKeywords : []),
+    ...(Array.isArray(chunk?.keywords) ? chunk.keywords : []),
+    ...(Array.isArray(catalog?.coverage_keywords) ? catalog.coverage_keywords : [])
+  ].filter(Boolean))].slice(0, 10);
+  const candidate = {
+    code: String(item?.code || '').trim(),
+    company: companies[0] || source?.company || '미분류',
+    companies,
+    coverageKeywords,
+    context: item?.context || chunk?.redacted_content || chunk?.content || source?.redacted_snippet || source?.text_snippet || '',
+    fileName: source?.file_name || source?.normalized_source?.fileName || '',
+    sourceId: source?.id || chunk?.source_id || '',
+    chunkId: chunk?.id || '',
+    catalogItemId: catalog?.id || '',
+    month: source?.month || catalog?.effective_month || '',
+    status: catalog?.status || chunk?.status || source?.status || 'review_needed',
+    sourceStatus: source?.status || '',
+    scope: source?.scope || chunk?.scope || catalog?.scope || '',
+    confidence: Number(item?.confidence || catalog?.confidence_score || 0),
+    evidenceQualityScore: Number(sourceMetadata.evidenceQualityScore || 0)
+  };
+  return {
+    ...candidate,
+    searchText: normalizeSearchText([
+      candidate.code,
+      candidate.context,
+      candidate.fileName,
+      candidate.company,
+      ...candidate.companies,
+      ...candidate.coverageKeywords
+    ].join(' '))
+  };
+}
+
+function codeSearchCacheKey(userId = '') {
+  return userId || 'global';
+}
+
+function clearPolibotCodeSearchCache(userId = '') {
+  if (!userId) {
+    codeSearchCache.clear();
+    return;
+  }
+  codeSearchCache.delete(codeSearchCacheKey(userId));
+}
+
+async function loadPolibotCodeSearchCandidates(userId = '') {
+  const key = codeSearchCacheKey(userId);
+  const cached = codeSearchCache.get(key);
+  if (cached && Date.now() - cached.createdAt < CODE_SEARCH_CACHE_TTL_MS) return cached.value;
+  const [globalSources, userSources, globalChunks, userChunks, globalCatalog, userCatalog] = await Promise.all([
+    dbList('polibot_knowledge_sources', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []),
+    userId ? dbList('polibot_knowledge_sources', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []) : [],
+    dbList('polibot_knowledge_chunks', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 3000 }).catch(() => []),
+    userId ? dbList('polibot_knowledge_chunks', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 3000 }).catch(() => []) : [],
+    dbList('polibot_catalog_items', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 2000 }).catch(() => []),
+    userId ? dbList('polibot_catalog_items', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 2000 }).catch(() => []) : []
+  ]);
+  const sources = [...globalSources, ...userSources];
+  const chunks = [...globalChunks, ...userChunks].filter((chunk) => SEARCHABLE_CODE_STATUSES.has(chunk.status));
+  const catalogItems = [...globalCatalog, ...userCatalog].filter((item) => SEARCHABLE_CODE_STATUSES.has(item.status));
+  const sourceById = Object.fromEntries(sources.map((source) => [source.id, source]));
+  const catalogBySource = catalogItems.reduce((acc, item) => {
+    if (!item.source_id) return acc;
+    acc[item.source_id] = acc[item.source_id] || [];
+    acc[item.source_id].push(item);
+    return acc;
+  }, {});
+  const candidates = [];
+  sources.forEach((source) => {
+    const normalized = source.normalized_source && typeof source.normalized_source === 'object' ? source.normalized_source : {};
+    (normalized.codeCandidates || []).forEach((item) => {
+      candidates.push(normalizeCodeCandidate({ item, source, catalog: catalogBySource[source.id]?.[0] }));
+    });
+  });
+  chunks.forEach((chunk) => {
+    const source = sourceById[chunk.source_id] || {};
+    const extracted = extractPolibotCoverageCodes({
+      text: chunk.redacted_content || chunk.content || '',
+      fileName: source.file_name || '',
+      companies: source.companies || [],
+      keywords: chunk.keywords || []
+    });
+    extracted.forEach((item) => {
+      candidates.push(normalizeCodeCandidate({ item, source, chunk, catalog: catalogBySource[chunk.source_id]?.[0] }));
+    });
+  });
+  const value = candidates.filter((candidate) => candidate.code);
+  codeSearchCache.set(key, { createdAt: Date.now(), value });
+  return value;
+}
+
+export async function searchPolibotCodeCandidates(userId = '', { query = '', company = '', coverage = '', limit = 30 } = {}) {
+  const selectedLimit = Math.max(1, Math.min(Number(limit || 30), 80));
+  const candidates = await loadPolibotCodeSearchCandidates(userId);
+  return candidates
+    .filter((candidate) => candidateMatchesSearch(candidate, { query, company, coverage }))
+    .map((candidate) => ({
+      ...candidate,
+      score: codeSearchScore(candidate, { query, company, coverage })
+    }))
+    .sort((a, b) => b.score - a.score || String(b.month || '').localeCompare(String(a.month || '')))
+    .filter((candidate, index, all) => all.findIndex((row) => row.code === candidate.code && row.sourceId === candidate.sourceId && row.context === candidate.context) === index)
+    .slice(0, selectedLimit);
+}
+
 export async function getPolibotDbKnowledgeSummary(userId = '') {
-  const [globalSources, userSources, globalCatalog, userCatalog, globalChunks, userChunks, globalInsights, userInsights, jobs] = await Promise.all([
+  const [globalSources, userSources, globalCatalog, userCatalog, globalChunks, userChunks, globalInsights, userInsights, jobs, importedSources] = await Promise.all([
     dbList('polibot_knowledge_sources', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []),
     userId ? dbList('polibot_knowledge_sources', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []) : [],
     dbList('polibot_catalog_items', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 2000 }).catch(() => []),
@@ -1010,10 +1735,16 @@ export async function getPolibotDbKnowledgeSummary(userId = '') {
     userId ? dbList('polibot_knowledge_chunks', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 3000 }).catch(() => []) : [],
     dbList('polibot_conversation_insights', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []),
     userId ? dbList('polibot_conversation_insights', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []) : [],
-    dbList('polibot_ingest_jobs', {}, { order: 'created_at', ascending: false, limit: 20 }).catch(() => [])
+    dbList('polibot_ingest_jobs', {}, { order: 'created_at', ascending: false, limit: 20 }).catch(() => []),
+    listImportedPolibotSources()
   ]);
   const sources = [...globalSources, ...userSources];
+  const importedCatalogItems = importedSources.flatMap((source) => source.catalogItems || []);
   const catalogItems = [...globalCatalog, ...userCatalog];
+  const allCatalogItems = [
+    ...catalogItems.map(normalizeCatalogRow),
+    ...importedCatalogItems
+  ];
   const chunks = [...globalChunks, ...userChunks];
   const insights = [...globalInsights, ...userInsights];
   const countBy = (items = [], key) => items.reduce((acc, item) => {
@@ -1026,14 +1757,18 @@ export async function getPolibotDbKnowledgeSummary(userId = '') {
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
     .map(([name, count]) => ({ name, count }));
-  const months = sources.map((source) => source.month).filter(Boolean).sort().reverse();
+  const months = [...sources.map((source) => source.month), ...importedSources.map((source) => source.month)].filter(Boolean).sort().reverse();
   const latestJob = jobs.find((job) => job.scope === 'global' || (userId && job.user_id === userId)) || null;
   return {
-    totalSources: sources.length,
+    totalSources: sources.length + importedSources.length,
     globalSources: globalSources.length,
     userSources: userSources.length,
+    importedSources: importedSources.length,
     statusCounts: countBy(sources, 'status'),
-    sourceChannelCounts: countBy(sources, 'source_channel'),
+    sourceChannelCounts: {
+      ...countBy(sources, 'source_channel'),
+      ...(importedSources.length ? { local_ingest: importedSources.length } : {})
+    },
     recommendableSources: sources.filter((source) => source.status === 'recommendable').length,
     reviewNeededSources: sources.filter((source) => source.status === 'review_needed').length,
     excludedSources: sources.filter((source) => source.status === 'excluded').length,
@@ -1043,17 +1778,18 @@ export async function getPolibotDbKnowledgeSummary(userId = '') {
     highQualitySources: sources.filter((source) => Number(source.metadata?.evidenceQualityScore || 0) >= 78).length,
     mediumQualitySources: sources.filter((source) => Number(source.metadata?.evidenceQualityScore || 0) >= 58 && Number(source.metadata?.evidenceQualityScore || 0) < 78).length,
     lowQualitySources: sources.filter((source) => Number(source.metadata?.evidenceQualityScore || 0) > 0 && Number(source.metadata?.evidenceQualityScore || 0) < 58).length,
-    catalogItems: catalogItems.length,
-    recommendableCatalogItems: catalogItems.filter((item) => item.status === 'recommendable').length,
-    reviewNeededCatalogItems: catalogItems.filter((item) => item.status === 'review_needed').length,
-    excludedCatalogItems: catalogItems.filter((item) => item.status === 'excluded').length,
+    catalogItems: catalogItems.length + importedCatalogItems.length,
+    importedCatalogItems: importedCatalogItems.length,
+    recommendableCatalogItems: catalogItems.filter((item) => item.status === 'recommendable').length + importedCatalogItems.filter((item) => item.status === 'confirmed').length,
+    reviewNeededCatalogItems: catalogItems.filter((item) => item.status === 'review_needed').length + importedCatalogItems.filter((item) => item.status === 'review').length,
+    excludedCatalogItems: catalogItems.filter((item) => item.status === 'excluded').length + importedCatalogItems.filter((item) => item.status === 'excluded').length,
     conflictCatalogItems: catalogItems.filter((item) => item.status === 'conflict').length,
     chunks: chunks.length,
     recommendableChunks: chunks.filter((chunk) => chunk.status === 'recommendable').length,
     conversationInsights: insights.length,
     latestMonth: months[0] || '',
-    companies: topValues(catalogItems, 'company'),
-    productGroups: topValues(catalogItems, 'product_group'),
+    companies: topValues(allCatalogItems, 'company'),
+    productGroups: topValues(allCatalogItems, 'productGroup'),
     latestJob: latestJob ? {
       id: latestJob.id,
       scope: latestJob.scope,
@@ -1070,12 +1806,15 @@ export async function listPolibotKnowledgeReviewQueue({ status = 'all', scope = 
   const selectedStatus = String(status || 'all');
   const selectedScope = ['global', 'user'].includes(scope) ? scope : 'all';
   const maxRows = Math.min(Math.max(Number(limit || 120), 20), 500);
-  const [sourceRows, catalogRows, jobs, feedbackRows] = await Promise.all([
+  const [sourceRows, catalogRows, jobs, feedbackRows, importedSources] = await Promise.all([
     dbList('polibot_knowledge_sources', selectedScope === 'all' ? {} : { scope: selectedScope }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []),
     dbList('polibot_catalog_items', selectedScope === 'all' ? {} : { scope: selectedScope }, { order: 'created_at', ascending: false, limit: 2000 }).catch(() => []),
     dbList('polibot_ingest_jobs', selectedScope === 'all' ? {} : { scope: selectedScope }, { order: 'created_at', ascending: false, limit: 20 }).catch(() => []),
-    dbList('polibot_recommendation_feedback', {}, { order: 'created_at', ascending: false, limit: 80 }).catch(() => [])
+    dbList('polibot_recommendation_feedback', {}, { order: 'created_at', ascending: false, limit: 80 }).catch(() => []),
+    selectedScope === 'user' ? [] : listImportedPolibotSources()
   ]);
+  const importedCatalogItems = importedSources.flatMap((source) => source.catalogItems || []);
+  const importedLatestMonth = importedSources.map((source) => source.month).filter(Boolean).sort().reverse()[0] || '';
   const statusFilter = selectedStatus === 'all' ? null : selectedStatus;
   const filteredSources = sourceRows
     .filter((row) => !statusFilter || row.status === statusFilter)
@@ -1090,6 +1829,9 @@ export async function listPolibotKnowledgeReviewQueue({ status = 'all', scope = 
     summary: {
       sources: sourceRows.length,
       catalogItems: catalogRows.length,
+      importedSources: importedSources.length,
+      importedCatalogItems: importedCatalogItems.length,
+      latestMonth: importedLatestMonth || sourceRows.map((row) => row.month).filter(Boolean).sort().reverse()[0] || '',
       sourceStatusCounts: countStatuses(sourceRows),
       catalogStatusCounts: countStatuses(catalogRows),
       feedbackCounts: countStatuses(feedbackRows.map((row) => ({ status: row.rating }))),
@@ -1121,6 +1863,8 @@ export async function listPolibotKnowledgeReviewQueue({ status = 'all', scope = 
       recommendationName: row.recommendation_snapshot?.name || '',
       recommendationType: row.recommendation_snapshot?.type || '',
       recommendationScore: row.recommendation_snapshot?.score || 0,
+      learningFlags: row.recommendation_snapshot?.learningSignal?.reasonFlags || [],
+      recommendationSnapshot: row.recommendation_snapshot || {},
       productNames: (row.recommendation_snapshot?.catalogItems || [])
         .map((item) => [item.company, item.productName].filter(Boolean).join(' '))
         .filter(Boolean)
@@ -1333,4 +2077,334 @@ export async function updatePolibotKnowledgeSourceReview(id, { status, reviewNot
     }
   });
   return sourceRowForReview(updated || row);
+}
+
+function premiumCatalogLinkCandidates(premium = {}, catalogRows = []) {
+  return catalogRows
+    .filter((row) => row.document_id && premium.document_id && row.document_id === premium.document_id)
+    .filter((row) => !premium.company || !row.company || row.company === premium.company)
+    .filter((row) => isImportedCatalogProductLike(row) || premium.catalog_item_id === row.id)
+    .map((row) => {
+      const productName = cleanCatalogProductName(row.product_name || '', row.company);
+      const coverageKeywords = importedCoverageKeywords(row.coverage_tags);
+      const productGroup = inferCatalogProductGroup({
+        productName,
+        productGroup: row.product_group,
+        itemType: row.item_type,
+        coverageTags: coverageKeywords
+      });
+      const score = importedPremiumMatchScore(row, premium, productName, productGroup);
+      const premiumProduct = cleanCatalogProductName(premium.product_name || '', premium.company);
+      const directProductMatch = premiumProduct && (productName.includes(premiumProduct) || premiumProduct.includes(productName));
+      const samePage = Number.isFinite(Number(premium.source_page))
+        && Number.isFinite(Number(row.source_page))
+        && Number(premium.source_page) === Number(row.source_page);
+      return {
+        row,
+        score,
+        directProductMatch,
+        samePage,
+        productName,
+        productGroup
+      };
+    })
+    .filter((candidate) => candidate.score > 0)
+    .sort((a, b) => b.score - a.score);
+}
+
+function premiumSectionCandidates(premium = {}, catalogRows = []) {
+  const premiumPage = Number(premium.source_page);
+  return catalogRows
+    .filter((row) => row.document_id && premium.document_id && row.document_id === premium.document_id)
+    .filter((row) => !premium.company || !row.company || row.company === premium.company)
+    .filter((row) => isImportedCatalogProductLike(row))
+    .map((row) => {
+      const productName = cleanCatalogProductName(row.product_name || '', row.company);
+      const coverageKeywords = importedCoverageKeywords(row.coverage_tags);
+      const productGroup = inferCatalogProductGroup({
+        productName,
+        productGroup: row.product_group,
+        itemType: row.item_type,
+        coverageTags: coverageKeywords
+      });
+      const rowPage = Number(row.source_page);
+      const hasPages = Number.isFinite(premiumPage) && Number.isFinite(rowPage);
+      const pageDistance = hasPages ? Math.abs(premiumPage - rowPage) : 99;
+      const beforeOrSamePage = hasPages && rowPage <= premiumPage;
+      let score = 0;
+      if (premium.company && row.company === premium.company) score += 28;
+      if (beforeOrSamePage) score += 24;
+      if (pageDistance === 0) score += 32;
+      else if (pageDistance === 1) score += 24;
+      else if (pageDistance <= 3) score += 14;
+      else if (pageDistance <= 6) score += 6;
+      else score -= 24;
+      if (polibotTextGroupMatch(premium.label || '', productGroup)) score += 16;
+      if (coverageKeywords.length) score += Math.min(14, coverageKeywords.length * 2);
+      const kind = importedCatalogNameKind(productName, row.company);
+      if (kind === 'product') score += 14;
+      if (kind === 'plan') score += 8;
+      if (kind === 'rider') score -= 10;
+      if (row.min_age || row.max_age) score += 5;
+      return {
+        catalogItemId: row.id,
+        productName,
+        company: row.company || '',
+        productGroup,
+        sourcePage: row.source_page || '',
+        pageDistance: hasPages ? pageDistance : null,
+        score,
+        linkConfidence: score >= 82 ? 'strong_section_candidate' : score >= 58 ? 'section_candidate' : 'weak_section_candidate'
+      };
+    })
+    .filter((item) => item.score >= 40)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+}
+
+function shouldLinkPremiumToCatalog(best, second) {
+  if (!best) return false;
+  if (best.directProductMatch && best.score >= 90) return true;
+  if (best.samePage && best.score >= 100 && (!second || best.score - second.score >= 18)) return true;
+  return false;
+}
+
+export async function backfillImportedPremiumCatalogLinks({ dryRun = true, limit = 5000 } = {}) {
+  const [catalogRows, premiumRows] = await Promise.all([
+    listImportedCatalogRows(),
+    dbList('premium_examples', {}, {
+      select: 'id,document_id,catalog_item_id,company,product_name,premium,age,gender,label,source_page',
+      order: 'created_at',
+      ascending: false,
+      limit: Math.min(Math.max(Number(limit || 5000), 100), 10000)
+    }).catch(() => [])
+  ]);
+  const unlinkedPremiums = premiumRows.filter((row) => !row.catalog_item_id && row.document_id && row.premium);
+  const updates = [];
+  const skipped = [];
+  for (const premium of unlinkedPremiums) {
+    const candidates = premiumCatalogLinkCandidates(premium, catalogRows);
+    const [best, second] = candidates;
+    if (!shouldLinkPremiumToCatalog(best, second)) {
+      skipped.push({
+        id: premium.id,
+        documentId: premium.document_id,
+        company: premium.company || '',
+        premium: premium.premium,
+        reason: best ? `ambiguous:${best.score}${second ? `/${second.score}` : ''}` : 'no_candidate'
+      });
+      continue;
+    }
+    const patch = {
+      catalog_item_id: best.row.id,
+      product_name: premium.product_name || best.productName,
+      company: premium.company || best.row.company || ''
+    };
+    updates.push({
+      id: premium.id,
+      patch,
+      match: {
+        catalogItemId: best.row.id,
+        company: best.row.company,
+        productName: best.productName,
+        productGroup: best.productGroup,
+        score: best.score
+      }
+    });
+    if (!dryRun) {
+      await dbUpdate('premium_examples', { id: premium.id }, patch);
+    }
+  }
+  if (!dryRun && updates.length) importedSourceCache = null;
+  return {
+    dryRun: Boolean(dryRun),
+    catalogRows: catalogRows.length,
+    premiumRows: premiumRows.length,
+    unlinkedPremiums: unlinkedPremiums.length,
+    linked: updates.length,
+    skipped: skipped.length,
+    updates: updates.slice(0, 80),
+    skippedSamples: skipped.slice(0, 80)
+  };
+}
+
+export async function analyzeImportedPolibotExtractionGaps({ limit = 5000 } = {}) {
+  const [docs, catalogRows, premiumRows] = await Promise.all([
+    dbList('parsed_documents', {}, {
+      select: 'id,filename,year_month,created_at,document_data',
+      order: 'created_at',
+      ascending: false,
+      limit: 1000
+    }).catch(() => []),
+    listImportedCatalogRows(),
+    dbList('premium_examples', {}, {
+      select: 'id,document_id,catalog_item_id,company,product_name,premium,age,gender,label,source_page',
+      order: 'created_at',
+      ascending: false,
+      limit: Math.min(Math.max(Number(limit || 5000), 100), 10000)
+    }).catch(() => [])
+  ]);
+  const docMap = new Map(docs.map((doc) => [doc.id, {
+    id: doc.id,
+    fileName: doc.filename || '',
+    month: doc.year_month || '',
+    catalogRows: 0,
+    confirmedRows: 0,
+    productRows: 0,
+    riderRows: 0,
+    documentRows: 0,
+    withCoverage: 0,
+    withAge: 0,
+    withRenewal: 0,
+    withPremium: 0,
+    linkedBenefitGroups: 0,
+    strongLinkedBenefitGroups: 0,
+    usableLinkedBenefitGroups: 0,
+    weakLinkedBenefitGroups: 0,
+    linkedGroupGaps: [],
+    premiumRows: 0,
+    linkedPremiumRows: 0,
+    namedPremiumRows: 0,
+    unlinkedPremiumRows: 0,
+    coverageGaps: [],
+    conditionGaps: [],
+    premiumGaps: [],
+    analysisPriority: 0
+  }]));
+  catalogRows.forEach((row) => {
+    const doc = docMap.get(row.document_id);
+    if (!doc) return;
+    const productName = cleanCatalogProductName(row.product_name || '', row.company);
+    const coverageKeywords = importedCoverageKeywords(row.coverage_tags);
+    const productGroup = inferCatalogProductGroup({ productName, productGroup: row.product_group, itemType: row.item_type, coverageTags: coverageKeywords });
+    const kind = isCatalogNonProductName(productName, row.company)
+      ? 'document'
+      : /특약|담보|진단비|수술비|입원비|생활비|간병비/.test(productName) && !/보험/.test(productName) ? 'rider' : 'product';
+    const importedItem = importedCatalogItemFromRow(row, premiumRows, docs.find((item) => item.id === row.document_id) || {});
+    const linkedGroups = Array.isArray(importedItem.linkedBenefitGroups) ? importedItem.linkedBenefitGroups : [];
+    const strongGroups = linkedGroups.filter((group) => group.linkConfidence === 'strong').length;
+    const usableGroups = linkedGroups.filter((group) => group.linkConfidence === 'usable').length;
+    const weakGroups = linkedGroups.filter((group) => group.linkConfidence === 'weak').length;
+    doc.catalogRows += 1;
+    if (normalizeImportedCatalogStatus(row.review_status) === 'confirmed') doc.confirmedRows += 1;
+    if (kind === 'product') doc.productRows += 1;
+    if (kind === 'rider') doc.riderRows += 1;
+    if (kind === 'document') doc.documentRows += 1;
+    if (coverageKeywords.length || (importedItem.coverageKeywords || []).length || (importedItem.coverageDetails || []).length) doc.withCoverage += 1;
+    else doc.coverageGaps.push({ id: row.id, company: row.company || '', productName, productGroup, sourcePage: row.source_page || '' });
+    if (row.min_age || row.max_age || importedItem.ageRange) doc.withAge += 1;
+    else doc.conditionGaps.push({ id: row.id, type: 'age', company: row.company || '', productName, sourcePage: row.source_page || '' });
+    if (row.renewal_type || importedItem.renewalType) doc.withRenewal += 1;
+    else doc.conditionGaps.push({ id: row.id, type: 'renewal', company: row.company || '', productName, sourcePage: row.source_page || '' });
+    if (row.premium) doc.withPremium += 1;
+    doc.linkedBenefitGroups += linkedGroups.length;
+    doc.strongLinkedBenefitGroups += strongGroups;
+    doc.usableLinkedBenefitGroups += usableGroups;
+    doc.weakLinkedBenefitGroups += weakGroups;
+    if (!linkedGroups.length || linkedGroups.every((group) => group.linkConfidence === 'weak')) {
+      doc.linkedGroupGaps.push({
+        id: row.id,
+        company: row.company || '',
+        productName,
+        productGroup,
+        sourcePage: row.source_page || '',
+        reason: !linkedGroups.length ? 'no_linked_group' : 'weak_linked_group'
+      });
+    }
+  });
+  premiumRows.filter((row) => row.premium).forEach((premium) => {
+    const doc = docMap.get(premium.document_id);
+    if (!doc) return;
+    doc.premiumRows += 1;
+    if (premium.catalog_item_id) doc.linkedPremiumRows += 1;
+    if (premium.product_name) doc.namedPremiumRows += 1;
+    if (!premium.catalog_item_id) {
+      doc.unlinkedPremiumRows += 1;
+      const candidates = premiumCatalogLinkCandidates(premium, catalogRows).slice(0, 3);
+      const sectionCandidates = premiumSectionCandidates(premium, catalogRows);
+      doc.premiumGaps.push({
+        id: premium.id,
+        company: premium.company || '',
+        premium: premium.premium,
+        age: premium.age || '',
+        gender: premium.gender || '',
+        label: String(premium.label || '').slice(0, 120),
+        sourcePage: premium.source_page || '',
+        bestCandidates: candidates.map((item) => ({
+          catalogItemId: item.row.id,
+          productName: item.productName,
+          company: item.row.company || '',
+          sourcePage: item.row.source_page || '',
+          score: item.score,
+          reason: item.directProductMatch ? 'direct_product' : item.samePage ? 'same_page' : 'context'
+        })),
+        sectionCandidates
+      });
+    }
+  });
+  const docsReport = [...docMap.values()].map((doc) => {
+    const missingCoverage = Math.max(0, doc.catalogRows - doc.withCoverage);
+    const missingAge = Math.max(0, doc.catalogRows - doc.withAge);
+    const missingRenewal = Math.max(0, doc.catalogRows - doc.withRenewal);
+    const unlinkedPremiums = doc.unlinkedPremiumRows;
+    const weakLinkedGroups = Math.max(0, doc.catalogRows - doc.strongLinkedBenefitGroups - doc.usableLinkedBenefitGroups);
+    const priority = unlinkedPremiums * 4 + missingCoverage + Math.round(missingAge * 0.6) + Math.round(missingRenewal * 0.4) + Math.round(weakLinkedGroups * 0.8);
+    return {
+      ...doc,
+      coverageGaps: doc.coverageGaps.slice(0, 10),
+      conditionGaps: doc.conditionGaps.slice(0, 12),
+      premiumGaps: doc.premiumGaps.slice(0, 12),
+      linkedGroupGaps: doc.linkedGroupGaps.slice(0, 12),
+      missingCoverage,
+      missingAge,
+      missingRenewal,
+      weakLinkedGroups,
+      analysisPriority: priority,
+      recommendedAction: unlinkedPremiums
+        ? '보험료표 섹션/상품명 재분석 우선'
+        : weakLinkedGroups > doc.catalogRows * 0.5 ? '보험료-담보-조건 연결 재분석 우선'
+        : missingCoverage > doc.catalogRows * 0.4 ? '보장 세부항목 재분석 우선'
+          : missingAge || missingRenewal ? '가입조건/갱신조건 재분석'
+            : '상태 양호'
+    };
+  }).sort((a, b) => b.analysisPriority - a.analysisPriority);
+  const totals = docsReport.reduce((acc, doc) => {
+    acc.catalogRows += doc.catalogRows;
+    acc.premiumRows += doc.premiumRows;
+    acc.linkedPremiumRows += doc.linkedPremiumRows;
+    acc.unlinkedPremiumRows += doc.unlinkedPremiumRows;
+    acc.missingCoverage += doc.missingCoverage;
+    acc.missingAge += doc.missingAge;
+    acc.missingRenewal += doc.missingRenewal;
+    acc.linkedBenefitGroups += doc.linkedBenefitGroups;
+    acc.strongLinkedBenefitGroups += doc.strongLinkedBenefitGroups;
+    acc.usableLinkedBenefitGroups += doc.usableLinkedBenefitGroups;
+    acc.weakLinkedBenefitGroups += doc.weakLinkedBenefitGroups;
+    acc.weakLinkedGroups += doc.weakLinkedGroups;
+    if (!doc.catalogRows) acc.docsWithoutCatalog += 1;
+    if (!doc.premiumRows) acc.docsWithoutPremium += 1;
+    return acc;
+  }, {
+    documents: docsReport.length,
+    catalogRows: 0,
+    premiumRows: 0,
+    linkedPremiumRows: 0,
+    unlinkedPremiumRows: 0,
+    missingCoverage: 0,
+    missingAge: 0,
+    missingRenewal: 0,
+    linkedBenefitGroups: 0,
+    strongLinkedBenefitGroups: 0,
+    usableLinkedBenefitGroups: 0,
+    weakLinkedBenefitGroups: 0,
+    weakLinkedGroups: 0,
+    docsWithoutCatalog: 0,
+    docsWithoutPremium: 0
+  });
+  return {
+    generatedAt: now(),
+    totals,
+    priorityDocuments: docsReport.slice(0, 20),
+    healthyDocuments: docsReport.filter((doc) => doc.recommendedAction === '상태 양호').slice(0, 20)
+  };
 }

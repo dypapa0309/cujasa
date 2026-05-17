@@ -41,11 +41,11 @@ function speechRegisterViolations(text = '', account = {}) {
 const modeProfiles = {
   auto: {
     label: '자동 맞춤',
-    contentTypes: ['일상형', '공감형', '문제 해결형', '체크리스트형', '질문형'],
+    contentTypes: ['일상형', '공감형', '문제 해결형', '체크리스트형', '질문형', '공감 실패담형', '밈 카드형', '사지 말아야 할 기준형', '모음집 브릿지형'],
     rules: [
       'Content mode is AUTO: choose the content type that best fits the topic, selected products, and referencePatterns.',
       'When referencePatterns are available, prioritize their structure, pacing, and voice over rigid mode templates.',
-      'Mix daily, empathy, problem-solution, checklist, and question formats naturally across candidates.'
+      'Mix daily, empathy, problem-solution, checklist, question, relatable-fail, meme-card, anti-recommendation, and collection-bridge formats naturally across candidates.'
     ]
   },
   daily: {
@@ -58,7 +58,7 @@ const modeProfiles = {
   },
   empathy: {
     label: '공감형',
-    contentTypes: ['공감형'],
+    contentTypes: ['공감형', '공감 실패담형'],
     rules: [
       'Content mode is EMPATHY: first sentence must name a relatable inconvenience or feeling.',
       'Make the reader feel understood before mentioning any product use case.'
@@ -74,7 +74,7 @@ const modeProfiles = {
   },
   checklist: {
     label: '체크리스트형',
-    contentTypes: ['체크리스트형'],
+    contentTypes: ['체크리스트형', '사지 말아야 할 기준형'],
     rules: [
       'Content mode is CHECKLIST: use concise selection points or criteria.',
       'Keep checklist short; avoid long blog-style lists.'
@@ -271,7 +271,7 @@ function firstSentenceOf(body = '') {
 export function scorePostHook(body = '') {
   const first = firstSentenceOf(body);
   const checks = {
-    concreteInconvenience: /귀찮|불편|신경|피곤|번거|막상|은근|자꾸|놓치|고민|헷갈|애매/.test(first),
+    concreteInconvenience: /귀찮|불편|신경|피곤|번거|막상|은근|자꾸|놓치|고민|헷갈|애매|안\s*맞으면|손\s*안\s*가|바닥에\s*둬|쌓/.test(first),
     choiceTension: /갈리|취향|습관|상황|공간|예산|빈도|기준|먼저|차이|쪽/.test(first),
     regretPrevention: /후회|실수|사고 나서|사기 전|고르기 전|놓치기 쉬운|체크/.test(first),
     replyPrompt: /여러분|다들|혹시|어때|뭐가|어느 쪽|고르/.test(first)

@@ -14,6 +14,58 @@ function result(ok, reason = null) {
   return ok ? { ok: true } : { ok: false, reason };
 }
 
+const CONTENT_FORMATS = new Set([
+  'plain_observation',
+  'daily_one_liner',
+  'two_line_empathy',
+  'random_life_complaint',
+  'fake_chat',
+  'before_after',
+  'meme_caption',
+  'anti_buy',
+  'checklist_card',
+  'mini_story',
+  'choice_question',
+  'soft_question',
+  'collection_bridge',
+  'direct_product',
+  'seasonal_life',
+  'trend_reaction',
+  'send_to_friend',
+  'tiny_confession',
+  'wrong_purchase',
+  'before_buy_check',
+  'room_reality',
+  'lazy_person_tip',
+  'anti_aesthetic',
+  'mini_poll',
+  'micro_story',
+  'visual_card_caption',
+  'pov_scene',
+  'myth_reality',
+  'ranked_list',
+  'imaginary_reply',
+  'series_note',
+  'photo_dump_caption'
+]);
+
+const CONTENT_GOALS = new Set([
+  'reach_only',
+  'reply',
+  'save',
+  'conversion',
+  'trust',
+  'experiment',
+  'share',
+  'meme',
+  'rant',
+  'confession',
+  'anti_buy',
+  'seasonal_spike',
+  'curiosity',
+  'community'
+]);
+
 export function validateTopicsResponse(value) {
   if (!isObject(value)) return result(false, 'topics response must be an object');
   if (!Array.isArray(value.topics) || value.topics.length === 0) return result(false, 'topics must be a non-empty array');
@@ -48,6 +100,8 @@ export function validatePostsResponse(value) {
   for (const [index, post] of value.posts.entries()) {
     if (!isObject(post)) return result(false, `posts[${index}] must be an object`);
     if (!isNonEmptyString(post.contentType)) return result(false, `posts[${index}].contentType is required`);
+    if (post.contentFormat != null && !CONTENT_FORMATS.has(post.contentFormat)) return result(false, `posts[${index}].contentFormat is invalid`);
+    if (post.contentGoal != null && !CONTENT_GOALS.has(post.contentGoal)) return result(false, `posts[${index}].contentGoal is invalid`);
     if (!isNonEmptyString(post.body)) return result(false, `posts[${index}].body is required`);
     if (post.riskLevel != null && !['low', 'medium', 'high'].includes(post.riskLevel)) return result(false, `posts[${index}].riskLevel is invalid`);
   }

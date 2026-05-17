@@ -6,6 +6,7 @@ import {
   listPolibotDbKnowledgeSources,
   listPolibotKnowledgeReviewQueue,
   runPolibotSourceOcr,
+  searchPolibotCodeCandidates,
   updatePolibotCatalogItemReview
 } from './polibotKnowledgeDbService.js';
 
@@ -235,4 +236,26 @@ test('lists and updates POLIBOT catalog review queue', async () => {
   });
   assert.equal(updated.status, 'excluded');
   assert.equal(updated.reviewNote, '테스트에서 충돌 후보 제외');
+});
+
+test('searches POLIBOT coverage code candidates by code and coverage context', async () => {
+  await ingestPolibotKnowledge({
+    scope: 'global',
+    sourceChannel: 'local_ingest',
+    files: [{
+      name: 'coverage-code-search-test.txt',
+      fileName: 'coverage-code-search-test.txt',
+      type: 'txt',
+      size: 180,
+      fileHash: 'coverage-code-search-test-file-hash',
+      text: '삼성화재 보장코드 305 암 진단비 특약 자료입니다. 33번 담보는 뇌혈관 진단비 보장으로 확인합니다.'
+    }],
+    dryRun: false
+  });
+
+  const byCode = await searchPolibotCodeCandidates('', { query: '305' });
+  assert.ok(byCode.some((item) => item.code === '305' && item.coverageKeywords.includes('암')));
+
+  const byCoverage = await searchPolibotCodeCandidates('', { query: '뇌혈관 진단비' });
+  assert.ok(byCoverage.some((item) => item.code === '33'));
 });

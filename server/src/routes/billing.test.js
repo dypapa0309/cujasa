@@ -6,7 +6,8 @@ const validSnapshot = {
   checked: {
     terms: true,
     service: true,
-    platformRisk: true
+    platformRisk: true,
+    refundPolicy: true
   }
 };
 
@@ -19,14 +20,13 @@ test('billing agreement payload is required before checkout starts', () => {
   }), /최신/);
   assert.throws(() => assertAgreementPayload({
     agreementAccepted: true,
-    agreementVersion: 'jasain-payment-terms-v1',
-    agreementSnapshot: { checked: { terms: true, service: true } }
+    agreementVersion: 'jasain-payment-terms-v2',
+    agreementSnapshot: { checked: { terms: true, service: true, platformRisk: true } }
   }), /필수 동의/);
 
   assert.deepEqual(assertAgreementPayload({
     agreementAccepted: true,
-    agreementVersion: 'jasain-payment-terms-v1',
+    agreementVersion: 'jasain-payment-terms-v2',
     agreementSnapshot: validSnapshot
   }), validSnapshot);
 });
-

@@ -16,7 +16,17 @@ test('auto content mode allows mixed content types without mode-specific blockin
   });
 
   assert.equal(profile.strategy.effectiveMode, 'auto');
-  assert.deepEqual(profile.strategy.allowedContentTypes, ['일상형', '공감형', '문제 해결형', '체크리스트형', '질문형']);
+  assert.deepEqual(profile.strategy.allowedContentTypes, [
+    '일상형',
+    '공감형',
+    '문제 해결형',
+    '체크리스트형',
+    '질문형',
+    '공감 실패담형',
+    '밈 카드형',
+    '사지 말아야 할 기준형',
+    '모음집 브릿지형'
+  ]);
   assert.equal(result.allowed, true);
 });
 

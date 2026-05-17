@@ -48,8 +48,8 @@ create table if not exists accounts (
   daily_post_max int not null default 3,
   active_time_windows jsonb not null default '[{"start":"09:00","end":"23:00"}]',
   min_interval_minutes int not null default 90,
-  link_post_ratio numeric not null default 0.67,
-  no_link_post_ratio numeric not null default 0.33,
+  link_post_ratio numeric not null default 0.9,
+  no_link_post_ratio numeric not null default 0.1,
   rest_days_per_week int not null default 1,
   threads_access_token text,
   threads_user_id text,
@@ -119,8 +119,8 @@ alter table accounts alter column daily_post_min set default 0;
 alter table accounts alter column daily_post_max set default 3;
 alter table accounts alter column active_time_windows set default '[{"start":"09:00","end":"23:00"}]'::jsonb;
 alter table accounts alter column min_interval_minutes set default 90;
-alter table accounts alter column link_post_ratio set default 0.67;
-alter table accounts alter column no_link_post_ratio set default 0.33;
+alter table accounts alter column link_post_ratio set default 0.9;
+alter table accounts alter column no_link_post_ratio set default 0.1;
 create unique index if not exists idx_accounts_blog_slug
   on accounts(blog_slug)
   where blog_slug is not null;

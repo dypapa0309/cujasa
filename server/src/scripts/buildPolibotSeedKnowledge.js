@@ -8,16 +8,30 @@ import {
 
 const sourceDir = process.argv[2] || '/Users/sangbinsmacbook/Downloads/polibot_doc';
 const outputFile = new URL('../data/polibotSeedKnowledge.json', import.meta.url);
-const supported = new Set(['pdf', 'pptx', 'csv', 'txt', 'image']);
+const supported = new Set(['pdf', 'pptx', 'docx', 'xlsx', 'csv', 'txt', 'image']);
+
+async function listFiles(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    if (entry.name.startsWith('.') || entry.name === '__MACOSX') continue;
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await listFiles(fullPath));
+      continue;
+    }
+    const fileType = inferPolibotFileType(entry.name);
+    if (supported.has(fileType)) files.push(fullPath);
+  }
+  return files;
+}
 
 async function main() {
-  const names = await readdir(sourceDir);
+  const filePaths = await listFiles(sourceDir);
   const items = [];
-  for (const name of names) {
-    if (name.startsWith('.') || name === '__MACOSX') continue;
-    const filePath = path.join(sourceDir, name);
+  for (const filePath of filePaths) {
+    const name = path.relative(sourceDir, filePath);
     const fileType = inferPolibotFileType(name);
-    if (!supported.has(fileType)) continue;
     const buffer = await readFile(filePath);
     let text = '';
     if (fileType !== 'image') {
@@ -34,6 +48,8 @@ async function main() {
       size: buffer.length,
       type: fileType
     }));
+    text = '';
+    if (typeof global.gc === 'function') global.gc();
   }
   const sorted = items.sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(a.fileName).localeCompare(String(b.fileName), 'ko'));
   await writeFile(outputFile, `${JSON.stringify(sorted, null, 2)}\n`, 'utf8');

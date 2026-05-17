@@ -56,9 +56,16 @@ test('generatePosts stores one selected post with engagement metadata', async ()
   assert.equal(saved.metadata.rubric.usefulSpecificityScore > 0, true);
   assert.equal(saved.metadata.rubric.saveWorthinessScore > 0, true);
   assert.equal(saved.metadata.rubric.humanWarmthScore > 0, true);
-  assert.match(saved.body, /여러분|뭐였어요|보세요/);
+  assert.match(saved.body, /다들|나만|저만|공감|겪어본|예민한|필수|뭐부터|보세요/);
   assert.doesNotMatch(saved.body, /이건 은근 기준이 갈리는 선택|실용성.*사용감|작은 기준 하나만 정해도/);
-  assert.match(saved.body, /설거지|빨래|현관|욕실|조리대|바닥|물기|바구니|꺼내/);
+  assert.match(saved.body, /설거지|빨래|현관|욕실|조리대|바닥|물기|바구니|꺼내|방문|침대\s*밑|수납|정리템/);
+  assert.ok(saved.metadata.visualPlan);
+  assert.equal(typeof saved.metadata.visualPlan.attachImage, 'boolean');
+  assert.ok(['none', 'generated_card', 'product_image'].includes(saved.metadata.visualPlan.imageSourceType));
+  assert.ok(saved.metadata.contentFormat);
+  assert.ok(saved.metadata.contentGoal);
+  assert.ok(saved.metadata.lengthBucket);
+  assert.ok(saved.metadata.selectedFormatDiversity);
 });
 
 test('rewritePostQualityPrompt includes approved pattern fields without raw source text', () => {

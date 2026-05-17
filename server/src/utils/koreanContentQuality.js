@@ -37,6 +37,7 @@ export function stripBodyCtaLines(value) {
       .replace(/링크\s*확인!?/g, '')
       .replace(/더\s*많은\s*(팁|정보|내용)이?\s*궁금하다면\.?/g, '')
       .replace(/댓글에서?\s*확인!?/g, '')
+      .replace(/댓글\s*(참고|확인|봐|달|남겨|공유|알려|부탁)[^.!?\n]*[.!?]?/g, '')
       .replace(/구매\s*링크|댓글\s*링크|아래\s*링크|프로필\s*링크/g, '')
       .replace(/최저가|특가|할인\s*(정보|링크)?/g, '')
       .trim())

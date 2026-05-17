@@ -43,7 +43,7 @@ test('choice tension fallback is comment-oriented', () => {
   );
   const score = scorePostEngagement(body);
 
-  assert.match(body, /설거지 끝나고 바로 내려둘 자리|조리대 위에 올려도 손이 안 좁아지는지|자주 쓰는 순간에 바로 닿는지/);
+  assert.match(body, /설거지 끝나고 바로 내려둘 자리|조리대 위에 올려도 손이 안 좁아지는지|자주 쓰는 순간에 바로 닿는지|펼쳤을 때 방문이 걸리지 않는지|침대 밑에 넣을 수 있는지/);
   assert.equal(score.checks.livedInStructure, true);
   assert.equal(score.checks.concreteCriteria, true);
   assert.equal(score.checks.genericTemplate, false);
@@ -98,10 +98,10 @@ test('human style fallback matches the target lived-in post shape', () => {
   );
   const score = scorePostEngagement(body);
 
-  assert.match(body, /어디에 둘지/);
+  assert.match(body, /사진만 보면|첫 주에 바로 티/);
   assert.match(body, /설거지 끝나고 바로 내려둘 자리/);
   assert.match(body, /빨래 돌리기 전 잠깐 모아둘 바구니 자리/);
-  assert.match(body, /처음 자취할 때/);
+  assert.match(body, /공감|어디까지|예민한|필수/);
   assert.equal(score.checks.livedInStructure, true);
   assert.equal(score.checks.concreteCriteria, true);
   assert.equal(score.checks.microDetail, true);
@@ -179,6 +179,91 @@ test('penalizes awkward phrasing and category mismatched details', () => {
   assert.equal(mismatchScore.checks.categoryMismatch, true);
   assert.ok(mismatchScore.rubric.categoryMismatchPenalty < 0);
   assert.equal(kitchenMismatchScore.checks.categoryMismatch, true);
+});
+
+test('penalizes unclear compressed internet-style openings', () => {
+  const vagueCleaning = '청소는 꺼내는 시간이 길면 시작도 안 하게 됨.\n\n먼지가 보여도 그냥 지나치게 되는 경우 많음.\n\n이거 나만 그런가?';
+  const vagueStorage = '수납하려고 샀는데 방이 더 좁아지는 거 진짜 있음.\n\n정리템 살 때 은근 조심해야 함.\n\n다들 공감함?';
+  const clearStorage = '좁은 방 정리하려고 수납장 샀는데 방이 더 좁아짐 ㅋㅋ\n\n정리템 잘못 사면 큰 짐 하나 더 생기는 느낌임.\n\n이거 겪어본 사람 은근 많지 않나';
+
+  const vagueCleaningScore = scorePostEngagement(vagueCleaning);
+  const vagueStorageScore = scorePostEngagement(vagueStorage);
+  const clearStorageScore = scorePostEngagement(clearStorage);
+
+  assert.equal(vagueCleaningScore.checks.ambiguousCompressedSetup, true);
+  assert.equal(vagueStorageScore.checks.ambiguousCompressedSetup, true);
+  assert.equal(clearStorageScore.checks.ambiguousCompressedSetup, false);
+  assert.ok(vagueCleaningScore.rubric.ambiguousCompressedSetupPenalty < 0);
+  assert.ok(clearStorageScore.engagementScore > vagueStorageScore.engagementScore);
+});
+
+test('penalizes body CTA leaks and topic-title echo posts', () => {
+  const ctaLeak = '예전엔 조리도구가 여기저기 흩어져서 설거지 후 둘 데 찾느라 난감했어. 다들 어떤 기준으로 고름? 댓글 참고해봐!';
+  const titleEcho = '홈인테리어,주방용품,소형 생활가전 정리 쉽게 하는 법, 평소에는 별거 아닌데 막상 필요할 때마다 은근 신경 쓰여.';
+
+  const ctaScore = scorePostEngagement(ctaLeak);
+  const echoScore = scorePostEngagement(titleEcho);
+
+  assert.equal(ctaScore.checks.ctaLeak, true);
+  assert.equal(echoScore.checks.topicTitleEcho, true);
+  assert.ok(ctaScore.rubric.ctaLeakPenalty < 0);
+  assert.ok(echoScore.rubric.topicTitleEchoPenalty < 0);
+  assert.ok(ctaScore.engagementScore < 70);
+  assert.ok(echoScore.engagementScore < 70);
+});
+
+test('rewards share meme lazy and wrong-purchase shapes', () => {
+  const share = scorePostEngagement('택배 박스 못 버리는 사람한테 보내야 됨\n현관 앞에 쌓이면 분리수거 봉투 찾는 순간부터 의욕 사라짐');
+  const wrong = scorePostEngagement('선반 샀는데 선반 둘 자리가 없었음\n좁은 방은 정리템 잘못 사면 큰 짐 하나 더 생김 ㅋㅋ');
+  const lazy = scorePostEngagement('부지런한 사람 기준 말고 다시 넣기 귀찮은 사람 기준으로 봐야 됨\n손 안 가면 결국 바닥에 쌓임');
+
+  assert.equal(share.checks.shareTrigger, true);
+  assert.equal(wrong.checks.wrongPurchase, true);
+  assert.equal(lazy.checks.lazyAngle, true);
+  assert.ok(share.rubric.shareabilityScore > 0);
+  assert.ok(wrong.rubric.wrongPurchaseScore > 0);
+  assert.ok(lazy.rubric.lazyAngleScore > 0);
+});
+
+test('rewards native social scene formats without forcing questions', () => {
+  const pov = scorePostEngagement('POV: 방 치우려고 일어났는데 충전선이 발에 걸림\n침대 옆 선이 바닥에 늘어지면 청소할 때마다 멈칫함');
+  const ranked = scorePostEngagement('화장대 정리템 볼 때 제 우선순위\n1순위 매일 쓰는 제품이 앞에 나와 있는지\n2순위 파우치 안에서 다시 찾기 쉬운지');
+  const reply = scorePostEngagement('댓글에서 차량용품 뭐부터 보냐고 물어보면 난 컵홀더 막는지부터 봄\n운전 중 바닥에 굴러다니면 첫날부터 거슬림');
+
+  assert.equal(pov.checks.nativeSocialShape, true);
+  assert.equal(ranked.checks.rankedPriority, true);
+  assert.equal(reply.checks.imaginaryReply, true);
+  assert.ok(pov.rubric.nativeSocialShapeScore > 0);
+  assert.ok(ranked.rubric.rankedPriorityScore > 0);
+  assert.ok(reply.rubric.communityReplyScore > 0);
+  assert.ok(ranked.engagementScore >= 82);
+});
+
+test('accepts short relatable one-liners as a valid content format', () => {
+  const oneLiner = '좁은 방 정리하려고 수납장 샀는데 방이 더 좁아짐 ㅋㅋ';
+  const twoLine = '먼지 보여도 돌돌이 안 보이면 그냥 못 본 척하게 됨.\n이거 나만 그런 거 아니지';
+
+  const oneLinerScore = scorePostEngagement(oneLiner);
+  const twoLineScore = scorePostEngagement(twoLine);
+
+  assert.equal(oneLinerScore.checks.compactRelatable, true);
+  assert.equal(twoLineScore.checks.compactRelatable, true);
+  assert.equal(oneLinerScore.checks.ambiguousCompressedSetup, false);
+  assert.ok(oneLinerScore.engagementScore >= 82);
+  assert.ok(twoLineScore.engagementScore >= 82);
+});
+
+test('penalizes over-written metaphors that do not sound like normal Korean posts', () => {
+  const awkward = '집이 좁은 게 아니라 내가 물건을 너무 믿었음';
+  const natural = '방 좁은데 수납장까지 들어오니까 더 답답함 ㅋㅋ';
+
+  const awkwardScore = scorePostEngagement(awkward);
+  const naturalScore = scorePostEngagement(natural);
+
+  assert.equal(awkwardScore.checks.awkwardMetaphor, true);
+  assert.equal(naturalScore.checks.awkwardMetaphor, false);
+  assert.ok(awkwardScore.rubric.awkwardMetaphorPenalty < 0);
+  assert.ok(naturalScore.engagementScore > awkwardScore.engagementScore);
 });
 
 test('gift fallback details count as concrete lived-in details', () => {

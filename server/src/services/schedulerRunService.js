@@ -6,6 +6,7 @@ import { cleanupOldActivityLogs } from './activityLogCleanupService.js';
 import { sendOpsAlert } from './notificationService.js';
 import { expireStalePipelineRuns } from './pipelineRunService.js';
 import { enforceDailyQueueLimits, repairReplyLinkFailures } from './schedulerService.js';
+import { refreshAnonymousTrendPatternAssets } from './trendReferenceLearningService.js';
 
 export const DAILY_PIPELINE_JOB = 'daily-pipeline';
 
@@ -365,6 +366,13 @@ export async function runDailyPipelineOnce({
     const expiredPipelines = await expireStalePipelineRuns();
     const dailyQueueLimits = await enforceDailyQueueLimits();
     const replyRepair = await repairReplyLinkFailures({ dryRun: true, limit: 50 });
+    const trendRefresh = process.env.TREND_SOURCE_AUTO_REFRESH === 'false'
+      ? { skipped: true, reason: 'TREND_SOURCE_AUTO_REFRESH=false' }
+      : await refreshAnonymousTrendPatternAssets().catch((error) => ({
+        skipped: true,
+        error: error.message,
+        code: error.code || null
+      }));
     const pipeline = await runFullPipeline({
       requestedBy: triggeredBy,
       accountIds: Array.isArray(accountIds) && accountIds.length ? accountIds : resumedAccountIds,
@@ -398,6 +406,7 @@ export async function runDailyPipelineOnce({
       expiredPipelines: expiredPipelines.length,
       dailyQueueLimits,
       replyRepair,
+      trendRefresh,
       cleanup,
       oldIssues,
       oldActivityLogs,

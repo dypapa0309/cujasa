@@ -101,8 +101,10 @@ export default function AdminPolibotKnowledgePage() {
     privacy: sourceCounts.privacy_risk || 0,
     ocr: sourceCounts.ocr_needed || 0,
     excluded: (sourceCounts.excluded || 0) + (catalogCounts.excluded || 0),
-    feedbackReview: summary.feedbackNeedsReview || 0
-  }), [catalogCounts, sourceCounts, summary.feedbackNeedsReview]);
+    feedbackReview: summary.feedbackNeedsReview || 0,
+    importedCatalog: summary.importedCatalogItems || 0,
+    importedSources: summary.importedSources || 0
+  }), [catalogCounts, sourceCounts, summary.feedbackNeedsReview, summary.importedCatalogItems, summary.importedSources]);
 
   const updateCatalogStatus = async (item, nextStatus) => {
     setSavingId(item.id);
@@ -239,12 +241,12 @@ export default function AdminPolibotKnowledgePage() {
           <label className="grid gap-1 text-sm font-semibold text-slate-700">
             자료 파일
             <span className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100">
-              <span className="truncate">{uploadForm.files.length ? `${uploadForm.files.length}개 자료 선택됨` : 'PDF/PPTX/DOCX/CSV/TXT/이미지 업로드'}</span>
+              <span className="truncate">{uploadForm.files.length ? `${uploadForm.files.length}개 자료 선택됨` : 'PDF/PPTX/DOCX/HWP/CSV/TXT/이미지 업로드'}</span>
               <Upload size={15} />
               <input
                 type="file"
                 multiple
-                accept=".pdf,.ppt,.pptx,.docx,.csv,.txt,.jpg,.jpeg,.png,.webp"
+                accept=".pdf,.ppt,.pptx,.docx,.hwp,.csv,.txt,.jpg,.jpeg,.png,.webp"
                 className="hidden"
                 onChange={(event) => uploadKnowledgeFiles(event.target.files)}
               />
@@ -263,14 +265,31 @@ export default function AdminPolibotKnowledgePage() {
         </label>
       </section>
 
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-7">
         <SummaryCard label="검토 필요" value={totals.review} icon={AlertTriangle} active={status === 'review_needed'} onClick={() => setStatus('review_needed')} />
         <SummaryCard label="추천 가능" value={totals.recommendable} icon={CheckCircle2} active={status === 'recommendable'} onClick={() => setStatus('recommendable')} />
+        <SummaryCard label="실제 추출 DB" value={totals.importedCatalog} icon={DatabaseZap} />
         <SummaryCard label="충돌" value={totals.conflict} icon={ShieldAlert} active={status === 'conflict'} onClick={() => setStatus('conflict')} />
         <SummaryCard label="개인정보 위험" value={totals.privacy} icon={EyeOff} active={status === 'privacy_risk'} onClick={() => setStatus('privacy_risk')} />
         <SummaryCard label="OCR 필요" value={totals.ocr} icon={DatabaseZap} active={status === 'ocr_needed'} onClick={() => setStatus('ocr_needed')} />
         <SummaryCard label="피드백 검수" value={totals.feedbackReview} icon={MessageSquareWarning} />
       </div>
+
+      {totals.importedSources > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-black text-slate-950">연결된 실제 추출 데이터</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                별도 파서에서 읽은 문서 {totals.importedSources}개와 상품 후보 {totals.importedCatalog}개를 POLIBOT 추천 근거로 함께 사용합니다.
+              </p>
+            </div>
+            <div className="rounded-xl bg-slate-100 px-3 py-2 text-sm font-black text-slate-700">
+              최신 자료월 {summary.latestMonth || '-'}
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         {Object.keys(statusLabels).map((key) => (

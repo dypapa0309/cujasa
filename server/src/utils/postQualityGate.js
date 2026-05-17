@@ -10,8 +10,11 @@ const BLOCKING_CHECKS = [
   ['shallowChecklist', '얕은 체크리스트 문장'],
   ['genericTemplate', '반복 템플릿 문장'],
   ['repetitiveFallback', '반복 fallback 골격'],
+  ['ctaLeak', '본문에 CTA/링크 레이어 노출'],
+  ['topicTitleEcho', '주제 제목을 그대로 붙인 문장'],
   ['abstractSetup', '추상적인 첫 문장'],
   ['awkwardPhrase', '어색한 금지 표현'],
+  ['awkwardMetaphor', '작위적인 비유/교훈문'],
   ['categoryMismatch', '카테고리와 생활 디테일 불일치'],
   ['duplicateRisk', '최근 글과 유사한 문장 구조'],
   ['aiLikeTone', 'AI식 설명 문체'],
@@ -26,8 +29,16 @@ export function evaluatePostQualityGate(engagement = {}) {
   if (Number(engagement.engagementScore || 0) < QUALITY_GATE_SCORE) {
     reasons.push(`점수 ${engagement.engagementScore || 0}점으로 기준 ${QUALITY_GATE_SCORE}점 미달`);
   }
-  for (const [key, label] of REQUIRED_CHECKS) {
-    if (!checks[key]) reasons.push(label);
+  const compactRelatablePassed = Boolean(checks.compactRelatable)
+    && checks.concreteSituation
+    && checks.lowAdTone
+    && checks.productNatural
+    && checks.safe
+    && checks.humanWarmth;
+  if (!compactRelatablePassed) {
+    for (const [key, label] of REQUIRED_CHECKS) {
+      if (!checks[key]) reasons.push(label);
+    }
   }
   for (const [key, label] of BLOCKING_CHECKS) {
     if (checks[key]) reasons.push(label);
@@ -37,7 +48,10 @@ export function evaluatePostQualityGate(engagement = {}) {
     checks.accountTokenLeak
       || checks.genericTemplate
       || checks.repetitiveFallback
+      || checks.ctaLeak
+      || checks.topicTitleEcho
       || checks.awkwardPhrase
+      || checks.awkwardMetaphor
       || checks.categoryMismatch
       || checks.duplicateRisk
       || checks.aiLikeTone
@@ -60,6 +74,7 @@ export function buildRewriteInstructions(reasons = []) {
     '링크, 댓글 링크, 구매, 최저가, 할인, 특가 표현을 쓰지 않는다.',
     '현관, 설거지, 빨래, 욕실 물기, 조리대, 침대 옆 충전기, 분리수거 봉투 같은 작은 생활 디테일을 최소 2개 넣는다.',
     '“흐름이에요”, “흐름이야”, “생활 속에서”, “고려해야”, “도움이 됩니다”, “중요합니다”를 쓰지 않는다.',
+    '“집이 좁은 게 아니라 내가 물건을 너무 믿었음”, “청소는 인생 개조 프로젝트” 같은 작위적인 비유를 쓰지 않는다.',
     '주방 글은 조리대, 싱크대, 설거지, 물 빠짐처럼 주방 디테일로 쓰고, 육아/선물/청소 디테일을 섞지 않는다.',
     '독자가 저장하고 싶을 만한 작은 기준을 하나 이상 남긴다.',
     '설명문이나 블로그 글처럼 쓰지 말고 짧은 Threads 말투로 쓴다.',
@@ -75,11 +90,17 @@ export function buildRewriteInstructions(reasons = []) {
   if (reasons.some((reason) => /반복|유사/.test(reason))) {
     instructions.push('최근 글과 같은 첫 문장, 같은 질문, 같은 1-2-3 기준을 반복하지 않고 다른 생활 장면으로 바꾼다.');
   }
+  if (reasons.some((reason) => /CTA|링크|제목/.test(reason))) {
+    instructions.push('댓글, 링크, 쿠팡, 제휴 고지, 주제 제목을 본문에 드러내지 말고 실제 생활 상황으로 시작한다.');
+  }
   if (reasons.some((reason) => /추상/.test(reason))) {
     instructions.push('첫 문장은 “생활 속에서”, “중요합니다” 같은 추상 설명 대신 실제 상황 하나로 시작한다.');
   }
   if (reasons.some((reason) => /금지 표현|어색/.test(reason))) {
     instructions.push('“다시 두기 편한지”, “손이 덜 가는지”, “자주 꺼내기 쉬운지”, “놔둘 자리가 있는지”처럼 실제 행동으로 바꾼다.');
+  }
+  if (reasons.some((reason) => /비유|교훈/.test(reason))) {
+    instructions.push('카피 문장처럼 꾸미지 말고 “방 좁은데 수납장까지 들어오니까 더 답답함 ㅋㅋ”처럼 실제로 말할 법한 상황문으로 바꾼다.');
   }
   if (reasons.some((reason) => /카테고리|불일치/.test(reason))) {
     instructions.push('선물 글에는 육아 동선이나 주방 동선을 넣지 말고, 받는 사람/취향/바로 쓸 수 있는지 기준으로 쓴다.');

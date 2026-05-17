@@ -37,6 +37,9 @@ export async function buildAccountPerformanceSignals(accountId, { limit = 5 } = 
   const topicClicks = new Map();
   const productClicks = new Map();
   const postClicks = new Map();
+  const formatClicks = new Map();
+  const goalClicks = new Map();
+  const lengthBucketClicks = new Map();
   for (const row of sourceRows) {
     const count = Number(row.clicks || 0);
     if (count <= 0) continue;
@@ -71,10 +74,16 @@ export async function buildAccountPerformanceSignals(accountId, { limit = 5 } = 
   const topPosts = topEntries(postClicks, limit).map(([postId, count]) => {
     const post = postById.get(postId) || {};
     const topic = topicById.get(post.topic_id) || {};
+    addCount(formatClicks, post.metadata?.contentFormat, count);
+    addCount(goalClicks, post.metadata?.contentGoal, count);
+    addCount(lengthBucketClicks, post.metadata?.lengthBucket, count);
     return {
       postId,
       topicTitle: topic.title || '',
       contentType: post.content_type || '',
+      contentFormat: post.metadata?.contentFormat || '',
+      contentGoal: post.metadata?.contentGoal || '',
+      lengthBucket: post.metadata?.lengthBucket || '',
       bodySnippet: textSnippet(post.body),
       engagementPattern: post.metadata?.engagementPattern || '',
       clicks: count
@@ -94,6 +103,9 @@ export async function buildAccountPerformanceSignals(accountId, { limit = 5 } = 
       .slice(0, limit)
       .map(([name, count]) => ({ name, clicks: count })),
     topPosts,
+    topContentFormats: topEntries(formatClicks, limit).map(([name, clicks]) => ({ name, clicks })),
+    topContentGoals: topEntries(goalClicks, limit).map(([name, clicks]) => ({ name, clicks })),
+    topLengthBuckets: topEntries(lengthBucketClicks, limit).map(([name, clicks]) => ({ name, clicks })),
     guidance: topTopics.length
       ? topTopics.map((item) => `${item.title}와 비슷한 문제/상품군을 확장하되 같은 제목 반복은 피하세요.`)
       : []

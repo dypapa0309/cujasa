@@ -6,7 +6,7 @@ import { redactSensitivePayload } from '../services/redactionService.js';
 
 const router = Router();
 const BASIC_MAX_ACCOUNTS = 2;
-const AGREEMENT_VERSION = 'jasain-payment-terms-v1';
+const AGREEMENT_VERSION = 'jasain-payment-terms-v2';
 const AGREEMENT_TITLE = 'JASAIN 서비스 이용 및 결제 계약';
 
 const addMonths = (date, months) => {
@@ -66,7 +66,7 @@ export function assertAgreementPayload(body = {}) {
     ? body.agreementSnapshot
     : {};
   const checked = snapshot.checked && typeof snapshot.checked === 'object' ? snapshot.checked : {};
-  if (!checked.terms || !checked.service || !checked.platformRisk) {
+  if (!checked.terms || !checked.service || !checked.platformRisk || !checked.refundPolicy) {
     const error = new Error('필수 동의 항목을 모두 체크해주세요.');
     error.status = 400;
     error.code = 'BILLING_AGREEMENT_CHECKS_REQUIRED';

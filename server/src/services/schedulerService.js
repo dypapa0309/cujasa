@@ -76,16 +76,18 @@ function createReplyLinkRequiredError(code, message) {
 
 function calculateQueueModeCounts(total, account = {}, { allowLink = true } = {}) {
   if (total <= 0) return { linkCount: 0, noLinkCount: 0 };
-  const rawLink = Number(account.link_post_ratio ?? 0.67);
-  const rawNoLink = Number(account.no_link_post_ratio ?? 0.33);
+  const rawLink = Number(account.link_post_ratio ?? 0.9);
+  const rawNoLink = Number(account.no_link_post_ratio ?? 0.1);
   const linkRatio = Number.isFinite(rawLink) && rawLink > 0 ? rawLink : 0;
   const noLinkRatio = Number.isFinite(rawNoLink) && rawNoLink > 0 ? rawNoLink : 0;
   if (!allowLink) return { linkCount: 0, noLinkCount: total };
   const ratioTotal = linkRatio + noLinkRatio;
   if (ratioTotal <= 0) return { linkCount: total, noLinkCount: 0 };
-  let linkCount = Math.round((total * linkRatio) / ratioTotal);
+  if (linkRatio <= 0) return { linkCount: 0, noLinkCount: total };
+  let noLinkCount = noLinkRatio > 0 ? Math.floor((total * noLinkRatio) / ratioTotal) : 0;
+  noLinkCount = Math.max(0, Math.min(total, noLinkCount));
+  let linkCount = total - noLinkCount;
   if (linkRatio > 0 && linkCount === 0) linkCount = 1;
-  if (noLinkRatio > 0 && total > 1 && linkCount >= total) linkCount = total - 1;
   linkCount = Math.max(0, Math.min(total, linkCount));
   return { linkCount, noLinkCount: total - linkCount };
 }
@@ -481,6 +483,12 @@ function canSkipMonetizationPreflight({ queue = {}, post = {}, automationLink = 
     && (queue.post_mode || 'auto') === 'no_link';
 }
 
+function shouldUpgradeNoLinkQueueToLink({ queue = {}, post = {}, product = null, automationLink = null } = {}) {
+  if ((queue.post_mode || 'auto') !== 'no_link') return false;
+  if (canSkipMonetizationPreflight({ queue, post, automationLink })) return false;
+  return isLinkableCoupangProduct(product);
+}
+
 function fallbackThreadsPostUrl(account = {}, postId = '') {
   const id = String(postId || '').trim();
   if (!id) return '';
@@ -784,14 +792,21 @@ export async function createDailyQueue(accountId, options = {}) {
   const withLink = queueableDrafts.filter((p) => productsPerTopic.has(p.topic_id));
   const withoutLink = queueableDrafts.filter((p) => !productsPerTopic.has(p.topic_id));
 
+  const modeCounts = calculateQueueModeCounts(total, account, { allowLink: reply.ok });
   const linkSelection = reply.ok
-    ? selectQueueDrafts({ posts: withLink, times, topicProducts: primaryProductByTopic, requireLink: true, recentFormatCounts })
+    ? selectQueueDrafts({
+      posts: withLink,
+      times: times.slice(0, modeCounts.linkCount),
+      topicProducts: primaryProductByTopic,
+      requireLink: true,
+      recentFormatCounts
+    })
     : { selected: [], rejected: [] };
-  const candidateWithLink = withLink.slice(0, total);
+  const candidateWithLink = withLink.slice(0, reply.ok ? modeCounts.linkCount : total);
   const primaryWithLink = linkSelection.selected.map((item) => item.post);
   const selectedIds = new Set(primaryWithLink.map((post) => post.id));
   const linkBlockedByReplyReadiness = !reply.ok && candidateWithLink.length > 0;
-  const remainingSlots = linkBlockedByReplyReadiness ? 0 : Math.max(0, total - primaryWithLink.length);
+  const remainingSlots = linkBlockedByReplyReadiness ? 0 : Math.max(0, Math.min(modeCounts.noLinkCount, total - primaryWithLink.length));
   const noLinkSelection = selectQueueDrafts({
     posts: withoutLink
     .filter((post, index, list) => list.findIndex((row) => row.id === post.id) === index)
@@ -802,9 +817,9 @@ export async function createDailyQueue(accountId, options = {}) {
     recentFormatCounts
   });
   const primaryNoLink = noLinkSelection.selected.map((item) => item.post);
-  const linkCount = candidateWithLink.length;
-  const noLinkCount = remainingSlots;
-  const linkShortage = 0;
+  const linkCount = modeCounts.linkCount;
+  const noLinkCount = modeCounts.noLinkCount;
+  const linkShortage = Math.max(0, modeCounts.linkCount - primaryWithLink.length);
   const noLinkShortage = Math.max(0, remainingSlots - primaryNoLink.length);
   const linkOverflow = Math.max(0, withLink.length - primaryWithLink.length);
   let sponsoredSlotAvailable = !(await sponsoredCommentAlreadyQueuedToday(account.id));
@@ -1495,7 +1510,23 @@ export async function uploadQueueItem(queueId) {
       ? await dbGet('tracking_links', { id: queue.tracking_link_id })
       : null;
     const postMode = queue.post_mode || 'auto';
-    let requiresLink = postMode === 'link' || (postMode === 'auto' && isLinkableCoupangProduct(product));
+    const upgradeNoLinkQueue = shouldUpgradeNoLinkQueueToLink({ queue, post, product, automationLink });
+    let requiresLink = postMode === 'link'
+      || (postMode === 'auto' && isLinkableCoupangProduct(product))
+      || upgradeNoLinkQueue;
+    if (upgradeNoLinkQueue) {
+      await logActivity({
+        account_id: queue.account_id,
+        project_id: queue.project_id,
+        topic_id: queue.topic_id,
+        post_id: queue.post_id,
+        queue_id: queue.id,
+        action: 'no_link_queue_upgraded_to_link',
+        level: 'info',
+        message: '상품이 연결된 일반 큐를 댓글 링크 글로 전환했습니다.',
+        payload: { previousPostMode: postMode, productId: product?.id || null }
+      }).catch(() => null);
+    }
     const willSendLinkReply = requiresLink || Boolean(existingLink);
     if (willSendLinkReply) {
       const reply = await replyLinkReadiness(account);

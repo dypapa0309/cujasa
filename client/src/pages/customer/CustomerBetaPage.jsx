@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, Clapperboard, ClipboardCheck, CreditCard, Download, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, Plus, RefreshCw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, Wand2, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, Clapperboard, ClipboardCheck, CreditCard, DatabaseZap, Download, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, Plus, RefreshCw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, Wand2, X } from 'lucide-react';
 import { api, postEvent } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 import { useToast } from '../../lib/toast.jsx';
@@ -49,7 +49,7 @@ const spreadActions = [
 ];
 
 const polibotActions = [
-  { key: 'polibot-upload', productId: 'polibot', label: 'PDF 업로드', icon: Upload, hint: '보험 상품 PDF와 메모를 넣고 분석 준비 상태를 만들어요.' },
+  { key: 'polibot-upload', productId: 'polibot', label: '자료 상태', icon: DatabaseZap, hint: '관리자가 올린 월별 상품 자료와 추천 준비 상태를 확인해요.' },
   { key: 'polibot-recommend', productId: 'polibot', label: '상품 추천', icon: Sparkles, hint: '고객 조건과 보장 니즈로 추천 초안을 만들어요.' },
   { key: 'polibot-customers', productId: 'polibot', label: '고객 관리', icon: Users, hint: '고객 조건과 추천 기록을 정리해요.' },
   { key: 'polibot-download', productId: 'polibot', label: '결과 다운로드', icon: Download, hint: '추천 결과를 CSV로 내려받아요.' }
@@ -3595,7 +3595,7 @@ function AccountInfoRow({ label, value }) {
   return (
     <div className="grid gap-1 rounded-2xl bg-black/25 px-4 py-3">
       <div className="text-[11px] font-black uppercase tracking-wide text-zinc-600">{label}</div>
-      <div className="break-words text-sm font-bold text-zinc-200">{value}</div>
+      <div className="break-words text-sm font-bold text-zinc-200">{displayValue(value)}</div>
     </div>
   );
 }
@@ -3853,7 +3853,9 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
   const [saving, setSaving] = useState(false);
   const [workspace, setWorkspace] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
   const urlCount = urls.split(/\s+/).map((item) => item.trim()).filter(Boolean).length;
+  const workspaceLoading = !workspaceLoaded;
   const usage = workspaceUsage(workspace);
 
   const loadCandidateFile = (file) => {
@@ -3880,7 +3882,8 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
         if (data?.fileName) setFileName(data.fileName);
         if (data?.targetCategory) setTargetCategory(data.targetCategory);
       })
-      .catch((err) => toast(err.message || 'DEXOR 후보를 불러오지 못했어요.', 'error'));
+      .catch((err) => toast(err.message || 'DEXOR 후보를 불러오지 못했어요.', 'error'))
+      .finally(() => setWorkspaceLoaded(true));
   }, [toast]);
 
   useEffect(() => {
@@ -4620,90 +4623,85 @@ function SpreadReviewPanel({ reloadCurrentUser }) {
   );
 }
 
+function polibotMonthlyChangeItems(report = {}) {
+  const items = [
+    ...((report.changed || []).slice(0, 5).map((item) => `${item.company} ${item.productName} · 변경: ${(item.changedFields || []).join(', ')}${(item.changeDetails || []).length ? ` · ${(item.changeDetails || []).slice(0, 2).join(' / ')}` : ''}`)),
+    ...((report.added || []).slice(0, 3).map((item) => `신규: ${item.company} ${item.productName}`)),
+    ...((report.removed || []).slice(0, 3).map((item) => `전월만 존재: ${item.company} ${item.productName}`))
+  ].filter(Boolean);
+  return items.length ? items : ['전월 비교 대상이 아직 부족합니다.'];
+}
+
 function PolibotUploadPanel() {
   const toast = useToast();
-  const [form, setForm] = useState({ month: '', note: '' });
-  const [files, setFiles] = useState([]);
   const [workspace, setWorkspace] = useState({});
-  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const usage = workspaceUsage(workspace);
 
-  useEffect(() => {
+  const loadWorkspace = useCallback(() => {
+    setLoading(true);
     api.get('/api/product-workspace/polibot')
       .then((data) => setWorkspace(data || {}))
-      .catch((err) => toast(err.message || 'POLIBOT 데이터를 불러오지 못했어요.', 'error'));
+      .catch((err) => toast(err.message || 'POLIBOT 데이터를 불러오지 못했어요.', 'error'))
+      .finally(() => setLoading(false));
   }, [toast]);
 
-  const loadKnowledgeFiles = async (fileList) => {
-    const selected = Array.from(fileList || []).slice(0, 40);
-    const loaded = await Promise.all(selected.map((file) => new Promise((resolve) => {
-      const base = { name: file.name, size: file.size, type: file.type, mimeType: file.type };
-      if (file.size > 12 * 1024 * 1024) {
-        resolve(base);
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (/\.(csv|txt)$/i.test(file.name)) {
-          resolve({ ...base, text: String(reader.result || '').slice(0, 12000) });
-          return;
-        }
-        const result = String(reader.result || '');
-        resolve({ ...base, base64: result.includes(',') ? result.split(',').pop() : result });
-      };
-      reader.onerror = () => resolve(base);
-      if (/\.(csv|txt)$/i.test(file.name)) reader.readAsText(file);
-      else reader.readAsDataURL(file);
-    })));
-    setFiles(loaded);
-  };
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      const next = await api.post('/api/product-workspace/polibot/knowledge', { ...form, files });
-      setWorkspace(next);
-      toast('월별 보험 자료를 지식베이스에 저장했어요.', 'success');
-    } catch (err) {
-      toast(err.message || '저장에 실패했어요.', 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
+  useEffect(() => {
+    loadWorkspace();
+  }, [loadWorkspace]);
 
   return (
     <>
-      <PanelCard title="월별 보험 자료">
+      <PanelCard title="자료 상태">
         <ProductUsageStrip usage={usage} />
         {workspace.qualityReport && <PolibotQualityReport report={workspace.qualityReport} dbSummary={workspace.knowledgeDbSummary} />}
-        {saving && <Notice>자료를 읽고 상품 후보와 제외된 후보를 정리하고 있어요.</Notice>}
-        <div className="grid gap-3">
-          <label className={labelClass}>자료 월<input className={inputClass} value={form.month} onChange={(event) => setForm((prev) => ({ ...prev, month: event.target.value }))} placeholder="예: 2026-05" /></label>
-          <label className="flex min-w-0 cursor-pointer items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 bg-black/25 px-4 py-5 text-sm font-bold text-zinc-300 hover:bg-white/5">
-            <span className="inline-flex min-w-0 items-center gap-2">
-              <Upload size={17} />
-              <span className="min-w-0 truncate">{files.length ? `${files.length}개 자료 선택됨` : 'PDF/PPTX/CSV/JPEG 자료 선택'}</span>
-            </span>
-            <input
-              type="file"
-              multiple
-              accept=".pdf,.ppt,.pptx,.csv,.txt,.jpg,.jpeg,.png"
-              className="hidden"
-              onChange={(event) => loadKnowledgeFiles(event.target.files)}
-            />
-          </label>
-          <label className={labelClass}>메모<textarea className={inputClass} rows="4" value={form.note} onChange={(event) => setForm((prev) => ({ ...prev, note: event.target.value }))} placeholder="상품군, 보험사, 보장 특이사항을 적어주세요." /></label>
-          <DarkButton onClick={save} disabled={saving || (files.length === 0 && !form.note.trim())}>{saving ? '저장 중...' : '월별 자료 저장'}</DarkButton>
+        {loading && <Notice>월별 상품 DB와 추천 준비 상태를 불러오고 있어요.</Notice>}
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+            <div className="text-[11px] font-bold text-zinc-600">최신 자료월</div>
+            <div className="mt-1 text-lg font-black text-zinc-100">{workspace.latestKnowledgeMonth || workspace.knowledgeDbSummary?.latestMonth || '-'}</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+            <div className="text-[11px] font-bold text-zinc-600">추천 가능 상품</div>
+            <div className="mt-1 text-lg font-black text-zinc-100">{workspace.knowledgeDbSummary?.recommendableCatalogItems || workspace.qualityReport?.recommendableProducts || 0}개</div>
+          </div>
+          <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
+            <div className="text-[11px] font-bold text-zinc-600">실제 추출 DB</div>
+            <div className="mt-1 text-lg font-black text-zinc-100">{workspace.knowledgeDbSummary?.importedCatalogItems || 0}개</div>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <DarkButton onClick={loadWorkspace} disabled={loading} className="w-auto">
+            <RefreshCw size={15} /> {loading ? '확인 중...' : '상태 새로고침'}
+          </DarkButton>
+          <button
+            type="button"
+            onClick={() => toast('원본 업로드와 상품 후보 검수는 관리자 화면의 POLIBOT 자료 탭에서 관리합니다.', 'info')}
+            className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-sm font-bold text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+          >
+            운영 자료 위치
+          </button>
         </div>
         <p className="mt-3 text-xs leading-relaxed text-zinc-600">
-          PDF/PPTX/CSV/TXT는 텍스트를 추출해 월별 지식베이스로 저장해요. 12MB 이하 이미지는 OCR 대기 자료로 저장하고, 12MB가 넘는 파일은 파일명과 메모만 저장해요.
+          고객 상담 화면에는 추천에 필요한 준비 상태만 표시합니다. 원본 업로드, OCR, 충돌/제외 후보 검수는 관리자 POLIBOT 자료 탭에서 공통 지식베이스로 관리합니다.
         </p>
       </PanelCard>
+      {workspace.monthlyChangeReport && (
+        <PanelCard title="월별 변경 감지">
+          <div className="rounded-2xl bg-black/25 px-4 py-3">
+            <div className="text-sm font-black text-zinc-100">{workspace.monthlyChangeReport.summary}</div>
+            <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+              상품명, 보험료, 담보/가입금액, 가입연령, 심사조건이 전월과 달라진 후보를 우선 확인합니다.
+            </p>
+          </div>
+          <SimpleInfoList items={polibotMonthlyChangeItems(workspace.monthlyChangeReport)} />
+        </PanelCard>
+      )}
       {workspace.knowledgeSources?.length > 0 && (
-        <PanelCard title="월별 자료 목록">
+        <PanelCard title="추천에 반영되는 자료">
           <SimpleInfoList items={workspace.knowledgeSources.slice(0, 10).map((item) => {
             const catalogItem = workspace.qualityReport?.catalog?.find((row) => row.sourceId === item.id || row.fileName === item.fileName);
-            return `${item.month} · ${item.fileName} · ${(item.companies || [item.company]).filter(Boolean).slice(0, 3).join(', ') || '미분류'} · ${item.productGroup || '종합 보장'} · ${catalogItem?.statusLabel || '품질 확인'}`;
+            return `${item.month || '월 미확인'} · ${item.fileName} · ${(item.companies || [item.company]).filter(Boolean).slice(0, 3).join(', ') || '미분류'} · ${item.productGroup || '종합 보장'} · ${catalogItem?.statusLabel || '추천 근거'}`;
           })} />
         </PanelCard>
       )}
@@ -4823,6 +4821,29 @@ function PolibotKnowledgeSummary({ report }) {
   );
 }
 
+function PolibotLoadingBanner({ label = '처리 중' }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-black text-zinc-200">
+      <RefreshCw size={16} className="shrink-0 animate-spin text-zinc-400" />
+      <span className="truncate">{label}</span>
+    </div>
+  );
+}
+
+function PolibotLoadingState({ title = '처리 중', description = '잠시만 기다려 주세요.' }) {
+  return (
+    <div className="grid min-h-[180px] place-items-center rounded-2xl border border-white/10 bg-black/25 px-5 py-8 text-center">
+      <div>
+        <div className="mx-auto grid h-11 w-11 place-items-center rounded-2xl bg-white/[0.06]">
+          <RefreshCw size={20} className="animate-spin text-zinc-200" />
+        </div>
+        <div className="mt-3 text-sm font-black text-zinc-100">{title}</div>
+        <p className="mt-1 max-w-sm text-xs font-bold leading-relaxed text-zinc-500">{description}</p>
+      </div>
+    </div>
+  );
+}
+
 function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction, currentUser }) {
   const toast = useToast();
   const isTestStepper = String(currentUser?.email || '').trim().toLowerCase() === 'test1@test.com';
@@ -4848,8 +4869,18 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [testStep, setTestStep] = useState(1);
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
+  const workspaceLoading = !workspaceLoaded;
   const usage = workspaceUsage(workspace);
-  const catalogCompanies = Array.isArray(workspace.catalog?.companies) ? workspace.catalog.companies : Array.isArray(workspace.qualityReport?.companies) ? workspace.qualityReport.companies : [];
+  const summaryCompanies = Array.isArray(workspace.knowledgeDbSummary?.companies)
+    ? workspace.knowledgeDbSummary.companies.map((item) => item?.name).filter(Boolean)
+    : [];
+  const rawCatalogCompanies = Array.isArray(workspace.catalog?.companies) && workspace.catalog.companies.length
+    ? workspace.catalog.companies
+    : Array.isArray(workspace.qualityReport?.companies) && workspace.qualityReport.companies.length
+      ? workspace.qualityReport.companies
+      : summaryCompanies;
+  const catalogCompanies = rawCatalogCompanies.map(displayValue).filter(Boolean);
   const companies = ['전체 보험사', ...catalogCompanies];
   const recommendations = Array.isArray(workspace.recommendations) ? workspace.recommendations : [];
   const hasAnalysis = Boolean(workspace.consultationDraft);
@@ -4871,7 +4902,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
         const firstCompany = data?.catalog?.companies?.[0];
         setForm((prev) => ({ ...prev, company: prev.company || firstCompany || '전체 보험사' }));
       })
-      .catch((err) => toast(err.message || '추천 데이터를 불러오지 못했어요.', 'error'));
+      .catch((err) => toast(err.message || '추천 데이터를 불러오지 못했어요.', 'error'))
+      .finally(() => setWorkspaceLoaded(true));
   }, [toast]);
 
   useEffect(() => {
@@ -4946,6 +4978,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   if (isTestStepper) {
     return (
       <div className="grid gap-4">
+        {workspaceLoading && <PolibotLoadingBanner label="월별 상품 DB와 보험사 자료를 불러오는 중" />}
         <PolibotRecommendStepper
           step={testStep}
           onStepChange={setTestStep}
@@ -4960,6 +4993,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           recommendations={recommendations}
           hasAnalysis={hasAnalysis}
           hasRecommendations={hasRecommendations}
+          workspaceLoaded={workspaceLoaded}
           saving={saving}
           save={save}
           submitAttempted={submitAttempted}
@@ -4990,13 +5024,14 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
 
   return (
     <div className="grid gap-4">
+      {workspaceLoading && <PolibotLoadingBanner label="월별 상품 DB와 보험사 자료를 불러오는 중" />}
       <PolibotProgressHeader activeStep={legacyProgressStep} usage={usage} />
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(360px,0.85fr)_minmax(0,1.15fr)] xl:items-start">
       <PanelCard title="1. 고객 조건" className="min-w-0 xl:sticky xl:top-4">
         {assistantDraft?.actionKey === 'polibot-recommend' && (
           <Notice>채팅에서 만든 초안이 들어왔어요. 핵심 조건만 확인하고 바로 추천 초안을 만들면 됩니다.</Notice>
         )}
-        {saving && <Notice>고객 조건을 분석하고 확정 상품 DB와 대조하고 있어요.</Notice>}
+        {saving && <PolibotLoadingBanner label="고객 조건 분석 및 확정 상품 DB 대조 중" />}
         <div className="grid gap-3">
           <div className="grid gap-2.5 md:grid-cols-[minmax(0,1fr)_88px_108px]">
             <label className={labelClass}>고객명<input className={inputClass} value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="이효진" /></label>
@@ -5036,7 +5071,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
                 searchable
                 searchPlaceholder="보험사 검색"
               />
-              <PolibotCompanyHint companies={catalogCompanies} selectedCompany={form.company} onOpenKnowledge={() => onOpenAction?.('polibot-upload')} />
+              <PolibotCompanyHint companies={catalogCompanies} selectedCompany={form.company} loading={!workspaceLoaded} onOpenKnowledge={() => onOpenAction?.('polibot-upload')} />
             </div>
           </div>
           <button
@@ -5063,7 +5098,10 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
               <DarkSelect label="가입 목적" value={form.purpose} onChange={(value) => setForm((prev) => ({ ...prev, purpose: value }))} options={[{ value: '', label: '미확인' }, { value: '보장 강화', label: '보장 강화' }, { value: '보험료 절감', label: '보험료 절감' }, { value: '리모델링', label: '리모델링' }, { value: '신규 가입', label: '신규 가입' }]} />
             </div>
           )}
-          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0} className="w-full">{saving ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}</DarkButton>
+          <DarkButton onClick={save} disabled={workspaceLoading || saving || usage.remaining <= 0} className="w-full">
+            {saving && <RefreshCw size={15} className="animate-spin" />}
+            {workspaceLoading ? '자료 불러오는 중...' : saving ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}
+          </DarkButton>
           {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
@@ -5072,14 +5110,16 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           <PolibotConsultationDraft draft={workspace.consultationDraft} profile={workspace.customerProfile || form} saving={saving} />
         </PanelCard>
         <PanelCard title="3. 상품 추천" className="min-w-0 xl:max-h-[calc(100vh-23rem)] xl:overflow-y-auto">
-          {hasRecommendations ? (
+          {workspaceLoading && <PolibotLoadingState title="자료 불러오는 중" description="보험사별 상품 후보와 최신 월별 자료를 확인하고 있어요." />}
+          {saving && <PolibotLoadingState title="추천 생성 중" description="고객 조건, 보험사 범위, 확정 상품 DB를 대조하고 있어요." />}
+          {!workspaceLoading && !saving && hasRecommendations ? (
             <PolibotRecommendationList
               recommendations={recommendations}
               saveMemo={saveMemo}
               onMemoChange={setSaveMemo}
               onSelect={setSelectedRecommendation}
             />
-          ) : (
+          ) : !workspaceLoading && !saving ? (
             <PolibotRecommendationEmptyState
               workspace={workspace}
               hasAnalysis={hasAnalysis}
@@ -5087,7 +5127,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
               onOpenDetails={() => setDetailsOpen(true)}
               onOpenKnowledge={() => onOpenAction?.('polibot-upload')}
             />
-          )}
+          ) : null}
         </PanelCard>
       </div>
       </div>
@@ -5124,6 +5164,7 @@ function PolibotRecommendStepper({
   recommendations,
   hasAnalysis,
   hasRecommendations,
+  workspaceLoaded = true,
   saving,
   save,
   submitAttempted,
@@ -5137,7 +5178,7 @@ function PolibotRecommendStepper({
     { id: 2, title: '상세 조건', caption: '실손, 병력, 선호' },
     { id: 3, title: '상품 추천', caption: '초안과 후보 검토' }
   ];
-  const canGenerate = !saving && usage.remaining > 0;
+  const canGenerate = workspaceLoaded && !saving && usage.remaining > 0;
   const draftMissing = Array.isArray(workspace.consultationDraft?.missing) ? workspace.consultationDraft.missing : [];
   const notice = workspace.recommendationNotice || '';
   const hardMissingLabels = [
@@ -5178,6 +5219,7 @@ function PolibotRecommendStepper({
 
   return (
     <div className="grid min-w-0 gap-3">
+      {!workspaceLoaded && <PolibotLoadingBanner label="월별 상품 DB와 보험사 자료를 불러오는 중" />}
       <div className="min-w-0 rounded-2xl border border-white/10 bg-black/20 p-2.5">
         <div className="grid min-w-0 gap-2">
           <div className="grid min-w-0 gap-1.5 sm:grid-cols-3">
@@ -5219,7 +5261,7 @@ function PolibotRecommendStepper({
       {step === 1 && (
         <PanelCard title="1. 기본 조건" className="min-w-0 p-4">
           <div className="grid gap-3">
-            {saving && <Notice>고객 조건을 분석하고 확정 상품 DB와 대조하고 있어요.</Notice>}
+            {saving && <PolibotLoadingBanner label="고객 조건 분석 및 확정 상품 DB 대조 중" />}
             <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_76px_92px]">
               <label className={labelClass}>고객명<input className={inputClass} value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="이효진" /></label>
               <label className={labelClass}>나이<input type="number" min="0" className={fieldClass('나이')} value={form.age} onChange={(event) => setForm((prev) => ({ ...prev, age: event.target.value }))} placeholder="45" /></label>
@@ -5300,7 +5342,7 @@ function PolibotRecommendStepper({
                   searchable
                   searchPlaceholder="보험사 검색"
                 />
-                <PolibotCompanyHint companies={catalogCompanies} selectedCompany={form.company} onOpenKnowledge={onOpenKnowledge} />
+                <PolibotCompanyHint companies={catalogCompanies} selectedCompany={form.company} loading={!workspaceLoaded} onOpenKnowledge={onOpenKnowledge} />
               </div>
             </div>
           </div>
@@ -5342,6 +5384,8 @@ function PolibotRecommendStepper({
                 showGenerate
                 testMode
               />
+            ) : saving ? (
+              <PolibotLoadingState title="추천 생성 중" description="고객 조건과 확정 상품 DB를 대조해 2~3개 후보를 고르고 있어요." />
             ) : (
               <div className="grid gap-3">
                 <PolibotRecommendationEmptyState
@@ -5449,34 +5493,43 @@ function PolibotConsultationDraft({ draft, profile, saving = false }) {
   );
 }
 
-function PolibotCompanyHint({ companies = [], selectedCompany = '전체 보험사', onOpenKnowledge }) {
-  if (!companies.length) {
+function PolibotCompanyHint({ companies = [], selectedCompany = '전체 보험사', loading = false, onOpenKnowledge }) {
+  const safeCompanies = Array.isArray(companies) ? companies.map(displayValue).filter(Boolean) : [];
+  const selectedCompanyText = displayValue(selectedCompany) || '전체 보험사';
+  if (loading) {
     return (
       <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs leading-relaxed text-zinc-500">
-        보험사 자료가 아직 분류되지 않았어요.{' '}
-        <button type="button" onClick={onOpenKnowledge} className="font-black text-zinc-200 underline decoration-white/20 underline-offset-4 hover:text-white">
-          자료 확인
-        </button>
-        에서 상품 자료를 먼저 올려주세요.
+        보험사 자료와 월별 상품 카탈로그를 불러오고 있어요.
       </div>
     );
   }
-  const preview = companies.slice(0, 5);
+  if (!safeCompanies.length) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs leading-relaxed text-zinc-500">
+        추천에 쓸 보험사 목록을 아직 확인하지 못했어요.{' '}
+        <button type="button" onClick={onOpenKnowledge} className="font-black text-zinc-200 underline decoration-white/20 underline-offset-4 hover:text-white">
+          자료 확인
+        </button>
+        에서 연결 상태를 확인해 주세요.
+      </div>
+    );
+  }
+  const preview = safeCompanies.slice(0, 5);
   return (
     <div className="grid gap-2 rounded-2xl bg-black/20 px-3 py-2">
       <div className="text-[11px] font-bold leading-relaxed text-zinc-500">
-        {selectedCompany === '전체 보험사'
-          ? `자료에서 확인된 보험사 ${companies.length}개 전체를 대상으로 봅니다.`
-          : `${selectedCompany} 자료 안에서만 추천 후보를 찾습니다.`}
+        {selectedCompanyText === '전체 보험사'
+          ? `자료에서 확인된 보험사 ${safeCompanies.length}개 전체를 대상으로 봅니다.`
+          : `${selectedCompanyText} 자료 안에서만 추천 후보를 찾습니다.`}
       </div>
       <div className="flex min-w-0 gap-1.5 overflow-x-auto">
         {preview.map((company) => (
-          <span key={company} className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-black ${selectedCompany === company ? 'border-white bg-white text-zinc-950' : 'border-white/10 text-zinc-500'}`}>
+          <span key={company} className={`shrink-0 whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-black ${selectedCompanyText === company ? 'border-white bg-white text-zinc-950' : 'border-white/10 text-zinc-500'}`}>
             {company}
           </span>
         ))}
-        {companies.length > preview.length && (
-          <span className="shrink-0 whitespace-nowrap rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-black text-zinc-600">+{companies.length - preview.length}</span>
+        {safeCompanies.length > preview.length && (
+          <span className="shrink-0 whitespace-nowrap rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-black text-zinc-600">+{safeCompanies.length - preview.length}</span>
         )}
       </div>
     </div>
@@ -5487,6 +5540,7 @@ function PolibotGenerateButton({ saving, canGenerate, usage, onGenerate }) {
   return (
     <div className="grid min-w-0 gap-2 rounded-2xl border border-white/10 bg-black/20 p-2.5">
       <DarkButton size="sm" onClick={onGenerate} disabled={!canGenerate}>
+        {saving && <RefreshCw size={15} className="animate-spin" />}
         {saving ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}
       </DarkButton>
       {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
@@ -5495,11 +5549,12 @@ function PolibotGenerateButton({ saving, canGenerate, usage, onGenerate }) {
 }
 
 function PolibotRecommendationList({ recommendations, saveMemo, onMemoChange, onSelect, saving, canGenerate, usage, onGenerate, showGenerate = false, testMode = false }) {
-  const recommendationState = recommendations.some((item) => (item.cautions || []).length > 0 || item.recommendationStatus === 'needs_review')
+  const recommendationState = recommendations.some((item) => (item.reviewReasons || []).length > 0 || item.recommendationStatus === 'needs_review')
     ? '확인 필요 추천'
     : '추천 후보';
   return (
     <div className="grid gap-3">
+      {saving && <PolibotLoadingBanner label="추천 후보를 다시 계산하는 중" />}
       <div className="rounded-2xl bg-black/25 px-4 py-3">
         <div className="text-sm font-black text-zinc-100">{testMode ? recommendationState : '추천 후보'} {recommendations.length}개</div>
         <p className="mt-1 text-xs leading-relaxed text-zinc-500">카드를 눌러 근거와 주의 조건을 확인한 뒤 고객목록에 저장하세요.</p>
@@ -5520,9 +5575,9 @@ function PolibotRecommendationList({ recommendations, saveMemo, onMemoChange, on
               {testMode && <div>보험료: {item.premium || '보험료 자료 없음'}</div>}
               {testMode && item.additionalBudgetMemo && <div>예산 기준: {item.additionalBudgetMemo}</div>}
               {item.feedback && <div className="text-zinc-400">피드백: {item.feedback}{item.feedbackReason ? ` · ${item.feedbackReason}` : ''}</div>}
-              {((item.cautions || []).length > 0 || !testMode) && (
+              {(((item.reviewReasons || []).length > 0 || (item.routineChecks || []).length > 0 || (item.cautions || []).length > 0) || !testMode) && (
                 <div className="rounded-xl border border-amber-400/20 bg-amber-950/10 px-3 py-2 font-black text-amber-100/90">
-                  주의 조건: {(item.cautions || [])[0] || '고지사항과 기존 보험 중복 여부 확인'}
+                  확인 조건: {(item.reviewReasons || [])[0] || (item.routineChecks || [])[0] || (item.cautions || [])[0] || '고지사항과 기존 보험 중복 여부 확인'}
                 </div>
               )}
               {!testMode && (item.confidence?.reasons || []).slice(0, 2).map((reason) => (
@@ -5583,7 +5638,7 @@ function PolibotStatusRow({ label, value }) {
   return (
     <div className="flex items-start justify-between gap-3 rounded-2xl bg-black/25 px-4 py-3">
       <div className="text-xs font-black text-zinc-600">{label}</div>
-      <div className="max-w-[70%] text-right text-xs font-black leading-relaxed text-zinc-200">{value}</div>
+      <div className="max-w-[70%] text-right text-xs font-black leading-relaxed text-zinc-200">{displayValue(value)}</div>
     </div>
   );
 }
@@ -5593,6 +5648,13 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
   const [feedbackReason, setFeedbackReason] = useState(recommendation.feedbackReason || '');
   const [feedbackMemo, setFeedbackMemo] = useState(recommendation.feedbackMemo || '');
   const [savingFeedback, setSavingFeedback] = useState(false);
+  const analysis = recommendation.decisionAnalysis || {};
+  const reviewSummary = recommendation.reviewSummary || {};
+  const reviewReasons = recommendation.reviewReasons || [...(reviewSummary.blockers || []), ...(reviewSummary.reasons || [])];
+  const routineChecks = recommendation.routineChecks || reviewSummary.routineChecks || [];
+  const cautionItems = reviewReasons.length || routineChecks.length
+    ? [...reviewReasons, ...routineChecks]
+    : (recommendation.cautions || []);
   const saveWithFeedback = () => onSave({
     ...recommendation,
     feedback,
@@ -5625,9 +5687,9 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
         <div className="mt-5 grid gap-3">
           {!testMode && <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/25 p-4">
             {[
-              ['검토 이유', recommendation.headline || recommendation.reason || '고객 조건과 근거 자료가 맞는 조합이에요.'],
-              ['확인 조건', (recommendation.cautions || [])[0] || '고지사항과 기존 보험 중복 여부를 확인해 주세요.'],
-              ['보류 여부', recommendation.confidence?.level === '낮음' ? '확신도가 낮아 추가 확인 후 검토가 필요해요.' : '즉시 검토 가능한 추천 초안이에요.']
+              ['검토 이유', reviewSummary.summary || recommendation.headline || recommendation.reason || '고객 조건과 근거 자료가 맞는 조합이에요.'],
+              ['확인 조건', reviewReasons[0] || routineChecks[0] || (recommendation.cautions || [])[0] || '고지사항과 기존 보험 중복 여부를 확인해 주세요.'],
+              ['추천 상태', recommendation.recommendationStatusLabel || (recommendation.recommendationStatus === 'ready' ? '추천 초안 준비' : '상담 확인 필요')]
             ].map(([label, value]) => (
               <div key={label} className="grid gap-1">
                 <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">{label}</div>
@@ -5639,13 +5701,163 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
             <AccountInfoRow label="추천 조합" value={recommendation.name || '-'} />
             <AccountInfoRow label="고객 조건" value={[profile?.name, profile?.age ? `${profile.age}세` : '', profile?.gender].filter(Boolean).join(' · ') || '미입력'} />
             <AccountInfoRow label="필요 보장" value={(profile?.needs || []).join(', ') || '미입력'} />
+            <AccountInfoRow label="가입 가능성" value={analysis.eligibilityLevel || '확인 필요'} />
+            <AccountInfoRow label="추천 상태" value={recommendation.recommendationStatusLabel || recommendation.recommendationStatus || '확인 필요'} />
+            <AccountInfoRow label="판단 점수" value={analysis.decisionScore ? `${analysis.decisionScore.level} · ${analysis.decisionScore.score}점 · ${analysis.decisionScore.reason}` : '-'} />
+            <AccountInfoRow label="근거 정확도" value={analysis.evidenceIntegrity ? `${analysis.evidenceIntegrity.level} · ${analysis.evidenceIntegrity.score}점 · ${analysis.evidenceIntegrity.reason}` : '-'} />
+            <AccountInfoRow label="목적 적합도" value={analysis.purposeAnalysis ? `${analysis.purposeAnalysis.level} · ${analysis.purposeAnalysis.score}점 · ${analysis.purposeAnalysis.label}` : '-'} />
+            <AccountInfoRow label="가격 전략" value={analysis.priceStrategy?.label || recommendation.additionalBudgetMemo || '-'} />
             <AccountInfoRow label="보완 포인트" value={recommendation.coverageGap || '-'} />
-            <AccountInfoRow label="보험료 메모" value={recommendation.premium || '-'} />
+            <AccountInfoRow label="보험료 메모" value={[recommendation.premium, recommendation.premiumConfidence === 'reference' ? '참고값' : ''].filter(Boolean).join(' · ') || '-'} />
             {testMode && <AccountInfoRow label="예산 기준" value={recommendation.additionalBudgetMemo || '-'} />}
-            <AccountInfoRow label="주의 조건" value={(recommendation.cautions || []).join(', ') || '추가 확인 필요'} />
+            <AccountInfoRow label="확인 조건" value={cautionItems.join(', ') || '추가 확인 필요'} />
             {!testMode && <AccountInfoRow label="추천 확신도" value={`${recommendation.confidence?.level || '보통'}${recommendation.confidence?.reasons?.length ? ` · ${recommendation.confidence.reasons.join(', ')}` : ''}`} />}
             {testMode && recommendation.confidence?.level === '낮음' && <AccountInfoRow label="자료 신뢰도" value="확인 필요" />}
           </div>
+          {(analysis.why || analysis.coverageMatches || analysis.ageChecks || analysis.medicalRisk || analysis.priceStrategy) && (
+            <CollapsiblePanel title="상담 판단 분석">
+              <div className="grid gap-3">
+                {(analysis.why || []).length > 0 && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">왜 추천하는지</div>
+                    <SimpleInfoList items={(recommendation.advisorExplanation || []).length ? recommendation.advisorExplanation : analysis.why} />
+                  </div>
+                )}
+                {(analysis.coverageMatches || []).length > 0 && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">보장 니즈 매칭</div>
+                    <SimpleInfoList items={analysis.coverageMatches.map((item) => `${item.need} · ${item.label} · ${item.reason}`)} />
+                  </div>
+                )}
+                {analysis.evidenceIntegrity && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">근거 정확도</div>
+                    <SimpleInfoList items={[
+                      `${analysis.evidenceIntegrity.level} · ${analysis.evidenceIntegrity.score}점 · ${analysis.evidenceIntegrity.reason}`,
+                      ...((analysis.evidenceIntegrity.checks || []).map((item) => `${item.label} · ${item.status} · ${item.reason}`))
+                    ]} />
+                  </div>
+                )}
+                {analysis.purposeAnalysis && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">목적 적합도</div>
+                    <SimpleInfoList items={[
+                      `${analysis.purposeAnalysis.label} · ${analysis.purposeAnalysis.level} ${analysis.purposeAnalysis.score}점`,
+                      ...((analysis.purposeAnalysis.successCriteria || []).map((item) => `성공 조건 · ${item}`)),
+                      ...((analysis.purposeAnalysis.blockers || []).map((item) => `보류 조건 · ${item}`)),
+                      ...((analysis.purposeAnalysis.tradeoffs || []).map((item) => `트레이드오프 · ${item}`))
+                    ]} />
+                  </div>
+                )}
+                {analysis.itemDecisionSummary && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">상품 선정 요약</div>
+                    <SimpleInfoList items={[
+                      (analysis.itemDecisionSummary.priorityItems || []).length > 0 && `우선 후보 · ${analysis.itemDecisionSummary.priorityItems.join(', ')}`,
+                      ...((analysis.itemDecisionSummary.holdItems || []).map((item) => `${[item.company, item.productName].filter(Boolean).join(' ') || '상품'} · 보류/검수 · ${(item.reasons || []).join(', ') || '조건 확인 필요'}`)),
+                      (analysis.itemDecisionSummary.premiumUnknownItems || []).length > 0 && `보험료 확인 필요 · ${analysis.itemDecisionSummary.premiumUnknownItems.join(', ')}`
+                    ].filter(Boolean)} />
+                  </div>
+                )}
+                {(reviewReasons.length > 0 || routineChecks.length > 0) && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">검수/확인 분리</div>
+                    <SimpleInfoList items={[
+                      ...reviewReasons.map((item) => `검수 필요 · ${item}`),
+                      ...routineChecks.map((item) => `상담 확인 · ${item}`)
+                    ]} />
+                  </div>
+                )}
+                {(analysis.coveragePriority || []).length > 0 && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">보장 우선순위</div>
+                    <SimpleInfoList items={analysis.coveragePriority.map((item) => `${item.need} · ${item.priority} · ${item.reason}`)} />
+                  </div>
+                )}
+                {(analysis.ageChecks || []).length > 0 && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">나이/가입 조건</div>
+                    <SimpleInfoList items={analysis.ageChecks.map((item) => `${[item.company, item.productName].filter(Boolean).join(' ')} · ${item.label} · ${item.reason}`)} />
+                  </div>
+                )}
+                {(analysis.itemDiagnostics || []).length > 0 && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">상품별 세부 진단</div>
+                    <SimpleInfoList items={analysis.itemDiagnostics.map((item) => {
+                      const breakdown = item.decisionBreakdown || {};
+                      const scoreParts = [
+                        breakdown.coverage && `보장 ${breakdown.coverage.score}`,
+                        breakdown.age && `연령 ${breakdown.age.score}`,
+                        breakdown.premium && `보험료 ${breakdown.premium.score}`,
+                        breakdown.underwriting && `심사 ${breakdown.underwriting.score}`,
+                        breakdown.evidence && `근거 ${breakdown.evidence.score}`,
+                        breakdown.renewal && breakdown.renewal.score ? `갱신 ${breakdown.renewal.score}` : ''
+                      ].filter(Boolean).join(' / ');
+                      const detailParts = [
+                        breakdown.premium?.matchQuality?.label,
+                        breakdown.underwriting?.classification?.label,
+                        breakdown.evidence?.quality?.level && `근거품질 ${breakdown.evidence.quality.level}`
+                      ].filter(Boolean).join(' · ');
+                      const strengths = (item.strengths || breakdown.strengths || []).slice(0, 2).join(', ');
+                      const blockers = (item.blockers || breakdown.blockers || []).slice(0, 2).join(', ');
+                      return `${[item.company, item.productName].filter(Boolean).join(' ')} · ${item.fitLevel} ${item.fitScore}점 · 매칭 ${item.matchedNeeds.join(', ') || '없음'} · ${item.premiumStatus}${detailParts ? ` · ${detailParts}` : ''}${scoreParts ? ` · ${scoreParts}` : ''}${strengths ? ` · 강점: ${strengths}` : ''}${blockers ? ` · 확인: ${blockers}` : item.cautions.length ? ` · 주의: ${item.cautions.join(', ')}` : ''}`;
+                    })} />
+                  </div>
+                )}
+                {(analysis.companyOutlook || []).length > 0 && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">보험사별 가능성</div>
+                    <SimpleInfoList items={analysis.companyOutlook.map((item) => `${item.company} · ${item.status} ${item.fitScore || 0}점 · ${item.route} · 상품 ${item.products.join(', ') || '확인 필요'} · ${item.reasons.join(' ')}`)} />
+                  </div>
+                )}
+                {analysis.medicalRisk && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">병력/고지 판단</div>
+                    <SimpleInfoList items={[
+                      analysis.medicalRisk.label,
+                      analysis.medicalRisk.routeHint && `심사 방향 · ${analysis.medicalRisk.routeHint}`,
+                      ...((analysis.medicalRisk.flags || []).map((item) => `${item.label} · ${item.risk} · ${item.question}`)),
+                      ...(analysis.medicalRisk.reasons || [])
+                    ].filter(Boolean)} />
+                  </div>
+                )}
+                {(analysis.underwritingRoute || []).length > 0 && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">심사 경로 추천</div>
+                    <SimpleInfoList items={analysis.underwritingRoute.map((item) => `${item.priority}순위 · ${item.label} · ${item.status} · ${item.reason}`)} />
+                  </div>
+                )}
+                {(analysis.disclosureTimeline || []).length > 0 && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">고지 기간 체크</div>
+                    <SimpleInfoList items={analysis.disclosureTimeline.map((item) => `${item.label} · ${item.status} · ${item.reason}`)} />
+                  </div>
+                )}
+                {(analysis.underwritingChecklist || []).length > 0 && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">인수심사 체크리스트</div>
+                    <SimpleInfoList items={analysis.underwritingChecklist.map((item) => `${item.label} · ${item.status} · ${item.reason}`)} />
+                  </div>
+                )}
+                {analysis.priceStrategy && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">보험료 의사결정</div>
+                    <SimpleInfoList items={[
+                      analysis.priceStrategy.label,
+                      analysis.premiumFit && `${analysis.premiumFit.label} · ${analysis.premiumFit.reason}`,
+                      ...(analysis.priceStrategy.reasons || [])
+                    ].filter(Boolean)} />
+                  </div>
+                )}
+                {(analysis.premiumReferences || []).length > 0 && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">문서 내 참고 보험료표</div>
+                    <SimpleInfoList items={analysis.premiumReferences.map((item) => `${[item.company, item.productName || item.label, item.age ? `${item.age}세` : '', item.gender].filter(Boolean).join(' · ')} · ${item.premium} · 상품 연결 ${item.linkStatus === 'linked' ? '확정' : '검수 필요'}`)} />
+                  </div>
+                )}
+              </div>
+            </CollapsiblePanel>
+          )}
           {(recommendation.catalogItems || []).length > 0 && (
             <CollapsiblePanel title="확정 상품 정보">
               {(recommendation.catalogItems || []).map((item, index) => (
@@ -5662,8 +5874,45 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
                     {(item.premiumExample || item.refundRate) && (
                       <div>보험료/환급: {[item.premiumExample, item.refundRate].filter(Boolean).join(' · ')}</div>
                     )}
+                    {(item.coverageDetails || []).length > 0 && (
+                      <div>세부 담보: {(item.coverageDetails || []).slice(0, 5).map((coverage) => [coverage.fineCategory || coverage.category, coverage.title, coverage.amount].filter(Boolean).join(' ')).join(' · ')}</div>
+                    )}
+                    {item.decisionBreakdown && (
+                      <div>
+                        추천판단: {[item.decisionBreakdown.level, item.decisionBreakdown.score ? `${item.decisionBreakdown.score}점` : '', item.decisionBreakdown.premium?.amount ? `보험료 ${item.decisionBreakdown.premium.amount}` : '', item.decisionBreakdown.age?.label, item.decisionBreakdown.underwriting?.status].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                    {(item.decisionBreakdown?.strengths || []).length > 0 && (
+                      <div>강점: {(item.decisionBreakdown.strengths || []).slice(0, 3).join(' · ')}</div>
+                    )}
+                    {(item.decisionBreakdown?.blockers || []).length > 0 && (
+                      <div>확인 필요: {(item.decisionBreakdown.blockers || []).slice(0, 3).join(' · ')}</div>
+                    )}
+                    {(item.linkedBenefitGroups || []).length > 0 && (
+                      <div className="mt-2 space-y-2">
+                        {(item.linkedBenefitGroups || []).slice(0, 2).map((group, groupIndex) => (
+                          <div key={`${group.key || group.plan || groupIndex}`} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                            <div className="font-black text-zinc-300">
+                              {[group.linkConfidence === 'strong' ? '강한 연결' : group.linkConfidence === 'usable' ? '사용 가능 연결' : '검수 필요 연결', group.linkedSummary || group.plan].filter(Boolean).join(' · ')}
+                            </div>
+                            {(group.premiums || []).length > 0 && (
+                              <div>보험료: {(group.premiums || []).slice(0, 3).map((premium) => [premium.gender, premium.age ? `${premium.age}세` : '', premium.amount].filter(Boolean).join(' ')).join(' · ')}</div>
+                            )}
+                            {(group.coverages || []).length > 0 && (
+                              <div>담보: {(group.coverages || []).slice(0, 4).map((coverage) => [coverage.fineCategory || coverage.category, coverage.title, coverage.amount].filter(Boolean).join(' ')).join(' · ')}</div>
+                            )}
+                            {(group.conditions?.ageRange || group.conditions?.paymentTerm || group.conditions?.renewalType) && (
+                              <div>조건: {[group.conditions.ageRange, group.conditions.paymentTerm, group.conditions.renewalType].filter(Boolean).join(' · ')}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {(item.disclosureMemo || item.reductionMemo) && (
                       <div>고지/감액: {[item.disclosureMemo, item.reductionMemo].filter(Boolean).join(' · ')}</div>
+                    )}
+                    {(item.evidenceAnchors || []).length > 0 && (
+                      <div>원문 근거: {(item.evidenceAnchors || []).slice(0, 2).map((anchor) => anchor.excerpt).filter(Boolean).join(' · ')}</div>
                     )}
                     {(item.targetAudience || []).length > 0 && <div>추천 대상: {item.targetAudience.join(', ')}</div>}
                     {(item.excludedAudience || []).length > 0 && <div>제외 대상: {item.excludedAudience.join(', ')}</div>}
@@ -5675,7 +5924,7 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
           )}
           {(recommendation.excludedCandidates || []).length > 0 && (
             <CollapsiblePanel title="제외/보류 후보">
-              <SimpleInfoList items={recommendation.excludedCandidates.map((item) => `${item.name} · ${item.reason}`)} />
+              <SimpleInfoList items={recommendation.excludedCandidates.map((item) => `${item.name} · ${item.reason}${(item.details || []).length ? ` · ${(item.details || []).join(' / ')}` : ''}`)} />
             </CollapsiblePanel>
           )}
           {(recommendation.nextQuestions || []).length > 0 && (
@@ -7718,11 +7967,32 @@ function normalizeLines(value = '') {
     .filter(Boolean);
 }
 
+function displayValue(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(displayValue).filter(Boolean).join(', ');
+  if (typeof value === 'object') {
+    return displayValue(
+      value.name
+      || value.label
+      || value.title
+      || value.productName
+      || value.company
+      || value.productId
+      || value.id
+      || value.status
+      || ''
+    ) || JSON.stringify(value);
+  }
+  return String(value);
+}
+
 function SimpleInfoList({ items }) {
+  const safeItems = Array.isArray(items) ? items.map(displayValue).filter(Boolean) : [];
   return (
     <div className="grid gap-2">
-      {items.map((item) => (
-        <div key={item} className="rounded-2xl bg-black/25 px-4 py-3 text-sm font-bold text-zinc-300">{item}</div>
+      {safeItems.map((item, index) => (
+        <div key={`${item}-${index}`} className="rounded-2xl bg-black/25 px-4 py-3 text-sm font-bold text-zinc-300">{item}</div>
       ))}
     </div>
   );
@@ -7798,15 +8068,15 @@ function PrivacyModal({ onClose }) {
           </button>
         </div>
         <div className="grid gap-5 overflow-y-auto px-6 py-5 text-sm leading-relaxed text-zinc-400">
-          <p>이상한 회사는 JASAIN 서비스 제공과 계정 보호를 위해 필요한 범위에서 개인정보를 처리해요. 서비스 이용을 계속하면 아래 처리 기준에 동의한 것으로 봐요.</p>
-          <PolicySection title="수집 항목">이메일, 이름 또는 사용자명, 연락처, 결제 및 입금 확인 정보, 보유 솔루션, 서비스 이용 기록, 오류 기록, 상담 기록, Threads/Coupang 연결 상태와 자동화 운영에 필요한 설정값을 수집할 수 있어요.</PolicySection>
-          <PolicySection title="이용 목적">회원 식별, 무료체험 및 결제 권한 관리, 자동화 서비스 제공, 장애 대응, 부정 이용 방지, 고객 안내, 서비스 개선, 분쟁 대응과 법적 의무 이행을 위해 사용해요.</PolicySection>
-          <PolicySection title="보유 기간">회원 탈퇴 또는 계약 종료 후에도 정산, 분쟁 대응, 부정 이용 방지, 법령상 보존 의무를 위해 필요한 기간 동안 보관할 수 있어요. 결제·거래 기록은 관련 법령에 따라 보관해요.</PolicySection>
-          <PolicySection title="제3자 제공 및 처리 위탁">법령상 요구, 결제 처리, 인프라 운영, 고객 응대처럼 서비스 제공에 필요한 경우에 한해 외부 사업자에게 제공하거나 처리를 맡길 수 있어요. 그 외에는 이용자 동의 없이 임의로 판매하지 않아요.</PolicySection>
-          <PolicySection title="환불 기준">디지털 자동화 서비스 특성상 무료체험, 크레딧, 이용권, 세팅 지원, API 연결, 자동화 실행이 시작된 뒤에는 단순 변심 환불이 제한돼요. 결제 오류나 중복 결제처럼 회사 귀책이 명확한 경우에만 확인 후 환불을 검토해요.</PolicySection>
-          <PolicySection title="이용자 책임">Threads, Coupang, 카드사, 은행 등 외부 서비스 정책 변경이나 이용자 계정 상태로 생기는 연결 오류는 회사가 임의로 복구할 수 없어요. 필요한 경우 재연결 또는 재설정 안내를 제공해요.</PolicySection>
+          <p>이상한 회사는 JASAIN 서비스 제공과 계정 보호를 위해 필요한 범위에서 개인정보를 처리합니다. 회원가입, 구매 신청, 결제, 외부 계정 연결, 고객 상담 단계에서 아래 항목이 처리될 수 있습니다.</p>
+          <PolicySection title="수집 항목">회원가입 시 고객명, 연락처, 아이디, 비밀번호 암호화값, 선택 솔루션, 개인정보 동의 일시를 수집합니다. 구매 및 결제 시 상품명, 결제금액, 주문번호, 입금 상태, 가상계좌 정보, 결제 승인 및 취소 기록을 처리합니다. 서비스 이용 중에는 보유 솔루션, 이용권, 접속 및 오류 기록, 상담 기록, Threads 계정 연결 상태, Coupang API 연결 상태, 자동화 설정값, 생성·예약·게시 이력이 처리될 수 있습니다.</PolicySection>
+          <PolicySection title="이용 목적">회원 식별과 로그인, 무료체험 제공, 유료 이용권 관리, 결제 및 입금 확인, 서비스 셋업, 자동화 기능 제공, 장애 대응, 부정 이용 방지, 고객 안내, 계약 이행, 분쟁 대응, 법령상 의무 이행을 위해 사용합니다.</PolicySection>
+          <PolicySection title="보유 기간">회원 정보는 탈퇴 또는 계약 종료 후 지체 없이 파기하는 것을 원칙으로 합니다. 다만 정산, 분쟁 대응, 부정 이용 방지, 법령상 보존 의무가 필요한 경우 해당 기간 동안 보관합니다. 계약·청약철회 기록과 대금결제 기록은 전자상거래 등에서의 소비자보호에 관한 법률에 따라 5년, 서비스 이용 관련 로그는 통신비밀보호법에 따라 3개월 보관할 수 있습니다.</PolicySection>
+          <PolicySection title="제3자 제공 및 처리 위탁">회사는 이용자 동의 없이 개인정보를 임의로 판매하지 않습니다. 다만 결제 처리, 인프라 운영, 이메일·문자 안내, 고객 응대, 외부 플랫폼 연동처럼 서비스 제공에 필요한 범위에서 Toss Payments, 호스팅·데이터베이스 제공자, 메시지 발송 사업자, Meta/Threads, Coupang 등 관련 사업자에게 제공하거나 처리를 위탁할 수 있습니다.</PolicySection>
+          <PolicySection title="환불 기준">CUJASA 일시불 상품은 결제 후 7일 이내 환불 신청 시 구매 가격의 20%를 환불하며, 7일 이후에는 환불이 불가합니다. 월정액 상품은 결제된 이용 기간이 시작된 뒤 해당 회차 환불이 제한되며, 다음 결제 전 해지 요청 시 다음 회차부터 과금되지 않습니다. 중복 결제, 결제 오류, 회사 귀책으로 서비스 제공이 불가능한 경우에는 확인 후 별도 환불을 진행합니다.</PolicySection>
+          <PolicySection title="이용자 권리 및 책임">이용자는 개인정보 열람, 정정, 삭제, 처리 정지를 요청할 수 있습니다. Threads, Coupang, 카드사, 은행 등 외부 서비스의 정책 변경, 계정 제한, 인증 만료, 이용자 입력 오류로 발생하는 연결 문제는 회사가 임의로 복구할 수 없으며, 필요한 경우 재연결 또는 재설정 안내를 제공합니다.</PolicySection>
           <div className="rounded-2xl bg-black/25 px-4 py-3 text-xs leading-relaxed text-zinc-500">
-            책임자 이상빈 · 이메일 dypapa0309@gmail.com · 사업자등록번호 876-28-01550 · 주소 상동로 87 가나베스트타운 803-102
+            시행일 2026년 5월 15일 · 책임자 이상빈 · 이메일 dypapa0309@gmail.com · 사업자등록번호 876-28-01550 · 주소 상동로 87 가나베스트타운 803-102
           </div>
         </div>
       </div>
@@ -7882,15 +8152,27 @@ function PolicySection({ title, children }) {
 }
 
 function DarkSelect({ label, value, onChange, options, searchable = false, searchPlaceholder = '검색', invalid = false }) {
+  const safeOptions = (Array.isArray(options) ? options : []).map((option) => {
+    if (option && typeof option === 'object') {
+      return {
+        ...option,
+        value: displayValue(option.value ?? option.id ?? option.label ?? option.name),
+        label: displayValue(option.label ?? option.name ?? option.value ?? option.id)
+      };
+    }
+    const text = displayValue(option);
+    return { value: text, label: text };
+  });
+  const safeValue = displayValue(value);
   if (searchable) {
     return (
       <label className={labelClass}>
         {label}
         <SearchableSelect
-          value={value}
+          value={safeValue}
           onChange={onChange}
-          options={options}
-          placeholder={options.find((option) => option.value === value)?.label || '선택'}
+          options={safeOptions}
+          placeholder={safeOptions.find((option) => option.value === safeValue)?.label || '선택'}
           searchPlaceholder={searchPlaceholder}
           variant="dark"
           className={invalid ? invalidFieldClass : ''}
@@ -7902,8 +8184,8 @@ function DarkSelect({ label, value, onChange, options, searchable = false, searc
   return (
     <label className={labelClass}>
       {label}
-      <select className={`${inputClass} ${invalid ? invalidFieldClass : ''}`} value={value} onChange={(event) => onChange(event.target.value)}>
-        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      <select className={`${inputClass} ${invalid ? invalidFieldClass : ''}`} value={safeValue} onChange={(event) => onChange(event.target.value)}>
+        {safeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
       </select>
     </label>
   );

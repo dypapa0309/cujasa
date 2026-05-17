@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ShieldCheck, X } from 'lucide-react';
 
-export const BILLING_AGREEMENT_VERSION = 'jasain-payment-terms-v1';
+export const BILLING_AGREEMENT_VERSION = 'jasain-payment-terms-v2';
 
 const agreementSections = [
   {
@@ -14,11 +14,15 @@ const agreementSections = [
   },
   {
     title: '환불/취소 기준',
-    body: '입금 또는 자동결제 승인 후에는 서비스 제공 준비가 시작됩니다. 환불과 취소는 실제 제공 상태, 사용량, 세팅 진행 여부, 관련 법령 및 고지된 운영 기준에 따라 처리됩니다.'
+    body: 'CUJASA 일시불 상품은 결제일로부터 7일 이내 환불 신청 시 구매 가격의 20%를 환불하며, 7일 이후에는 환불이 불가합니다. 월정액 상품은 결제된 이용 기간이 시작된 뒤에는 사용 여부와 관계없이 해당 회차 환불이 제한되며, 다음 결제 전 해지 요청 시 다음 회차부터 과금되지 않습니다. 중복 결제, 결제 오류, 회사 귀책으로 서비스 제공이 불가능한 경우에는 확인 후 별도 환불을 진행합니다.'
   },
   {
     title: '계약 효력 발생',
     body: '가상계좌 입금 확인 또는 카드 자동결제 승인 시 본 이용조건에 따른 계약 효력이 발생하며, 셋업 및 서비스 제공 절차가 진행됩니다.'
+  },
+  {
+    title: '개인정보 처리 고지',
+    body: '결제와 서비스 제공을 위해 회원 정보, 연락처, 결제 및 입금 확인 정보, 상품 이용권, 상담 기록, 서비스 이용 기록이 처리됩니다. 결제 처리는 Toss Payments 등 결제대행사를 통해 진행될 수 있으며, 법령상 보관이 필요한 거래 기록은 정해진 기간 동안 보관합니다.'
   }
 ];
 
@@ -38,7 +42,8 @@ export function buildBillingAgreementSnapshot({ product, flow }) {
     checked: {
       terms: true,
       service: true,
-      platformRisk: true
+      platformRisk: true,
+      refundPolicy: true
     }
   };
 }
@@ -48,8 +53,8 @@ function price(value) {
 }
 
 export default function BillingAgreementModal({ product, flow = 'payment', busy = false, onCancel, onConfirm }) {
-  const [checks, setChecks] = useState({ terms: false, service: false, platformRisk: false });
-  const canSubmit = checks.terms && checks.service && checks.platformRisk && product && !busy;
+  const [checks, setChecks] = useState({ terms: false, service: false, platformRisk: false, refundPolicy: false });
+  const canSubmit = checks.terms && checks.service && checks.platformRisk && checks.refundPolicy && product && !busy;
   const snapshot = useMemo(() => ({
     ...buildBillingAgreementSnapshot({ product, flow }),
     checked: checks
@@ -95,6 +100,10 @@ export default function BillingAgreementModal({ product, flow = 'payment', busy 
               <input type="checkbox" checked={checks.platformRisk} onChange={() => toggle('platformRisk')} className="mt-1" />
               외부 플랫폼 정책 변경과 계정 상태에 따라 자동화 결과가 달라질 수 있음을 확인했습니다.
             </label>
+            <label className="flex items-start gap-2 rounded-xl border border-gray-100 px-3 py-2 text-sm font-bold text-gray-700">
+              <input type="checkbox" checked={checks.refundPolicy} onChange={() => toggle('refundPolicy')} className="mt-1" />
+              환불/취소 기준과 개인정보 처리 고지를 확인하고 동의합니다.
+            </label>
           </div>
         </div>
         <div className="grid gap-2 border-t border-gray-100 px-5 py-4 sm:grid-cols-[1fr_auto]">
@@ -114,4 +123,3 @@ export default function BillingAgreementModal({ product, flow = 'payment', busy 
     </div>
   );
 }
-

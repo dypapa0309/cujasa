@@ -189,18 +189,18 @@ export default function LoginPage({ onLogin }) {
                     </div>
                     <div className="rounded-2xl border border-white/10 bg-black/25 p-3 text-xs leading-relaxed text-zinc-500">
                       {registerForm.productId === CURRENT_PRODUCT.id
-                        ? '가입하면 CUJASA 무료 체험 계정이 준비돼요. 실제 Threads 업로드 기준 5회까지 체험할 수 있어요.'
+                        ? '가입하면 CUJASA 체험 계정이 준비돼요. 설정을 마치면 바로 자동화를 확인할 수 있어요.'
                         : '가입하면 선택한 솔루션이 JASAIN 계정에 연결돼요. 로그인 후 워크스페이스에서 바로 확인할 수 있어요.'}
                     </div>
                     <label className="flex items-start gap-2 rounded-2xl border border-white/10 bg-black/25 p-3 text-xs leading-relaxed text-zinc-500">
                       <input className="mt-0.5 h-4 w-4 rounded border-white/20 bg-black text-zinc-100" type="checkbox" checked={registerForm.privacyConsent} onChange={(e) => setRegisterForm((prev) => ({ ...prev, privacyConsent: e.target.checked }))} />
-                      <span>개인정보 수집 및 이용에 동의해요. 연락처는 가입 확인, 서비스 안내, 상담 응대 목적으로 사용해요.</span>
+                      <span>개인정보 수집 및 이용에 동의해요. 고객명, 연락처, 아이디, 비밀번호 암호화값, 선택 솔루션, 서비스 이용 기록은 회원가입, 계정 보호, 무료체험 제공, 상담 응대, 결제 및 서비스 운영 목적으로 처리됩니다.</span>
                     </label>
                   </div>
                 )}
 
                 {error ? <div className="mt-4 rounded-2xl border border-white/10 bg-black/40 p-3 text-sm font-bold text-zinc-200">{error}</div> : null}
-                <button disabled={busy || (mode === 'register' && coreDegraded)} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-950 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60">
+                <button disabled={busy || (mode === 'register' && (coreDegraded || !registerForm.privacyConsent))} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-950 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60">
                   {busy ? '확인 중' : mode === 'login' ? '로그인' : '무료로 시작하기'}
                   <ChevronRight size={18} />
                 </button>
@@ -233,15 +233,15 @@ function PrivacyModal({ onClose }) {
           </button>
         </div>
         <div className="grid gap-5 overflow-y-auto px-6 py-5 text-sm leading-relaxed text-zinc-400">
-          <p>이상한 회사는 JASAIN 서비스 제공과 계정 보호를 위해 필요한 범위에서 개인정보를 처리해요. 서비스 이용을 계속하면 아래 처리 기준에 동의한 것으로 봐요.</p>
-          <PolicySection title="수집 항목">이메일, 이름 또는 사용자명, 연락처, 결제 및 입금 확인 정보, 보유 솔루션, 서비스 이용 기록, 오류 기록, 상담 기록, Threads/Coupang 연결 상태와 자동화 운영에 필요한 설정값을 수집할 수 있어요.</PolicySection>
-          <PolicySection title="이용 목적">회원 식별, 무료체험 및 결제 권한 관리, 자동화 서비스 제공, 장애 대응, 부정 이용 방지, 고객 안내, 서비스 개선, 분쟁 대응과 법적 의무 이행을 위해 사용해요.</PolicySection>
-          <PolicySection title="보유 기간">회원 탈퇴 또는 계약 종료 후에도 정산, 분쟁 대응, 부정 이용 방지, 법령상 보존 의무를 위해 필요한 기간 동안 보관할 수 있어요. 결제·거래 기록은 관련 법령에 따라 보관해요.</PolicySection>
-          <PolicySection title="제3자 제공 및 처리 위탁">법령상 요구, 결제 처리, 인프라 운영, 고객 응대처럼 서비스 제공에 필요한 경우에 한해 외부 사업자에게 제공하거나 처리를 맡길 수 있어요. 그 외에는 이용자 동의 없이 임의로 판매하지 않아요.</PolicySection>
-          <PolicySection title="환불 기준">디지털 자동화 서비스 특성상 무료체험, 크레딧, 이용권, 세팅 지원, API 연결, 자동화 실행이 시작된 뒤에는 단순 변심 환불이 제한돼요. 결제 오류나 중복 결제처럼 회사 귀책이 명확한 경우에만 확인 후 환불을 검토해요.</PolicySection>
-          <PolicySection title="이용자 책임">Threads, Coupang, 카드사, 은행 등 외부 서비스 정책 변경이나 이용자 계정 상태로 생기는 연결 오류는 회사가 임의로 복구할 수 없어요. 필요한 경우 재연결 또는 재설정 안내를 제공해요.</PolicySection>
+          <p>이상한 회사는 JASAIN 서비스 제공과 계정 보호를 위해 필요한 범위에서 개인정보를 처리합니다. 회원가입, 구매 신청, 결제, 외부 계정 연결, 고객 상담 단계에서 아래 항목이 처리될 수 있습니다.</p>
+          <PolicySection title="수집 항목">회원가입 시 고객명, 연락처, 아이디, 비밀번호 암호화값, 선택 솔루션, 개인정보 동의 일시를 수집합니다. 구매 및 결제 시 상품명, 결제금액, 주문번호, 입금 상태, 가상계좌 정보, 결제 승인 및 취소 기록을 처리합니다. 서비스 이용 중에는 보유 솔루션, 이용권, 접속 및 오류 기록, 상담 기록, Threads 계정 연결 상태, Coupang API 연결 상태, 자동화 설정값, 생성·예약·게시 이력이 처리될 수 있습니다.</PolicySection>
+          <PolicySection title="이용 목적">회원 식별과 로그인, 무료체험 제공, 유료 이용권 관리, 결제 및 입금 확인, 서비스 셋업, 자동화 기능 제공, 장애 대응, 부정 이용 방지, 고객 안내, 계약 이행, 분쟁 대응, 법령상 의무 이행을 위해 사용합니다.</PolicySection>
+          <PolicySection title="보유 기간">회원 정보는 탈퇴 또는 계약 종료 후 지체 없이 파기하는 것을 원칙으로 합니다. 다만 정산, 분쟁 대응, 부정 이용 방지, 법령상 보존 의무가 필요한 경우 해당 기간 동안 보관합니다. 계약·청약철회 기록과 대금결제 기록은 전자상거래 등에서의 소비자보호에 관한 법률에 따라 5년, 서비스 이용 관련 로그는 통신비밀보호법에 따라 3개월 보관할 수 있습니다.</PolicySection>
+          <PolicySection title="제3자 제공 및 처리 위탁">회사는 이용자 동의 없이 개인정보를 임의로 판매하지 않습니다. 다만 결제 처리, 인프라 운영, 이메일·문자 안내, 고객 응대, 외부 플랫폼 연동처럼 서비스 제공에 필요한 범위에서 Toss Payments, 호스팅·데이터베이스 제공자, 메시지 발송 사업자, Meta/Threads, Coupang 등 관련 사업자에게 제공하거나 처리를 위탁할 수 있습니다.</PolicySection>
+          <PolicySection title="환불 기준">CUJASA 일시불 상품은 결제 후 7일 이내 환불 신청 시 구매 가격의 20%를 환불하며, 7일 이후에는 환불이 불가합니다. 월정액 상품은 결제된 이용 기간이 시작된 뒤 해당 회차 환불이 제한되며, 다음 결제 전 해지 요청 시 다음 회차부터 과금되지 않습니다. 중복 결제, 결제 오류, 회사 귀책으로 서비스 제공이 불가능한 경우에는 확인 후 별도 환불을 진행합니다.</PolicySection>
+          <PolicySection title="이용자 권리 및 책임">이용자는 개인정보 열람, 정정, 삭제, 처리 정지를 요청할 수 있습니다. Threads, Coupang, 카드사, 은행 등 외부 서비스의 정책 변경, 계정 제한, 인증 만료, 이용자 입력 오류로 발생하는 연결 문제는 회사가 임의로 복구할 수 없으며, 필요한 경우 재연결 또는 재설정 안내를 제공합니다.</PolicySection>
           <div className="rounded-2xl bg-black/25 px-4 py-3 text-xs leading-relaxed text-zinc-500">
-            책임자 이상빈 · 이메일 dypapa0309@gmail.com · 사업자등록번호 876-28-01550 · 주소 상동로 87 가나베스트타운 803-102
+            시행일 2026년 5월 15일 · 책임자 이상빈 · 이메일 dypapa0309@gmail.com · 사업자등록번호 876-28-01550 · 주소 상동로 87 가나베스트타운 803-102
           </div>
         </div>
       </div>

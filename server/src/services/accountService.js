@@ -7,8 +7,8 @@ const COMMENT_STYLES = new Set(['none', 'soft_question', 'experience_question', 
 const PRODUCT_MENTION_STYLES = new Set(['none', 'natural', 'direct']);
 const EMOJI_LEVELS = new Set(['none', 'low', 'medium']);
 const MAX_DAILY_POSTS = 5;
-const BALANCED_LINK_RATIO = 0.67;
-const BALANCED_NO_LINK_RATIO = 0.33;
+const BALANCED_LINK_RATIO = 0.9;
+const BALANCED_NO_LINK_RATIO = 0.1;
 const SENSITIVE_ACCOUNT_KEYS = new Set([
   'threads_access_token',
   'coupang_access_key',

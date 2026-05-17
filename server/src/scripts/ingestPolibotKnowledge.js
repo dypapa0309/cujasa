@@ -8,7 +8,7 @@ import {
 } from '../services/polibotKnowledgeService.js';
 import { ingestPolibotKnowledge } from '../services/polibotKnowledgeDbService.js';
 
-const supported = new Set(['pdf', 'pptx', 'csv', 'txt', 'image']);
+const supported = new Set(['pdf', 'pptx', 'docx', 'xlsx', 'csv', 'txt', 'image', 'hwp']);
 
 function parseArgs(argv = []) {
   const args = {
@@ -61,7 +61,7 @@ async function readKnowledgeFile(filePath) {
   const fileName = path.basename(filePath);
   const fileType = inferPolibotFileType(fileName);
   let text = '';
-  if (fileType !== 'image') {
+  if (fileType !== 'image' && fileType !== 'hwp') {
     try {
       text = await extractPolibotTextFromBuffer(buffer, fileName);
     } catch (error) {
@@ -91,21 +91,45 @@ async function main() {
   }
 
   const filePaths = await listFiles(args.sourceDir);
-  const files = [];
+  const result = {
+    summary: {
+      total: filePaths.length,
+      insertedSources: 0,
+      duplicateSources: 0,
+      insertedChunks: 0,
+      skippedChunks: 0,
+      insertedCatalogItems: 0,
+      insertedConversationInsights: 0,
+      duplicateChunks: 0,
+      failed: 0,
+      dryRun: Boolean(args.dryRun)
+    },
+    errors: []
+  };
   for (const filePath of filePaths) {
-    files.push(await readKnowledgeFile(filePath));
+    try {
+      const file = await readKnowledgeFile(filePath);
+      const batch = await ingestPolibotKnowledge({
+        userId: args.userId,
+        scope: args.scope,
+        sourceChannel: args.sourceChannel,
+        sourceLabel: path.relative(args.sourceDir, filePath) || args.sourceDir,
+        files: [file],
+        month: args.month,
+        note: args.note,
+        dryRun: args.dryRun
+      });
+      Object.entries(batch.summary || {}).forEach(([key, value]) => {
+        if (key === 'total' || key === 'dryRun') return;
+        if (typeof value === 'number') result.summary[key] = (result.summary[key] || 0) + value;
+      });
+      result.errors.push(...(batch.errors || []));
+    } catch (error) {
+      result.summary.failed += 1;
+      result.errors.push({ fileName: path.basename(filePath), error: error.message || String(error) });
+    }
+    if (typeof global.gc === 'function') global.gc();
   }
-
-  const result = await ingestPolibotKnowledge({
-    userId: args.userId,
-    scope: args.scope,
-    sourceChannel: args.sourceChannel,
-    sourceLabel: args.sourceDir,
-    files,
-    month: args.month,
-    note: args.note,
-    dryRun: args.dryRun
-  });
 
   console.log(JSON.stringify({
     sourceDir: args.sourceDir,
