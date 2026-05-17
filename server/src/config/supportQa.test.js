@@ -19,11 +19,9 @@ function withEnv(patch, callback) {
   }
 }
 
-test('support widget does not advertise direct SPREAD signup while the product is gated', () => {
+test('support widget advertises direct SPREAD signup now that the product is open', () => {
   withEnv({ NODE_ENV: 'production', SPREAD_SERVICE_OPEN: undefined }, () => {
     const spreadOptions = publicSupportConfig().nodes.spread.options;
-    assert.equal(spreadOptions.length, 1);
-    assert.equal(spreadOptions[0].action, 'inquiry');
-    assert.equal(spreadOptions[0].topic, 'spread');
+    assert.equal(spreadOptions.some((option) => option.action === 'link' && /product=spread/.test(option.href || '')), true);
   });
 });

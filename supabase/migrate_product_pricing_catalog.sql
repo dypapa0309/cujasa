@@ -1,8 +1,8 @@
 insert into billing_products (id, app_product_id, name, plan, amount, billing_cycle, max_accounts, active)
 values
-  ('infludex_credit_19000', 'infludex', 'INFLUDEX 라이트 분석 30회', 'onetime', 19000, 'once', 0, true),
-  ('infludex_credit_49000', 'infludex', 'INFLUDEX 베이직 분석 100회', 'onetime', 49000, 'once', 0, true),
-  ('infludex_credit_99000', 'infludex', 'INFLUDEX 프로 분석 250회', 'onetime', 99000, 'once', 0, true),
+  ('infludex_credit_19000', 'infludex', 'INFLUDEX 라이트 분석 30회', 'onetime', 5000, 'once', 0, true),
+  ('infludex_credit_49000', 'infludex', 'INFLUDEX 베이직 분석 100회', 'onetime', 10000, 'once', 0, true),
+  ('infludex_credit_99000', 'infludex', 'INFLUDEX 프로 분석 250회', 'onetime', 50000, 'once', 0, true),
   ('spread_starter_monthly_49000', 'spread', 'SPREAD 스타터 월정액', 'monthly', 49000, 'monthly', 0, true),
   ('spread_basic_monthly_149000', 'spread', 'SPREAD 베이직 월정액', 'monthly', 149000, 'monthly', 0, true),
   ('spread_pro_monthly_390000', 'spread', 'SPREAD 프로 월정액', 'monthly', 390000, 'monthly', 0, true),

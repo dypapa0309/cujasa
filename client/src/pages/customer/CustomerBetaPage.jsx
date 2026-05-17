@@ -16,7 +16,6 @@ import {
 } from '../../config/contentStrategy.js';
 
 const MAX_DAILY_POSTS = 5;
-const spreadMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_SPREAD_BETA !== 'true';
 const infludexMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_INFLUDEX_BETA !== 'true';
 
 const cujasaActions = [
@@ -101,7 +100,6 @@ function isTrustedThreadsPostUrl(url = '') {
 
 function isProductInMaintenance(product = {}) {
   if (!product) return false;
-  if (product?.id === 'spread') return spreadMaintenanceEnabled;
   if (product?.id === 'infludex') return infludexMaintenanceEnabled;
   return false;
 }
@@ -3012,6 +3010,20 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
     }
   };
 
+  const startFreeProduct = async (productId) => {
+    setBusy(productId);
+    try {
+      await api.post(`/api/auth/products/${encodeURIComponent(productId)}/start`);
+      await reloadCurrentUser?.();
+      await load().catch(() => {});
+      toast('제품 사용을 시작했어요.', 'success');
+    } catch (err) {
+      toast(err.message || '제품 사용 시작에 실패했어요.', 'error');
+    } finally {
+      setBusy('');
+    }
+  };
+
   const requestAgreement = (flow, product, run) => {
     onRequestBillingAgreement?.({
       flow,
@@ -3081,6 +3093,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
       requestAgreement={requestAgreement}
       startOnetime={startOnetime}
       startMonthly={startMonthly}
+      startFreeProduct={startFreeProduct}
     />
   );
 
@@ -3276,26 +3289,32 @@ function buildWorkspacePricingCatalog({ productsById, cujasaPlans, currentUser }
       id: 'spread',
       label: 'SPREAD',
       title: '추천 캠페인 운영 자동화',
-      modeLabel: '운영형 3단계 요금제',
-      description: '캠페인 생성, 신청자 정리, 제출물 검수 흐름을 줄이는 월정액 상품입니다.',
+      modeLabel: '무료 오픈',
+      description: '캠페인 생성, 신청자 정리, 제출물 검수를 지금은 무료로 시작할 수 있습니다.',
       plans: [
         pricingPlan(productsById, 'spread_starter_monthly_49000', { name: 'SPREAD 스타터 월정액', app_product_id: 'spread', amount: 49000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
-          title: '스타터',
+          title: '무료 운영',
+          priceText: '무료',
+          freeStart: true,
           caption: '작은 캠페인 운영 시작',
-          buttonLabel: '스타터 시작',
-          features: ['월 캠페인 3개', '신청자/제출물 기본 정리', '가상계좌 월 단위 이용']
+          buttonLabel: '무료로 시작',
+          features: ['캠페인 초안 생성', '신청자/제출물 기본 정리', '워크스페이스 제공']
         }),
         pricingPlan(productsById, 'spread_basic_monthly_149000', { name: 'SPREAD 베이직 월정액', app_product_id: 'spread', amount: 149000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
-          title: '베이직',
+          title: '운영 확장',
+          priceText: '무료',
+          freeStart: true,
           caption: '추천/선정 자동화 포함',
           badge: '추천',
-          buttonLabel: '베이직 시작',
+          buttonLabel: '무료로 시작',
           features: ['월 캠페인 10개', '신청자 추천/선정 자동화', '운영 현황 확인']
         }),
         pricingPlan(productsById, 'spread_pro_monthly_390000', { name: 'SPREAD 프로 월정액', app_product_id: 'spread', amount: 390000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
-          title: '프로',
+          title: '팀 운영',
+          priceText: '무료',
+          freeStart: true,
           caption: '운영팀 캠페인 관리용',
-          buttonLabel: '프로 시작',
+          buttonLabel: '무료로 시작',
           features: ['월 캠페인 30개', '제출물/운영 리포트', '우선 지원']
         })
       ],
@@ -3348,20 +3367,20 @@ function buildWorkspacePricingCatalog({ productsById, cujasaPlans, currentUser }
       description: '인스타그램 후보 1명 단위로 등급, 적합도, 리스크를 분석하는 사용량 기반 상품입니다.',
       usage: usageFor('infludex'),
       plans: [
-        pricingPlan(productsById, 'infludex_credit_19000', { name: 'INFLUDEX 라이트 분석 30회', app_product_id: 'infludex', amount: 19000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+        pricingPlan(productsById, 'infludex_credit_19000', { name: 'INFLUDEX 라이트 분석 30회', app_product_id: 'infludex', amount: 5000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
           title: '라이트 분석',
           caption: '작은 후보군 검토',
           buttonLabel: '30회 충전',
           features: ['후보 분석 30회', '등급/리스크 확인', '가상계좌 입금 확인 후 반영']
         }),
-        pricingPlan(productsById, 'infludex_credit_49000', { name: 'INFLUDEX 베이직 분석 100회', app_product_id: 'infludex', amount: 49000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+        pricingPlan(productsById, 'infludex_credit_49000', { name: 'INFLUDEX 베이직 분석 100회', app_product_id: 'infludex', amount: 10000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
           title: '베이직 분석',
           caption: '캠페인 후보 선별용',
           badge: '추천',
           buttonLabel: '100회 충전',
           features: ['후보 분석 100회', '캠페인 후보 비교', '가상계좌 입금 확인 후 반영']
         }),
-        pricingPlan(productsById, 'infludex_credit_99000', { name: 'INFLUDEX 프로 분석 250회', app_product_id: 'infludex', amount: 99000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+        pricingPlan(productsById, 'infludex_credit_99000', { name: 'INFLUDEX 프로 분석 250회', app_product_id: 'infludex', amount: 50000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
           title: '프로 분석',
           caption: '대량 후보 검토',
           buttonLabel: '250회 충전',
@@ -3390,13 +3409,18 @@ function TestBillingPricingPage({
   load,
   requestAgreement,
   startOnetime,
-  startMonthly
+  startMonthly,
+  startFreeProduct
 }) {
   const [activeProductId, setActiveProductId] = useState('cujasa');
   const productPricing = useMemo(() => buildWorkspacePricingCatalog({ productsById, cujasaPlans, currentUser }), [productsById, cujasaPlans, currentUser]);
   const activePricing = productPricing.find((item) => item.id === activeProductId) || productPricing[0];
   const openPlan = (plan) => {
     if (plan.testOnly) return;
+    if (plan.freeStart) {
+      startFreeProduct?.(activePricing.id);
+      return;
+    }
     const flow = plan.product?.billing_cycle === 'once' ? 'onetime' : 'monthly';
     const runner = flow === 'onetime'
       ? (snapshot) => startOnetime(plan.id, snapshot)
@@ -3545,7 +3569,7 @@ function TestBillingPricingPage({
         </PanelCard>
         <PanelCard title="테스트 안내">
           <Notice>
-            이 제품별 요금제 화면은 test1@test.com 전용 테스트입니다. 모든 상품은 Toss 가상계좌 결제 흐름으로 검증할 수 있어요.
+            이 제품별 요금제 화면은 test1@test.com 전용 테스트입니다. 유료 상품은 Toss 가상계좌 결제로 검증할 수 있어요.
           </Notice>
         </PanelCard>
       </section>
@@ -6597,8 +6621,8 @@ const productPreviewContent = {
     title: 'SPREAD',
     subtitle: '추천 캠페인 운영 자동화',
     motto: '캠페인 운영의 반복 작업을 한곳에서 줄여요.',
-    description: '캠페인 추천, 참여자 선정, 제출물 검수를 한 흐름으로 묶어 운영자가 판단할 일만 남겨요.',
-    cta: 'SPREAD 시작하기'
+    description: '캠페인 추천, 참여자 선정, 제출물 검수를 한 화면에서 묶어 운영자가 판단할 일만 남겨요. 지금은 무료로 시작할 수 있어요.',
+    cta: 'SPREAD 무료로 시작'
   },
   polibot: {
     title: 'POLIBOT',

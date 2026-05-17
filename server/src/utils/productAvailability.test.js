@@ -25,17 +25,14 @@ function withEnv(patch, callback) {
 
 test('closes gated products in production until the beta flag is enabled', () => {
   withEnv({ NODE_ENV: 'production', SPREAD_SERVICE_OPEN: undefined, INFLUDEX_SERVICE_OPEN: undefined }, () => {
-    assert.equal(productServiceClosedInProduction('spread'), true);
+    assert.equal(productServiceClosedInProduction('spread'), false);
     assert.equal(productServiceClosedInProduction('infludex'), true);
     assert.equal(productServiceClosedInProduction('dexor'), false);
     assert.deepEqual(productMaintenancePayload('infludex'), {
       error: 'INFLUDEX_SERVICE_MAINTENANCE',
       message: 'INFLUDEX는 현재 서비스 점검 중입니다.'
     });
-    assert.throws(
-      () => throwIfProductServiceClosed('spread'),
-      (error) => error.status === 503 && error.code === 'SPREAD_SERVICE_MAINTENANCE'
-    );
+    assert.doesNotThrow(() => throwIfProductServiceClosed('spread'));
   });
 });
 

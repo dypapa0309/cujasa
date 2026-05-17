@@ -1,6 +1,5 @@
 export function productServiceClosedInProduction(productId) {
   if (process.env.NODE_ENV !== 'production') return false;
-  if (productId === 'spread') return process.env.SPREAD_SERVICE_OPEN !== 'true';
   if (productId === 'infludex') return process.env.INFLUDEX_SERVICE_OPEN !== 'true';
   return false;
 }
