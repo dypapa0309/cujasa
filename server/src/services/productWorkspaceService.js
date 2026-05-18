@@ -11,6 +11,7 @@ import {
   rankPolibotEvidence
 } from './polibotKnowledgeService.js';
 import {
+  getImportedPolibotCatalogReadiness,
   ingestPolibotKnowledge,
   listPolibotDbKnowledgeSources,
   searchPolibotCodeCandidates
@@ -908,6 +909,22 @@ export async function getProductWorkspaceStatus(userId, productId) {
   const grant = await getGrant(userId, productId);
   const status = summarizeGrantedProduct({ product, grant });
   if (productId !== 'polibot') return status;
+  const importedReadiness = await getImportedPolibotCatalogReadiness().catch((error) => {
+    console.warn('[polibot_status_imported_catalog_load_failed]', error?.message || error);
+    return null;
+  });
+  if (importedReadiness?.knowledgeDbSummary?.importedCatalogItems > 0) {
+    const qualityReport = importedReadiness.qualityReport || {};
+    return {
+      ...applyPolibotCatalogReadiness(status, qualityReport),
+      qualityReport: compactPolibotClientQualityReport(qualityReport),
+      knowledgeDbSummary: {
+        ...EMPTY_POLIBOT_KNOWLEDGE_DB_SUMMARY,
+        ...(importedReadiness.knowledgeDbSummary || {})
+      },
+      catalog: importedReadiness.catalog || { companies: [], productGroups: [], months: [] }
+    };
+  }
   const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
   const workspace = settings.workspace && typeof settings.workspace === 'object' ? settings.workspace : {};
   const rawCurrentKnowledge = Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [];

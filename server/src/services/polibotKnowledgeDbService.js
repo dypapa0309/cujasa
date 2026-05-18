@@ -42,6 +42,7 @@ const IMPORTED_PREMIUM_SOURCE_LIMIT = Math.max(500, Number(process.env.POLIBOT_I
 const IMPORTED_DOCUMENT_SOURCE_LIMIT = Math.max(100, Number(process.env.POLIBOT_IMPORTED_DOCUMENT_SOURCE_LIMIT || 1000));
 const codeSearchCache = new Map();
 let importedSourceCache = null;
+let importedCatalogReadinessCache = null;
 const dbSourceCache = new Map();
 
 function now() {
@@ -1125,6 +1126,69 @@ async function listImportedPolibotSources() {
   return value;
 }
 
+export async function getImportedPolibotCatalogReadiness() {
+  if (importedCatalogReadinessCache && Date.now() - importedCatalogReadinessCache.createdAt < IMPORTED_SOURCE_CACHE_TTL_MS) {
+    return importedCatalogReadinessCache.value;
+  }
+  const catalogRows = await listImportedCatalogRows({ limit: IMPORTED_CATALOG_SOURCE_LIMIT, includeExcerpt: false }).catch(() => []);
+  const catalogItems = catalogRows
+    .map((row) => importedCatalogItemFromRow(row, [], {}))
+    .filter((item) => item.status !== 'excluded');
+  const recommendableItems = catalogItems.filter((item) => item.status === 'confirmed' && item.productName);
+  const sourceKeys = [...new Set(catalogRows.map((row) => row.document_id || row.source_filename || row.id).filter(Boolean))];
+  const companies = [...new Set([
+    ...recommendableItems.map((item) => item.company),
+    ...catalogItems.map((item) => item.company)
+  ].filter((company) => company && company !== '미분류'))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const productGroups = [...new Set([
+    ...recommendableItems.map((item) => item.productGroup),
+    ...catalogItems.map((item) => item.productGroup)
+  ].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const months = [...new Set(catalogItems.map((item) => item.evidenceMonth).filter(Boolean))].sort((a, b) => b.localeCompare(a));
+  const keywords = [...new Set(recommendableItems.flatMap((item) => item.coverageKeywords || []))].slice(0, 20);
+  const reviewNeededProducts = catalogItems.filter((item) => item.status === 'review' || item.status === 'review_needed').length;
+  const value = {
+    qualityReport: {
+      totalSources: sourceKeys.length,
+      recommendableProducts: new Set(recommendableItems.map((item) => `${item.company}-${item.productName}`)).size,
+      insufficientProducts: recommendableItems.filter((item) => item.completeness === '부족').length,
+      reviewNeededProducts,
+      excludedPhrases: catalogRows.length - catalogItems.length,
+      ocrNeeded: 0,
+      companies,
+      productGroups,
+      keywords,
+      catalogItems: catalogItems.slice(0, 160),
+      recommendableCatalogItems: recommendableItems.slice(0, 120),
+      catalog: []
+    },
+    knowledgeDbSummary: {
+      totalSources: sourceKeys.length,
+      globalSources: 0,
+      userSources: 0,
+      importedSources: sourceKeys.length,
+      latestMonth: months[0] || '',
+      recommendableCatalogItems: recommendableItems.length,
+      importedCatalogItems: catalogItems.length,
+      reviewNeededCatalogItems: reviewNeededProducts,
+      conflictCatalogItems: 0,
+      privacyRiskSources: 0,
+      highQualitySources: 0,
+      mediumQualitySources: 0,
+      lowQualitySources: 0,
+      companies: companies.map((name) => ({ name, count: catalogItems.filter((item) => item.company === name).length })),
+      productGroups: productGroups.map((name) => ({ name, count: catalogItems.filter((item) => item.productGroup === name).length }))
+    },
+    catalog: {
+      companies,
+      productGroups,
+      months
+    }
+  };
+  importedCatalogReadinessCache = { createdAt: Date.now(), value };
+  return value;
+}
+
 async function listImportedCatalogRows({ limit = 5000, includeExcerpt = true } = {}) {
   const rowLimit = Math.max(1, Math.min(5000, Number(limit || 5000)));
   const select = [
@@ -1690,6 +1754,7 @@ export async function ingestPolibotKnowledge({
     if (!dryRun && (summary.insertedSources > 0 || summary.insertedChunks > 0 || summary.insertedCatalogItems > 0)) {
       clearPolibotCodeSearchCache(normalizedScope === 'global' ? '' : userId);
       clearPolibotDbSourceCache(normalizedScope === 'global' ? '' : userId);
+      importedCatalogReadinessCache = null;
     }
     return {
       job: { ...job, summary },
@@ -2210,6 +2275,7 @@ export async function runPolibotSourceOcr(id, { reviewerId = '' } = {}) {
     });
     clearPolibotCodeSearchCache(scope === 'global' ? '' : userId);
     clearPolibotDbSourceCache(scope === 'global' ? '' : userId);
+    importedCatalogReadinessCache = null;
     return {
       source: sourceRowForReview(sourceRow),
       summary,
@@ -2233,6 +2299,7 @@ export async function updatePolibotCatalogItemReview(id, { status, reviewNote = 
       review_status: reviewStatus
     });
     importedSourceCache = null;
+    importedCatalogReadinessCache = null;
     clearPolibotDbSourceCache();
     if (!updated) {
       const error = new Error('POLIBOT 이관 상품 후보를 찾지 못했습니다.');
@@ -2424,6 +2491,7 @@ export async function backfillImportedPremiumCatalogLinks({ dryRun = true, limit
   }
   if (!dryRun && updates.length) {
     importedSourceCache = null;
+    importedCatalogReadinessCache = null;
     clearPolibotDbSourceCache();
   }
   return {
