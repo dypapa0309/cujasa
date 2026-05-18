@@ -7431,10 +7431,6 @@ const sublogPresets = [
   { name: 'iCloud+', amount: 1100, currency: 'KRW', category: '클라우드' }
 ];
 
-function sublogId() {
-  return crypto?.randomUUID?.() || `sublog-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
 function sublogToKrw(item = {}) {
   return Number(item.amount || 0) * (item.currency === 'USD' ? 1350 : 1);
 }
@@ -7458,18 +7454,14 @@ function sublogDaysUntil(day, today = new Date()) {
 }
 
 function SublogPanel({ currentUser }) {
+  const toast = useToast();
   const accountStorageKey = useMemo(() => {
     const accountKey = String(currentUser?.email || currentUser?.userId || 'unknown').trim().toLowerCase() || 'unknown';
     return `${sublogStorageKeyPrefix}:${accountKey}`;
   }, [currentUser?.email, currentUser?.userId]);
-  const skipNextStorageWriteRef = useRef(false);
-  const [items, setItems] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(accountStorageKey) || '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('전체');
   const [sort, setSort] = useState('recent');
   const [activeTab, setActiveTab] = useState('subscriptions');
@@ -7485,24 +7477,43 @@ function SublogPanel({ currentUser }) {
     return window.Notification.permission;
   });
 
-  useEffect(() => {
-    skipNextStorageWriteRef.current = true;
+  const loadItems = useCallback(async () => {
+    setLoading(true);
     try {
-      setItems(JSON.parse(localStorage.getItem(accountStorageKey) || '[]'));
-    } catch {
+      const payload = await api.get('/api/product-workspace/sublog/subscriptions');
+      const serverItems = payload.items || [];
+      const migrationKey = `${accountStorageKey}:server_migrated`;
+      const localItems = (() => {
+        try {
+          return JSON.parse(localStorage.getItem(accountStorageKey) || '[]');
+        } catch {
+          return [];
+        }
+      })();
+      if (serverItems.length === 0 && localItems.length > 0 && localStorage.getItem(migrationKey) !== '1') {
+        const migrated = [];
+        for (const item of localItems.slice(0, 50)) {
+          const result = await api.post('/api/product-workspace/sublog/subscriptions', item);
+          if (result?.item) migrated.push(result.item);
+        }
+        localStorage.setItem(migrationKey, '1');
+        setItems(migrated);
+      } else {
+        setItems(serverItems);
+      }
+    } catch (err) {
+      toast(err.message || 'SUBLOG 구독 목록을 불러오지 못했어요.', 'error');
       setItems([]);
+    } finally {
+      setLoading(false);
     }
-    const savedReminderDays = Number(localStorage.getItem(`${accountStorageKey}:reminder_days`));
-    setReminderDays(Number.isFinite(savedReminderDays) && savedReminderDays >= 0 ? savedReminderDays : 3);
-  }, [accountStorageKey]);
+  }, [accountStorageKey, toast]);
 
   useEffect(() => {
-    if (skipNextStorageWriteRef.current) {
-      skipNextStorageWriteRef.current = false;
-      return;
-    }
-    localStorage.setItem(accountStorageKey, JSON.stringify(items));
-  }, [accountStorageKey, items]);
+    const savedReminderDays = Number(localStorage.getItem(`${accountStorageKey}:reminder_days`));
+    setReminderDays(Number.isFinite(savedReminderDays) && savedReminderDays >= 0 ? savedReminderDays : 3);
+    loadItems();
+  }, [accountStorageKey, loadItems]);
 
   useEffect(() => {
     localStorage.setItem(`${accountStorageKey}:reminder_days`, String(reminderDays));
@@ -7539,32 +7550,61 @@ function SublogPanel({ currentUser }) {
     resetForm();
     setFormOpen(false);
   };
-  const save = (event) => {
+  const save = async (event) => {
     event.preventDefault();
     const amount = Number(String(form.amount).replace(/,/g, ''));
     const name = form.name.trim();
     if (!name || !Number.isFinite(amount) || amount <= 0) return;
-    const now = new Date().toISOString();
-    const payload = { ...form, name, amount, billingDay: Math.min(31, Math.max(1, Number(form.billingDay) || 1)), memo: form.memo.trim(), updatedAt: now };
-    setItems((current) => editingId
-      ? current.map((item) => item.id === editingId ? { ...item, ...payload } : item)
-      : [{ id: sublogId(), ...payload, createdAt: now }, ...current]);
-    closeForm();
+    setSaving(true);
+    try {
+      const payload = { ...form, id: editingId || undefined, name, amount, billingDay: Math.min(31, Math.max(1, Number(form.billingDay) || 1)), memo: form.memo.trim() };
+      const result = await api.post('/api/product-workspace/sublog/subscriptions', payload);
+      if (result?.item) {
+        setItems((current) => editingId
+          ? current.map((item) => item.id === editingId ? result.item : item)
+          : [result.item, ...current]);
+      }
+      closeForm();
+    } catch (err) {
+      toast(err.message || '구독을 저장하지 못했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
   };
   const edit = (item) => {
     setEditingId(item.id);
     setForm({ name: item.name, amount: String(item.amount), currency: item.currency, billingDay: item.billingDay, category: item.category, memo: item.memo || '' });
     setFormOpen(true);
   };
-  const remove = (item) => {
-    if (window.confirm(`${item.name} 구독을 삭제할까요?`)) setItems((current) => current.filter((row) => row.id !== item.id));
+  const remove = async (item) => {
+    if (!window.confirm(`${item.name} 구독을 삭제할까요?`)) return;
+    try {
+      await api.delete(`/api/product-workspace/sublog/subscriptions/${encodeURIComponent(item.id)}`);
+      setItems((current) => current.filter((row) => row.id !== item.id));
+    } catch (err) {
+      toast(err.message || '구독을 삭제하지 못했어요.', 'error');
+    }
   };
   const applyPreset = (preset) => setForm({ ...form, ...preset, amount: String(preset.amount), billingDay: form.billingDay || 1, memo: '' });
-  const addSample = () => setItems((current) => [
-    { id: sublogId(), name: 'ChatGPT Plus', amount: 20, currency: 'USD', billingDay: 12, category: 'AI', memo: '업무 보조', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-    { id: sublogId(), name: 'YouTube Premium', amount: 14900, currency: 'KRW', billingDay: 21, category: '영상', memo: '광고 없이 보기', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-    ...current
-  ]);
+  const addSample = async () => {
+    setSaving(true);
+    try {
+      const samples = [
+        { name: 'ChatGPT Plus', amount: 20, currency: 'USD', billingDay: 12, category: 'AI', memo: '업무 보조' },
+        { name: 'YouTube Premium', amount: 14900, currency: 'KRW', billingDay: 21, category: '영상', memo: '광고 없이 보기' }
+      ];
+      const saved = [];
+      for (const sample of samples) {
+        const result = await api.post('/api/product-workspace/sublog/subscriptions', sample);
+        if (result?.item) saved.push(result.item);
+      }
+      setItems((current) => [...saved, ...current]);
+    } catch (err) {
+      toast(err.message || '예시 구독을 추가하지 못했어요.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
   const requestBrowserNotification = async () => {
     if (!('Notification' in window)) {
       setNotificationPermission('unsupported');
@@ -7623,6 +7663,12 @@ function SublogPanel({ currentUser }) {
           </button>
         ))}
       </div>
+
+      {loading && (
+        <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-bold text-zinc-500">
+          구독 목록을 불러오는 중이에요.
+        </div>
+      )}
 
       {activeTab === 'subscriptions' && (
         <>
@@ -7726,7 +7772,7 @@ function SublogPanel({ currentUser }) {
           <p className="mt-1 text-sm text-zinc-500">가장 자주 쓰는 서비스부터 하나씩 추가해보세요.</p>
           <div className="mt-4 flex justify-center gap-2">
             <DarkButton type="button" onClick={openAddForm}>구독 추가</DarkButton>
-            <DarkButton type="button" variant="ghost" onClick={addSample}>예시로 보기</DarkButton>
+            <DarkButton type="button" variant="ghost" onClick={addSample} disabled={saving}>예시로 보기</DarkButton>
           </div>
         </div>
       ) : (
@@ -7744,7 +7790,7 @@ function SublogPanel({ currentUser }) {
                 </div>
                 <div className="flex shrink-0 gap-1">
                   <button type="button" onClick={() => edit(item)} className="rounded-full px-2 py-1 text-xs font-black text-zinc-400 hover:bg-white/10 hover:text-white">수정</button>
-                  <button type="button" onClick={() => remove(item)} className="rounded-full px-2 py-1 text-xs font-black text-zinc-500 hover:bg-white/10 hover:text-red-200">삭제</button>
+                  <button type="button" onClick={() => remove(item)} disabled={saving} className="rounded-full px-2 py-1 text-xs font-black text-zinc-500 hover:bg-white/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-50">삭제</button>
                 </div>
               </div>
             </div>
@@ -7790,7 +7836,7 @@ function SublogPanel({ currentUser }) {
               <textarea className={`${inputClass} min-h-[74px]`} value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="메모 예: 가족 공유, 해지 예정, 업무용" />
               <div className="grid grid-cols-2 gap-2">
                 <DarkButton type="button" variant="ghost" onClick={closeForm}>취소</DarkButton>
-                <DarkButton type="submit">{editingId ? '저장하기' : '구독 추가'}</DarkButton>
+                <DarkButton type="submit" disabled={saving}>{saving ? '저장 중...' : editingId ? '저장하기' : '구독 추가'}</DarkButton>
               </div>
             </form>
           </div>

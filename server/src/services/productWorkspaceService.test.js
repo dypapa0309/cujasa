@@ -9,12 +9,15 @@ import {
 import {
   analyzeInfludexCandidates,
   buildProductWorkspaceSummary,
+  deleteSublogSubscription,
   getProductWorkspace,
+  listSublogSubscriptions,
   saveInfludexCandidates,
   savePolibotRecommendation,
   savePolibotRecommendationFeedback,
   saveSpreadApplicants,
   saveSpreadCampaign,
+  saveSublogSubscription,
   reviewSpreadSubmission,
   updateSpreadCampaignStatus
 } from './productWorkspaceService.js';
@@ -774,4 +777,53 @@ test('SPREAD legacy campaign draft is reused for applicants', async () => {
   assert.equal(next.campaigns[0].product, '주방용품');
   assert.equal(next.campaigns[0].applicants.length, 1);
   assert.equal(next.selectedCampaignId, next.campaigns[0].id);
+});
+
+test('SUBLOG subscriptions are stored per user', async () => {
+  const userId = '91919191-9191-4911-8911-919191919191';
+  await dbInsert('users', {
+    id: userId,
+    email: 'sublog-storage-test@example.com',
+    password_hash: 'test',
+    name: 'SUBLOG Storage',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'sublog',
+    status: 'active',
+    role: 'customer',
+    settings: {}
+  });
+
+  const created = await saveSublogSubscription(userId, {
+    name: 'ChatGPT Plus',
+    amount: 20,
+    currency: 'USD',
+    billingDay: 12,
+    category: 'AI',
+    memo: '업무 보조'
+  });
+  assert.equal(created.item.name, 'ChatGPT Plus');
+  assert.equal(created.item.billingDay, 12);
+
+  const updated = await saveSublogSubscription(userId, {
+    id: created.item.id,
+    name: 'ChatGPT Team',
+    amount: 25,
+    currency: 'USD',
+    billingDay: 15,
+    category: 'AI',
+    memo: '팀 계정'
+  });
+  assert.equal(updated.item.name, 'ChatGPT Team');
+  assert.equal(updated.item.amount, 25);
+
+  const listed = await listSublogSubscriptions(userId);
+  assert.equal(listed.items.length, 1);
+  assert.equal(listed.items[0].memo, '팀 계정');
+
+  await deleteSublogSubscription(userId, created.item.id);
+  const afterDelete = await listSublogSubscriptions(userId);
+  assert.equal(afterDelete.items.length, 0);
 });

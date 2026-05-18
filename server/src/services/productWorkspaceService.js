@@ -1,6 +1,6 @@
 import { PRODUCTS, productById } from '../config/products.js';
 import AdmZip from 'adm-zip';
-import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
+import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
 import { productServiceClosedInProduction } from '../utils/productAvailability.js';
 import {
   buildPolibotCatalog,
@@ -17,7 +17,7 @@ import {
   searchPolibotCodeCandidates
 } from './polibotKnowledgeDbService.js';
 
-const ALLOWED_PRODUCTS = new Set(['dexor', 'spread', 'polibot', 'infludex', 'auvibot']);
+const ALLOWED_PRODUCTS = new Set(['dexor', 'spread', 'polibot', 'infludex', 'auvibot', 'sublog']);
 const DEFAULT_USAGE_LIMIT = 5;
 const UNLIMITED_TEST_EMAILS = new Set(['test1@test.com']);
 const UNLIMITED_USAGE_LIMIT = 999999;
@@ -1765,6 +1765,90 @@ export async function searchPolibotCoverageCodes(userId, params = {}) {
       ? '검수 상태가 함께 표시됩니다. 추천 가능 상태가 아닌 근거는 고객 제시 전 확인이 필요합니다.'
       : '일치하는 코드 후보를 찾지 못했습니다. 보장명, 보험사, 숫자 코드를 바꿔 다시 검색해 주세요.'
   };
+}
+
+const SUBLOG_CATEGORIES = new Set(['AI', '영상', '음악', '생산성', '클라우드', '업무', '마케팅', '개발', '기타']);
+const SUBLOG_CURRENCIES = new Set(['KRW', 'USD']);
+
+function mapSublogSubscription(row = {}) {
+  return {
+    id: row.id,
+    name: row.name || '',
+    amount: Number(row.amount || 0),
+    currency: row.currency || 'KRW',
+    billingDay: Number(row.billing_day || 1),
+    category: row.category || '기타',
+    memo: row.memo || '',
+    createdAt: row.created_at || null,
+    updatedAt: row.updated_at || row.created_at || null
+  };
+}
+
+function normalizeSublogPayload(input = {}) {
+  const name = String(input.name || '').trim();
+  const amount = Number(String(input.amount ?? '').replace(/,/g, ''));
+  const currency = SUBLOG_CURRENCIES.has(String(input.currency || '').toUpperCase())
+    ? String(input.currency).toUpperCase()
+    : 'KRW';
+  const billingDay = Math.min(31, Math.max(1, Number(input.billingDay || input.billing_day || 1) || 1));
+  const rawCategory = String(input.category || '기타').trim();
+  const category = SUBLOG_CATEGORIES.has(rawCategory) ? rawCategory : '기타';
+  const memo = String(input.memo || '').trim().slice(0, 500);
+  if (!name) {
+    const error = new Error('구독 이름을 입력해주세요.');
+    error.status = 400;
+    throw error;
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    const error = new Error('구독 금액을 입력해주세요.');
+    error.status = 400;
+    throw error;
+  }
+  return {
+    name: name.slice(0, 120),
+    amount,
+    currency,
+    billing_day: billingDay,
+    category,
+    memo
+  };
+}
+
+export async function listSublogSubscriptions(userId) {
+  await getGrant(userId, 'sublog');
+  const rows = await dbList('sublog_subscriptions', { user_id: userId }, { order: 'created_at', ascending: false });
+  return { items: rows.map(mapSublogSubscription) };
+}
+
+export async function saveSublogSubscription(userId, input = {}) {
+  await getGrant(userId, 'sublog');
+  const payload = normalizeSublogPayload(input);
+  const id = String(input.id || '').trim();
+  if (id) {
+    const existing = await dbGet('sublog_subscriptions', { id, user_id: userId });
+    if (!existing) {
+      const error = new Error('구독 항목을 찾을 수 없습니다.');
+      error.status = 404;
+      throw error;
+    }
+    const [updated] = await dbUpdate('sublog_subscriptions', { id, user_id: userId }, payload);
+    return { item: mapSublogSubscription(updated) };
+  }
+  const inserted = await dbInsert('sublog_subscriptions', { user_id: userId, ...payload });
+  return { item: mapSublogSubscription(inserted) };
+}
+
+export async function deleteSublogSubscription(userId, subscriptionId) {
+  await getGrant(userId, 'sublog');
+  const id = String(subscriptionId || '').trim();
+  const existing = id ? await dbGet('sublog_subscriptions', { id, user_id: userId }) : null;
+  if (!existing) {
+    const error = new Error('구독 항목을 찾을 수 없습니다.');
+    error.status = 404;
+    throw error;
+  }
+  await dbDelete('sublog_subscriptions', { id, user_id: userId });
+  return { ok: true };
 }
 
 export async function saveDexorCandidates(userId, { urls = '', fileName = '', targetCategory = '' } = {}) {

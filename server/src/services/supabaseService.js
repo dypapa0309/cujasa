@@ -183,6 +183,7 @@ const tables = {
   polibot_catalog_items: [],
   polibot_conversation_insights: [],
   polibot_recommendation_feedback: [],
+  sublog_subscriptions: [],
   billing_products: [
     {
       id: 'sponsored_monthly_19000',

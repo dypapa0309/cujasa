@@ -9,12 +9,15 @@ import {
   reviewSpreadSubmission,
   searchPolibotCoverageCodes,
   saveInfludexCandidates,
+  deleteSublogSubscription,
+  listSublogSubscriptions,
   saveDexorCandidates,
   savePolibotCustomer,
   savePolibotKnowledge,
   savePolibotRecommendationFeedback,
   savePolibotRecommendation,
   savePolibotUpload,
+  saveSublogSubscription,
   saveSpreadApplicants,
   saveSpreadCampaign,
   startAuvibotAutomationRun,
@@ -283,6 +286,39 @@ router.post('/polibot/customers', async (req, res, next) => {
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await savePolibotCustomer(user.userId, req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/sublog/subscriptions', async (req, res, next) => {
+  try {
+    if (!requireWorkspaceServiceOpen(req, res, 'sublog')) return;
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await listSublogSubscriptions(user.userId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/sublog/subscriptions', async (req, res, next) => {
+  try {
+    if (!requireWorkspaceServiceOpen(req, res, 'sublog')) return;
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await saveSublogSubscription(user.userId, req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.delete('/sublog/subscriptions/:id', async (req, res, next) => {
+  try {
+    if (!requireWorkspaceServiceOpen(req, res, 'sublog')) return;
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await deleteSublogSubscription(user.userId, req.params.id));
   } catch (error) {
     next(error);
   }
