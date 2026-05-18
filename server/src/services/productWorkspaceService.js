@@ -1746,6 +1746,7 @@ export async function getProductWorkspace(userId, productId) {
       sourceCount: next.knowledgeSources.length,
       catalogItemCount: next.knowledgeSources.reduce((sum, source) => sum + (Array.isArray(source.catalogItems) ? source.catalogItems.length : 0), 0)
     });
+    next.knowledgeSources = next.knowledgeSources.map(compactPolibotClientKnowledgeSource);
   }
   return withUsage(next, { ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);
 }
@@ -2205,9 +2206,16 @@ function polibotEvidencePayload(source = {}, reviews = {}) {
     company: source.company,
     companies: source.companies || [],
     productGroup: source.productGroup,
-    productNames: catalogItems.map((item) => item.productName),
-    catalogItems,
-    premiumReferences: Array.isArray(source.premiumReferences) ? source.premiumReferences : [],
+    productNames: [...new Set(catalogItems.map((item) => item.productName).filter(Boolean))].slice(0, 12),
+    catalogItems: catalogItems.slice(0, 6).map(compactPolibotClientCatalogItem),
+    premiumReferences: (Array.isArray(source.premiumReferences) ? source.premiumReferences : []).slice(0, 6).map((item) => ({
+      company: item.company || '',
+      productName: compactPolibotText(item.productName || '', 80),
+      premium: item.premium || '',
+      age: item.age || '',
+      gender: item.gender || '',
+      linkStatus: item.linkStatus || ''
+    })),
     keywords: source.keywordHits?.length ? source.keywordHits : source.keywords || [],
     matchScore: source.matchScore || 0,
     sourceChannel: source.sourceChannel || '',
@@ -2218,6 +2226,134 @@ function polibotEvidencePayload(source = {}, reviews = {}) {
     targetAudience: source.targetAudience || [],
     cautions: source.cautions || [],
     summary: source.summary || ''
+  };
+}
+
+function compactPolibotText(value = '', max = 180) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max).trim()}...` : text;
+}
+
+function compactPolibotClientCoverage(item = {}) {
+  return {
+    category: item.fineCategory || item.category || '',
+    title: compactPolibotText(item.title || '', 80),
+    amount: compactPolibotText(item.amount || '', 40)
+  };
+}
+
+function compactPolibotClientCatalogItem(item = {}) {
+  const decisionBreakdown = item.decisionBreakdown || {};
+  return {
+    id: item.id || '',
+    sourceId: item.sourceId || '',
+    productName: compactPolibotText(item.productName || '', 120),
+    company: item.company || '',
+    productGroup: item.productGroup || '',
+    coverageKeywords: (item.coverageKeywords || []).slice(0, 10),
+    ageRange: item.ageRange || '',
+    paymentTerm: item.paymentTerm || '',
+    renewalType: item.renewalType || '',
+    disclosureMemo: compactPolibotText(item.disclosureMemo || '', 160),
+    reductionMemo: compactPolibotText(item.reductionMemo || '', 120),
+    premiumExample: item.premiumExample || '',
+    premiumExamples: (item.premiumExamples || []).slice(0, 3),
+    premiumTableRows: (item.premiumTableRows || []).slice(0, 3),
+    premiumConfidence: item.premiumConfidence || '',
+    refundRate: item.refundRate || '',
+    coverageDetails: (item.coverageDetails || []).slice(0, 6).map(compactPolibotClientCoverage),
+    coverageTableRows: (item.coverageTableRows || []).slice(0, 4).map(compactPolibotClientCoverage),
+    conditionRules: {
+      ageRules: (item.conditionRules?.ageRules || []).slice(0, 3),
+      paymentTerms: (item.conditionRules?.paymentTerms || []).slice(0, 3),
+      underwritingTypes: (item.conditionRules?.underwritingTypes || []).slice(0, 4),
+      waitingPeriods: (item.conditionRules?.waitingPeriods || []).slice(0, 2).map((value) => compactPolibotText(value, 120))
+    },
+    linkedBenefitGroups: (item.linkedBenefitGroups || []).slice(0, 2).map((group) => ({
+      key: group.key || '',
+      plan: compactPolibotText(group.plan || '', 80),
+      linkedSummary: compactPolibotText(group.linkedSummary || '', 140),
+      linkConfidence: group.linkConfidence || '',
+      premiums: (group.premiums || []).slice(0, 3),
+      coverages: (group.coverages || []).slice(0, 4).map(compactPolibotClientCoverage),
+      conditions: {
+        ageRange: group.conditions?.ageRange || '',
+        paymentTerm: group.conditions?.paymentTerm || '',
+        renewalType: group.conditions?.renewalType || ''
+      }
+    })),
+    evidenceAnchors: (item.evidenceAnchors || []).slice(0, 2).map((anchor) => ({ excerpt: compactPolibotText(anchor.excerpt || '', 120) })),
+    decisionBreakdown: decisionBreakdown.level || decisionBreakdown.score ? {
+      level: decisionBreakdown.level || '',
+      score: decisionBreakdown.score || 0,
+      scoreFormula: decisionBreakdown.scoreFormula ? {
+        components: (decisionBreakdown.scoreFormula.components || []).slice(0, 8)
+      } : null,
+      premium: decisionBreakdown.premium ? {
+        amount: decisionBreakdown.premium.amount || '',
+        status: decisionBreakdown.premium.status || '',
+        score: decisionBreakdown.premium.score || 0,
+        matchQuality: decisionBreakdown.premium.matchQuality ? {
+          label: decisionBreakdown.premium.matchQuality.label || '',
+          level: decisionBreakdown.premium.matchQuality.level || ''
+        } : null
+      } : null,
+      age: decisionBreakdown.age ? {
+        label: decisionBreakdown.age.label || '',
+        status: decisionBreakdown.age.status || '',
+        score: decisionBreakdown.age.score || 0
+      } : null,
+      underwriting: decisionBreakdown.underwriting ? {
+        status: decisionBreakdown.underwriting.status || '',
+        score: decisionBreakdown.underwriting.score || 0,
+        classification: decisionBreakdown.underwriting.classification ? {
+          label: decisionBreakdown.underwriting.classification.label || '',
+          level: decisionBreakdown.underwriting.classification.level || ''
+        } : null
+      } : null,
+      evidence: decisionBreakdown.evidence ? {
+        score: decisionBreakdown.evidence.score || 0,
+        quality: decisionBreakdown.evidence.quality ? {
+          level: decisionBreakdown.evidence.quality.level || '',
+          label: decisionBreakdown.evidence.quality.label || ''
+        } : null
+      } : null,
+      strengths: (decisionBreakdown.strengths || []).slice(0, 3),
+      blockers: (decisionBreakdown.blockers || []).slice(0, 3)
+    } : null,
+    targetAudience: (item.targetAudience || []).slice(0, 5),
+    excludedAudience: (item.excludedAudience || []).slice(0, 5),
+    cautionMemo: compactPolibotText(item.cautionMemo || '', 160),
+    completeness: item.completeness || '부족',
+    displayKind: item.displayKind || polibotCatalogItemKind(item),
+    evidenceFile: item.evidenceFile || '',
+    evidenceMonth: item.evidenceMonth || '',
+    conflictReasons: (item.conflictReasons || []).slice(0, 4)
+  };
+}
+
+function compactPolibotClientKnowledgeSource(source = {}) {
+  const catalogItems = Array.isArray(source.catalogItems) ? source.catalogItems : [];
+  return {
+    id: source.id || '',
+    dbSourceId: source.dbSourceId || '',
+    fileName: source.fileName || '',
+    month: source.month || '',
+    fileType: source.fileType || '',
+    company: source.company || '',
+    companies: (source.companies || []).slice(0, 12),
+    productGroup: source.productGroup || '',
+    productNames: (source.productNames || catalogItems.map((item) => item.productName)).filter(Boolean).slice(0, 12),
+    keywords: (source.keywords || []).slice(0, 12),
+    scope: source.scope || '',
+    sourceChannel: source.sourceChannel || '',
+    knowledgeStatus: source.knowledgeStatus || '',
+    recommendationEligible: source.recommendationEligible !== false,
+    evidenceQualityScore: Number(source.evidenceQualityScore || 0),
+    evidenceQualityLevel: source.evidenceQualityLevel || '',
+    catalogItemCount: catalogItems.length,
+    summary: compactPolibotText(source.summary || source.textSnippet || '', 180),
+    uploadedAt: source.uploadedAt || ''
   };
 }
 
@@ -3507,38 +3643,9 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     reviewReasons: [...reviewSummary.blockers, ...reviewSummary.reasons].slice(0, 8),
     routineChecks: reviewSummary.routineChecks,
     keywords: keywordHits.length ? keywordHits : itemKeywords,
-    catalogItems: catalogItems.map((item) => ({
-      id: item.id || '',
-      sourceId: item.sourceId || '',
-      productName: item.productName,
-      company: item.company,
-      productGroup: item.productGroup,
-      coverageKeywords: item.coverageKeywords || [],
-      ageRange: item.ageRange || '',
-      paymentTerm: item.paymentTerm || '',
-      renewalType: item.renewalType || '',
-      disclosureMemo: item.disclosureMemo || '',
-      reductionMemo: item.reductionMemo || '',
-      premiumExample: item.premiumExample || '',
-      premiumExamples: item.premiumExamples || [],
-      premiumTableRows: item.premiumTableRows || [],
-      premiumConfidence: item.premiumConfidence || '',
-      refundRate: item.refundRate || '',
-      coverageDetails: item.coverageDetails || [],
-      coverageTableRows: item.coverageTableRows || [],
-      conditionDetails: item.conditionDetails || {},
-      conditionRules: item.conditionRules || item.conditionDetails?.conditionRules || {},
-      linkedBenefitGroups: item.linkedBenefitGroups || [],
-      evidenceAnchors: item.evidenceAnchors || [],
-      decisionBreakdown: polibotItemDecisionBreakdown(item, profile),
-      targetAudience: item.targetAudience || [],
-      excludedAudience: item.excludedAudience || [],
-      cautionMemo: item.cautionMemo || '',
-      completeness: item.completeness || '부족',
-      displayKind: item.displayKind || polibotCatalogItemKind(item),
-      evidenceFile: item.evidenceFile || '',
-      evidenceMonth: item.evidenceMonth || '',
-      conflictReasons: item.conflictReasons || []
+    catalogItems: catalogItems.map((item) => compactPolibotClientCatalogItem({
+      ...item,
+      decisionBreakdown: polibotItemDecisionBreakdown(item, profile)
     })),
     sourceCompanies,
     evidence: sources.map((source) => polibotEvidencePayload(source, profile.catalogReviews)),
