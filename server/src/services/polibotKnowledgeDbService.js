@@ -1054,7 +1054,7 @@ async function listImportedPolibotSources() {
   if (importedSourceCache && Date.now() - importedSourceCache.createdAt < IMPORTED_SOURCE_CACHE_TTL_MS) {
     return importedSourceCache.value;
   }
-  const catalogRows = await listImportedCatalogRows({ limit: 1200, includeExcerpt: false }).catch(() => []);
+  const catalogRows = await listImportedCatalogRows({ limit: 500, includeExcerpt: false }).catch(() => []);
   if (!catalogRows.length) return [];
   const catalogByDocument = catalogRows.reduce((acc, row) => {
     const sourceKey = row.document_id || `${row.effective_month || ''}-${row.source_filename || ''}` || row.id;

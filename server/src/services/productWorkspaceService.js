@@ -85,6 +85,106 @@ function dexorScoreComment(score) {
   return '제외하거나 다시 검토하는 편이 좋아요.';
 }
 
+function dexorGradeRank(grade = '') {
+  return { S: 5, A: 4, B: 3, C: 2, D: 1 }[grade] || 0;
+}
+
+function dexorMinGrade(...grades) {
+  return grades.filter(Boolean).sort((a, b) => dexorGradeRank(a) - dexorGradeRank(b))[0] || 'D';
+}
+
+function normalizeLegacyDexorIndex(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/초급|준최\s*1|준최\s*2|low|beginner/i.test(text)) return '초급';
+  if (/중급|준최\s*3|준최\s*4|mid|middle/i.test(text)) return '중급';
+  if (/고급|최적|준최\s*5|high|advanced/i.test(text)) return '고급';
+  return text.slice(0, 20);
+}
+
+function dexorDataConfidence({ candidate = {}, daysSinceRecent = null, hasParsedMetrics = false } = {}) {
+  if (candidate.recentPostAt && hasParsedMetrics) {
+    return {
+      level: '높음',
+      score: 84,
+      sourceLabel: '업로드 지표 기반',
+      reason: '최근글일, 조회/방문, 반응 지표가 함께 입력되어 계산 근거가 비교적 안정적입니다.'
+    };
+  }
+  if (candidate.recentPostAt || hasParsedMetrics) {
+    return {
+      level: '보통',
+      score: 62,
+      sourceLabel: '일부 지표 기반',
+      reason: '일부 지표만 입력되어 URL 패턴 추정값을 함께 사용했습니다.'
+    };
+  }
+  return {
+    level: '낮음',
+    score: 38,
+    sourceLabel: 'URL 기반 추정',
+    reason: 'URL 외 검증 지표가 없어 후보 선별용 추정값 비중이 큽니다.'
+  };
+}
+
+function strengthenDexorResult({ score, scoreLabel, candidate, daysSinceRecent, targetCategory, candidateCategory, riskFlags = [] }) {
+  const hasParsedMetrics = Boolean(candidate.recentPostAt || candidate.visitEstimate || candidate.reactionEstimate);
+  const dataConfidence = dexorDataConfidence({ candidate, daysSinceRecent, hasParsedMetrics });
+  const legacyIndex = normalizeLegacyDexorIndex(candidate.legacyIndex);
+  const verificationFlags = ['최근 상위노출 검증 미완료'];
+  let scorePenalty = 0;
+  let gradeCap = null;
+
+  if (scoreLabel === 'S') gradeCap = 'A';
+  if (dataConfidence.level === '낮음') {
+    verificationFlags.push('데이터 신뢰도 낮음');
+    scorePenalty += 14;
+    gradeCap = dexorMinGrade(gradeCap, 'B');
+  } else if (dataConfidence.level === '보통') {
+    verificationFlags.push('추정 데이터 포함');
+    scorePenalty += 6;
+  }
+  if (legacyIndex === '초급' && ['S', 'A'].includes(scoreLabel)) {
+    verificationFlags.push('기존 지수 초급 대비 DEXOR 고득점');
+    scorePenalty += 10;
+    gradeCap = dexorMinGrade(gradeCap, 'B');
+  } else if (legacyIndex === '중급' && scoreLabel === 'S') {
+    verificationFlags.push('기존 지수 중급 대비 DEXOR S등급');
+    scorePenalty += 5;
+  }
+  if (candidate.adMemo) {
+    verificationFlags.push('광고/협찬 메모 확인');
+  }
+  if (daysSinceRecent !== null && daysSinceRecent > 60) {
+    verificationFlags.push('최근 활동 확인 필요');
+    scorePenalty += 6;
+  }
+  if (targetCategory !== '기타' && candidateCategory !== '미입력' && candidateCategory !== targetCategory) {
+    verificationFlags.push('캠페인 카테고리 불일치');
+    scorePenalty += 5;
+  }
+  riskFlags.forEach((flag) => verificationFlags.push(flag));
+
+  const strengthenedScore = Math.max(20, Math.min(98, Math.round(score - scorePenalty)));
+  const scoreGrade = dexorScoreLabel(strengthenedScore);
+  const strengthenedGrade = dexorMinGrade(scoreGrade, gradeCap || scoreLabel);
+  return {
+    originalScore: score,
+    originalGrade: scoreLabel,
+    strengthenedScore,
+    strengthenedGrade,
+    strengthenedDecision: dexorScoreComment(strengthenedScore),
+    dataConfidence,
+    legacyIndex,
+    verificationFlags: [...new Set(verificationFlags)],
+    searchValidation: {
+      status: 'pending',
+      label: '최근 상위노출 검증 미완료'
+    },
+    gradeStatus: strengthenedGrade === scoreLabel ? '유지' : `${scoreLabel} → ${strengthenedGrade}`
+  };
+}
+
 function infludexGradeFromScore(score) {
   if (score >= 85) return 'S';
   if (score >= 72) return 'A';
@@ -254,12 +354,14 @@ function parseCandidateRows(input = '', fileName = '') {
     const categoryCell = metaCells.find((cell) => DEXOR_CATEGORIES.some((category) => String(cell || '').includes(category))) || '';
     const blogName = metaCells.find((cell) => cell && cell !== recentPostAt && cell !== categoryCell && parseNumberLike(cell) === null && !/광고|협찬|체험단|스폰서/i.test(cell)) || deriveBlogNameFromUrl(url);
     const adMemo = metaCells.find((cell) => /광고|협찬|체험단|스폰서|상업/i.test(cell)) || '';
+    const legacyIndex = metaCells.find((cell) => /초급|중급|고급|최적|준최\s*\d|low|mid|high|beginner|advanced/i.test(cell)) || '';
     candidates.push({
       id: `dexor-${hashText(`${url}-${index}`)}`,
       url,
       source: fileName ? 'file-or-manual' : 'manual',
       blogName,
       candidateCategory: normalizeDexorCategory(categoryCell),
+      legacyIndex: normalizeLegacyDexorIndex(legacyIndex),
       recentPostAt,
       visitEstimate: numbers[0] ?? null,
       reactionEstimate: numbers[1] ?? null,
@@ -1747,6 +1849,7 @@ export async function getProductWorkspace(userId, productId) {
       catalogItemCount: next.knowledgeSources.reduce((sum, source) => sum + (Array.isArray(source.catalogItems) ? source.catalogItems.length : 0), 0)
     });
     next.knowledgeSources = next.knowledgeSources.map(compactPolibotClientKnowledgeSource);
+    next.qualityReport = compactPolibotClientQualityReport(next.qualityReport);
   }
   return withUsage(next, { ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);
 }
@@ -2041,12 +2144,27 @@ export async function analyzeDexorCandidates(userId) {
     const score = Math.max(20, Math.min(98, 46 + (hash % 35) + naverBonus + freshnessBonus + visitBonus + reactionBonus + categoryBonus - longUrlPenalty - adPenalty));
     const scoreLabel = dexorScoreLabel(score);
     const scoreComment = dexorScoreComment(score);
+    const riskFlags = [
+      candidate.adMemo ? '광고성 콘텐츠 신호' : '',
+      daysSinceRecent !== null && daysSinceRecent > 60 ? '최근 활동 약함' : '',
+      candidateCategory !== '미입력' && targetCategory !== '기타' && candidateCategory !== targetCategory ? '카테고리 불일치' : ''
+    ].filter(Boolean);
+    const strengthened = strengthenDexorResult({
+      score,
+      scoreLabel,
+      candidate,
+      daysSinceRecent,
+      targetCategory,
+      candidateCategory,
+      riskFlags
+    });
     const summaryReasons = [
       /blog\.naver\.com/i.test(candidate.url) ? '네이버' : '외부',
       candidateCategory !== '미입력' && targetCategory !== '기타' ? (candidateCategory === targetCategory ? '카테고리 일치' : '카테고리 다름') : '',
       daysSinceRecent === null ? '' : daysSinceRecent <= 45 ? '최근 활동 양호' : '최근 활동 확인',
       candidate.visitEstimate ? `조회 ${candidate.visitEstimate}` : '',
       candidate.reactionEstimate ? `반응 ${candidate.reactionEstimate}` : '',
+      candidate.legacyIndex ? `기존 지수 ${candidate.legacyIndex}` : '',
       candidate.adMemo ? '광고성 확인' : ''
     ].filter(Boolean);
     const reasonSummary = summaryReasons.join(' · ') || '기본 지표 기준';
@@ -2056,13 +2174,24 @@ export async function analyzeDexorCandidates(userId) {
       blogName: candidate.blogName || deriveBlogNameFromUrl(candidate.url) || '미입력',
       targetCategory,
       candidateCategory,
+      legacyIndex: strengthened.legacyIndex,
       score,
       grade: scoreLabel,
       scoreLabel,
       scoreComment,
+      originalScore: strengthened.originalScore,
+      originalGrade: strengthened.originalGrade,
+      strengthenedScore: strengthened.strengthenedScore,
+      strengthenedGrade: strengthened.strengthenedGrade,
+      strengthenedDecision: strengthened.strengthenedDecision,
+      dataConfidence: strengthened.dataConfidence,
+      verificationFlags: strengthened.verificationFlags,
+      searchValidation: strengthened.searchValidation,
+      gradeStatus: strengthened.gradeStatus,
       visitEstimate: candidate.visitEstimate ?? null,
       reactionEstimate: candidate.reactionEstimate ?? null,
       recentPostAt: candidate.recentPostAt || '',
+      riskFlags,
       reasonSummary,
       reasons: [reasonSummary],
       analyzedAt: now()
@@ -2354,6 +2483,25 @@ function compactPolibotClientKnowledgeSource(source = {}) {
     catalogItemCount: catalogItems.length,
     summary: compactPolibotText(source.summary || source.textSnippet || '', 180),
     uploadedAt: source.uploadedAt || ''
+  };
+}
+
+function compactPolibotClientQualityReport(report = {}) {
+  return {
+    totalSources: report.totalSources || 0,
+    recommendableProducts: report.recommendableProducts || 0,
+    reviewNeededProducts: report.reviewNeededProducts || 0,
+    excludedProducts: report.excludedProducts || 0,
+    ocrNeeded: report.ocrNeeded || 0,
+    privacyRiskSources: report.privacyRiskSources || 0,
+    conflictProducts: report.conflictProducts || 0,
+    companies: (report.companies || []).slice(0, 80),
+    productGroups: (report.productGroups || []).slice(0, 40),
+    keywords: (report.keywords || []).slice(0, 40),
+    premiumReferenceCount: report.premiumReferenceCount || 0,
+    premiumTableRows: report.premiumTableRows || 0,
+    linkedBenefitGroups: report.linkedBenefitGroups || 0,
+    strongLinkedBenefitGroups: report.strongLinkedBenefitGroups || 0
   };
 }
 
@@ -3815,7 +3963,7 @@ export async function savePolibotRecommendation(userId, {
   const patch = {
     customerProfile: profile,
     consultationDraft,
-    qualityReport,
+    qualityReport: compactPolibotClientQualityReport(qualityReport),
     recommendations: recommendationsWithSnapshot,
     excludedCandidates: buildPolibotExcludedCandidates(evidence, profile),
     recommendationNotice,
