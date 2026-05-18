@@ -126,10 +126,19 @@ export async function requireAuth(req, res, next) {
             res.setHeader('X-Auth-Context-Duration-Ms', String(Date.now() - startedAt));
             return next();
           }
-          return res.status(503).json({
-            error: '현재 데이터베이스 연결이 지연되고 있습니다. 잠시 후 다시 시도해주세요.',
-            code: 'SUPABASE_UNAVAILABLE'
-          });
+          req.authDegraded = true;
+          req.user = {
+            type: 'user',
+            userId: payload.userId,
+            email: payload.sub,
+            username: payload.username || null,
+            maxAccounts: payload.maxAccounts ?? 2,
+            allowedAccountIds: [],
+            products: context.products || [],
+            dbUnavailable: true
+          };
+          res.setHeader('X-Auth-Context-Duration-Ms', String(Date.now() - startedAt));
+          return next();
         }
         return res.status(401).json({ error: 'Unauthorized' });
       }

@@ -85,7 +85,8 @@ router.get('/me', async (req, res, next) => {
       return res.json({ type: 'admin', admin: { email: user.email }, authConfigured: true });
     }
     if (req.authDegraded || user.dbUnavailable) {
-      return res.status(503).json({
+      res.setHeader('X-CUJASA-Degraded', 'SUPABASE_UNAVAILABLE');
+      return res.json({
         type: 'user',
         degraded: true,
         code: 'SUPABASE_UNAVAILABLE',

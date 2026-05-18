@@ -109,11 +109,11 @@ const invalidFieldClass = 'ring-1 ring-red-400/45 bg-red-950/10';
 const labelClass = 'grid gap-2 text-sm font-bold text-zinc-300';
 const dexorCategoryOptions = ['맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
 const dexorScoreRows = [
-  ['S', '90점 이상', '최우선 후보'],
-  ['A', '80-89점', '우선 선정 후보'],
-  ['B', '70-79점', '검토 가능 후보'],
-  ['C', '60-69점', '보조 후보'],
-  ['D', '60점 미만', '제외 또는 재검토']
+  ['S', '90점 이상', '우선 추천'],
+  ['A', '80-89점', '추천'],
+  ['B', '70-79점', '검토'],
+  ['C', '60-69점', '추가 확인'],
+  ['D', '60점 미만', '비추천']
 ];
 const polibotNeedOptions = ['암', '뇌', '심장', '수술', '입원', '실손', '생활비', '운전자'];
 const polibotTargetPremiumQuickOptions = ['10', '20', '30', '40', '50'];
@@ -333,11 +333,11 @@ function sortDexorResults(results = []) {
 
 function dexorScoreComment(score) {
   const value = Number(score || 0);
-  if (value >= 90) return '최우선으로 볼 만한 후보예요.';
-  if (value >= 80) return '우선 선정 후보에 가까워요.';
-  if (value >= 70) return '조건을 확인하며 검토할 후보예요.';
-  if (value >= 60) return '보조 후보로 보는 편이 좋아요.';
-  return '제외하거나 다시 검토하는 편이 좋아요.';
+  if (value >= 90) return '우선 추천';
+  if (value >= 80) return '추천';
+  if (value >= 70) return '검토';
+  if (value >= 60) return '추가 확인';
+  return '비추천';
 }
 
 function sortInfludexResults(results = []) {
@@ -4041,11 +4041,115 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
   );
 }
 
+function extractDexorBlogId(url = '') {
+  const match = String(url || '').match(/blog\.naver\.com\/([a-zA-Z0-9._-]+)/i);
+  return match?.[1]?.toLowerCase() || '';
+}
+
+function parseDexorKeywords(input = '') {
+  return String(input || '')
+    .split(/\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
+function parseDexorSearchRows(input = '', keywords = []) {
+  const rows = [];
+  let currentKeyword = keywords[0] || '미지정 키워드';
+  const rankByKeyword = {};
+  String(input || '').split(/\n|\r/).forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) return;
+    if (/^#/.test(line)) {
+      currentKeyword = line.replace(/^#+/, '').trim() || currentKeyword;
+      return;
+    }
+    const cells = line.split(/[,\t]/).map((cell) => cell.trim()).filter(Boolean);
+    const urlCell = cells.find((cell) => /blog\.naver\.com\//i.test(cell));
+    if (!urlCell) {
+      currentKeyword = line;
+      return;
+    }
+    const keywordCell = cells.find((cell) => cell !== urlCell && !/^https?:\/\//i.test(cell));
+    const keyword = keywordCell || currentKeyword || keywords[0] || '미지정 키워드';
+    rankByKeyword[keyword] = (rankByKeyword[keyword] || 0) + 1;
+    rows.push({
+      keyword,
+      url: urlCell,
+      blogId: extractDexorBlogId(urlCell),
+      rank: rankByKeyword[keyword]
+    });
+  });
+  return rows.filter((row) => row.blogId);
+}
+
+function dexorRankScore(rank) {
+  if (!rank) return 0;
+  if (rank <= 3) return 100;
+  if (rank <= 5) return 88;
+  if (rank <= 10) return 72;
+  if (rank <= 20) return 48;
+  if (rank <= 30) return 30;
+  return 12;
+}
+
+function dexorRecencyScore(item = {}) {
+  if (!item.recentPostAt) return 45;
+  const time = new Date(String(item.recentPostAt).replace(/[./]/g, '-')).getTime();
+  if (!Number.isFinite(time)) return 45;
+  const days = Math.max(0, Math.floor((Date.now() - time) / (24 * 60 * 60 * 1000)));
+  if (days <= 30) return 100;
+  if (days <= 90) return 70;
+  if (days <= 180) return 42;
+  return 18;
+}
+
+function dexorFinalGrade(item = {}, validation = {}) {
+  const baseGrade = item.strengthenedGrade || item.scoreLabel || item.grade || 'D';
+  const score = Number(validation.validationScore || 0);
+  const hasExposure = validation.matches?.length > 0;
+  if (['S', 'A'].includes(baseGrade) && score >= 80) return 'S';
+  if (['S', 'A'].includes(baseGrade) && score >= 60) return 'A';
+  if (['S', 'A', 'B'].includes(baseGrade) && hasExposure) return 'B';
+  if (baseGrade === 'A') return 'B';
+  return baseGrade;
+}
+
+function buildDexorValidationRows(results = [], keywordInput = '', searchInput = '') {
+  const keywords = parseDexorKeywords(keywordInput);
+  const searchRows = parseDexorSearchRows(searchInput, keywords);
+  return results.map((item) => {
+    const blogId = extractDexorBlogId(item.url);
+    const matches = searchRows.filter((row) => row.blogId === blogId);
+    const bestRank = matches.reduce((min, row) => Math.min(min, row.rank), Infinity);
+    const matchedKeywords = [...new Set(matches.map((row) => row.keyword))];
+    const rankScore = Number.isFinite(bestRank) ? dexorRankScore(bestRank) : 0;
+    const recencyScore = dexorRecencyScore(item);
+    const diversityScore = Math.min(100, Math.round((matchedKeywords.length / Math.max(1, Math.min(3, keywords.length || 3))) * 100));
+    const categoryScore = item.targetCategory === '기타' || !item.candidateCategory || item.candidateCategory === '미입력' || item.candidateCategory === item.targetCategory ? 100 : 35;
+    const validationScore = Math.round(rankScore * 0.5 + recencyScore * 0.25 + diversityScore * 0.15 + categoryScore * 0.1);
+    const validation = {
+      matches,
+      matchedKeywords,
+      bestRank: Number.isFinite(bestRank) ? bestRank : null,
+      validationScore,
+      status: matches.length ? '노출 확인' : '미노출',
+      label: matches.length ? `${matchedKeywords.length}개 키워드 · 최고 ${bestRank}위` : '검색 결과 내 미노출'
+    };
+    return {
+      ...item,
+      exposureValidation: validation,
+      finalGrade: dexorFinalGrade(item, validation),
+      finalScore: Math.round(((item.strengthenedScore || item.score || 0) * 0.65) + validationScore * 0.35)
+    };
+  });
+}
+
 function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
   const toast = useToast();
   const [workspace, setWorkspace] = useState({});
   const [analyzing, setAnalyzing] = useState(false);
-  const [scoreHelpOpen, setScoreHelpOpen] = useState(false);
   const results = sortDexorResults(Array.isArray(workspace.analysisResults) ? workspace.analysisResults : []);
   const candidates = Array.isArray(workspace.candidates) ? workspace.candidates : [];
   const usage = workspaceUsage(workspace);
@@ -4095,36 +4199,10 @@ function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
 
   return (
     <>
-      <PanelCard
-        title={(
-          <span className="inline-flex items-center gap-2">
-            등급 요약
-            <button
-              type="button"
-              onClick={() => setScoreHelpOpen((prev) => !prev)}
-              className="grid h-5 w-5 place-items-center rounded-full border border-white/15 text-[11px] font-black text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
-              aria-label="등급 기준 보기"
-            >
-              ?
-            </button>
-          </span>
-        )}
-      >
+      <PanelCard title="등급 요약">
         <ProductUsageStrip usage={usage} />
-        {scoreHelpOpen && (
-          <div className="mb-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs leading-relaxed text-zinc-500">
-            <div className="grid gap-1">
-              {dexorScoreRows.map(([label, range, description]) => (
-                <div key={label} className="flex items-center justify-between gap-3">
-                  <span className="font-bold text-zinc-300">{label}</span>
-                  <span className="text-right">{range} · {description}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {gradeRows.map(([grade, count, label]) => (
+          {gradeRows.map(([grade, count]) => (
             <div key={grade} className="rounded-2xl bg-black/25 px-3 py-4 text-center">
               <div className="text-base font-black text-zinc-100">{grade}</div>
               <div className="mt-2 text-lg font-black text-zinc-300">{count}</div>
@@ -4170,19 +4248,7 @@ function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
                   </div>
                 </div>
                 <div className="mt-2 text-xs font-bold text-zinc-300">{item.strengthenedDecision || item.scoreComment || dexorScoreComment(item.score)}</div>
-                <div className="mt-3 grid gap-2 sm:grid-cols-4">
-                  <DexorSignal label="데이터 신뢰도" value={item.dataConfidence ? `${item.dataConfidence.level} ${item.dataConfidence.score}` : '미계산'} sub={item.dataConfidence?.sourceLabel || '기본'} />
-                  <DexorSignal label="기존 지수" value={item.legacyIndex || '없음'} sub={item.legacyIndex ? '충돌 여부 반영' : '입력 없음'} />
-                  <DexorSignal label="상위노출 검증" value={item.searchValidation?.label || '미검증'} sub="정밀 단계에서 검증" />
-                  <DexorSignal label="기준 조정" value={item.gradeStatus || '유지'} sub={adjusted ? '강화 기준 적용' : '등급 유지'} />
-                </div>
-                {Array.isArray(item.verificationFlags) && item.verificationFlags.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {item.verificationFlags.map((flag) => (
-                      <span key={flag} className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[11px] font-bold text-zinc-500">{flag}</span>
-                    ))}
-                  </div>
-                )}
+                <div className="mt-2 text-xs font-bold text-zinc-600">{item.candidateCategory || item.targetCategory || '카테고리 미입력'}</div>
               </div>
             );
           })}
@@ -4217,7 +4283,7 @@ function DexorDownloadPanel({ onOpenUpload }) {
   }, [toast]);
 
   const downloadCsv = () => {
-    const header = ['url', 'blogName', 'targetCategory', 'candidateCategory', 'rank', 'score', 'strengthenedRank', 'strengthenedScore', 'dataConfidence', 'legacyIndex', 'searchValidation', 'flags', 'comment', 'summary'];
+    const header = ['url', 'blogName', 'targetCategory', 'candidateCategory', 'rank', 'score', 'finalRank', 'finalScore', 'materialStatus', 'searchStatus', 'comment', 'summary'];
     const rows = results.map((item) => [
       item.url || '미입력',
       item.blogName || '미입력',
@@ -4228,9 +4294,7 @@ function DexorDownloadPanel({ onOpenUpload }) {
       item.strengthenedGrade || item.scoreLabel || item.grade || '미입력',
       item.strengthenedScore ?? item.score ?? '미입력',
       item.dataConfidence?.level || '미입력',
-      item.legacyIndex || '미입력',
-      item.searchValidation?.label || '미검증',
-      Array.isArray(item.verificationFlags) ? item.verificationFlags.join(' | ') : '',
+      item.searchValidation?.label || '확인 전',
       item.strengthenedDecision || item.scoreComment || dexorScoreComment(item.score),
       item.reasonSummary || item.reasons?.slice(0, 2).join(' | ') || '기본 지표 기준'
     ].map(csvEscape).join(','));
