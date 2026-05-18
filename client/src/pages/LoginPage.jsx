@@ -441,8 +441,6 @@ function ProductDetailDrawer({ product, open, onClose, onRegister, onLogin }) {
 
           <section className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
-              <div className="text-xs font-black uppercase tracking-[0.12em] text-zinc-500">Best Fit</div>
-              <h3 className="mt-2 text-base font-black text-zinc-50">이런 팀에 맞아요</h3>
               <div className="mt-3 grid gap-2">
                 {detail.bestFor.map((item) => (
                   <div key={item} className="flex gap-2 text-xs font-bold leading-5 text-zinc-400">
@@ -453,8 +451,6 @@ function ProductDetailDrawer({ product, open, onClose, onRegister, onLogin }) {
               </div>
             </div>
             <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
-              <div className="text-xs font-black uppercase tracking-[0.12em] text-zinc-500">Outputs</div>
-              <h3 className="mt-2 text-base font-black text-zinc-50">시작하면 남는 것</h3>
               <div className="mt-3 grid gap-2">
                 {detail.outputs.map((item) => (
                   <div key={item} className="flex gap-2 text-xs font-bold leading-5 text-zinc-400">
