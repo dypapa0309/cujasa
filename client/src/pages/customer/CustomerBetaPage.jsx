@@ -4667,11 +4667,8 @@ function PolibotUploadPanel({ onOpenAction }) {
   const loadWorkspace = useCallback(() => {
     setLoading(true);
     setLoadError('');
-    api.get('/api/product-workspace/summary', { timeoutMs: 12000 })
-      .then((data) => {
-        const polibot = (data?.products || []).find((item) => item.productId === 'polibot') || null;
-        setStatus(polibot);
-      })
+    api.get('/api/product-workspace/polibot/status', { timeoutMs: 5000 })
+      .then((data) => setStatus(data || null))
       .catch((err) => {
         setLoadError('자료 준비 상태를 불러오지 못했어요. 잠시 후 다시 시도해주세요.');
         toast(err.message || '자료 준비 상태를 불러오지 못했어요.', 'error');
@@ -4692,7 +4689,7 @@ function PolibotUploadPanel({ onOpenAction }) {
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
             <div className="text-[11px] font-bold text-zinc-600">사용 상태</div>
-            <div className="mt-1 text-lg font-black text-zinc-100">{status?.granted ? '사용 가능' : '권한 필요'}</div>
+            <div className="mt-1 text-lg font-black text-zinc-100">{loading ? '확인 중' : status?.granted ? '사용 가능' : '권한 필요'}</div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
             <div className="text-[11px] font-bold text-zinc-600">추천 준비</div>

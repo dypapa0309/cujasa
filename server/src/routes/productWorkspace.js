@@ -3,6 +3,7 @@ import {
   analyzeDexorCandidates,
   analyzeInfludexCandidates,
   buildProductWorkspaceSummary,
+  getProductWorkspaceStatus,
   getProductWorkspace,
   resetDexorWorkspace,
   resetInfludexWorkspace,
@@ -74,6 +75,17 @@ router.get('/polibot/code-search', async (req, res, next) => {
       coverage: req.query?.coverage || '',
       limit: req.query?.limit || 30
     }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/polibot/status', async (req, res, next) => {
+  try {
+    if (!requireWorkspaceServiceOpen(req, res, 'polibot')) return;
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await getProductWorkspaceStatus(user.userId, 'polibot'));
   } catch (error) {
     next(error);
   }

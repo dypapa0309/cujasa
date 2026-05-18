@@ -11,6 +11,7 @@ import {
   buildProductWorkspaceSummary,
   deleteSublogSubscription,
   getProductWorkspace,
+  getProductWorkspaceStatus,
   listSublogSubscriptions,
   saveInfludexCandidates,
   savePolibotRecommendation,
@@ -80,6 +81,37 @@ test('buildProductWorkspaceSummary returns hub cards with next actions', async (
   assert.equal(polibot.granted, false);
   assert.equal(polibot.health, 'locked');
   assert.equal(polibot.actionKey, 'polibot');
+});
+
+test('getProductWorkspaceStatus returns lightweight POLIBOT customer status', async () => {
+  const userId = '11111111-2026-4110-8110-101010101010';
+  await dbInsert('users', {
+    id: userId,
+    email: 'polibot-status-test@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT Status',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      usage: { polibot: { limit: 5, used: 2 } },
+      workspace: {
+        knowledgeSources: [{ id: 'source-1', fileName: 'status.pdf' }],
+        recommendations: []
+      }
+    }
+  });
+
+  const status = await getProductWorkspaceStatus(userId, 'polibot');
+
+  assert.equal(status.productId, 'polibot');
+  assert.equal(status.granted, true);
+  assert.equal(status.actionKey, 'polibot-recommend');
+  assert.equal(status.usage.remaining, 3);
 });
 
 test('stores POLIBOT recommendation knowledge snapshot with source trace', async () => {

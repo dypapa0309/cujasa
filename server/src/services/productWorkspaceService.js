@@ -503,6 +503,12 @@ export async function buildProductWorkspaceSummary({ userId, allowedAccountIds =
   };
 }
 
+export async function getProductWorkspaceStatus(userId, productId) {
+  const product = productById(productId);
+  const grant = await getGrant(userId, productId);
+  return summarizeGrantedProduct({ product, grant });
+}
+
 function sortDexorResults(results = []) {
   return [...results].sort((a, b) => {
     const aLabel = a.scoreLabel || a.grade || '';
