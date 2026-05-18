@@ -37,6 +37,9 @@ const POLIBOT_STORAGE_BUCKET = process.env.POLIBOT_STORAGE_BUCKET || 'polibot-kn
 const CODE_SEARCH_CACHE_TTL_MS = 60 * 1000;
 const IMPORTED_SOURCE_CACHE_TTL_MS = 5 * 60 * 1000;
 const DB_SOURCE_CACHE_TTL_MS = Math.max(0, Number(process.env.POLIBOT_DB_SOURCE_CACHE_TTL_MS || 60 * 1000));
+const IMPORTED_CATALOG_SOURCE_LIMIT = Math.max(500, Number(process.env.POLIBOT_IMPORTED_CATALOG_SOURCE_LIMIT || 5000));
+const IMPORTED_PREMIUM_SOURCE_LIMIT = Math.max(500, Number(process.env.POLIBOT_IMPORTED_PREMIUM_SOURCE_LIMIT || 10000));
+const IMPORTED_DOCUMENT_SOURCE_LIMIT = Math.max(100, Number(process.env.POLIBOT_IMPORTED_DOCUMENT_SOURCE_LIMIT || 1000));
 const codeSearchCache = new Map();
 let importedSourceCache = null;
 const dbSourceCache = new Map();
@@ -1064,8 +1067,23 @@ async function listImportedPolibotSources() {
   if (importedSourceCache && Date.now() - importedSourceCache.createdAt < IMPORTED_SOURCE_CACHE_TTL_MS) {
     return importedSourceCache.value;
   }
-  const catalogRows = await listImportedCatalogRows({ limit: 500, includeExcerpt: false }).catch(() => []);
+  const [catalogRows, premiumRows, docs] = await Promise.all([
+    listImportedCatalogRows({ limit: IMPORTED_CATALOG_SOURCE_LIMIT, includeExcerpt: true }).catch(() => []),
+    dbList('premium_examples', {}, {
+      select: 'id,document_id,catalog_item_id,company,product_name,premium,age,gender,label,source_page',
+      order: 'created_at',
+      ascending: false,
+      limit: IMPORTED_PREMIUM_SOURCE_LIMIT
+    }).catch(() => []),
+    dbList('parsed_documents', {}, {
+      select: 'id,filename,year_month,created_at,document_data',
+      order: 'created_at',
+      ascending: false,
+      limit: IMPORTED_DOCUMENT_SOURCE_LIMIT
+    }).catch(() => [])
+  ]);
   if (!catalogRows.length) return [];
+  const docsById = new Map(docs.map((doc) => [doc.id, doc]));
   const catalogByDocument = catalogRows.reduce((acc, row) => {
     const sourceKey = row.document_id || `${row.effective_month || ''}-${row.source_filename || ''}` || row.id;
     acc[sourceKey] = acc[sourceKey] || [];
@@ -1075,13 +1093,14 @@ async function listImportedPolibotSources() {
   const value = Object.entries(catalogByDocument)
     .map(([sourceKey, rows]) => {
       const first = rows[0] || {};
-      return importedSourceFromDocument({
+      const doc = docsById.get(first.document_id) || {
         id: sourceKey,
         filename: first.source_filename || `catalog-${sourceKey}`,
         year_month: first.effective_month || '',
         created_at: first.updated_at || '',
         document_data: null
-      }, rows, []);
+      };
+      return importedSourceFromDocument(doc, rows, premiumRows);
     })
     .filter((source) => source.catalogItems.length > 0)
     .sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')));
