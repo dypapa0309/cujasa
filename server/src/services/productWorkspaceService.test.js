@@ -114,6 +114,35 @@ test('getProductWorkspaceStatus returns lightweight POLIBOT customer status', as
   assert.equal(status.usage.remaining, 3);
 });
 
+test('POLIBOT incomplete recommendation stores draft without consuming usage', async () => {
+  const userId = '11111111-2026-4110-8110-202020202020';
+  await dbInsert('users', {
+    id: userId,
+    email: 'polibot-incomplete-test@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT Incomplete',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      usage: { polibot: { limit: 5, used: 0 } },
+      workspace: {}
+    }
+  });
+
+  const workspace = await savePolibotRecommendation(userId, { age: '45' });
+
+  assert.equal(workspace.customerProfile.age, '45');
+  assert.equal(workspace.recommendations.length, 0);
+  assert.match(workspace.recommendationNotice, /필요 보장/);
+  assert.equal(workspace.usage.used, 0);
+  assert.equal(workspace.usage.remaining, 5);
+});
+
 test('stores POLIBOT recommendation knowledge snapshot with source trace', async () => {
   const userId = '11111111-1111-4111-8111-111111111111';
   await dbInsert('users', {

@@ -24,6 +24,7 @@ const UNLIMITED_USAGE_LIMIT = 999999;
 const DEXOR_SCORE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
 const INFLUDEX_GRADE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
 const DEXOR_CATEGORIES = ['맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
+const POLIBOT_RECOMMEND_TIMING_WARN_MS = 1000;
 
 const EMPTY_POLIBOT_KNOWLEDGE_DB_SUMMARY = {
   totalSources: 0,
@@ -1710,7 +1711,7 @@ export async function getProductWorkspace(userId, productId) {
     });
     const currentKnowledge = dbKnowledge.length ? [] : rawCurrentKnowledge;
     const seedKnowledge = dbKnowledge.length ? [] : polibotSeedKnowledgeSources();
-    const catalogReviews = normalizeCatalogReviews(next.catalogReviews);
+    const catalogReviews = attachPolibotCatalogItemCache(normalizeCatalogReviews(next.catalogReviews));
     const merged = [...dbKnowledge, ...currentKnowledge, ...seedKnowledge];
     next.knowledgeSources = merged
       .filter((item, index, all) => all.findIndex((row) => row.id === item.id || `${row.month}-${row.fileName}` === `${item.month}-${item.fileName}`) === index)
@@ -1733,6 +1734,90 @@ export async function getProductWorkspace(userId, productId) {
     next.monthlyChangeReport = buildPolibotMonthlyChangeReport(next.knowledgeSources, catalogReviews);
   }
   return withUsage(next, { ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);
+}
+
+function createPolibotTimingLogger(label = 'polibot_timing') {
+  const startedAt = Date.now();
+  let previousAt = startedAt;
+  const stages = [];
+  return {
+    mark(stage) {
+      const currentAt = Date.now();
+      stages.push({ stage, ms: currentAt - previousAt });
+      previousAt = currentAt;
+    },
+    flush(extra = {}) {
+      const totalMs = Date.now() - startedAt;
+      const slowStages = stages.filter((item) => item.ms >= POLIBOT_RECOMMEND_TIMING_WARN_MS);
+      if (totalMs >= POLIBOT_RECOMMEND_TIMING_WARN_MS || slowStages.length) {
+        console.warn(`[${label}]`, {
+          totalMs,
+          slowStages,
+          stages,
+          ...extra
+        });
+      }
+    }
+  };
+}
+
+function buildPolibotLightKnowledgeSummary(knowledgeSources = []) {
+  const catalogItems = knowledgeSources.flatMap((source) => Array.isArray(source.catalogItems) ? source.catalogItems : []);
+  return {
+    totalSources: knowledgeSources.length,
+    globalSources: knowledgeSources.filter((source) => source.scope === 'global').length,
+    userSources: knowledgeSources.filter((source) => source.scope === 'user').length,
+    importedSources: knowledgeSources.filter((source) => source.sourceChannel === 'local_ingest' || source.sourceSystem === 'polibot_core').length,
+    latestMonth: knowledgeSources.map((source) => source.month).filter(Boolean).sort().reverse()[0] || '',
+    recommendableCatalogItems: catalogItems.filter((item) => item.status === 'confirmed' || item.status === 'recommendable').length,
+    importedCatalogItems: catalogItems.filter((item) => String(item.id || '').startsWith('imported-')).length,
+    reviewNeededCatalogItems: catalogItems.filter((item) => item.status === 'review' || item.status === 'review_needed').length,
+    conflictCatalogItems: catalogItems.filter((item) => item.status === 'conflict').length,
+    privacyRiskSources: knowledgeSources.filter((source) => source.knowledgeStatus === 'privacy_risk').length,
+    highQualitySources: knowledgeSources.filter((source) => Number(source.evidenceQualityScore || 0) >= 78).length
+  };
+}
+
+async function getPolibotRecommendationContext(userId, timing = null) {
+  const grant = await getGrant(userId, 'polibot');
+  timing?.mark('grant');
+  const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  const workspace = settings.workspace && typeof settings.workspace === 'object' ? settings.workspace : {};
+  const rawCurrentKnowledge = Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [];
+  const dbKnowledge = await listPolibotDbKnowledgeSources(userId).catch((error) => {
+    console.warn('[polibot_recommend_knowledge_load_failed]', error?.message || error);
+    return [];
+  });
+  timing?.mark('knowledge_load');
+  const currentKnowledge = dbKnowledge.length ? [] : rawCurrentKnowledge;
+  const seedKnowledge = dbKnowledge.length ? [] : polibotSeedKnowledgeSources();
+  const catalogReviews = attachPolibotCatalogItemCache(normalizeCatalogReviews(workspace.catalogReviews));
+  const knowledgeSources = [...dbKnowledge, ...currentKnowledge, ...seedKnowledge]
+    .filter((item, index, all) => all.findIndex((row) => row.id === item.id || `${row.month}-${row.fileName}` === `${item.month}-${item.fileName}`) === index)
+    .sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')))
+    .slice(0, 500)
+    .map((source) => ({
+      ...source,
+      catalogItems: sourceCatalogItems(source, catalogReviews)
+    }));
+  timing?.mark('catalog_items');
+  const qualityReport = knowledgeSources.length && knowledgeSources.every((source) => source.dbSourceId)
+    ? buildPolibotDbQualityReport(knowledgeSources)
+    : buildPolibotQualityReport(knowledgeSources, catalogReviews);
+  timing?.mark('quality_report');
+  return {
+    workspace: withUsage({
+      ...workspace,
+      knowledgeSources,
+      catalogReviews,
+      latestKnowledgeMonth: knowledgeSources[0]?.month || workspace.latestKnowledgeMonth || '',
+      qualityReport,
+      knowledgeDbSummary: buildPolibotLightKnowledgeSummary(knowledgeSources)
+    }, { ...settings, unlimitedUsage: grant.unlimitedUsage }, 'polibot'),
+    knowledgeSources,
+    catalogReviews,
+    qualityReport
+  };
 }
 
 export async function startAuvibotAutomationRun(userId, input = {}) {
@@ -2368,18 +2453,33 @@ function normalizeCatalogReviews(reviews = {}) {
     }]));
 }
 
+function attachPolibotCatalogItemCache(reviews = {}) {
+  if (!reviews || typeof reviews !== 'object' || Object.prototype.hasOwnProperty.call(reviews, '__sourceCatalogItemCache')) return reviews;
+  Object.defineProperty(reviews, '__sourceCatalogItemCache', {
+    value: new Map(),
+    enumerable: false,
+    configurable: false
+  });
+  return reviews;
+}
+
 function sourceCatalogItems(source = {}, reviews = {}) {
+  const cache = reviews && typeof reviews === 'object' ? reviews.__sourceCatalogItemCache : null;
+  const cacheKey = cache && (source.dbSourceId || source.id || `${source.month || ''}-${source.fileName || ''}`);
+  if (cache && cacheKey && cache.has(cacheKey)) return cache.get(cacheKey);
   const dbCatalogItems = Array.isArray(source.catalogItems) && source.dbSourceId
     ? source.catalogItems
     : [];
   const items = dbCatalogItems.length
     ? dbCatalogItems
     : buildPolibotCatalogItems([source], { reviews });
-  return items
+  const usableItems = items
     .filter((item) => item.status === 'confirmed'
       && Number(item.confidence || 0) >= 80
       && ['충분', '보통'].includes(item.completeness || '부족')
       && isPolibotCatalogItemUsable(item));
+  if (cache && cacheKey) cache.set(cacheKey, usableItems);
+  return usableItems;
 }
 
 function sourceAllCatalogItems(source = {}, reviews = {}) {
@@ -3472,20 +3572,16 @@ export async function savePolibotRecommendation(userId, {
   profile.targetPremium = premiumPlan.targetPremium;
   profile.currentPremium = premiumPlan.currentPremium;
   profile.additionalBudgetMemo = premiumPlan.additionalBudgetMemo;
+  const hardMissing = [
+    !profile.age && '나이',
+    profile.needs.length === 0 && '필요 보장',
+    !profile.budget && '예산'
+  ].filter(Boolean);
   if (!profile.age && profile.needs.length === 0 && !profile.budget) {
     const error = new Error('고객 나이, 니즈, 예산 중 하나 이상을 입력해 주세요.');
     error.status = 400;
     throw error;
   }
-  const seed = hashText(JSON.stringify(profile));
-  const workspace = await getProductWorkspace(userId, 'polibot');
-  const knowledgeSources = Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [];
-  const recommendationKnowledgeSources = knowledgeSources.filter(isPolibotRecommendationEligibleSource);
-  const catalogReviews = normalizeCatalogReviews(workspace.catalogReviews);
-  const qualityReport = knowledgeSources.length && knowledgeSources.every((source) => source.dbSourceId)
-    ? buildPolibotDbQualityReport(knowledgeSources)
-    : buildPolibotQualityReport(knowledgeSources, catalogReviews);
-  const consultationDraft = buildPolibotConsultationDraft(profile, qualityReport);
   const missingForRecommendation = [
     !profile.age && '나이',
     !profile.gender && '성별',
@@ -3494,6 +3590,42 @@ export async function savePolibotRecommendation(userId, {
     !profile.existingMedicalPlan && '기존 실손 여부',
     !profile.medicalHistory && '병력/고지 이슈'
   ].filter(Boolean);
+  if (hardMissing.length > 0) {
+    const timing = createPolibotTimingLogger('polibot_recommend_timing');
+    const qualityReport = buildPolibotQualityReport([], {});
+    const consultationDraft = buildPolibotConsultationDraft(profile, qualityReport);
+    const recommendationNotice = `추천 전에 ${(hardMissing.length ? hardMissing : missingForRecommendation).slice(0, 4).join(', ')} 정보를 먼저 확인해 주세요. 고객 조건이 부족해서 사용 횟수는 차감하지 않았어요.`;
+    const patch = {
+      customerProfile: profile,
+      consultationDraft,
+      qualityReport,
+      recommendations: [],
+      excludedCandidates: [],
+      recommendationNotice
+    };
+    patch.knowledgeSnapshot = buildPolibotKnowledgeSnapshot({
+      workspace: {},
+      evidence: [],
+      recommendations: [],
+      recommendationNotice
+    });
+    timing.mark('hard_missing_patch');
+    const result = await updateWorkspace(userId, 'polibot', patch);
+    timing.mark('update');
+    timing.flush({ mode: 'hard_missing', hardMissing });
+    return result;
+  }
+  const timing = createPolibotTimingLogger('polibot_recommend_timing');
+  const seed = hashText(JSON.stringify(profile));
+  const {
+    workspace,
+    knowledgeSources,
+    catalogReviews,
+    qualityReport
+  } = await getPolibotRecommendationContext(userId, timing);
+  const recommendationKnowledgeSources = knowledgeSources.filter(isPolibotRecommendationEligibleSource);
+  const consultationDraft = buildPolibotConsultationDraft(profile, qualityReport);
+  timing.mark('consultation');
   const riskHoldReasons = [
     !profile.existingMedicalPlan && '기존 실손 여부',
     profile.existingMedicalPlan && profile.existingMedicalPlan !== '없음' && '실손 중복 여부',
@@ -3501,30 +3633,9 @@ export async function savePolibotRecommendation(userId, {
     /있음|예|확인|수술|입원|투약|치료|진단/i.test(profile.medicalHistory) && '고지 상세',
     profile.budget && Number(String(profile.budget).replace(/[^\d.]/g, '')) > 0 && Number(String(profile.budget).replace(/[^\d.]/g, '')) < 5 && '예산 조건'
   ].filter(Boolean);
-  const hardMissing = [
-    !profile.age && '나이',
-    profile.needs.length === 0 && '필요 보장',
-    !profile.budget && '예산'
-  ].filter(Boolean);
-  if (hardMissing.length > 0) {
-    const patch = {
-      customerProfile: profile,
-      consultationDraft,
-      qualityReport,
-      recommendations: [],
-      excludedCandidates: [],
-    recommendationNotice: `추천 전에 ${(hardMissing.length ? hardMissing : missingForRecommendation).slice(0, 4).join(', ')} 정보를 먼저 확인해 주세요. 고객 조건이 부족해서 사용 횟수는 차감하지 않았어요.`
-    };
-    patch.knowledgeSnapshot = buildPolibotKnowledgeSnapshot({
-      workspace,
-      evidence: [],
-      recommendations: [],
-      recommendationNotice: patch.recommendationNotice
-    });
-    return updateWorkspace(userId, 'polibot', patch);
-  }
   const enrichedProfile = { ...profile, qualityReport, consultationDraft, catalogReviews, riskHoldReasons };
   const rankedEvidence = rankPolibotEvidence(recommendationKnowledgeSources, profile);
+  timing.mark('rank');
   const evidence = rankedEvidence
     .filter((source) => Number(source.matchScore || 0) >= 9
       || (source.keywordHits || []).length > 0
@@ -3556,6 +3667,7 @@ export async function savePolibotRecommendation(userId, {
     .sort((a, b) => b.score - a.score)
     .filter((item, index, items) => items.findIndex((candidate) => candidate.name === item.name) === index)
     .slice(0, 3);
+  timing.mark('recommendations');
   const recommendationNotice = recommendations.length
     ? (riskHoldReasons.length ? `${riskHoldReasons.slice(0, 3).join(', ')} 확인이 필요해요. 추천 후보의 주의 조건에 표시했어요.` : '')
     : (qualityReport.recommendableProducts > 0
@@ -3588,9 +3700,19 @@ export async function savePolibotRecommendation(userId, {
     recommendationNotice,
     knowledgeSnapshot
   };
-  return recommendationsWithSnapshot.length
+  timing.mark('snapshot');
+  const result = recommendationsWithSnapshot.length
     ? updateWorkspaceAndConsume(userId, 'polibot', patch)
     : updateWorkspace(userId, 'polibot', patch);
+  const saved = await result;
+  timing.mark('update');
+  timing.flush({
+    mode: recommendationsWithSnapshot.length ? 'recommended' : 'no_match',
+    sourceCount: knowledgeSources.length,
+    evidenceCount: recommendationEvidence.length,
+    recommendationCount: recommendationsWithSnapshot.length
+  });
+  return saved;
 }
 
 export async function listPolibotCatalogReview(userId) {
