@@ -894,7 +894,37 @@ export async function buildProductWorkspaceSummary({ userId, allowedAccountIds =
 export async function getProductWorkspaceStatus(userId, productId) {
   const product = productById(productId);
   const grant = await getGrant(userId, productId);
-  return summarizeGrantedProduct({ product, grant });
+  const status = summarizeGrantedProduct({ product, grant });
+  if (productId !== 'polibot') return status;
+  const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  const workspace = settings.workspace && typeof settings.workspace === 'object' ? settings.workspace : {};
+  const rawCurrentKnowledge = Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources : [];
+  const dbKnowledge = await listPolibotDbKnowledgeSources(userId).catch((error) => {
+    console.warn('[polibot_status_knowledge_load_failed]', error?.message || error);
+    return [];
+  });
+  const catalogReviews = attachPolibotCatalogItemCache(normalizeCatalogReviews(workspace.catalogReviews));
+  const knowledgeSources = (dbKnowledge.length ? dbKnowledge : rawCurrentKnowledge)
+    .slice(0, 500)
+    .map((source) => ({
+      ...source,
+      catalogItems: sourceCatalogItems(source, catalogReviews)
+    }));
+  const qualityReport = knowledgeSources.length && knowledgeSources.every((source) => source.dbSourceId)
+    ? buildPolibotDbQualityReport(knowledgeSources)
+    : buildPolibotQualityReport(knowledgeSources, catalogReviews);
+  const knowledgeDbSummary = {
+    ...EMPTY_POLIBOT_KNOWLEDGE_DB_SUMMARY,
+    ...buildPolibotLightKnowledgeSummary(knowledgeSources),
+    companies: (qualityReport?.companies || []).map((name) => ({ name, count: 0 })),
+    productGroups: (qualityReport?.productGroups || []).map((name) => ({ name, count: 0 }))
+  };
+  return {
+    ...status,
+    qualityReport: compactPolibotClientQualityReport(qualityReport),
+    knowledgeDbSummary,
+    catalog: buildPolibotCatalog(knowledgeSources)
+  };
 }
 
 function sortDexorResults(results = []) {

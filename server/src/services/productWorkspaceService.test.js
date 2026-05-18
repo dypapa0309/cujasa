@@ -115,6 +115,82 @@ test('getProductWorkspaceStatus returns lightweight POLIBOT customer status', as
   assert.equal(status.usage.remaining, 3);
 });
 
+test('getProductWorkspaceStatus includes POLIBOT common catalog readiness', async () => {
+  const userId = '11111111-2026-4110-8110-101010101011';
+  const sourceId = '11111111-2026-4110-8110-101010101012';
+  await dbInsert('users', {
+    id: userId,
+    email: 'polibot-status-catalog-test@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT Status Catalog',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      usage: { polibot: { limit: 5, used: 0 } },
+      workspace: {}
+    }
+  });
+  await dbInsert('polibot_knowledge_sources', {
+    id: sourceId,
+    user_id: null,
+    scope: 'global',
+    source_channel: 'local_ingest',
+    status: 'recommendable',
+    file_name: 'status-catalog.txt',
+    file_type: 'txt',
+    file_hash: 'status-catalog-file-hash',
+    text_hash: 'status-catalog-text-hash',
+    month: '2026-05',
+    company: '메리츠화재',
+    companies: ['메리츠화재'],
+    product_group: '암/뇌/심장',
+    keywords: ['암'],
+    product_names: ['메리츠 암 플랜'],
+    normalized_source: {
+      id: sourceId,
+      fileName: 'status-catalog.txt',
+      month: '2026-05',
+      company: '메리츠화재',
+      companies: ['메리츠화재'],
+      productGroup: '암/뇌/심장',
+      keywords: ['암'],
+      productNames: ['메리츠 암 플랜'],
+      catalogItems: []
+    },
+    metadata: { recommendationEligible: true, evidenceQualityScore: 86 }
+  });
+  await dbInsert('polibot_catalog_items', {
+    id: '11111111-2026-4110-8110-101010101013',
+    source_id: sourceId,
+    user_id: null,
+    scope: 'global',
+    status: 'recommendable',
+    company: '메리츠화재',
+    product_name: '메리츠 암 플랜',
+    product_group: '암/뇌/심장',
+    coverage_keywords: ['암'],
+    premium_example: '월 89,000원',
+    age_range: '20-65세',
+    renewal_type: '비갱신형',
+    completeness: '충분',
+    confidence_score: 90,
+    metadata: {}
+  });
+
+  const status = await getProductWorkspaceStatus(userId, 'polibot');
+
+  assert.equal(status.health, 'empty');
+  assert.ok(status.qualityReport?.recommendableProducts >= 1);
+  assert.ok(status.qualityReport?.companies?.includes('메리츠화재'));
+  assert.ok(status.catalog?.companies?.includes('메리츠화재'));
+  assert.ok(status.knowledgeDbSummary?.companies?.some((item) => item.name === '메리츠화재'));
+});
+
 test('POLIBOT incomplete recommendation stores draft without consuming usage', async () => {
   const userId = '11111111-2026-4110-8110-202020202020';
   await dbInsert('users', {

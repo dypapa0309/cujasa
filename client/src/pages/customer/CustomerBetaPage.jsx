@@ -5014,7 +5014,10 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           ...prev,
           usage: data?.usage || prev.usage,
           status: data?.health || prev.status,
-          summary: data?.summary || prev.summary
+          summary: data?.summary || prev.summary,
+          catalog: data?.catalog || prev.catalog,
+          qualityReport: data?.qualityReport || prev.qualityReport,
+          knowledgeDbSummary: data?.knowledgeDbSummary || prev.knowledgeDbSummary
         }));
       })
       .catch((err) => {
