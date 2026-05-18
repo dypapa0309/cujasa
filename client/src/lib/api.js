@@ -95,8 +95,8 @@ async function request(path, options = {}) {
     } catch (fetchError) {
       const timedOut = fetchError?.name === 'AbortError';
       const error = new Error(timedOut
-        ? '요청이 너무 오래 걸려 중단했습니다. 서버 상태를 확인한 뒤 다시 시도해주세요.'
-        : '요청 연결이 끊겼습니다. 서버 작업 상태를 다시 확인하고 있습니다.');
+        ? '자료를 불러오는 데 시간이 오래 걸립니다. 잠시 후 다시 시도해주세요.'
+        : '요청 연결이 끊겼습니다. 잠시 후 다시 시도해주세요.');
       error.code = timedOut ? 'NETWORK_REQUEST_TIMEOUT' : 'NETWORK_REQUEST_FAILED';
       error.networkError = true;
       error.cause = fetchError;
@@ -134,7 +134,7 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  get: (path) => request(path),
+  get: (path, options = {}) => request(path, options),
   post: (path, body) => request(path, { method: 'POST', body }),
   patch: (path, body) => request(path, { method: 'PATCH', body }),
   delete: (path) => request(path, { method: 'DELETE' })

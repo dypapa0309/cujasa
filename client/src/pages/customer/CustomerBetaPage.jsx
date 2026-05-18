@@ -1584,7 +1584,7 @@ function TaskDrawer(props) {
           {action.key === 'spread-campaign' && <SpreadCampaignPanel assistantDraft={props.assistantDraft} reloadCurrentUser={props.reloadCurrentUser} />}
           {action.key === 'spread-applicants' && <SpreadApplicantsPanel reloadCurrentUser={props.reloadCurrentUser} />}
           {action.key === 'spread-review' && <SpreadReviewPanel reloadCurrentUser={props.reloadCurrentUser} />}
-          {action.key === 'polibot-upload' && <PolibotUploadPanel />}
+          {action.key === 'polibot-upload' && <PolibotUploadPanel onOpenAction={props.onOpenAction} />}
           {action.key === 'polibot-recommend' && <PolibotRecommendPanel assistantDraft={props.assistantDraft} reloadCurrentUser={props.reloadCurrentUser} onOpenAction={props.onOpenAction} currentUser={props.currentUser} />}
           {action.key === 'polibot-customers' && <PolibotCustomersPanel />}
           {action.key === 'polibot-download' && <PolibotDownloadPanel />}
@@ -4656,17 +4656,26 @@ function polibotMonthlyChangeItems(report = {}) {
   return items.length ? items : ['전월 비교 대상이 아직 부족합니다.'];
 }
 
-function PolibotUploadPanel() {
+function PolibotUploadPanel({ onOpenAction }) {
   const toast = useToast();
-  const [workspace, setWorkspace] = useState({});
+  const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
-  const usage = workspaceUsage(workspace);
+  const [loadError, setLoadError] = useState('');
+  const usage = status?.usage || workspaceUsage({});
+  const isReady = ['ready', 'empty'].includes(status?.health);
 
   const loadWorkspace = useCallback(() => {
     setLoading(true);
-    api.get('/api/product-workspace/polibot')
-      .then((data) => setWorkspace(data || {}))
-      .catch((err) => toast(err.message || 'POLIBOT 데이터를 불러오지 못했어요.', 'error'))
+    setLoadError('');
+    api.get('/api/product-workspace/summary', { timeoutMs: 12000 })
+      .then((data) => {
+        const polibot = (data?.products || []).find((item) => item.productId === 'polibot') || null;
+        setStatus(polibot);
+      })
+      .catch((err) => {
+        setLoadError('자료 준비 상태를 불러오지 못했어요. 잠시 후 다시 시도해주세요.');
+        toast(err.message || '자료 준비 상태를 불러오지 못했어요.', 'error');
+      })
       .finally(() => setLoading(false));
   }, [toast]);
 
@@ -4678,157 +4687,39 @@ function PolibotUploadPanel() {
     <>
       <PanelCard title="자료 상태">
         <ProductUsageStrip usage={usage} />
-        {workspace.qualityReport && <PolibotQualityReport report={workspace.qualityReport} dbSummary={workspace.knowledgeDbSummary} />}
-        {loading && <Notice>월별 상품 DB와 추천 준비 상태를 불러오고 있어요.</Notice>}
+        {loading && <Notice>추천 준비 상태를 확인하고 있어요.</Notice>}
+        {loadError && <Notice tone="error">{loadError}</Notice>}
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
-            <div className="text-[11px] font-bold text-zinc-600">최신 자료월</div>
-            <div className="mt-1 text-lg font-black text-zinc-100">{workspace.latestKnowledgeMonth || workspace.knowledgeDbSummary?.latestMonth || '-'}</div>
+            <div className="text-[11px] font-bold text-zinc-600">사용 상태</div>
+            <div className="mt-1 text-lg font-black text-zinc-100">{status?.granted ? '사용 가능' : '권한 필요'}</div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
-            <div className="text-[11px] font-bold text-zinc-600">추천 가능 상품</div>
-            <div className="mt-1 text-lg font-black text-zinc-100">{workspace.knowledgeDbSummary?.recommendableCatalogItems || workspace.qualityReport?.recommendableProducts || 0}개</div>
+            <div className="text-[11px] font-bold text-zinc-600">추천 준비</div>
+            <div className="mt-1 text-lg font-black text-zinc-100">{isReady ? '가능' : status?.health === 'needs_setup' ? '준비 중' : '-'}</div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
-            <div className="text-[11px] font-bold text-zinc-600">실제 추출 DB</div>
-            <div className="mt-1 text-lg font-black text-zinc-100">{workspace.knowledgeDbSummary?.importedCatalogItems || 0}개</div>
+            <div className="text-[11px] font-bold text-zinc-600">남은 추천</div>
+            <div className="mt-1 text-lg font-black text-zinc-100">{usageRemainingLabel(usage)}</div>
           </div>
         </div>
+        {status?.summary && (
+          <div className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold leading-relaxed text-zinc-300">
+            {status.summary}
+          </div>
+        )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <DarkButton onClick={loadWorkspace} disabled={loading} className="w-auto">
             <RefreshCw size={15} /> {loading ? '확인 중...' : '상태 새로고침'}
           </DarkButton>
-          <button
-            type="button"
-            onClick={() => toast('원본 업로드와 상품 후보 검수는 관리자 화면의 POLIBOT 자료 탭에서 관리합니다.', 'info')}
-            className="rounded-2xl border border-white/10 bg-black/20 px-4 py-2 text-sm font-bold text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
-          >
-            운영 자료 위치
-          </button>
-        </div>
-        <p className="mt-3 text-xs leading-relaxed text-zinc-600">
-          고객 상담 화면에는 추천에 필요한 준비 상태만 표시합니다. 원본 업로드, OCR, 충돌/제외 후보 검수는 관리자 POLIBOT 자료 탭에서 공통 지식베이스로 관리합니다.
-        </p>
-      </PanelCard>
-      {workspace.monthlyChangeReport && (
-        <PanelCard title="월별 변경 감지">
-          <div className="rounded-2xl bg-black/25 px-4 py-3">
-            <div className="text-sm font-black text-zinc-100">{workspace.monthlyChangeReport.summary}</div>
-            <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-              상품명, 보험료, 담보/가입금액, 가입연령, 심사조건이 전월과 달라진 후보를 우선 확인합니다.
-            </p>
-          </div>
-          <SimpleInfoList items={polibotMonthlyChangeItems(workspace.monthlyChangeReport)} />
-        </PanelCard>
-      )}
-      {workspace.knowledgeSources?.length > 0 && (
-        <PanelCard title="추천에 반영되는 자료">
-          <SimpleInfoList items={workspace.knowledgeSources.slice(0, 10).map((item) => {
-            const catalogItem = workspace.qualityReport?.catalog?.find((row) => row.sourceId === item.id || row.fileName === item.fileName);
-            return `${item.month || '월 미확인'} · ${item.fileName} · ${(item.companies || [item.company]).filter(Boolean).slice(0, 3).join(', ') || '미분류'} · ${item.productGroup || '종합 보장'} · ${catalogItem?.statusLabel || '추천 근거'}`;
-          })} />
-        </PanelCard>
-      )}
-    </>
-  );
-}
-
-function PolibotQualityReport({ report, dbSummary }) {
-  if (!report) return null;
-  const countBy = (items = [], key) => items.reduce((acc, item) => {
-    const value = item?.[key] || '미분류';
-    acc[value] = (acc[value] || 0) + 1;
-    return acc;
-  }, {});
-  const companyCounts = Object.entries(countBy(report.catalogItems || [], 'company'))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
-  const groupCounts = Object.entries(countBy(report.catalogItems || [], 'productGroup'))
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5);
-  const items = [
-    ['자동 확정 상품', `${report.recommendableProducts || 0}개`],
-    ['확정 후 정보부족', `${report.insufficientProducts || 0}개`],
-    ['검토 필요 후보', `${report.reviewNeededProducts || 0}개`],
-    ['제외된 후보', `${report.excludedPhrases || 0}개`],
-    ['이미지/OCR 필요', `${report.ocrNeeded || 0}개`]
-  ];
-  const dbItems = dbSummary ? [
-    ['DB 확정 상품', `${dbSummary.recommendableCatalogItems || 0}개`],
-    ['DB 검토 필요', `${dbSummary.reviewNeededCatalogItems || 0}개`],
-    ['고품질 근거', `${dbSummary.highQualitySources || 0}개`],
-    ['충돌 후보', `${dbSummary.conflictCatalogItems || 0}개`],
-    ['개인정보 위험', `${dbSummary.privacyRiskSources || 0}개`],
-    ['DB 청크', `${dbSummary.chunks || 0}개`],
-    ['카톡 상담 지식', `${dbSummary.conversationInsights || 0}개`]
-  ] : [];
-  const sourceChannelCounts = dbSummary?.sourceChannelCounts || {};
-  const sourceChannelText = [
-    sourceChannelCounts.local_ingest ? `로컬 ${sourceChannelCounts.local_ingest}` : '',
-    sourceChannelCounts.web_upload ? `웹 ${sourceChannelCounts.web_upload}` : '',
-    sourceChannelCounts.admin_upload ? `관리자 ${sourceChannelCounts.admin_upload}` : '',
-    sourceChannelCounts.kakao_txt ? `카톡 ${sourceChannelCounts.kakao_txt}` : ''
-  ].filter(Boolean).join(' · ');
-  const latestJobSummary = dbSummary?.latestJob?.summary || {};
-  const latestJobText = dbSummary?.latestJob
-    ? [
-      latestJobSummary.insertedSources != null ? `저장 ${latestJobSummary.insertedSources}` : '',
-      latestJobSummary.duplicateSources ? `중복 파일 ${latestJobSummary.duplicateSources}` : '',
-      latestJobSummary.duplicateChunks ? `중복 내용 ${latestJobSummary.duplicateChunks}` : '',
-      latestJobSummary.failed ? `실패 ${latestJobSummary.failed}` : ''
-    ].filter(Boolean).join(' · ')
-    : '';
-  return (
-    <div className="mb-3 min-w-0 overflow-hidden rounded-2xl border border-white/10 bg-black/20 p-2.5">
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="shrink-0 text-xs font-black text-zinc-400">자료 품질</div>
-        <div className="min-w-0 truncate text-[11px] font-bold text-zinc-600">
-          {(report.companies || []).slice(0, 3).join(', ') || '보험사 미분류'}
-        </div>
-      </div>
-      <div className="mt-2 flex min-w-0 gap-2 overflow-x-auto pb-1">
-        {items.map(([label, value]) => (
-          <div key={label} className="min-w-[104px] rounded-xl bg-black/25 px-3 py-2">
-            <div className="text-[10px] font-bold text-zinc-600">{label}</div>
-            <div className="mt-0.5 text-sm font-black text-zinc-100">{value}</div>
-          </div>
-        ))}
-      </div>
-      {dbSummary && (
-        <div className="mt-2 grid gap-2 rounded-xl bg-black/25 px-3 py-2 text-[11px] font-bold leading-relaxed text-zinc-500">
-          <div>
-            DB 자료 <span className="font-black text-zinc-200">{dbSummary.totalSources || 0}개</span>
-            <span className="text-zinc-700"> · </span>
-            공통 <span className="font-black text-zinc-200">{dbSummary.globalSources || 0}개</span>
-            <span className="text-zinc-700"> · </span>
-            내 자료 <span className="font-black text-zinc-200">{dbSummary.userSources || 0}개</span>
-            {dbSummary.latestMonth && (
-              <>
-                <span className="text-zinc-700"> · </span>
-                최신 <span className="font-black text-zinc-200">{dbSummary.latestMonth}</span>
-              </>
-            )}
-          </div>
-          {dbItems.length > 0 && (
-            <div className="flex min-w-0 gap-1.5 overflow-x-auto pb-0.5">
-              {dbItems.map(([label, value]) => (
-                <span key={label} className="shrink-0 rounded-full border border-white/10 bg-black/25 px-2 py-1">
-                  {label} <span className="font-black text-zinc-200">{value}</span>
-                </span>
-              ))}
-            </div>
+          {status?.actionKey && status.actionKey !== 'polibot-upload' && (
+            <DarkButton variant="ghost" onClick={() => onOpenAction?.(status.actionKey)} className="w-auto">
+              {status.nextAction || '다음 단계'}
+            </DarkButton>
           )}
-          {sourceChannelText && <div className="text-zinc-600">유입 경로 {sourceChannelText}</div>}
-          {latestJobText && <div className="text-zinc-600">최근 처리 {latestJobText}</div>}
         </div>
-      )}
-      {(companyCounts.length > 0 || groupCounts.length > 0) && (
-        <div className="mt-2 line-clamp-2 text-[11px] font-bold leading-relaxed text-zinc-600">
-          {companyCounts.length > 0 && <div>후보 보험사별 {companyCounts.map(([name, count]) => `${name} ${count}`).join(' · ')}</div>}
-          {groupCounts.length > 0 && <div>후보 상품군별 {groupCounts.map(([name, count]) => `${name} ${count}`).join(' · ')}</div>}
-        </div>
-      )}
-    </div>
+      </PanelCard>
+    </>
   );
 }
 
@@ -4836,11 +4727,11 @@ function PolibotKnowledgeSummary({ report }) {
   if (!report) return null;
   return (
     <div className="rounded-2xl bg-black/25 px-4 py-3 text-sm leading-relaxed text-zinc-400">
-      자동 확정 <span className="font-black text-zinc-100">{report.recommendableProducts || 0}개</span>
+      추천 가능 <span className="font-black text-zinc-100">{report.recommendableProducts || 0}개</span>
       <span className="text-zinc-600"> · </span>
-      정보부족 <span className="font-black text-zinc-100">{report.insufficientProducts || 0}개</span>
+      보험사 <span className="font-black text-zinc-100">{report.companies?.length || 0}개</span>
       <span className="text-zinc-600"> · </span>
-      OCR 필요 <span className="font-black text-zinc-100">{report.ocrNeeded || 0}개</span>
+      상품군 <span className="font-black text-zinc-100">{report.productGroups?.length || 0}개</span>
     </div>
   );
 }
@@ -5029,7 +4920,6 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
         {workspace.qualityReport && (
           <CollapsiblePanel title="자료 상태">
             <PolibotKnowledgeSummary report={workspace.qualityReport} />
-            <PolibotQualityReport report={workspace.qualityReport} dbSummary={workspace.knowledgeDbSummary} />
           </CollapsiblePanel>
         )}
         {selectedRecommendation && (
@@ -5158,7 +5048,6 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       {workspace.qualityReport && (
         <CollapsiblePanel title="자료 상태">
           <PolibotKnowledgeSummary report={workspace.qualityReport} />
-          <PolibotQualityReport report={workspace.qualityReport} dbSummary={workspace.knowledgeDbSummary} />
         </CollapsiblePanel>
       )}
       {selectedRecommendation && (
@@ -6628,7 +6517,7 @@ const productPreviewContent = {
     title: 'POLIBOT',
     subtitle: '보험 보장분석 자동화',
     motto: '보험 상품과 고객 조건을 빠르게 비교해요.',
-    description: 'PDF 업로드, 고객 프로필, 보장 니즈를 바탕으로 추천 초안과 비교 결과를 정리해요.',
+    description: '고객 프로필과 보장 니즈를 바탕으로 추천 초안과 비교 결과를 정리해요.',
     cta: 'POLIBOT 시작하기'
   },
   infludex: {

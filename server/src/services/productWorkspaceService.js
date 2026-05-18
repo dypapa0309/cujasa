@@ -402,8 +402,8 @@ function summarizePolibotProduct({ product, grant } = {}) {
   const feedbackNeedsReview = Number(workspace.feedbackSummary?.needsReview || 0);
   if (feedbackNeedsReview > 0) return { health: 'needs_attention', summary: `${feedbackNeedsReview}개 추천 피드백 검토가 필요해요.`, nextAction: '상품 추천', actionKey: 'polibot-recommend', usage };
   if (recommendationCount > 0) return { health: 'ready', summary: `${recommendationCount}개 추천 초안이 준비됐어요.`, nextAction: '결과 다운로드', actionKey: 'polibot-download', usage };
-  if (knowledgeCount === 0) return { health: 'needs_setup', summary: '보험 상품 PDF나 지식 자료를 먼저 넣어야 해요.', nextAction: 'PDF 업로드', actionKey: 'polibot-upload', usage };
-  return { health: 'empty', summary: `${knowledgeCount}개 자료가 준비됐어요. 고객 조건을 넣어 추천을 만들 수 있어요.`, nextAction: '상품 추천', actionKey: 'polibot-recommend', usage };
+  if (knowledgeCount === 0) return { health: 'needs_setup', summary: '추천 자료 준비 상태를 확인 중이에요. 고객 조건 입력은 계속 진행할 수 있어요.', nextAction: '상품 추천', actionKey: 'polibot-recommend', usage };
+  return { health: 'empty', summary: '추천 준비가 완료됐어요. 고객 조건을 넣어 추천을 만들 수 있어요.', nextAction: '상품 추천', actionKey: 'polibot-recommend', usage };
 }
 
 function summarizeInfludexProduct({ product, grant } = {}) {
