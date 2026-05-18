@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, BarChart3, CalendarClock, CheckCircle2, ChevronRight, Link2, PenLine, Search, ShieldCheck, X } from 'lucide-react';
 import { api, setAuthToken } from '../lib/api.js';
-import { CURRENT_PRODUCT, PRODUCTS, productById } from '../config/products.js';
+import { CURRENT_PRODUCT, PRODUCTS, productById, productIdFromPath } from '../config/products.js';
 
 const inputClass = 'w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-700 outline-none focus:border-white/30';
 const labelClass = 'grid gap-2 text-sm font-bold text-zinc-300';
@@ -202,10 +202,11 @@ function detailForProduct(productId) {
 
 export default function LoginPage({ onLogin }) {
   const params = new URLSearchParams(window.location.search);
+  const pathProduct = productIdFromPath(window.location.pathname);
   const requestedMode = params.get('mode') === 'register' ? 'register' : 'login';
   const registrationProducts = PRODUCTS.filter(isProductRegistrationOpen);
   const fallbackProduct = registrationProducts[0] || CURRENT_PRODUCT || PRODUCTS.find((product) => product?.id) || { id: 'cujasa', name: 'CUJASA', supportLabel: '쿠팡 파트너스 자동화', description: '쿠팡 파트너스 자동화 콘솔' };
-  const requestedProductConfig = productById(params.get('product'));
+  const requestedProductConfig = productById(params.get('product')) || productById(pathProduct);
   const requestedProduct = isProductRegistrationOpen(requestedProductConfig)
     ? requestedProductConfig.id
     : fallbackProduct.id;

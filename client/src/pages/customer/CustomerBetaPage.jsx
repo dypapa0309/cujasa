@@ -4,7 +4,7 @@ import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight,
 import { api, postEvent } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 import { useToast } from '../../lib/toast.jsx';
-import { PRODUCTS, CURRENT_PRODUCT, productById } from '../../config/products.js';
+import { PRODUCTS, CURRENT_PRODUCT, productById, productIdFromPath } from '../../config/products.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 import BillingAgreementModal, { BILLING_AGREEMENT_VERSION } from '../../components/BillingAgreementModal.jsx';
 import {
@@ -407,7 +407,7 @@ export default function CustomerBetaPage({
   const [prompt, setPrompt] = useState('');
   const [activeActionKey, setActiveActionKey] = useState('');
   const [drawerClosing, setDrawerClosing] = useState(false);
-  const initialUrlProductId = productById(new URLSearchParams(window.location.search).get('product'))?.id || CURRENT_PRODUCT.id;
+  const initialUrlProductId = productById(new URLSearchParams(window.location.search).get('product'))?.id || productIdFromPath(window.location.pathname) || CURRENT_PRODUCT.id;
   const initialUrlProductHandledRef = useRef(false);
   const [selectedProductId, setSelectedProductId] = useState(initialUrlProductId);
   const [showOtherProducts, setShowOtherProducts] = useState(false);
@@ -527,7 +527,7 @@ export default function CustomerBetaPage({
 
   useEffect(() => {
     if (initialUrlProductHandledRef.current) return;
-    const urlProductId = productById(new URLSearchParams(window.location.search).get('product'))?.id;
+    const urlProductId = productById(new URLSearchParams(window.location.search).get('product'))?.id || productIdFromPath(window.location.pathname);
     if (!urlProductId) {
       initialUrlProductHandledRef.current = true;
       return;

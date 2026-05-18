@@ -72,3 +72,8 @@ export const CURRENT_PRODUCT = PRODUCTS[0];
 export function productById(productId) {
   return PRODUCTS.find((product) => product.id === productId) || null;
 }
+
+export function productIdFromPath(pathname = '') {
+  const firstSegment = String(pathname || '').split('/').filter(Boolean)[0] || '';
+  return productById(firstSegment)?.id || '';
+}

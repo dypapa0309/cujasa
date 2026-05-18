@@ -8,7 +8,7 @@ import CustomerSettingsPage from './CustomerSettingsPage.jsx';
 import CustomerBillingPage from './CustomerBillingPage.jsx';
 import CustomerRunPage from './CustomerRunPage.jsx';
 import CustomerBetaPage from './CustomerBetaPage.jsx';
-import { CURRENT_PRODUCT, JASAIN_BRAND, productById } from '../../config/products.js';
+import { CURRENT_PRODUCT, JASAIN_BRAND, productById, productIdFromPath } from '../../config/products.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 
 const baseTabs = [
@@ -47,7 +47,8 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
   const progressFailuresRef = useRef(0);
   const useWorkspaceShell = true;
   const searchParams = new URLSearchParams(window.location.search);
-  const productParam = productById(searchParams.get('product'))?.id;
+  const pathProduct = productIdFromPath(window.location.pathname);
+  const productParam = productById(searchParams.get('product'))?.id || pathProduct;
   const isProductStartRequest = searchParams.get('mode') === 'register' && productParam && productParam !== CURRENT_PRODUCT.id;
   const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
   const requestedTab = hashParams.get('tab');
