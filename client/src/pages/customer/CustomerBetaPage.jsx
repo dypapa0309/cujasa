@@ -150,6 +150,15 @@ function formatPolibotPremiumValue(value) {
   return `${Number(value).toLocaleString('ko-KR')}만원`;
 }
 
+function normalizePolibotPremiumInput(value = '') {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  if (/^\d+(?:\.\d+)?$/.test(text.replace(/,/g, ''))) {
+    return `${Number(text.replace(/,/g, '')).toLocaleString('ko-KR')}만원`;
+  }
+  return text;
+}
+
 function polibotBudgetHint({ budget = '', existingPremium = '', purpose = '' } = {}) {
   const target = parsePolibotPremiumValue(budget);
   const current = parsePolibotPremiumValue(existingPremium);
@@ -4799,7 +4808,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const hasRecommendations = recommendations.length > 0;
   const legacyProgressStep = hasRecommendations ? 3 : hasAnalysis ? 2 : 1;
   const selectedNeeds = useMemo(() => normalizeLines(form.needs), [form.needs]);
-  const setNeeds = (needs) => setForm((prev) => ({ ...prev, needs: needs.join(isTestStepper ? ', ' : '\n') }));
+  const setNeeds = (needs) => setForm((prev) => ({ ...prev, needs: needs.join(', ') }));
   const toggleNeed = (need) => {
     const next = selectedNeeds.includes(need)
       ? selectedNeeds.filter((item) => item !== need)
@@ -4808,14 +4817,32 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   };
 
   useEffect(() => {
-    api.get('/api/product-workspace/polibot')
+    let cancelled = false;
+    api.get('/api/product-workspace/polibot/status', { timeoutMs: 5000 })
       .then((data) => {
+        if (cancelled) return;
+        setWorkspace((prev) => ({ ...prev, usage: data?.usage || prev.usage }));
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setWorkspaceLoaded(true);
+      });
+    api.get('/api/product-workspace/polibot', { timeoutMs: 45000 })
+      .then((data) => {
+        if (cancelled) return;
         setWorkspace(data || {});
         const firstCompany = data?.catalog?.companies?.[0];
         setForm((prev) => ({ ...prev, company: prev.company || firstCompany || '전체 보험사' }));
       })
-      .catch((err) => toast(err.message || '추천 데이터를 불러오지 못했어요.', 'error'))
-      .finally(() => setWorkspaceLoaded(true));
+      .catch((err) => {
+        if (!cancelled) toast(err.message || '추천 데이터 일부를 불러오지 못했어요.', 'error');
+      })
+      .finally(() => {
+        if (!cancelled) setWorkspaceLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [toast]);
 
   useEffect(() => {
@@ -4826,8 +4853,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       name: values.name ?? prev.name,
       age: values.age ?? prev.age,
       gender: values.gender ?? prev.gender,
-      needs: Array.isArray(values.needs) ? values.needs.join(isTestStepper ? ', ' : '\n') : values.needs ?? prev.needs,
-      budget: values.budget ?? prev.budget,
+      needs: Array.isArray(values.needs) ? values.needs.join(', ') : values.needs ?? prev.needs,
+      budget: values.budget ? normalizePolibotPremiumInput(values.budget) : prev.budget,
       company: values.company || prev.company || '전체 보험사',
       existingMedicalPlan: values.existingMedicalPlan ?? prev.existingMedicalPlan,
       existingPremium: values.existingPremium ?? prev.existingPremium,
@@ -4837,13 +4864,17 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       renewalPreference: values.renewalPreference ?? prev.renewalPreference,
       purpose: values.purpose ?? prev.purpose
     }));
-  }, [assistantDraft, isTestStepper]);
+  }, [assistantDraft]);
 
   const save = async () => {
     setSubmitAttempted(true);
     setSaving(true);
     try {
-      const next = await api.post('/api/product-workspace/polibot/recommend', form);
+      const next = await api.post('/api/product-workspace/polibot/recommend', {
+        ...form,
+        needs: selectedNeeds.join(', '),
+        budget: normalizePolibotPremiumInput(form.budget)
+      });
       setWorkspace(next);
       await reloadCurrentUser?.();
       setSelectedRecommendation(null);
@@ -4890,7 +4921,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   if (isTestStepper) {
     return (
       <div className="grid gap-4">
-        {workspaceLoading && <PolibotLoadingBanner label="월별 상품 DB와 보험사 자료를 불러오는 중" />}
+        {workspaceLoading && <PolibotLoadingBanner label="자료 목록은 백그라운드에서 확인 중" />}
         <PolibotRecommendStepper
           step={testStep}
           onStepChange={setTestStep}
@@ -4935,7 +4966,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
 
   return (
     <div className="grid gap-4">
-      {workspaceLoading && <PolibotLoadingBanner label="월별 상품 DB와 보험사 자료를 불러오는 중" />}
+      {workspaceLoading && <PolibotLoadingBanner label="자료 목록은 백그라운드에서 확인 중" />}
       <PolibotProgressHeader activeStep={legacyProgressStep} usage={usage} />
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(360px,0.85fr)_minmax(0,1.15fr)] xl:items-start">
       <PanelCard title="1. 고객 조건" className="min-w-0 xl:sticky xl:top-4">
@@ -4969,7 +5000,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
             <textarea className={`${inputClass} min-h-[42px] text-xs text-zinc-500`} rows="1" value={form.needs} onChange={(event) => setForm((prev) => ({ ...prev, needs: event.target.value }))} placeholder="추가 보장 입력" />
           </div>
           <div className="grid gap-2.5 md:grid-cols-2">
-            <label className={labelClass}>월 예산<input className={inputClass} value={form.budget} onChange={(event) => setForm((prev) => ({ ...prev, budget: event.target.value }))} placeholder="10만원" /></label>
+            <label className={labelClass}>월 예산<input className={inputClass} value={form.budget} onChange={(event) => setForm((prev) => ({ ...prev, budget: event.target.value }))} onBlur={() => setForm((prev) => ({ ...prev, budget: normalizePolibotPremiumInput(prev.budget) }))} placeholder="30" /></label>
             <div className="grid gap-2">
               <DarkSelect
                 label="보험사 범위"
@@ -5009,9 +5040,9 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
               <DarkSelect label="가입 목적" value={form.purpose} onChange={(value) => setForm((prev) => ({ ...prev, purpose: value }))} options={[{ value: '', label: '미확인' }, { value: '보장 강화', label: '보장 강화' }, { value: '보험료 절감', label: '보험료 절감' }, { value: '리모델링', label: '리모델링' }, { value: '신규 가입', label: '신규 가입' }]} />
             </div>
           )}
-          <DarkButton onClick={save} disabled={workspaceLoading || saving || usage.remaining <= 0} className="w-full">
+          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0} className="w-full">
             {saving && <RefreshCw size={15} className="animate-spin" />}
-            {workspaceLoading ? '자료 불러오는 중...' : saving ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}
+            {saving ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}
           </DarkButton>
           {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
@@ -5021,7 +5052,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           <PolibotConsultationDraft draft={workspace.consultationDraft} profile={workspace.customerProfile || form} saving={saving} />
         </PanelCard>
         <PanelCard title="3. 상품 추천" className="min-w-0 xl:max-h-[calc(100vh-23rem)] xl:overflow-y-auto">
-          {workspaceLoading && <PolibotLoadingState title="자료 불러오는 중" description="보험사별 상품 후보와 최신 월별 자료를 확인하고 있어요." />}
+          {workspaceLoading && <Notice>자료 목록은 백그라운드에서 확인 중입니다. 고객 조건 입력과 추천 실행은 바로 할 수 있어요.</Notice>}
           {saving && <PolibotLoadingState title="추천 생성 중" description="고객 조건, 보험사 범위, 확정 상품 DB를 대조하고 있어요." />}
           {!workspaceLoading && !saving && hasRecommendations ? (
             <PolibotRecommendationList
@@ -5224,7 +5255,8 @@ function PolibotRecommendStepper({
                     className={fieldClass('예산')}
                     value={form.budget}
                     onChange={(event) => setForm((prev) => ({ ...prev, budget: event.target.value }))}
-                    placeholder="예: 40"
+                    onBlur={() => setForm((prev) => ({ ...prev, budget: normalizePolibotPremiumInput(prev.budget) }))}
+                    placeholder="예: 30"
                   />
                 </label>
                 <div className="flex min-w-0 gap-1.5 overflow-x-auto">
