@@ -6,6 +6,7 @@ import { rememberCujasaPlanPayment } from './sponsorService.js';
 const CUJASA_PRODUCT_ID = 'cujasa';
 const DEXOR_PRODUCT_ID = 'dexor';
 const INFLUDEX_PRODUCT_ID = 'infludex';
+const POLIBOT_PRODUCT_ID = 'polibot';
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 const BASIC_MAX_ACCOUNTS = 2;
 export const DEXOR_CREDIT_PRODUCTS = {
@@ -24,8 +25,7 @@ export const MONTHLY_USAGE_PRODUCTS = {
   spread_basic_monthly_149000: { productId: 'spread', limit: 10 },
   spread_pro_monthly_390000: { productId: 'spread', limit: 30 },
   polibot_starter_monthly_39000: { productId: 'polibot', limit: 100 },
-  polibot_basic_monthly_99000: { productId: 'polibot', limit: 500 },
-  polibot_pro_monthly_290000: { productId: 'polibot', limit: 2000 }
+  polibot_basic_monthly_99000: { productId: 'polibot', limit: 500 }
 };
 
 async function addUsageCredits({ userId, productId, product, payment, credits, paidAt, source }) {
@@ -87,6 +87,25 @@ async function applyMonthlyUsageGrant({ userId, product, payment, paidAt, source
   return dbGet('users', { id: userId });
 }
 
+async function applyPolibotLifetimeGrant({ userId, product, payment, paidAt, source }) {
+  await grantUserProduct(userId, POLIBOT_PRODUCT_ID, { status: 'active', role: 'customer' });
+  const grant = await dbGet('user_products', { user_id: userId, product_id: POLIBOT_PRODUCT_ID });
+  const current = grant?.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  await dbUpdate('user_products', { user_id: userId, product_id: POLIBOT_PRODUCT_ID }, {
+    settings: {
+      ...current,
+      unlimitedUsage: true,
+      lastPlanPayment: {
+        productId: product.id,
+        paymentId: payment?.id || null,
+        paidAt: new Date(paidAt).toISOString(),
+        source
+      }
+    }
+  });
+  return dbGet('users', { id: userId });
+}
+
 export function addEntitlementDays(date = new Date(), days = 30) {
   return new Date(new Date(date).getTime() + days * 24 * 60 * 60 * 1000);
 }
@@ -103,6 +122,9 @@ export async function applyPaidEntitlement({ userId, product, payment, paidAt = 
   const monthlyUsage = MONTHLY_USAGE_PRODUCTS[product.id];
   if (monthlyUsage) {
     return applyMonthlyUsageGrant({ userId, product, payment, paidAt, source, ...monthlyUsage });
+  }
+  if (appProductId === POLIBOT_PRODUCT_ID) {
+    return applyPolibotLifetimeGrant({ userId, product, payment, paidAt, source });
   }
   const paidDate = new Date(paidAt);
   const user = await dbGet('users', { id: userId });

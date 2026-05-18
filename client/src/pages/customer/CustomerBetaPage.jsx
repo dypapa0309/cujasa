@@ -3330,30 +3330,30 @@ function buildWorkspacePricingCatalog({ productsById, cujasaPlans, currentUser }
       label: 'POLIBOT',
       title: '보험 상담/추천 자동화',
       modeLabel: '운영형 3단계 요금제',
-      description: '고객 상담 맥락, 보장분석 자료, 상품 추천 흐름을 정리하는 월정액 상품입니다.',
+      description: '고객 상담 맥락, 보장분석 자료, 상품 추천 근거를 정리하는 상담 운영 상품입니다.',
       plans: [
-        pricingPlan(productsById, 'polibot_starter_monthly_39000', { name: 'POLIBOT 스타터 월정액', app_product_id: 'polibot', amount: 39000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
+        pricingPlan(productsById, 'polibot_starter_monthly_39000', { name: 'POLIBOT 스타터 월정액', app_product_id: 'polibot', amount: 29000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
           title: '스타터',
           caption: '가볍게 상담 추천 시작',
           buttonLabel: '스타터 시작',
           features: ['상담/추천 100회', '지식 업로드 기본', '가상계좌 월 단위 이용']
         }),
-        pricingPlan(productsById, 'polibot_basic_monthly_99000', { name: 'POLIBOT 베이직 월정액', app_product_id: 'polibot', amount: 99000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
+        pricingPlan(productsById, 'polibot_basic_monthly_99000', { name: 'POLIBOT 베이직 월정액', app_product_id: 'polibot', amount: 79000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
           title: '베이직',
           caption: '고객별 추천 히스토리',
           badge: '추천',
           buttonLabel: '베이직 시작',
           features: ['상담/추천 500회', '고객별 추천 히스토리', '상품 추천 근거 정리']
         }),
-        pricingPlan(productsById, 'polibot_pro_monthly_290000', { name: 'POLIBOT 프로 월정액', app_product_id: 'polibot', amount: 290000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
-          title: '프로',
+        pricingPlan(productsById, 'polibot_lifetime_590000', { name: 'POLIBOT 프로 영구구매', app_product_id: 'polibot', amount: 590000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+          title: '프로 영구구매',
           caption: '팀 단위 상담 운영',
-          buttonLabel: '프로 시작',
-          features: ['상담/추천 2,000회', '팀 단위 운영', '우선 지원']
+          buttonLabel: '영구구매 신청',
+          features: ['상담/추천 장기 이용', '팀 단위 운영', '우선 지원']
         })
       ],
       comparisonRows: [
-        { label: '상담/추천 한도', values: ['100회 / 월', '500회 / 월', '2,000회 / 월'] },
+        { label: '상담/추천 한도', values: ['100회 / 월', '500회 / 월', '장기 이용'] },
         { label: '지식 업로드', values: ['기본', '확장', '팀 운영'] },
         { label: '추천 히스토리', values: ['기본', '포함', '고급'] },
         { label: '결제 방식', values: ['가상계좌', '가상계좌', '가상계좌'] }
