@@ -264,6 +264,7 @@ router.post('/infludex/reset', async (req, res, next) => {
 
 router.post('/polibot/upload', async (req, res, next) => {
   try {
+    if (!requireWorkspaceServiceOpen(req, res, 'polibot')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await savePolibotUpload(user.userId, req.body || {}));
@@ -274,6 +275,7 @@ router.post('/polibot/upload', async (req, res, next) => {
 
 router.post('/polibot/knowledge', async (req, res, next) => {
   try {
+    if (!requireWorkspaceServiceOpen(req, res, 'polibot')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await savePolibotKnowledge(user.userId, req.body || {}));
@@ -284,6 +286,7 @@ router.post('/polibot/knowledge', async (req, res, next) => {
 
 router.post('/polibot/recommend', async (req, res, next) => {
   try {
+    if (!requireWorkspaceServiceOpen(req, res, 'polibot')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await savePolibotRecommendation(user.userId, req.body || {}));
@@ -294,6 +297,7 @@ router.post('/polibot/recommend', async (req, res, next) => {
 
 router.post('/polibot/recommendations/:id/feedback', async (req, res, next) => {
   try {
+    if (!requireWorkspaceServiceOpen(req, res, 'polibot')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await savePolibotRecommendationFeedback(user.userId, {
@@ -307,6 +311,7 @@ router.post('/polibot/recommendations/:id/feedback', async (req, res, next) => {
 
 router.post('/polibot/customers', async (req, res, next) => {
   try {
+    if (!requireWorkspaceServiceOpen(req, res, 'polibot')) return;
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await savePolibotCustomer(user.userId, req.body || {}));

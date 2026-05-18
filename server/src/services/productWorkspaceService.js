@@ -787,13 +787,11 @@ function summarizeSpreadProduct({ product, grant } = {}) {
 function summarizePolibotProduct({ product, grant } = {}) {
   const workspace = workspaceFromGrant(grant);
   const usage = productUsageFromGrant(grant, product.id);
-  const knowledgeCount = Array.isArray(workspace.knowledgeSources) ? workspace.knowledgeSources.length : 0;
   const recommendationCount = Array.isArray(workspace.recommendations) ? workspace.recommendations.length : 0;
   const feedbackNeedsReview = Number(workspace.feedbackSummary?.needsReview || 0);
   if (feedbackNeedsReview > 0) return { health: 'needs_attention', summary: `${feedbackNeedsReview}개 추천 피드백 검토가 필요해요.`, nextAction: '상품 추천', actionKey: 'polibot-recommend', usage };
   if (recommendationCount > 0) return { health: 'ready', summary: `${recommendationCount}개 추천 초안이 준비됐어요.`, nextAction: '결과 다운로드', actionKey: 'polibot-download', usage };
-  if (knowledgeCount === 0) return { health: 'needs_setup', summary: '추천 자료 준비 상태를 확인 중이에요. 고객 조건 입력은 계속 진행할 수 있어요.', nextAction: '상품 추천', actionKey: 'polibot-recommend', usage };
-  return { health: 'empty', summary: '추천 준비가 완료됐어요. 고객 조건을 넣어 추천을 만들 수 있어요.', nextAction: '상품 추천', actionKey: 'polibot-recommend', usage };
+  return { health: 'empty', summary: '공통 상품 자료 기준으로 고객 조건 입력과 추천 초안을 시작할 수 있어요.', nextAction: '상품 추천', actionKey: 'polibot-recommend', usage };
 }
 
 function summarizeInfludexProduct({ product, grant } = {}) {
@@ -1978,13 +1976,15 @@ async function getGrant(userId, productId) {
     error.status = 404;
     throw error;
   }
-  const grant = await dbGet('user_products', { user_id: userId, product_id: product.id });
+  const [grant, user] = await Promise.all([
+    dbGet('user_products', { user_id: userId, product_id: product.id }),
+    dbGet('users', { id: userId }).catch(() => null)
+  ]);
   if (!grant || grant.status === 'suspended' || grant.status === 'expired') {
     const error = new Error('제품 사용 권한이 필요합니다.');
     error.status = 403;
     throw error;
   }
-  const user = await dbGet('users', { id: userId }).catch(() => null);
   return {
     ...grant,
     unlimitedUsage: UNLIMITED_TEST_EMAILS.has(String(user?.email || '').trim().toLowerCase())

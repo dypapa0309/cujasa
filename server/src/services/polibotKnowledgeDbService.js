@@ -36,11 +36,21 @@ const MAX_STORAGE_UPLOAD_BYTES = 24 * 1024 * 1024;
 const POLIBOT_STORAGE_BUCKET = process.env.POLIBOT_STORAGE_BUCKET || 'polibot-knowledge';
 const CODE_SEARCH_CACHE_TTL_MS = 60 * 1000;
 const IMPORTED_SOURCE_CACHE_TTL_MS = 5 * 60 * 1000;
+const DB_SOURCE_CACHE_TTL_MS = Math.max(0, Number(process.env.POLIBOT_DB_SOURCE_CACHE_TTL_MS || 60 * 1000));
 const codeSearchCache = new Map();
 let importedSourceCache = null;
+const dbSourceCache = new Map();
 
 function now() {
   return new Date().toISOString();
+}
+
+function clearPolibotDbSourceCache(userId = '') {
+  if (!userId) {
+    dbSourceCache.clear();
+    return;
+  }
+  dbSourceCache.delete(String(userId || ''));
 }
 
 function sha256(value = '') {
@@ -1643,6 +1653,7 @@ export async function ingestPolibotKnowledge({
     });
     if (!dryRun && (summary.insertedSources > 0 || summary.insertedChunks > 0 || summary.insertedCatalogItems > 0)) {
       clearPolibotCodeSearchCache(normalizedScope === 'global' ? '' : userId);
+      clearPolibotDbSourceCache(normalizedScope === 'global' ? '' : userId);
     }
     return {
       job: { ...job, summary },
@@ -1661,26 +1672,40 @@ export async function ingestPolibotKnowledge({
 }
 
 export async function listPolibotDbKnowledgeSources(userId = '') {
-  const globalSources = await dbList('polibot_knowledge_sources', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 500 }).catch(() => []);
-  const userSources = userId
-    ? await dbList('polibot_knowledge_sources', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 500 }).catch(() => [])
-    : [];
-  const importedSources = await listImportedPolibotSources();
+  const cacheKey = String(userId || '');
+  const cached = dbSourceCache.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < DB_SOURCE_CACHE_TTL_MS) return cached.value;
+  let loadFailed = false;
+  const safeList = (table, filters, options) => dbList(table, filters, options).catch((error) => {
+    loadFailed = true;
+    console.warn('[polibot_db_source_cache_load_failed]', table, error?.message || error);
+    return [];
+  });
+  const [globalSources, userSources, importedSources, globalCatalogRows, userCatalogRows] = await Promise.all([
+    safeList('polibot_knowledge_sources', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 500 }),
+    userId ? safeList('polibot_knowledge_sources', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 500 }) : [],
+    listImportedPolibotSources().catch((error) => {
+      loadFailed = true;
+      console.warn('[polibot_imported_source_cache_load_failed]', error?.message || error);
+      return [];
+    }),
+    safeList('polibot_catalog_items', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 1000 }),
+    userId ? safeList('polibot_catalog_items', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 1000 }) : []
+  ]);
   const sourceRows = [...globalSources, ...userSources];
-  const catalogRows = [
-    ...await dbList('polibot_catalog_items', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []),
-    ...(userId ? await dbList('polibot_catalog_items', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []) : [])
-  ];
+  const catalogRows = [...globalCatalogRows, ...userCatalogRows];
   const catalogBySource = catalogRows.reduce((acc, row) => {
     if (!row.source_id) return acc;
     acc[row.source_id] = acc[row.source_id] || [];
     acc[row.source_id].push(normalizeCatalogRow(row));
     return acc;
   }, {});
-  return sourceRows
+  const value = sourceRows
     .map((row) => sourceFromDb(row, catalogBySource[row.id] || []))
     .concat(importedSources)
     .sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')));
+  if (!loadFailed && DB_SOURCE_CACHE_TTL_MS > 0) dbSourceCache.set(cacheKey, { createdAt: Date.now(), value });
+  return value;
 }
 
 function normalizeSearchText(value = '') {
@@ -2147,6 +2172,8 @@ export async function runPolibotSourceOcr(id, { reviewerId = '' } = {}) {
       message: `POLIBOT OCR 완료: ${row.file_name || id}`,
       payload: { ...summary, jobId: job?.id }
     });
+    clearPolibotCodeSearchCache(scope === 'global' ? '' : userId);
+    clearPolibotDbSourceCache(scope === 'global' ? '' : userId);
     return {
       source: sourceRowForReview(sourceRow),
       summary,
@@ -2170,6 +2197,7 @@ export async function updatePolibotCatalogItemReview(id, { status, reviewNote = 
       review_status: reviewStatus
     });
     importedSourceCache = null;
+    clearPolibotDbSourceCache();
     if (!updated) {
       const error = new Error('POLIBOT 이관 상품 후보를 찾지 못했습니다.');
       error.status = 404;
@@ -2194,6 +2222,7 @@ export async function updatePolibotCatalogItemReview(id, { status, reviewNote = 
       reviewedAt: now()
     }
   });
+  clearPolibotDbSourceCache(row.scope === 'global' ? '' : row.user_id || '');
   return rawCatalogRowForReview(updated || row);
 }
 
@@ -2217,6 +2246,7 @@ export async function updatePolibotKnowledgeSourceReview(id, { status, reviewNot
       reviewedAt: now()
     }
   });
+  clearPolibotDbSourceCache(row.scope === 'global' ? '' : row.user_id || '');
   return sourceRowForReview(updated || row);
 }
 
@@ -2356,7 +2386,10 @@ export async function backfillImportedPremiumCatalogLinks({ dryRun = true, limit
       await dbUpdate('premium_examples', { id: premium.id }, patch);
     }
   }
-  if (!dryRun && updates.length) importedSourceCache = null;
+  if (!dryRun && updates.length) {
+    importedSourceCache = null;
+    clearPolibotDbSourceCache();
+  }
   return {
     dryRun: Boolean(dryRun),
     catalogRows: catalogRows.length,

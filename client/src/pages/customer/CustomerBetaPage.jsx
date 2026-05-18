@@ -48,7 +48,7 @@ const spreadActions = [
 ];
 
 const polibotActions = [
-  { key: 'polibot-upload', productId: 'polibot', label: '자료 상태', icon: DatabaseZap, hint: '관리자가 올린 월별 상품 자료와 추천 준비 상태를 확인해요.' },
+  { key: 'polibot-upload', productId: 'polibot', label: '자료 상태', icon: DatabaseZap, hint: '월별 상품 자료와 추천 준비 상태를 확인해요.' },
   { key: 'polibot-recommend', productId: 'polibot', label: '상품 추천', icon: Plus, hint: '고객 조건과 보장 니즈로 추천 초안을 만들어요.' },
   { key: 'polibot-customers', productId: 'polibot', label: '고객 관리', icon: Users, hint: '고객 조건과 추천 기록을 정리해요.' },
   { key: 'polibot-download', productId: 'polibot', label: '결과 다운로드', icon: Download, hint: '추천 결과를 CSV로 내려받아요.' }
@@ -4836,6 +4836,7 @@ function PolibotUploadPanel({ currentUser, onOpenAction }) {
   const [loadError, setLoadError] = useState('');
   const usage = status?.usage || workspaceUsage({});
   const isReady = ['ready', 'empty'].includes(status?.health);
+  const readinessLabel = !status?.granted ? '권한 필요' : isReady ? '가능' : status?.health === 'needs_setup' ? '확인 중' : '-';
 
   const loadWorkspace = useCallback(({ silent = false } = {}) => {
     if (silent) setRefreshing(true);
@@ -4874,7 +4875,7 @@ function PolibotUploadPanel({ currentUser, onOpenAction }) {
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
             <div className="text-[11px] font-bold text-zinc-600">추천 준비</div>
-            <div className="mt-1 text-lg font-black text-zinc-100">{isReady ? '가능' : status?.health === 'needs_setup' ? '준비 중' : '-'}</div>
+            <div className="mt-1 text-lg font-black text-zinc-100">{readinessLabel}</div>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
             <div className="text-[11px] font-bold text-zinc-600">남은 추천</div>
@@ -4939,7 +4940,8 @@ function PolibotLoadingState({ title = '처리 중', description = '잠시만 �
 
 function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction, currentUser }) {
   const toast = useToast();
-  const isTestStepper = String(currentUser?.email || '').trim().toLowerCase() === 'test1@test.com';
+  const useStepperRecommendationFlow = true;
+  const localStatus = useMemo(() => buildLocalPolibotStatus(currentUser), [currentUser]);
   const [form, setForm] = useState({
     name: '',
     age: '',
@@ -4955,14 +4957,18 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
     renewalPreference: '',
     purpose: ''
   });
-  const [workspace, setWorkspace] = useState({});
+  const [workspace, setWorkspace] = useState(() => ({
+    usage: localStatus?.usage || null,
+    status: localStatus?.health || '',
+    summary: localStatus?.summary || ''
+  }));
   const [selectedRecommendation, setSelectedRecommendation] = useState(null);
   const [saveMemo, setSaveMemo] = useState('');
   const [saving, setSaving] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [testStep, setTestStep] = useState(1);
   const [submitAttempted, setSubmitAttempted] = useState(false);
-  const [workspaceLoaded, setWorkspaceLoaded] = useState(false);
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(Boolean(localStatus));
   const workspaceLoading = !workspaceLoaded;
   const usage = workspaceUsage(workspace);
   const summaryCompanies = Array.isArray(workspace.knowledgeDbSummary?.companies)
@@ -4987,6 +4993,17 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       : [...selectedNeeds, need];
     setNeeds(next);
   };
+
+  useEffect(() => {
+    if (!localStatus) return;
+    setWorkspace((prev) => ({
+      ...prev,
+      usage: prev.usage || localStatus.usage,
+      status: prev.status || localStatus.health,
+      summary: prev.summary || localStatus.summary
+    }));
+    setWorkspaceLoaded(true);
+  }, [localStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -5044,7 +5061,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       setWorkspace(next);
       await reloadCurrentUser?.();
       setSelectedRecommendation(null);
-      if (isTestStepper) setTestStep(3);
+      if (useStepperRecommendationFlow) setTestStep(3);
       const hasNextRecommendations = Array.isArray(next?.recommendations) && next.recommendations.length > 0;
       toast(
         hasNextRecommendations ? '추천 초안을 만들었어요.' : '추천 보류 조건을 확인해 주세요.',
@@ -5084,7 +5101,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
     }
   };
 
-  if (isTestStepper) {
+  if (useStepperRecommendationFlow) {
     return (
       <div className="grid gap-4">
         {workspaceLoading && <PolibotLoadingBanner label="자료 목록은 백그라운드에서 확인 중" />}
@@ -5120,7 +5137,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           <PolibotRecommendationModal
             recommendation={selectedRecommendation}
             profile={workspace.customerProfile}
-            testMode={isTestStepper}
+            testMode={useStepperRecommendationFlow}
             onClose={() => setSelectedRecommendation(null)}
             onSave={saveCustomer}
             onFeedback={saveFeedback}

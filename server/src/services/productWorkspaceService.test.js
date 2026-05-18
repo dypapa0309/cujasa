@@ -110,6 +110,7 @@ test('getProductWorkspaceStatus returns lightweight POLIBOT customer status', as
 
   assert.equal(status.productId, 'polibot');
   assert.equal(status.granted, true);
+  assert.equal(status.health, 'empty');
   assert.equal(status.actionKey, 'polibot-recommend');
   assert.equal(status.usage.remaining, 3);
 });
