@@ -36,7 +36,7 @@ export const PRODUCTS = [
     description: '보험 보장분석 및 상품 추천 자동화',
     supportLabel: '보험 분석 자동화',
     appUrl: 'https://app.jasain.kr',
-    landingUrl: 'https://app.jasain.kr/?mode=register&product=polibot#tab=beta'
+    landingUrl: 'https://app.jasain.kr/polibot?mode=register#tab=beta'
   },
   {
     id: 'infludex',
@@ -44,7 +44,7 @@ export const PRODUCTS = [
     description: '인스타그램 인플루언서 등급 분석',
     supportLabel: '인스타그램 분석 자동화',
     appUrl: 'https://app.jasain.kr',
-    landingUrl: 'https://app.jasain.kr/?mode=register&product=infludex#tab=beta',
+    landingUrl: 'https://app.jasain.kr/infludex?mode=register#tab=beta',
     status: 'active'
   },
   {
@@ -53,7 +53,7 @@ export const PRODUCTS = [
     description: '구독 비용 관리',
     supportLabel: '구독 비용 관리',
     appUrl: 'https://app.jasain.kr',
-    landingUrl: 'https://app.jasain.kr/?mode=register&product=sublog#tab=beta',
+    landingUrl: 'https://app.jasain.kr/sublog?mode=register#tab=beta',
     status: 'active'
   },
   {
@@ -62,7 +62,7 @@ export const PRODUCTS = [
     description: '상품 쇼츠 생산 자동화',
     supportLabel: '상품 영상 자동화',
     appUrl: 'https://app.jasain.kr',
-    landingUrl: 'https://app.jasain.kr/?mode=register&product=auvibot#tab=beta',
+    landingUrl: 'https://app.jasain.kr/auvibot?mode=register#tab=beta',
     status: 'active'
   }
 ];

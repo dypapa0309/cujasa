@@ -150,7 +150,7 @@ const tables = {
       name: 'POLIBOT',
       description: '보험 보장분석 및 상품 추천 자동화',
       app_url: 'https://app.jasain.kr',
-      landing_url: 'https://app.jasain.kr/?mode=register&product=polibot#tab=beta',
+      landing_url: 'https://app.jasain.kr/polibot?mode=register#tab=beta',
       status: 'active',
       created_at: now(),
       updated_at: now()
@@ -160,7 +160,7 @@ const tables = {
       name: 'INFLUDEX',
       description: '인스타그램 인플루언서 등급 분석',
       app_url: 'https://app.jasain.kr',
-      landing_url: 'https://app.jasain.kr/?mode=register&product=infludex#tab=beta',
+      landing_url: 'https://app.jasain.kr/infludex?mode=register#tab=beta',
       status: 'active',
       created_at: now(),
       updated_at: now()
@@ -170,7 +170,7 @@ const tables = {
       name: 'SUBLOG',
       description: '구독 비용 관리',
       app_url: 'https://app.jasain.kr',
-      landing_url: 'https://app.jasain.kr/?mode=register&product=sublog#tab=beta',
+      landing_url: 'https://app.jasain.kr/sublog?mode=register#tab=beta',
       status: 'active',
       created_at: now(),
       updated_at: now()
