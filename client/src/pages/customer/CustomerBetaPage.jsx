@@ -429,7 +429,22 @@ export default function CustomerBetaPage({
   const isTestAssistantUser = String(currentUser?.email || '').trim().toLowerCase() === 'test1@test.com';
 
   const loadWorkspaceData = useCallback(async () => {
-    if (!account?.id) return;
+    if (selectedProductId !== CURRENT_PRODUCT.id) {
+      setQueue([]);
+      setPosts([]);
+      setAnalytics(null);
+      setLoadError('');
+      setLoading(false);
+      return;
+    }
+    if (!account?.id) {
+      setQueue([]);
+      setPosts([]);
+      setAnalytics(null);
+      setLoadError('');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setLoadError('');
     try {
@@ -447,7 +462,7 @@ export default function CustomerBetaPage({
     } finally {
       setLoading(false);
     }
-  }, [account?.id]);
+  }, [account?.id, selectedProductId]);
 
   useEffect(() => {
     loadWorkspaceData();
