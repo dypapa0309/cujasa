@@ -68,8 +68,15 @@ function tokenState(account) {
   return { status: 'ok', label: '연결됨' };
 }
 
-async function coupangState(account) {
-  const creds = await resolveCoupangCredentialsForAccount(account);
+async function coupangState(account, { productSettings = null } = {}) {
+  const creds = productSettings && typeof productSettings === 'object'
+    ? {
+        accessKey: account.coupang_access_key || productSettings.coupangAccessKey || process.env.COUPANG_ACCESS_KEY,
+        secretKey: account.coupang_secret_key || productSettings.coupangSecretKey || process.env.COUPANG_SECRET_KEY,
+        partnerId: account.coupang_partner_id || productSettings.coupangPartnerId || process.env.COUPANG_PARTNER_ID,
+        trackingCode: account.coupang_tracking_code || productSettings.defaultTrackingCode || process.env.COUPANG_TRACKING_CODE
+      }
+    : await resolveCoupangCredentialsForAccount(account);
   const missing = [];
   if (!creds.accessKey) missing.push('Access Key');
   if (!creds.secretKey) missing.push('Secret Key');
@@ -167,6 +174,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
     activityLogs = [],
     userAccounts = [],
     usersById = new Map(),
+    cujasaSettingsByAccountId = new Map(),
     pipelineRunsByAccountId = null,
     start,
     end
@@ -193,7 +201,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   const pipelineRun = pipelineRunsByAccountId?.get(account.id) || await latestPipelineRunReadOnly(account.id);
   const pipeline = pipelineState(pipelineRun);
   const threads = tokenState(account);
-  const coupang = await coupangState(account);
+  const coupang = await coupangState(account, { productSettings: cujasaSettingsByAccountId.get(account.id) || null });
   const customer = await customerLabelFor(account.id, userAccounts, usersById);
   const problems = [];
   const currentThreadsOk = threads.status !== 'error';
@@ -336,10 +344,26 @@ function latestPipelineRunsByAccount(runs = []) {
   return map;
 }
 
+function buildCujasaSettingsByAccount(userAccounts = [], userProducts = []) {
+  const settingsByUserId = new Map();
+  for (const grant of userProducts) {
+    if (grant.product_id !== 'cujasa') continue;
+    if (!grant.settings || typeof grant.settings !== 'object') continue;
+    settingsByUserId.set(grant.user_id, grant.settings);
+  }
+  const settingsByAccountId = new Map();
+  for (const link of userAccounts) {
+    if (!link.account_id || settingsByAccountId.has(link.account_id)) continue;
+    const settings = settingsByUserId.get(link.user_id);
+    if (settings) settingsByAccountId.set(link.account_id, settings);
+  }
+  return settingsByAccountId;
+}
+
 async function loadOperationContext() {
   const range = kstDayRange();
   const loadErrors = [];
-  const [accounts, queue, products, activityLogs, users, userAccounts, pipelineRuns] = await Promise.all([
+  const [accounts, queue, products, activityLogs, users, userAccounts, userProducts, pipelineRuns] = await Promise.all([
     safeDbList('accounts', {}, { limit: 500 }, [], loadErrors),
     safeDbList('post_queue', {}, {
       order: 'updated_at',
@@ -355,14 +379,16 @@ async function loadOperationContext() {
     safeDbList('activity_logs', {}, { order: 'created_at', ascending: false, limit: 300 }, [], loadErrors),
     safeDbList('users', {}, { limit: 1000 }, [], loadErrors),
     safeDbList('user_accounts', {}, { limit: 2000 }, [], loadErrors),
+    safeDbList('user_products', {}, { select: 'user_id,product_id,settings', limit: 5000 }, [], loadErrors),
     safeDbList('pipeline_runs', {}, { order: 'started_at', ascending: false, limit: OPERATION_PIPELINE_RUN_LIMIT }, [], loadErrors)
   ]);
-  return { ...range, accounts, queue, products, activityLogs, users, userAccounts, pipelineRuns, loadErrors };
+  return { ...range, accounts, queue, products, activityLogs, users, userAccounts, userProducts, pipelineRuns, loadErrors };
 }
 
 async function buildOperationAccountRows(context) {
-  const { accounts, queue, products, activityLogs, users, userAccounts, pipelineRuns, start, end } = context;
+  const { accounts, queue, products, activityLogs, users, userAccounts, userProducts, pipelineRuns, start, end } = context;
   const usersById = new Map(users.map((user) => [user.id, user]));
+  const cujasaSettingsByAccountId = buildCujasaSettingsByAccount(userAccounts, userProducts);
   const pipelineRunsByAccountId = latestPipelineRunsByAccount(pipelineRuns);
   const activeAccounts = accounts.filter((account) => account.status === 'active');
 
@@ -375,6 +401,7 @@ async function buildOperationAccountRows(context) {
         activityLogs,
         usersById,
         userAccounts,
+        cujasaSettingsByAccountId,
         pipelineRunsByAccountId,
         start,
         end

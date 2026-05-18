@@ -421,7 +421,7 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
     microDetail: microDetailMatches >= 2 || (microDetailMatches >= 1 && sensoryDetailMatches >= 1),
     saveWorthiness: /(저라면|먼저|덜\s*후회|덜\s*쌓|사기\s*전|시작할\s*때|처음\s*자취|체크|기준|자리부터|맞춰두|나중에|한\s*번\s*덜|첫\s*주|사진빨|방치|안\s*사게|손\s*안\s*감|공감함|공감하시나요|어디까지\s*봄|필수임|필수일까요|예민한\s*거임|예민한\s*걸까요)/.test(text)
       && (microDetailMatches >= 1 || numberedCriteriaCount >= 2),
-    humanWarmth: /(저라면|저는|나는|같아요|같아|더라고요|더라|되더라고요|덜\s*후회|살아보면|처음엔|막상|은근|진짜|나만|공감함|듯|많음|겪어본|안\s*사게|손\s*안\s*감|ㅋㅋ)/.test(text)
+    humanWarmth: /(저라면|저는|나는|같아요|같아|걸까요|많아요|더라고요|더라|되더라고요|덜\s*후회|살아보면|처음엔|막상|은근|진짜|나만|공감함|듯|많음|겪어본|안\s*사게|손\s*안\s*감|ㅋㅋ)/.test(text)
       && !/(습니다|합니다|됩니다|중요합니다)/.test(text),
     shallowChecklist
   };
@@ -719,11 +719,11 @@ export function buildHumanStyleFallback(topic = {}, account = {}, products = [],
   const imaginaryReplyTemplates = banmal
     ? [
       `댓글에서 ${itemLabel} 뭐부터 보냐고 물어보면 난 ${detail.first}부터 봄.\n\n${detail.second} 안 맞으면 결국 안 쓰게 되더라. ${question}`,
-      `누가 ${itemLabel} 아무거나 사도 되냐고 하면 일단 말림.\n${detail.first}, ${detail.third} 이거 안 맞으면 첫 주부터 거슬림.`
+      `누가 ${itemLabel} 아무거나 사도 되냐고 하면 일단 말림.\n${detail.first}, ${detail.third} 이거 안 맞으면 첫 주부터 거슬림.\n\n${question}`
     ]
     : [
       `댓글에서 ${itemLabel} 뭐부터 보냐고 물어보면 저는 ${detail.first}부터 봐요.\n\n${detail.second} 안 맞으면 결국 안 쓰게 되더라고요. ${question}`,
-      `누가 ${itemLabel} 아무거나 사도 되냐고 하면 일단 말릴 것 같아요.\n${detail.first}, ${detail.third} 이거 안 맞으면 첫 주부터 거슬려요.`
+      `누가 ${itemLabel} 아무거나 사도 되냐고 하면 일단 말릴 것 같아요.\n${detail.first}, ${detail.third} 이거 안 맞으면 첫 주부터 거슬려요.\n\n${question}`
     ];
 
   const templatesByStyle = {

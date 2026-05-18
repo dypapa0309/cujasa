@@ -435,26 +435,41 @@ export async function generatePosts(topicId) {
     const styleFit = validatePostStyleFit(prepared.body, account);
     if (!styleFit.allowed) {
       const originalBody = prepared.body;
-      const fallbackCandidate = preparePostBodyCandidate(buildChoiceTensionFallback(topic, account, selected, { recentBodies }), account);
-      const fallbackPrepared = fallbackCandidate.prepared;
-      const fallbackStyleFit = validatePostStyleFit(fallbackPrepared.body, account);
+      let rewriteAction = 'post_style_blocked';
+      let nextCandidate = preparePostBodyCandidate(strengthenPostHook(originalBody, topic, account), account);
+      let nextPrepared = nextCandidate.prepared;
+      let nextStyleFit = validatePostStyleFit(nextPrepared.body, account);
+
+      if (!nextStyleFit.allowed || nextCandidate.risk.riskLevel === 'high') {
+        nextCandidate = preparePostBodyCandidate(
+          buildChoiceTensionFallback(topic, account, selected, { recentBodies, formatStyle: 'experience_question' }),
+          account
+        );
+        nextPrepared = nextCandidate.prepared;
+        nextStyleFit = validatePostStyleFit(nextPrepared.body, account);
+      }
+
+      if (nextStyleFit.allowed && nextCandidate.risk.riskLevel !== 'high') {
+        rewriteAction = 'post_style_rewritten';
+      }
+
       await logActivity({
         account_id: topic.account_id,
         project_id: topic.project_id,
         topic_id: topic.id,
-        action: fallbackStyleFit.allowed ? 'post_style_rewritten' : 'post_style_blocked',
+        action: rewriteAction,
         level: 'info',
         message: styleFit.reasons.join('; '),
         payload: {
           contentType: item.contentType,
           originalBody,
-          fallbackBody: fallbackPrepared.body,
+          fallbackBody: nextPrepared.body,
           reasons: styleFit.reasons,
-          fallbackReasons: fallbackStyleFit.reasons,
+          fallbackReasons: nextStyleFit.reasons,
           contentMode: styleFit.profile.strategy.effectiveMode
         }
       });
-      if (!fallbackStyleFit.allowed) {
+      if (!nextStyleFit.allowed || nextCandidate.risk.riskLevel === 'high') {
         rejectionReasons.push('style_blocked');
         rejectedCandidates.push({
           contentType: contentTypeToSave,
@@ -464,8 +479,8 @@ export async function generatePosts(topicId) {
         });
         continue;
       }
-      risk = fallbackCandidate.risk;
-      prepared = fallbackPrepared;
+      risk = nextCandidate.risk;
+      prepared = nextPrepared;
       contentTypeToSave = getFallbackContentType(account);
       strategyMeta = resolveContentStrategyMetadata(item, prepared.body, contentTypeToSave);
     }

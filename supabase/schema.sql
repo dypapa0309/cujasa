@@ -22,7 +22,7 @@ create table if not exists accounts (
   forbidden_words jsonb not null default '[]',
   tone text,
   cta_style text,
-  content_mode text not null default 'auto' check (content_mode in ('auto', 'daily', 'empathy', 'problem_solution', 'checklist', 'question', 'safe_debate')),
+  content_mode text not null default 'question' check (content_mode in ('auto', 'daily', 'empathy', 'problem_solution', 'checklist', 'question', 'safe_debate')),
   content_intensity text not null default 'normal' check (content_intensity in ('soft', 'normal', 'strong')),
   seasonality_enabled boolean not null default true,
   comment_induction_style text not null default 'soft_question' check (comment_induction_style in ('none', 'soft_question', 'experience_question', 'choice_question')),
@@ -46,8 +46,8 @@ create table if not exists accounts (
   content_style_note text,
   daily_post_min int not null default 0,
   daily_post_max int not null default 3,
-  active_time_windows jsonb not null default '[{"start":"09:00","end":"23:00"}]',
-  min_interval_minutes int not null default 90,
+  active_time_windows jsonb not null default '[{"start":"09:00","end":"11:00"},{"start":"20:00","end":"23:00"}]',
+  min_interval_minutes int not null default 50,
   link_post_ratio numeric not null default 0.9,
   no_link_post_ratio numeric not null default 0.1,
   rest_days_per_week int not null default 1,
@@ -87,8 +87,8 @@ alter table accounts add column if not exists coupang_partner_id text;
 alter table accounts add column if not exists coupang_tracking_code text;
 alter table accounts add column if not exists coupang_search_cooldown_until timestamptz;
 alter table accounts add column if not exists coupang_search_status text default 'ok';
-alter table accounts add column if not exists content_mode text not null default 'auto';
-alter table accounts alter column content_mode set default 'auto';
+alter table accounts add column if not exists content_mode text not null default 'question';
+alter table accounts alter column content_mode set default 'question';
 alter table accounts
   drop constraint if exists accounts_content_mode_check;
 alter table accounts
@@ -117,8 +117,8 @@ alter table accounts add column if not exists toss_share_link_memo text;
 alter table accounts add column if not exists content_style_note text;
 alter table accounts alter column daily_post_min set default 0;
 alter table accounts alter column daily_post_max set default 3;
-alter table accounts alter column active_time_windows set default '[{"start":"09:00","end":"23:00"}]'::jsonb;
-alter table accounts alter column min_interval_minutes set default 90;
+alter table accounts alter column active_time_windows set default '[{"start":"09:00","end":"11:00"},{"start":"20:00","end":"23:00"}]'::jsonb;
+alter table accounts alter column min_interval_minutes set default 50;
 alter table accounts alter column link_post_ratio set default 0.9;
 alter table accounts alter column no_link_post_ratio set default 0.1;
 create unique index if not exists idx_accounts_blog_slug

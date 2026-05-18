@@ -9,6 +9,10 @@ const EMOJI_LEVELS = new Set(['none', 'low', 'medium']);
 const MAX_DAILY_POSTS = 5;
 const BALANCED_LINK_RATIO = 0.9;
 const BALANCED_NO_LINK_RATIO = 0.1;
+const STANDARD_DAILY_POST_MAX = 3;
+const STANDARD_ACTIVE_TIME_WINDOWS = [{ start: '09:00', end: '11:00' }, { start: '20:00', end: '23:00' }];
+const STANDARD_MIN_INTERVAL_MINUTES = 50;
+const STANDARD_CONTENT_MODE = 'question';
 const SENSITIVE_ACCOUNT_KEYS = new Set([
   'threads_access_token',
   'coupang_access_key',
@@ -114,18 +118,18 @@ function normalizeAccount(payload) {
   if (!Array.isArray(next.forbidden_topics)) next.forbidden_topics = next.forbidden_topics ? [String(next.forbidden_topics)] : [];
   if (!Array.isArray(next.forbidden_words)) next.forbidden_words = next.forbidden_words ? [String(next.forbidden_words)] : [];
   if (!Array.isArray(next.active_time_windows) || next.active_time_windows.length === 0) {
-    next.active_time_windows = [{ start: '09:00', end: '09:00' }];
+    next.active_time_windows = STANDARD_ACTIVE_TIME_WINDOWS;
   }
   next.active_time_windows = next.active_time_windows
     .filter((window) => window?.start && window?.end)
     .map((window) => ({ start: window.start, end: window.end }));
   next.daily_post_min = 0;
-  next.daily_post_max = Math.min(MAX_DAILY_POSTS, Math.max(0, toFiniteNumber(next.daily_post_max, 3)));
-  next.min_interval_minutes = Math.max(1, toFiniteNumber(next.min_interval_minutes, 90));
+  next.daily_post_max = Math.min(MAX_DAILY_POSTS, Math.max(0, toFiniteNumber(next.daily_post_max, STANDARD_DAILY_POST_MAX)));
+  next.min_interval_minutes = Math.max(1, toFiniteNumber(next.min_interval_minutes, STANDARD_MIN_INTERVAL_MINUTES));
   next.link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.link_post_ratio, BALANCED_LINK_RATIO)));
   next.no_link_post_ratio = Math.min(1, Math.max(0, toFiniteNumber(next.no_link_post_ratio, BALANCED_NO_LINK_RATIO)));
   next.rest_days_per_week = Math.min(7, Math.max(0, toFiniteNumber(next.rest_days_per_week, 1)));
-  if (!CONTENT_MODES.has(next.content_mode)) next.content_mode = 'auto';
+  if (!CONTENT_MODES.has(next.content_mode)) next.content_mode = STANDARD_CONTENT_MODE;
   if (!CONTENT_INTENSITIES.has(next.content_intensity)) next.content_intensity = 'normal';
   if (!COMMENT_STYLES.has(next.comment_induction_style)) next.comment_induction_style = 'soft_question';
   if (!PRODUCT_MENTION_STYLES.has(next.product_mention_style)) next.product_mention_style = 'natural';
@@ -173,7 +177,7 @@ export async function createAccount(payload) {
     automation_status: 'paused',
     forbidden_topics: [],
     forbidden_words: ['100%', '무조건', '완벽', '보장', '치료', '예방', '다이어트 약', '보조제', '가르시니아', '효과 보장', '체중감량 보장'],
-    content_mode: 'auto',
+    content_mode: STANDARD_CONTENT_MODE,
     content_intensity: 'normal',
     seasonality_enabled: true,
     comment_induction_style: 'soft_question',
@@ -196,9 +200,9 @@ export async function createAccount(payload) {
     toss_share_link_memo: '',
     content_style_note: '',
     daily_post_min: 0,
-    daily_post_max: 3,
-    active_time_windows: [{ start: '09:00', end: '23:00' }],
-    min_interval_minutes: 90,
+    daily_post_max: STANDARD_DAILY_POST_MAX,
+    active_time_windows: STANDARD_ACTIVE_TIME_WINDOWS,
+    min_interval_minutes: STANDARD_MIN_INTERVAL_MINUTES,
     threads_link_delivery_mode: 'reply',
     link_post_ratio: BALANCED_LINK_RATIO,
     no_link_post_ratio: BALANCED_NO_LINK_RATIO,

@@ -628,6 +628,41 @@ test('INFLUDEX link analysis uses deterministic campaign selection scoring', asy
   assert.ok(weak.riskFlags.includes('ad_memo_present'));
 });
 
+test('INFLUDEX caps risky high scores with confidence and quality signals', async () => {
+  const userId = '33333333-3333-4333-8333-444444444444';
+  await dbInsert('users', {
+    id: userId,
+    email: 'infludex-risk-cap-test@example.com',
+    password_hash: 'test',
+    name: 'INFLUDEX 리스크 캡',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'infludex',
+    status: 'active',
+    role: 'customer',
+    settings: { usage: { infludex: { limit: 5, used: 0, remaining: 5 } } }
+  });
+
+  await saveInfludexCandidates(userId, {
+    fileName: 'infludex-risk.csv',
+    rows: [
+      'url,handle,campaign,category,followers,avgLikes,avgComments,recentPostAt,adMemo',
+      'https://instagram.com/suspicious,@suspicious,뷰티,가전,30000,12000,0,,광고 많음'
+    ].join('\n')
+  });
+  const analyzed = await analyzeInfludexCandidates(userId);
+  const target = analyzed.infludexResults.find((item) => item.handle === 'suspicious');
+
+  assert.ok(target);
+  assert.equal(['B', 'C', 'D'].includes(target.grade), true);
+  assert.ok(Number(target.originalScore || 0) > Number(target.score || 0));
+  assert.ok(target.riskFlags.includes('category_mismatch'));
+  assert.ok(target.riskFlags.includes('heavy_ad_risk'));
+  assert.ok(target.riskFlags.includes('suspicious_high_engagement'));
+});
+
 test('INFLUDEX candidate upload reads DOCX files', async () => {
   const userId = '44444444-4444-4444-8444-444444444444';
   await dbInsert('users', {

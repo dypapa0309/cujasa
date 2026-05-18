@@ -14,7 +14,7 @@ function kstTime(iso) {
   }).format(new Date(iso));
 }
 
-test('creates fixed-start schedule using minimum interval', () => {
+test('creates random spread schedule using minimum interval as a floor', () => {
   const plan = createDailySchedulePlan({
     daily_post_max: 5,
     min_interval_minutes: 50,

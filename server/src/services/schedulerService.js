@@ -261,6 +261,29 @@ function sortDraftsForFormatBalance(posts = [], counts = new Map(), diversityCou
   });
 }
 
+function hasUsableDiversityAlternative(candidates = [], currentPost = {}, {
+  topicProducts = new Map(),
+  requireLink = false,
+  diversityCounts = buildDiversityCounts(),
+  selected = [],
+  usedTopicIds = new Set(),
+  usedProductIds = new Set(),
+  strictDuplicates = true,
+  similarityThreshold = 0.8
+} = {}) {
+  return candidates.some((candidate) => {
+    if (candidate.id === currentPost.id) return false;
+    if (requireLink && !topicProducts.has(candidate.topic_id)) return false;
+    if (queueQualityIssue(candidate)) return false;
+    if (strictDuplicates && usedTopicIds.has(candidate.topic_id)) return false;
+    const product = topicProducts.get(candidate.topic_id) || null;
+    if (strictDuplicates && product?.id && usedProductIds.has(product.id)) return false;
+    if (diversityIssue(candidate, diversityCounts, selected)) return false;
+    if (selected.some((item) => bodySimilarity(item.post.body, candidate.body) >= similarityThreshold)) return false;
+    return true;
+  });
+}
+
 function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), requireLink = false, recentFormatCounts = new Map(), diversityCounts = buildDiversityCounts() } = {}) {
   const selected = [];
   const usedTopicIds = new Set();
@@ -290,8 +313,18 @@ function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), 
     }
     const diversity = diversityIssue(post, diversityCounts, selected);
     if (diversity) {
-      rejected.push({ postId: post.id, topicId: post.topic_id, contentType: post.content_type, ...diversity });
-      continue;
+      const alternativeAvailable = hasUsableDiversityAlternative(candidates, post, {
+        topicProducts,
+        requireLink,
+        diversityCounts,
+        selected,
+        usedTopicIds,
+        usedProductIds
+      });
+      if (alternativeAvailable) {
+        rejected.push({ postId: post.id, topicId: post.topic_id, contentType: post.content_type, ...diversity });
+        continue;
+      }
     }
     const similar = selected.find((item) => bodySimilarity(item.post.body, post.body) >= 0.8);
     if (similar) {
@@ -311,8 +344,18 @@ function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), 
       if (issue) continue;
       const diversity = diversityIssue(post, diversityCounts, selected);
       if (diversity?.source === 'recent') {
-        rejected.push({ postId: post.id, topicId: post.topic_id, contentType: post.content_type, ...diversity });
-        continue;
+        const alternativeAvailable = hasUsableDiversityAlternative(candidates, post, {
+          topicProducts,
+          requireLink,
+          diversityCounts,
+          selected,
+          strictDuplicates: false,
+          similarityThreshold: 0.95
+        });
+        if (alternativeAvailable) {
+          rejected.push({ postId: post.id, topicId: post.topic_id, contentType: post.content_type, ...diversity });
+          continue;
+        }
       }
       const similar = selected.find((item) => bodySimilarity(item.post.body, post.body) >= 0.95);
       if (similar) continue;

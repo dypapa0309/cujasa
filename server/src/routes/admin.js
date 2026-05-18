@@ -5,6 +5,7 @@ import {
   grantUserProduct,
   listAvailableProducts,
   listUserProducts,
+  listUserSummaries,
   listUsers,
   revokeUserProduct,
   updateUser,
@@ -580,6 +581,12 @@ router.post('/accounts/:accountId/blog', async (req, res, next) => {
 
 router.patch('/setup-tasks/:id', async (req, res, next) => {
   try { res.json(await updateSetupTask(req.params.id, req.body || {})); } catch (e) { next(e); }
+});
+
+router.get('/users/summary', async (req, res, next) => {
+  try {
+    res.json(await listUserSummaries({ includeArchived: req.query?.includeArchived === '1' || req.query?.includeArchived === 'true' }));
+  } catch (e) { next(e); }
 });
 
 // 구매자 목록

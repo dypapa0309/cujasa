@@ -357,11 +357,20 @@ function sortInfludexResults(results = []) {
 function infludexRiskLabel(flag = '') {
   const labels = {
     category_missing: '카테고리 필요',
+    category_mismatch: '카테고리 확인 필요',
     followers_missing: '팔로워 수 필요',
     engagement_missing: '좋아요/댓글 평균 필요',
     recent_post_missing: '최근 게시일 필요',
     inactive_over_60d: '최근 활동 확인 필요',
-    ad_memo_present: '광고/협찬 메모 있음'
+    inactive_over_90d: '활동성 낮음',
+    ad_memo_present: '광고/협찬 메모 있음',
+    heavy_ad_risk: '광고성 높음',
+    follower_reaction_mismatch: '반응 확인 필요',
+    low_engagement_for_size: '반응 확인 필요',
+    suspicious_high_engagement: '반응 확인 필요',
+    high_engagement_review: '반응 확인 필요',
+    comments_missing_for_likes: '댓글 확인 필요',
+    low_comment_depth: '댓글 확인 필요'
   };
   return labels[flag] || flag;
 }
@@ -6038,7 +6047,7 @@ function PolibotCustomersPanel() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.get('/api/product-workspace/polibot')
+    api.get('/api/product-workspace/polibot/customer-workspace')
       .then((data) => setWorkspace(data || {}))
       .catch((err) => toast(err.message || '고객 데이터를 불러오지 못했어요.', 'error'));
   }, [toast]);
@@ -6122,7 +6131,7 @@ function PolibotDownloadPanel() {
   const [filters, setFilters] = useState({ query: '', from: '', to: '', productGroup: '', month: '', target: 'all', type: 'recommendations' });
 
   useEffect(() => {
-    api.get('/api/product-workspace/polibot')
+    api.get('/api/product-workspace/polibot/customer-workspace')
       .then((data) => setWorkspace(data || {}))
       .catch((err) => toast(err.message || '다운로드 데이터를 불러오지 못했어요.', 'error'));
   }, [toast]);
@@ -6386,12 +6395,12 @@ function InfludexUploadPanel({ onOpenGrade }) {
             rows="7"
             value={rows}
             onChange={(event) => setRows(event.target.value)}
+            placeholder={'인스타그램 URL 또는 @계정을 한 줄씩 입력해 주세요.\nCSV/TXT/DOCX 파일을 올려도 됩니다.'}
           />
         </label>
         <div className="mt-3 rounded-2xl bg-black/25 px-4 py-3 text-sm text-zinc-500">
-          {parsing ? '파일 분석 중...' : `현재 후보 ${candidateCount}개 · 캠페인 선정 기준으로 S/A/B/C/D 링크 분석을 실행해요.`}
+          {parsing ? '파일 분석 중...' : `현재 후보 ${candidateCount}개`}
         </div>
-        <label className={`${labelClass} mt-3`}>파일명<input className={inputClass} value={fileName} onChange={(event) => setFileName(event.target.value)} placeholder="infludex_candidates.csv" /></label>
         <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
           <DarkButton onClick={save} disabled={saving || parsing || (!rows.trim() && candidateFiles.length === 0 && savedCandidates.length === 0)}>{saving ? '저장 중...' : '후보 저장'}</DarkButton>
           <DarkButton variant="ghost" onClick={reset} disabled={saving || parsing || (savedCandidates.length === 0 && !rows.trim() && !fileName)}>새로 올리기</DarkButton>
@@ -6402,12 +6411,10 @@ function InfludexUploadPanel({ onOpenGrade }) {
           <div className="grid gap-2">
             {savedCandidates.slice(0, 8).map((item) => {
               const followers = Number(item.followerCount || 0);
-              const reactions = Number(item.avgLikes || 0) + Number(item.avgComments || 0);
-              const engagement = followers > 0 && reactions > 0 ? `반응률 ${((reactions / followers) * 100).toFixed(2)}%` : '지표 보강 필요';
               return (
                 <div key={item.id || item.handle || item.url} className="rounded-2xl bg-black/25 px-4 py-3">
                   <div className="text-sm font-black text-zinc-200">{infludexCandidateLabel(item)}</div>
-                  <div className="mt-1 text-xs font-bold text-zinc-500">{[item.displayName || item.description, item.category, followers ? `팔로워 ${followers.toLocaleString('ko-KR')}` : '', engagement].filter(Boolean).join(' · ')}</div>
+                  <div className="mt-1 text-xs font-bold text-zinc-500">{[item.displayName || item.description, item.category, followers ? `팔로워 ${followers.toLocaleString('ko-KR')}` : '분석 대기'].filter(Boolean).join(' · ')}</div>
                 </div>
               );
             })}
@@ -6422,12 +6429,13 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
   const toast = useToast();
   const [workspace, setWorkspace] = useState({});
   const [analyzing, setAnalyzing] = useState(false);
-  const [scoreHelpOpen, setScoreHelpOpen] = useState(false);
   const usage = workspaceUsage(workspace);
   const candidates = Array.isArray(workspace.candidates) ? workspace.candidates : [];
   const results = sortInfludexResults(Array.isArray(workspace.infludexResults) ? workspace.infludexResults : []);
   const scoredResults = results.filter((item) => item.analysisStatus !== 'data_missing' && item.grade);
   const missingResults = results.filter((item) => item.analysisStatus === 'data_missing' || !item.grade);
+  const recommendedResults = scoredResults.filter((item) => ['S', 'A'].includes(item.grade));
+  const reviewResults = results.filter((item) => !['S', 'A'].includes(item.grade));
   const gradeRows = ['S', 'A', 'B', 'C', 'D'].map((grade) => [grade, scoredResults.filter((item) => item.grade === grade).length]);
 
   useEffect(() => {
@@ -6468,37 +6476,20 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
     <>
       <PanelCard title="링크 분석">
         <ProductUsageStrip usage={usage} />
-        <div className="mb-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs leading-relaxed text-zinc-500">
-          캠페인 선정 기준으로 카테고리 적합도, 반응률, 댓글 비중, 팔로워 규모, 최근 활동성, 광고/협찬 리스크를 합산해 S/A/B/C/D 등급을 매겨요.
-        </div>
         {results.length > 0 && (
-          <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="mb-3 grid grid-cols-3 gap-2">
             <div className="rounded-2xl bg-black/25 px-3 py-4 text-center">
               <div className="text-xs font-black text-zinc-600">전체</div>
               <div className="mt-1 text-xl font-black text-zinc-100">{results.length}</div>
             </div>
             <div className="rounded-2xl bg-black/25 px-3 py-4 text-center">
-              <div className="text-xs font-black text-zinc-600">분석 가능</div>
-              <div className="mt-1 text-xl font-black text-emerald-300">{scoredResults.length}</div>
+              <div className="text-xs font-black text-zinc-600">추천</div>
+              <div className="mt-1 text-xl font-black text-emerald-300">{recommendedResults.length}</div>
             </div>
             <div className="rounded-2xl bg-black/25 px-3 py-4 text-center">
-              <div className="text-xs font-black text-zinc-600">데이터 부족</div>
-              <div className="mt-1 text-xl font-black text-amber-300">{missingResults.length}</div>
+              <div className="text-xs font-black text-zinc-600">확인 필요</div>
+              <div className="mt-1 text-xl font-black text-amber-300">{reviewResults.length}</div>
             </div>
-            <button
-              type="button"
-              onClick={() => setScoreHelpOpen((prev) => !prev)}
-              className="rounded-2xl bg-black/25 px-3 py-4 text-center transition hover:bg-white/5"
-            >
-              <div className="text-xs font-black text-zinc-600">기준</div>
-              <div className="mt-1 text-sm font-black text-zinc-200">보기</div>
-            </button>
-          </div>
-        )}
-        {scoreHelpOpen && (
-          <div className="mb-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs leading-relaxed text-zinc-500">
-            <div className="font-black text-zinc-300">S/A/B/C/D는 팔로워와 반응 지표가 있을 때만 매겨요.</div>
-            <div className="mt-1">지표가 없는 후보는 낮은 점수로 처리하지 않고 “데이터 부족”으로 분리합니다.</div>
           </div>
         )}
         {results.length > 0 && (
@@ -6533,18 +6524,15 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
                   <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-black text-zinc-200">{item.grade} · {item.score}</span>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-zinc-500">
-                  <span>반응률 {item.engagementRate ?? 0}%</span>
-                  <span>댓글 비중 {item.commentShare ?? 0}%</span>
-                  {item.recentPostAt && <span>최근 {item.recentPostAt}</span>}
-                  {item.adMemo && <span className="text-amber-400">광고 메모 있음</span>}
+                  <span>{item.decision || (Number(item.score || 0) >= 72 ? '추천' : Number(item.score || 0) >= 58 ? '검토' : '추가 확인')}</span>
+                  {item.recentPostAt && <span>최근 활동 확인</span>}
                 </div>
-                <div className="mt-2 text-xs leading-relaxed text-zinc-600">{(item.gradeReason || item.reasons || []).join(' · ')}</div>
-                {item.riskFlags?.length > 0 && <div className="mt-2 text-[11px] font-bold text-amber-400">{item.riskFlags.map(infludexRiskLabel).join(' · ')}</div>}
+                {item.riskFlags?.length > 0 && <div className="mt-2 text-[11px] font-bold text-amber-400">{[...new Set(item.riskFlags.map(infludexRiskLabel))].slice(0, 2).join(' · ')}</div>}
               </div>
             ))}
             {missingResults.length > 0 && (
               <div className="mt-2 rounded-3xl border border-amber-400/20 bg-amber-400/5 p-3">
-                <div className="mb-2 text-sm font-black text-amber-200">데이터 부족 후보 {missingResults.length}개</div>
+                <div className="mb-2 text-sm font-black text-amber-200">확인 필요 후보 {missingResults.length}개</div>
                 <div className="grid gap-2">
                   {missingResults.map((item) => (
                     <div key={item.id} className="rounded-2xl bg-black/25 px-4 py-3">
@@ -6553,10 +6541,10 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
                           <div className="truncate text-sm font-black text-zinc-200">{infludexCandidateLabel(item)}</div>
                           <div className="mt-0.5 truncate text-xs text-zinc-500">{[item.displayName || item.description, item.category].filter(Boolean).join(' · ') || '설명 보강 필요'}</div>
                         </div>
-                        <span className="shrink-0 rounded-full border border-amber-400/20 px-2.5 py-1 text-[11px] font-black text-amber-200">데이터 부족</span>
+                        <span className="shrink-0 rounded-full border border-amber-400/20 px-2.5 py-1 text-[11px] font-black text-amber-200">확인 필요</span>
                       </div>
                       {item.contactMemo && <div className="mt-2 text-xs font-bold text-zinc-500">문의 {item.contactMemo}</div>}
-                      <div className="mt-2 text-[11px] font-bold text-amber-300">{(item.riskFlags || []).map(infludexRiskLabel).join(' · ') || '팔로워/반응 지표 보강 필요'}</div>
+                      <div className="mt-2 text-[11px] font-bold text-amber-300">{[...new Set((item.riskFlags || []).map(infludexRiskLabel))].slice(0, 2).join(' · ') || '정보 확인 필요'}</div>
                     </div>
                   ))}
                 </div>
@@ -6581,26 +6569,20 @@ function InfludexDownloadPanel({ onOpenUpload }) {
   }, [toast]);
 
   const downloadCsv = () => {
-    const header = ['analysisStatus', 'url', 'handle', 'displayName', 'category', 'grade', 'score', 'followers', 'avgLikes', 'avgComments', 'engagementRate', 'commentShare', 'recentPostAt', 'contactMemo', 'adMemo', 'scoreBreakdown', 'riskFlags', 'reasons'];
+    const header = ['url', 'handle', 'displayName', 'category', 'grade', 'score', 'decision', 'status', 'followers', 'recentPostAt', 'contactMemo', 'summary'];
     const rows = results.map((item) => [
-      item.analysisStatus || 'scored',
       item.url,
       item.handle,
       item.displayName || item.description,
       item.category,
       item.grade,
       item.score,
+      item.decision || '',
+      item.analysisStatus === 'data_missing' || !item.grade ? '확인 필요' : ['S', 'A'].includes(item.grade) ? '추천' : '검토',
       item.followerCount,
-      item.avgLikes,
-      item.avgComments,
-      item.engagementRate,
-      item.commentShare,
       item.recentPostAt,
       item.contactMemo,
-      item.adMemo,
-      item.scoreBreakdown ? Object.entries(item.scoreBreakdown).map(([key, value]) => `${key}:${value}`).join(' | ') : '',
-      item.riskFlags?.map(infludexRiskLabel).join(' | '),
-      (item.gradeReason || item.reasons)?.join(' | ')
+      [...new Set((item.riskFlags || []).map(infludexRiskLabel))].slice(0, 2).join(' | ') || (item.gradeReason || item.reasons)?.slice(0, 2).join(' | ') || ''
     ].map(csvEscape).join(','));
     downloadTextFile('infludex-results.csv', `\uFEFF${[header.join(','), ...rows].join('\r\n')}`, 'text/csv;charset=utf-8');
   };

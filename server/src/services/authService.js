@@ -464,6 +464,24 @@ export async function listUsers({ includeArchived = false } = {}) {
   return includeArchived ? users : users.filter((user) => !user.archived_at);
 }
 
+export async function listUserSummaries({ includeArchived = false } = {}) {
+  const users = await listUsers({ includeArchived });
+  return users.map((user) => ({
+    id: user.id,
+    email: user.email,
+    username: user.username || null,
+    buyer_name: user.buyer_name || null,
+    buyerName: user.buyer_name || '',
+    phone: user.phone || null,
+    status: user.status || 'active',
+    plan: user.plan || null,
+    billing_status: user.billing_status || null,
+    max_accounts: user.max_accounts,
+    created_at: user.created_at,
+    archived_at: user.archived_at || null
+  }));
+}
+
 export const updateUser = (id, patch) => dbUpdate('users', { id }, patch);
 
 export async function archiveUser(userId, { reason = '', archivedBy = '' } = {}) {

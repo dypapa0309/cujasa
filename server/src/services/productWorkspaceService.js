@@ -340,11 +340,122 @@ function infludexGradeFromScore(score) {
   return 'D';
 }
 
+function infludexDecisionFromScore(score) {
+  if (score >= 85) return '우선 추천';
+  if (score >= 72) return '추천';
+  if (score >= 58) return '검토';
+  if (score >= 42) return '추가 확인';
+  return '비추천';
+}
+
+function infludexGradeRank(grade = '') {
+  return { S: 5, A: 4, B: 3, C: 2, D: 1 }[grade] || 0;
+}
+
+function infludexMinGrade(...grades) {
+  return grades.filter(Boolean).sort((a, b) => infludexGradeRank(a) - infludexGradeRank(b))[0] || 'D';
+}
+
 function scoreRange(value, ranges = []) {
   for (const [threshold, score] of ranges) {
     if (value >= threshold) return score;
   }
   return 0;
+}
+
+function normalizeInfludexText(value = '') {
+  return String(value || '').toLowerCase().replace(/\s+/g, '');
+}
+
+function infludexCategorySignal(candidate = {}) {
+  const target = normalizeInfludexText(candidate.targetCategory || candidate.campaignCategory || '');
+  const category = normalizeInfludexText(candidate.category || '');
+  const text = normalizeInfludexText([
+    candidate.category,
+    candidate.displayName,
+    candidate.description,
+    candidate.bio,
+    candidate.contactMemo
+  ].filter(Boolean).join(' '));
+  if (!target) return { status: category ? 'category-present' : 'missing', score: category ? 20 : 0, label: candidate.category || '' };
+  if (!category && !text) return { status: 'missing', score: 0, penalty: 8, gradeCap: 'B', label: '카테고리 확인 필요' };
+  if ((category && (target.includes(category) || category.includes(target))) || text.includes(target)) {
+    return { status: 'match', score: 24, label: candidate.targetCategory || candidate.campaignCategory };
+  }
+  return { status: 'mismatch', score: 4, penalty: 14, gradeCap: 'B', label: '캠페인 카테고리 불일치' };
+}
+
+function infludexDataConfidence(candidate = {}, metrics = {}) {
+  let confidence = 0;
+  if (candidate.url || candidate.handle) confidence += 15;
+  if (candidate.category) confidence += 15;
+  if (metrics.followers > 0) confidence += 18;
+  if (metrics.likes > 0) confidence += 14;
+  if (metrics.comments > 0) confidence += 14;
+  if (candidate.recentPostAt) confidence += 12;
+  if (candidate.displayName || candidate.description || candidate.bio) confidence += 6;
+  if (candidate.targetCategory || candidate.campaignCategory) confidence += 6;
+  return Math.max(0, Math.min(100, confidence));
+}
+
+function infludexQualitySignal({ followers = 0, likes = 0, comments = 0, engagementRate = 0, commentShare = 0, daysSinceRecent = null, adMemo = '' } = {}) {
+  const riskFlags = [];
+  let penalty = 0;
+  let gradeCap = '';
+
+  if (followers >= 30000 && engagementRate < 0.5) {
+    riskFlags.push('follower_reaction_mismatch');
+    penalty += 12;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'C');
+  } else if (followers >= 10000 && engagementRate < 0.8) {
+    riskFlags.push('low_engagement_for_size');
+    penalty += 7;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'B');
+  }
+
+  if (engagementRate >= 20) {
+    riskFlags.push('suspicious_high_engagement');
+    penalty += 14;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'B');
+  } else if (engagementRate >= 12) {
+    riskFlags.push('high_engagement_review');
+    penalty += 5;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'A');
+  }
+
+  if (likes >= 100 && comments === 0) {
+    riskFlags.push('comments_missing_for_likes');
+    penalty += 8;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'B');
+  } else if (likes >= 300 && commentShare < 0.5) {
+    riskFlags.push('low_comment_depth');
+    penalty += 5;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'A');
+  }
+
+  if (daysSinceRecent === null) {
+    riskFlags.push('recent_post_missing');
+    penalty += 6;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'B');
+  } else if (daysSinceRecent > 90) {
+    riskFlags.push('inactive_over_90d');
+    penalty += 14;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'C');
+  } else if (daysSinceRecent > 60) {
+    riskFlags.push('inactive_over_60d');
+    penalty += 8;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'B');
+  }
+
+  if (adMemo) {
+    const memo = String(adMemo || '');
+    const heavyAd = /광고\s*많|협찬\s*많|공구|판매|상업|ad\s*많|광고과다/i.test(memo);
+    riskFlags.push(heavyAd ? 'heavy_ad_risk' : 'ad_memo_present');
+    penalty += heavyAd ? 16 : 8;
+    gradeCap = infludexMinGrade(gradeCap || 'S', heavyAd ? 'B' : 'A');
+  }
+
+  return { riskFlags, penalty, gradeCap };
 }
 
 function analyzeInfludexCandidate(candidate = {}) {
@@ -357,12 +468,11 @@ function analyzeInfludexCandidate(candidate = {}) {
   const recentTime = candidate.recentPostAt ? new Date(String(candidate.recentPostAt).replace(/[./]/g, '-')).getTime() : 0;
   const daysSinceRecent = recentTime ? Math.floor((Date.now() - recentTime) / (24 * 60 * 60 * 1000)) : null;
   const hasAdRisk = Boolean(candidate.adMemo);
+  const dataConfidence = infludexDataConfidence(candidate, { followers, likes, comments });
   const riskFlags = [
     !candidate.category ? 'category_missing' : '',
     !followers ? 'followers_missing' : '',
     engagementRate <= 0 ? 'engagement_missing' : '',
-    daysSinceRecent === null ? 'recent_post_missing' : '',
-    daysSinceRecent !== null && daysSinceRecent > 60 ? 'inactive_over_60d' : '',
     hasAdRisk ? 'ad_memo_present' : ''
   ].filter(Boolean);
 
@@ -384,20 +494,33 @@ function analyzeInfludexCandidate(candidate = {}) {
         likes + comments <= 0 ? '좋아요/댓글 평균 필요' : '반응 지표 확인됨',
         daysSinceRecent === null ? '최근 게시일 필요' : daysSinceRecent <= 30 ? '최근 활동 양호' : '최근 활동 확인 필요'
       ],
+      dataConfidence,
+      decision: '추가 확인',
       riskFlags
     };
   }
 
-  const categoryFitScore = candidate.category ? 20 : 0;
+  const categorySignal = infludexCategorySignal(candidate);
+  const categoryFitScore = categorySignal.score;
   const engagementScore = scoreRange(engagementRate, [[6, 30], [3.5, 25], [2, 20], [1, 13], [0.5, 7]]);
   const commentScore = scoreRange(commentShare, [[8, 15], [5, 12], [2, 8], [0.5, 4]]);
   const followerScore = scoreRange(followers, [[100000, 15], [30000, 13], [10000, 10], [3000, 7], [1000, 4]]);
   const freshnessScore = daysSinceRecent === null ? 0 : daysSinceRecent <= 10 ? 10 : daysSinceRecent <= 30 ? 7 : daysSinceRecent <= 60 ? 3 : 0;
   const adPenalty = hasAdRisk ? 10 : 0;
-  const score = Math.max(0, Math.min(100, Math.round(categoryFitScore + engagementScore + commentScore + followerScore + freshnessScore - adPenalty)));
-  const grade = infludexGradeFromScore(score);
+  const qualitySignal = infludexQualitySignal({ followers, likes, comments, engagementRate, commentShare, daysSinceRecent, adMemo: candidate.adMemo });
+  let gradeCap = qualitySignal.gradeCap || '';
+  if (categorySignal.gradeCap) gradeCap = infludexMinGrade(gradeCap || 'S', categorySignal.gradeCap);
+  if (dataConfidence < 55) gradeCap = infludexMinGrade(gradeCap || 'S', 'C');
+  else if (dataConfidence < 75) gradeCap = infludexMinGrade(gradeCap || 'S', 'B');
+  else if (dataConfidence < 88) gradeCap = infludexMinGrade(gradeCap || 'S', 'A');
+
+  const rawScore = Math.max(0, Math.min(100, Math.round(categoryFitScore + engagementScore + commentScore + followerScore + freshnessScore - adPenalty)));
+  const scorePenalty = (categorySignal.penalty || 0) + qualitySignal.penalty + (dataConfidence < 75 ? 6 : 0);
+  const score = Math.max(0, Math.min(98, Math.round(rawScore - scorePenalty)));
+  const scoreGrade = infludexGradeFromScore(score);
+  const grade = infludexMinGrade(scoreGrade, gradeCap || scoreGrade);
   const gradeReason = [
-    categoryFitScore ? `카테고리 ${candidate.category}` : '카테고리 미입력',
+    categorySignal.status === 'match' ? `카테고리 적합` : categoryFitScore ? `카테고리 ${candidate.category}` : '카테고리 미입력',
     followers ? `팔로워 ${followers.toLocaleString('ko-KR')}` : '팔로워 미입력',
     engagementRate ? `반응률 ${engagementRate.toFixed(2)}%` : '반응 지표 미입력',
     commentShare ? `댓글 비중 ${commentShare.toFixed(1)}%` : '댓글 지표 미입력',
@@ -414,6 +537,12 @@ function analyzeInfludexCandidate(candidate = {}) {
     daysSinceRecent,
     score,
     grade,
+    originalScore: rawScore,
+    originalGrade: infludexGradeFromScore(rawScore),
+    finalScore: score,
+    finalGrade: grade,
+    decision: infludexDecisionFromScore(score),
+    dataConfidence,
     analysisStatus: 'scored',
     scoreBreakdown: {
       categoryFitScore,
@@ -421,10 +550,15 @@ function analyzeInfludexCandidate(candidate = {}) {
       commentScore,
       followerScore,
       freshnessScore,
-      adPenalty
+      adPenalty,
+      qualityPenalty: qualitySignal.penalty,
+      confidencePenalty: dataConfidence < 75 ? 6 : 0,
+      categoryPenalty: categorySignal.penalty || 0
     },
     gradeReason,
-    riskFlags
+    riskFlags: [...new Set([...riskFlags, ...qualitySignal.riskFlags, categorySignal.status === 'mismatch' ? 'category_mismatch' : ''].filter(Boolean))],
+    categorySignal,
+    gradeStatus: grade === infludexGradeFromScore(rawScore) ? '유지' : `${infludexGradeFromScore(rawScore)} → ${grade}`
   };
 }
 
@@ -820,8 +954,10 @@ function parseInfludexRows(input = '', fileName = '') {
     const avgComments = parseNumberLike(byHeader([/avgcomment/, /comments?/, /댓글/]));
     const numbers = metaCells.map(parseNumberLike).filter((value) => value !== null);
     const displayName = byHeader([/이름/, /설명/, /name/, /description/]) || '';
+    const bio = byHeader([/bio/, /소개/, /프로필/, /설명/]) || '';
+    const targetCategory = byHeader([/target/, /campaign/, /목표/, /캠페인/, /타겟/]) || '';
     const contactMemo = byHeader([/이메일/, /문의/, /contact/, /email/]) || metaCells.find((cell) => /@.+\.|010-|오픈톡|litt\.ly|linktr\.ee|카톡|문의/i.test(cell)) || '';
-    const descriptionText = [displayName, contactMemo, fileName].filter(Boolean).join(' ');
+    const descriptionText = [displayName, bio, contactMemo, fileName].filter(Boolean).join(' ');
     const inferredCategory = /부업|수익|n잡|n잡|n잡|재테크|머니/i.test(descriptionText) ? '부업/수익화'
       : /ai|인공지능|콘텐츠/i.test(descriptionText) ? 'AI/콘텐츠'
         : /마케팅|브랜딩|브랜드/i.test(descriptionText) ? '마케팅/브랜딩'
@@ -841,6 +977,8 @@ function parseInfludexRows(input = '', fileName = '') {
       recentPostAt,
       contactMemo,
       adMemo,
+      bio,
+      targetCategory,
       source: fileName ? 'file-or-manual' : 'manual',
       createdAt: now()
     });
@@ -2008,6 +2146,13 @@ export async function getProductWorkspace(userId, productId) {
   return withUsage(next, { ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);
 }
 
+export async function getPolibotCustomerWorkspace(userId) {
+  const grant = await getGrant(userId, 'polibot');
+  const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  const workspace = settings.workspace && typeof settings.workspace === 'object' ? settings.workspace : {};
+  return compactPolibotSavedWorkspace(withUsage(workspace, { ...settings, unlimitedUsage: grant.unlimitedUsage }, 'polibot'));
+}
+
 function createPolibotTimingLogger(label = 'polibot_timing') {
   const startedAt = Date.now();
   let previousAt = startedAt;
@@ -2423,12 +2568,22 @@ export async function analyzeInfludexCandidates(userId) {
       recentPostAt: candidate.recentPostAt || '',
       displayName: candidate.displayName || '',
       description: candidate.description || '',
+      bio: candidate.bio || '',
+      targetCategory: candidate.targetCategory || candidate.campaignCategory || '',
       contactMemo: candidate.contactMemo || '',
       adMemo: candidate.adMemo || '',
       engagementRate: analysis.engagementRate,
       commentShare: analysis.commentShare,
       score: analysis.score,
       grade: analysis.grade,
+      originalScore: analysis.originalScore ?? analysis.score,
+      originalGrade: analysis.originalGrade || analysis.grade,
+      finalScore: analysis.finalScore ?? analysis.score,
+      finalGrade: analysis.finalGrade || analysis.grade,
+      decision: analysis.decision || '',
+      dataConfidence: analysis.dataConfidence ?? null,
+      categorySignal: analysis.categorySignal || null,
+      gradeStatus: analysis.gradeStatus || '유지',
       analysisStatus: analysis.analysisStatus,
       scoreBreakdown: analysis.scoreBreakdown,
       gradeReason: analysis.gradeReason,
@@ -2673,6 +2828,24 @@ function compactPolibotClientQualityReport(report = {}) {
     premiumTableRows: report.premiumTableRows || 0,
     linkedBenefitGroups: report.linkedBenefitGroups || 0,
     strongLinkedBenefitGroups: report.strongLinkedBenefitGroups || 0
+  };
+}
+
+function compactPolibotSavedWorkspace(workspace = {}) {
+  return {
+    customerProfile: workspace.customerProfile || null,
+    consultationDraft: workspace.consultationDraft || null,
+    qualityReport: compactPolibotClientQualityReport(workspace.qualityReport || {}),
+    recommendations: Array.isArray(workspace.recommendations) ? workspace.recommendations : [],
+    customers: Array.isArray(workspace.customers) ? workspace.customers : [],
+    excludedCandidates: Array.isArray(workspace.excludedCandidates) ? workspace.excludedCandidates : [],
+    recommendationNotice: workspace.recommendationNotice || '',
+    knowledgeSnapshot: workspace.knowledgeSnapshot || null,
+    feedbackSummary: workspace.feedbackSummary || null,
+    latestKnowledgeMonth: workspace.latestKnowledgeMonth || workspace.knowledgeSnapshot?.latestKnowledgeMonth || '',
+    catalog: workspace.catalog || null,
+    usage: workspace.usage || null,
+    updatedAt: workspace.updatedAt || ''
   };
 }
 
@@ -4158,7 +4331,7 @@ export async function savePolibotRecommendation(userId, {
     evidenceCount: recommendationEvidence.length,
     recommendationCount: recommendationsWithSnapshot.length
   });
-  return saved;
+  return compactPolibotSavedWorkspace(saved);
 }
 
 export async function listPolibotCatalogReview(userId) {
@@ -4182,7 +4355,7 @@ export async function savePolibotCatalogReviews(userId, reviews = {}) {
 }
 
 export async function savePolibotCustomer(userId, { id = '', name = '', age = '', memo = '', recommendationId = '', selectedRecommendation = null, profile = null } = {}) {
-  const workspace = await getProductWorkspace(userId, 'polibot');
+  const workspace = await getPolibotCustomerWorkspace(userId);
   const currentProfile = profile && typeof profile === 'object'
     ? profile
     : {
@@ -4219,9 +4392,10 @@ export async function savePolibotCustomer(userId, { id = '', name = '', age = ''
     createdAt: existing?.createdAt || now()
   };
   const withoutCurrent = customers.filter((item) => item.id !== customer.id);
-  return updateWorkspace(userId, 'polibot', {
+  const nextWorkspace = await updateWorkspace(userId, 'polibot', {
     customers: [customer, ...withoutCurrent].slice(0, 100)
   });
+  return compactPolibotSavedWorkspace(nextWorkspace);
 }
 
 const POLIBOT_FEEDBACK_MAP = {
@@ -4272,7 +4446,7 @@ export async function savePolibotRecommendationFeedback(userId, {
     error.status = 400;
     throw error;
   }
-  const workspace = await getProductWorkspace(userId, 'polibot');
+  const workspace = await getPolibotCustomerWorkspace(userId);
   const recommendations = Array.isArray(workspace.recommendations) ? workspace.recommendations : [];
   const target = recommendations.find((item) => item.id === recommendationId);
   if (!target) {
@@ -4326,7 +4500,7 @@ export async function savePolibotRecommendationFeedback(userId, {
     }
   });
   return {
-    ...nextWorkspace,
+    ...compactPolibotSavedWorkspace(nextWorkspace),
     feedback: feedbackRow
   };
 }

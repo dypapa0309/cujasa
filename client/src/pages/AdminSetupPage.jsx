@@ -45,18 +45,22 @@ export default function AdminSetupPage() {
   const [threadsRequests, setThreadsRequests] = useState([]);
 
   const load = async () => {
-    const [rows, nextUsers, nextProducts, metrics, nextThreadsRequests] = await Promise.all([
+    const [tasksResult, usersResult, productsResult, metricsResult, threadsResult] = await Promise.allSettled([
       api.get('/api/admin/setup-tasks'),
-      api.get('/api/admin/users'),
+      api.get('/api/admin/users/summary'),
       api.get('/api/admin/billing/products'),
-      api.get('/api/admin/operations/assistant-metrics').catch(() => null),
-      api.get('/api/admin/threads-connection-requests').catch(() => [])
+      api.get('/api/admin/operations/assistant-metrics'),
+      api.get('/api/admin/threads-connection-requests')
     ]);
-    setTasks(rows);
-    setUsers(nextUsers);
-    setProducts(nextProducts);
-    setAssistantMetrics(metrics);
-    setThreadsRequests(Array.isArray(nextThreadsRequests) ? nextThreadsRequests : []);
+    if (tasksResult.status !== 'fulfilled') throw tasksResult.reason;
+    setTasks(tasksResult.value);
+    setUsers(usersResult.status === 'fulfilled' ? usersResult.value : []);
+    setProducts(productsResult.status === 'fulfilled' ? productsResult.value : []);
+    setAssistantMetrics(metricsResult.status === 'fulfilled' ? metricsResult.value : null);
+    setThreadsRequests(threadsResult.status === 'fulfilled' && Array.isArray(threadsResult.value) ? threadsResult.value : []);
+    if (usersResult.status !== 'fulfilled' || productsResult.status !== 'fulfilled' || threadsResult.status !== 'fulfilled') {
+      toast('셋업 일부 보조 데이터를 불러오지 못했습니다. 핵심 대기 목록은 표시합니다.', 'info');
+    }
   };
 
   useEffect(() => {

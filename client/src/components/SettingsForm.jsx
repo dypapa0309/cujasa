@@ -152,7 +152,7 @@ export default function SettingsForm({ form, setForm, onSubmit, saving, onReveal
         <input type="number" min="0" max={MAX_DAILY_POSTS} className="rounded border border-line px-3 py-2" value={form.daily_post_max ?? 5} onChange={(e) => update('daily_post_max', Math.min(MAX_DAILY_POSTS, Math.max(0, Number(e.target.value))))} />
       </label>
       <label className="grid gap-1 text-sm">
-        <span className="font-medium">최소 간격(분)</span>
+        <span className="font-medium">최소 텀(분)</span>
         <input type="number" className="rounded border border-line px-3 py-2" value={form.min_interval_minutes || 50} onChange={(e) => update('min_interval_minutes', Number(e.target.value))} />
       </label>
       <div className="grid gap-1 rounded border border-line bg-slate-50 px-3 py-2 text-sm">

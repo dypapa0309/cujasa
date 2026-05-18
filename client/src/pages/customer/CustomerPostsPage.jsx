@@ -215,8 +215,8 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
               </div>
               {pipelineResult.queueDiagnostics?.schedulePlan && (
                 <div className="mt-1 text-xs opacity-80">
-                  예약 분배 {pipelineResult.queueDiagnostics.schedulePlan.strategy === 'fixed_start' ? '고정 간격' : '균등 분산'} ·
-                  최소 간격 {pipelineResult.queueDiagnostics.schedulePlan.minGapMinutes}분 ·
+                  예약 분배 랜덤 ·
+                  최소 텀 {pipelineResult.queueDiagnostics.schedulePlan.minGapMinutes}분 이상 ·
                   {(pipelineResult.queueDiagnostics.schedulePlan.actualTimes || []).slice(0, 5).map(dateTime).join(' / ')}
                 </div>
               )}
