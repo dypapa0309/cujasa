@@ -25,6 +25,37 @@ const DEXOR_SCORE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
 const INFLUDEX_GRADE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
 const DEXOR_CATEGORIES = ['맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
 
+const EMPTY_POLIBOT_KNOWLEDGE_DB_SUMMARY = {
+  totalSources: 0,
+  globalSources: 0,
+  userSources: 0,
+  importedSources: 0,
+  statusCounts: {},
+  sourceChannelCounts: {},
+  recommendableSources: 0,
+  reviewNeededSources: 0,
+  excludedSources: 0,
+  ocrNeededSources: 0,
+  privacyRiskSources: 0,
+  conflictSources: 0,
+  highQualitySources: 0,
+  mediumQualitySources: 0,
+  lowQualitySources: 0,
+  catalogItems: 0,
+  importedCatalogItems: 0,
+  recommendableCatalogItems: 0,
+  reviewNeededCatalogItems: 0,
+  excludedCatalogItems: 0,
+  conflictCatalogItems: 0,
+  chunks: 0,
+  recommendableChunks: 0,
+  conversationInsights: 0,
+  latestMonth: '',
+  companies: [],
+  productGroups: [],
+  latestJob: null
+};
+
 function now() {
   return new Date().toISOString();
 }
@@ -1667,7 +1698,10 @@ export async function getProductWorkspace(userId, productId) {
   if (Array.isArray(next.infludexResults)) next.infludexResults = sortInfludexResults(next.infludexResults);
   if (productId === 'polibot') {
     const rawCurrentKnowledge = Array.isArray(next.knowledgeSources) ? next.knowledgeSources : [];
-    const dbKnowledge = await listPolibotDbKnowledgeSources(userId);
+    const dbKnowledge = await listPolibotDbKnowledgeSources(userId).catch((error) => {
+      console.warn('[polibot_workspace_knowledge_load_failed]', error?.message || error);
+      return [];
+    });
     const currentKnowledge = dbKnowledge.length ? [] : rawCurrentKnowledge;
     const seedKnowledge = dbKnowledge.length ? [] : polibotSeedKnowledgeSources();
     const catalogReviews = normalizeCatalogReviews(next.catalogReviews);
@@ -1686,7 +1720,10 @@ export async function getProductWorkspace(userId, productId) {
     next.qualityReport = next.knowledgeSources.length && next.knowledgeSources.every((source) => source.dbSourceId)
       ? buildPolibotDbQualityReport(next.knowledgeSources)
       : buildPolibotQualityReport(next.knowledgeSources, catalogReviews);
-    next.knowledgeDbSummary = await getPolibotDbKnowledgeSummary(userId);
+    next.knowledgeDbSummary = await getPolibotDbKnowledgeSummary(userId).catch((error) => {
+      console.warn('[polibot_workspace_summary_load_failed]', error?.message || error);
+      return EMPTY_POLIBOT_KNOWLEDGE_DB_SUMMARY;
+    });
     next.monthlyChangeReport = buildPolibotMonthlyChangeReport(next.knowledgeSources, catalogReviews);
   }
   return withUsage(next, { ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);

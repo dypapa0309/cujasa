@@ -1061,7 +1061,7 @@ async function listImportedPolibotSources() {
       ascending: false,
       limit: 500
     }).catch(() => []),
-    listImportedCatalogRows(),
+    listImportedCatalogRows().catch(() => []),
     dbList('premium_examples', {}, {
       select: 'id,document_id,catalog_item_id,company,product_name,premium,age,gender,label,source_page',
       order: 'created_at',

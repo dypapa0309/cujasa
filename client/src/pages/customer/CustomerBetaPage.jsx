@@ -49,7 +49,7 @@ const spreadActions = [
 
 const polibotActions = [
   { key: 'polibot-upload', productId: 'polibot', label: '자료 상태', icon: DatabaseZap, hint: '관리자가 올린 월별 상품 자료와 추천 준비 상태를 확인해요.' },
-  { key: 'polibot-recommend', productId: 'polibot', label: '상품 추천', icon: Sparkles, hint: '고객 조건과 보장 니즈로 추천 초안을 만들어요.' },
+  { key: 'polibot-recommend', productId: 'polibot', label: '상품 추천', icon: Plus, hint: '고객 조건과 보장 니즈로 추천 초안을 만들어요.' },
   { key: 'polibot-customers', productId: 'polibot', label: '고객 관리', icon: Users, hint: '고객 조건과 추천 기록을 정리해요.' },
   { key: 'polibot-download', productId: 'polibot', label: '결과 다운로드', icon: Download, hint: '추천 결과를 CSV로 내려받아요.' }
 ];
