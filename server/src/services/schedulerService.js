@@ -17,6 +17,7 @@ import { isReplyLinkModeEnabled } from '../utils/replyLinkMode.js';
 import { maybeGenerateBlogPostForQueue } from './blogService.js';
 import { canUseSponsoredComment, getSponsorCommentText, sponsoredCommentAlreadyQueuedToday } from './sponsorService.js';
 import { evaluateProductTopicMatch } from '../utils/productMatching.js';
+import { contentLengthBucket, resolveContentStrategyMetadata } from '../utils/contentFormatStrategy.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
@@ -134,37 +135,125 @@ function normalizeContentType(value = '') {
   return text || '기타';
 }
 
+function postDiversityProfile(post = {}) {
+  const body = String(post.body || '');
+  const strategy = resolveContentStrategyMetadata(post.metadata || {}, body, post.content_type || '');
+  return {
+    contentType: normalizeContentType(post.content_type),
+    contentFormat: strategy.contentFormat || 'unknown_format',
+    contentGoal: strategy.contentGoal || 'unknown_goal',
+    lengthBucket: post.metadata?.lengthBucket || contentLengthBucket(body),
+    openingSignature: openingSignature(body)
+  };
+}
+
+function openingSignature(body = '') {
+  const first = String(body || '').split(/\n+/).map((line) => line.trim()).find(Boolean) || '';
+  if (!first) return 'empty';
+  const normalized = normalizeBodyForComparison(first)
+    .replace(/\d+/g, '0')
+    .split(/\s+/)
+    .slice(0, 8)
+    .join(' ');
+  if (/[?？]/.test(first)) return `question:${normalized}`;
+  if (/^\s*\d+[.)]/.test(first)) return 'numbered_list';
+  if (/(솔직히|고백|나만|은근|처음엔|사고 나서|요즘|오늘)/.test(first)) {
+    return normalized.split(/\s+/).slice(0, 4).join(' ');
+  }
+  return normalized;
+}
+
 function formatCountsFromHistory(history = []) {
   const counts = new Map();
   for (const item of history) {
-    const type = normalizeContentType(item.post?.content_type || item.queue?.content_type || '');
+    const type = postDiversityProfile(item.post || item.queue || {}).contentType;
     if (!type || type === '기타') continue;
     counts.set(type, (counts.get(type) || 0) + 1);
   }
   return counts;
 }
 
-function contentTypeOverused(type, counts = new Map(), selected = []) {
-  const normalized = normalizeContentType(type);
-  if (!normalized || normalized === '기타') return false;
-  const recentCount = counts.get(normalized) || 0;
-  const selectedCount = selected.filter((item) => normalizeContentType(item.post.content_type) === normalized).length;
-  if (['질문형', '공감형'].includes(normalized)) return recentCount + selectedCount >= 2;
-  return recentCount + selectedCount >= 3;
+function buildDiversityCounts(history = []) {
+  const counts = {
+    contentType: new Map(),
+    contentFormat: new Map(),
+    contentGoal: new Map(),
+    lengthBucket: new Map(),
+    openingSignature: new Map()
+  };
+  for (const item of history) {
+    const profile = postDiversityProfile(item.post || item.queue || {});
+    for (const key of Object.keys(counts)) {
+      const value = profile[key];
+      if (!value || value === '기타' || value.startsWith?.('unknown_')) continue;
+      counts[key].set(value, (counts[key].get(value) || 0) + 1);
+    }
+  }
+  return counts;
 }
 
-function formatAlternativeAvailable(posts = [], post, counts = new Map(), selected = []) {
-  const currentType = normalizeContentType(post.content_type);
-  return posts.some((candidate) => candidate.id !== post.id
-    && normalizeContentType(candidate.content_type) !== currentType
-    && !contentTypeOverused(candidate.content_type, counts, selected));
+function incrementCount(map, key) {
+  if (!key || key === '기타' || key.startsWith?.('unknown_')) return;
+  map.set(key, (map.get(key) || 0) + 1);
 }
 
-function sortDraftsForFormatBalance(posts = [], counts = new Map()) {
+function mergedDiversityCounts(baseCounts = buildDiversityCounts(), selected = []) {
+  const counts = {
+    contentType: new Map(baseCounts.contentType || []),
+    contentFormat: new Map(baseCounts.contentFormat || []),
+    contentGoal: new Map(baseCounts.contentGoal || []),
+    lengthBucket: new Map(baseCounts.lengthBucket || []),
+    openingSignature: new Map(baseCounts.openingSignature || [])
+  };
+  for (const item of selected) {
+    const profile = postDiversityProfile(item.post);
+    for (const key of Object.keys(counts)) incrementCount(counts[key], profile[key]);
+  }
+  return counts;
+}
+
+function diversityIssue(post = {}, baseCounts = buildDiversityCounts(), selected = []) {
+  const profile = postDiversityProfile(post);
+  const counts = mergedDiversityCounts(baseCounts, selected);
+  const selectedCounts = mergedDiversityCounts(buildDiversityCounts(), selected);
+  const checks = [
+    { key: 'openingSignature', reason: 'opening_pattern_overused', recentLimit: 1, totalLimit: 2 },
+    { key: 'contentFormat', reason: 'content_format_overused', recentLimit: 1, totalLimit: 2 },
+    { key: 'contentGoal', reason: 'content_goal_overused', recentLimit: profile.contentGoal === 'reply' ? 1 : 2, totalLimit: profile.contentGoal === 'reply' ? 2 : 3 },
+    { key: 'lengthBucket', reason: 'length_bucket_overused', recentLimit: 3, totalLimit: 4 },
+    { key: 'contentType', reason: 'format_overused', recentLimit: ['질문형', '공감형'].includes(profile.contentType) ? 2 : 3, totalLimit: ['질문형', '공감형'].includes(profile.contentType) ? 2 : 4 }
+  ];
+  for (const check of checks) {
+    const value = profile[check.key];
+    if (!value || value === '기타' || value.startsWith?.('unknown_')) continue;
+    const recentCount = baseCounts[check.key].get(value) || 0;
+    const selectedCount = selectedCounts[check.key].get(value) || 0;
+    if (recentCount >= check.recentLimit) {
+      return { ...profile, reason: check.reason, dimension: check.key, value, source: 'recent', recentCount, selectedCount };
+    }
+    if ((counts[check.key].get(value) || 0) >= check.totalLimit) {
+      return { ...profile, reason: check.reason, dimension: check.key, value, source: 'selected', recentCount, selectedCount };
+    }
+  }
+  return null;
+}
+
+function sortDraftsForFormatBalance(posts = [], counts = new Map(), diversityCounts = buildDiversityCounts()) {
   return [...posts].sort((a, b) => {
     const aCount = counts.get(normalizeContentType(a.content_type)) || 0;
     const bCount = counts.get(normalizeContentType(b.content_type)) || 0;
     if (aCount !== bCount) return aCount - bCount;
+    const aProfile = postDiversityProfile(a);
+    const bProfile = postDiversityProfile(b);
+    const aFormatCount = diversityCounts.contentFormat.get(aProfile.contentFormat) || 0;
+    const bFormatCount = diversityCounts.contentFormat.get(bProfile.contentFormat) || 0;
+    if (aFormatCount !== bFormatCount) return aFormatCount - bFormatCount;
+    const aGoalCount = diversityCounts.contentGoal.get(aProfile.contentGoal) || 0;
+    const bGoalCount = diversityCounts.contentGoal.get(bProfile.contentGoal) || 0;
+    if (aGoalCount !== bGoalCount) return aGoalCount - bGoalCount;
+    const aLengthCount = diversityCounts.lengthBucket.get(aProfile.lengthBucket) || 0;
+    const bLengthCount = diversityCounts.lengthBucket.get(bProfile.lengthBucket) || 0;
+    if (aLengthCount !== bLengthCount) return aLengthCount - bLengthCount;
     const aQuestion = normalizeContentType(a.content_type) === '질문형' ? 1 : 0;
     const bQuestion = normalizeContentType(b.content_type) === '질문형' ? 1 : 0;
     if (aQuestion !== bQuestion) return aQuestion - bQuestion;
@@ -172,14 +261,15 @@ function sortDraftsForFormatBalance(posts = [], counts = new Map()) {
   });
 }
 
-function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), requireLink = false, recentFormatCounts = new Map() } = {}) {
+function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), requireLink = false, recentFormatCounts = new Map(), diversityCounts = buildDiversityCounts() } = {}) {
   const selected = [];
   const usedTopicIds = new Set();
   const usedProductIds = new Set();
   const rejected = [];
   const candidates = sortDraftsForFormatBalance(
     posts.filter((post) => !requireLink || topicProducts.has(post.topic_id)),
-    recentFormatCounts
+    recentFormatCounts,
+    diversityCounts
   );
 
   for (const post of candidates) {
@@ -198,8 +288,9 @@ function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), 
       rejected.push({ postId: post.id, topicId: post.topic_id, productId: product.id, reason: 'duplicate_product' });
       continue;
     }
-    if (contentTypeOverused(post.content_type, recentFormatCounts, selected) && formatAlternativeAvailable(candidates, post, recentFormatCounts, selected)) {
-      rejected.push({ postId: post.id, topicId: post.topic_id, contentType: post.content_type, reason: 'format_overused' });
+    const diversity = diversityIssue(post, diversityCounts, selected);
+    if (diversity) {
+      rejected.push({ postId: post.id, topicId: post.topic_id, contentType: post.content_type, ...diversity });
       continue;
     }
     const similar = selected.find((item) => bodySimilarity(item.post.body, post.body) >= 0.8);
@@ -218,7 +309,11 @@ function selectQueueDrafts({ posts = [], times = [], topicProducts = new Map(), 
       if (selected.some((item) => item.post.id === post.id)) continue;
       const issue = queueQualityIssue(post);
       if (issue) continue;
-      if (contentTypeOverused(post.content_type, recentFormatCounts, selected) && formatAlternativeAvailable(candidates, post, recentFormatCounts, selected)) continue;
+      const diversity = diversityIssue(post, diversityCounts, selected);
+      if (diversity?.source === 'recent') {
+        rejected.push({ postId: post.id, topicId: post.topic_id, contentType: post.content_type, ...diversity });
+        continue;
+      }
       const similar = selected.find((item) => bodySimilarity(item.post.body, post.body) >= 0.95);
       if (similar) continue;
       selected.push({ post, postMode: requireLink ? 'link' : 'no_link' });
@@ -779,6 +874,7 @@ export async function createDailyQueue(accountId, options = {}) {
   const repairOutcomes = [];
   const recentHistory = await recentAccountQueueHistory(accountId, { days: Number(options.historyDays || 7) });
   const recentFormatCounts = formatCountsFromHistory(recentHistory);
+  const recentDiversityCounts = buildDiversityCounts(recentHistory);
   const historyRejected = [];
   const queueableDrafts = [];
   for (const post of allDrafts) {
@@ -799,7 +895,8 @@ export async function createDailyQueue(accountId, options = {}) {
       times: times.slice(0, modeCounts.linkCount),
       topicProducts: primaryProductByTopic,
       requireLink: true,
-      recentFormatCounts
+      recentFormatCounts,
+      diversityCounts: recentDiversityCounts
     })
     : { selected: [], rejected: [] };
   const candidateWithLink = withLink.slice(0, reply.ok ? modeCounts.linkCount : total);
@@ -814,7 +911,8 @@ export async function createDailyQueue(accountId, options = {}) {
     times: times.slice(0, remainingSlots),
     topicProducts: primaryProductByTopic,
     requireLink: false,
-    recentFormatCounts
+    recentFormatCounts,
+    diversityCounts: recentDiversityCounts
   });
   const primaryNoLink = noLinkSelection.selected.map((item) => item.post);
   const linkCount = modeCounts.linkCount;
@@ -868,8 +966,16 @@ export async function createDailyQueue(accountId, options = {}) {
     qualityRejectedCount: linkSelection.rejected.length + noLinkSelection.rejected.length,
     qualityRejected: linkSelection.rejected.concat(noLinkSelection.rejected).slice(0, 10),
     formatRejectedCount: linkSelection.rejected.concat(noLinkSelection.rejected).filter((row) => row.reason === 'format_overused').length,
+    diversityRejectedCount: linkSelection.rejected.concat(noLinkSelection.rejected)
+      .filter((row) => ['format_overused', 'content_format_overused', 'content_goal_overused', 'length_bucket_overused', 'opening_pattern_overused'].includes(row.reason)).length,
     recentFormatCounts: Object.fromEntries(recentFormatCounts),
+    recentContentFormatCounts: Object.fromEntries(recentDiversityCounts.contentFormat),
+    recentContentGoalCounts: Object.fromEntries(recentDiversityCounts.contentGoal),
+    recentLengthBucketCounts: Object.fromEntries(recentDiversityCounts.lengthBucket),
     selectedContentTypes: drafts.map((row) => row.post.content_type || ''),
+    selectedContentFormats: drafts.map((row) => postDiversityProfile(row.post).contentFormat),
+    selectedContentGoals: drafts.map((row) => postDiversityProfile(row.post).contentGoal),
+    selectedLengthBuckets: drafts.map((row) => postDiversityProfile(row.post).lengthBucket),
     historyRejectedCount: historyRejected.length,
     historyRejected: historyRejected.slice(0, 10),
     repairOutcomes: repairOutcomes.map((row) => ({

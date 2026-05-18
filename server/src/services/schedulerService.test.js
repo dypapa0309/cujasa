@@ -460,6 +460,7 @@ test('createDailyQueue only fills remaining slots for today', async () => {
       topic_id: existingTopic.id,
       content_type: '정보제공형',
       body: '이미 오늘 예약된 글입니다. 오늘 예약 상한 계산에 포함되어야 합니다.',
+      metadata: { contentFormat: 'plain_observation', contentGoal: 'trust', lengthBucket: 'short' },
       risk_level: 'low',
       status: 'queued'
     });
@@ -487,6 +488,9 @@ test('createDailyQueue only fills remaining slots for today', async () => {
         topic_id: topic.id,
         content_type: index % 2 === 0 ? '공감형' : '정보제공형',
         body: `오늘 남은 슬롯에만 들어가야 하는 생활 팁 ${index}. 이미 잡힌 예약을 넘기면 안 됩니다.`,
+        metadata: index % 2 === 0
+          ? { contentFormat: 'mini_poll', contentGoal: 'reply', lengthBucket: 'two_line' }
+          : { contentFormat: 'before_buy_check', contentGoal: 'save', lengthBucket: 'short' },
         risk_level: 'low',
         status: 'draft'
       });
@@ -766,6 +770,113 @@ test('createDailyQueue prefers underused content formats when questions are over
     assert.equal(queued[0].post_id, infoPost.id);
     assert.equal(queued.diagnostics.recentFormatCounts['질문형'], 2);
     assert.equal(queued.diagnostics.selectedContentTypes[0], '체크리스트형');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('createDailyQueue avoids repeated strategy format goal and opening patterns', async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'strategydiversity' })
+  });
+
+  try {
+    const project = await dbInsert('projects', {
+      name: 'strategy diversity project',
+      type: 'coupang',
+      status: 'active'
+    });
+    const account = await dbInsert('accounts', {
+      project_id: project.id,
+      name: 'strategy diversity account',
+      platform: 'threads',
+      account_handle: 'strategydiversity',
+      target_audience: '생활 관심 고객',
+      content_scope: '생활용품',
+      forbidden_topics: [],
+      forbidden_words: [],
+      daily_post_max: 2,
+      active_time_windows: [{ start: '09:00', end: '23:00' }],
+      min_interval_minutes: 90,
+      link_post_ratio: 0,
+      no_link_post_ratio: 1,
+      status: 'active',
+      automation_status: 'running',
+      threads_access_token: 'token',
+      threads_link_delivery_mode: 'reply',
+      coupang_access_key: 'access',
+      coupang_secret_key: 'secret',
+      coupang_partner_id: 'partner',
+      coupang_search_status: 'ok'
+    });
+    const recentTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '최근 짧은 공감',
+      angle: '일상 공감'
+    });
+    const recentPost = await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: recentTopic.id,
+      content_type: '공감형',
+      body: '은근 정리하려고 꺼낸 물건이 더 어질러질 때가 있어요.',
+      metadata: { contentFormat: 'daily_one_liner', contentGoal: 'reach_only', lengthBucket: 'one_line' },
+      risk_level: 'low',
+      status: 'posted'
+    });
+    await dbInsert('post_queue', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: recentTopic.id,
+      post_id: recentPost.id,
+      platform: 'threads',
+      scheduled_at: new Date().toISOString(),
+      posted_at: new Date().toISOString(),
+      status: 'posted',
+      post_mode: 'no_link'
+    });
+
+    const repeatedTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '반복 짧은 공감',
+      angle: '일상 공감'
+    });
+    await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: repeatedTopic.id,
+      content_type: '공감형',
+      body: '퇴근하고 보면 바닥에 놓인 충전기부터 눈에 밟히는 날이 많아요.',
+      metadata: { contentFormat: 'daily_one_liner', contentGoal: 'reach_only', lengthBucket: 'one_line' },
+      risk_level: 'low',
+      status: 'draft'
+    });
+    const freshTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '구매 전 체크 기준',
+      angle: '저장형'
+    });
+    const freshPost = await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: freshTopic.id,
+      content_type: '체크리스트형',
+      body: '수납함은 사기 전에 넣을 물건보다 꺼낼 위치를 먼저 정해두면 실패가 줄어요. 선반 위면 가벼운 재질, 바닥이면 손잡이부터 보는 식입니다.',
+      metadata: { contentFormat: 'before_buy_check', contentGoal: 'save', lengthBucket: 'short' },
+      risk_level: 'low',
+      status: 'draft'
+    });
+
+    const queued = await createDailyQueue(account.id, { skipPreflight: true });
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].post_id, freshPost.id);
+    assert.equal(queued.diagnostics.recentContentFormatCounts.daily_one_liner, 1);
+    assert.equal(queued.diagnostics.selectedContentFormats[0], 'before_buy_check');
   } finally {
     globalThis.fetch = previousFetch;
   }
