@@ -20,6 +20,8 @@ const productDetailContent = {
     intro: '주제 선정, 상품 검색, 글 작성, 예약 업로드, 성과 확인을 한곳에서 관리합니다.',
     previewTitle: 'CUJASA 운영 현황',
     rows: [['오늘의 추천 주제', '봄철 집정리 아이템', '준비 완료'], ['상품 자동 매칭', '쿠팡 실상품 8개', '연결됨'], ['Threads 예약 큐', '오후 8:30 발행', '대기 중']],
+    bestFor: ['쿠팡 파트너스 글을 매일 올려야 하는 운영자', 'Threads 계정을 여러 개 관리하는 팀', '상품 검색과 링크 삽입 시간을 줄이고 싶은 계정'],
+    outputs: ['주제별 포스팅 초안', '쿠팡 실상품과 추적 링크', '예약 큐와 클릭 성과'],
     whyTitle: '왜 쿠자사를 써야 하나',
     problems: [
       { title: '매일 상품을 다시 찾음', body: '주제에 맞는 쿠팡 상품을 검색하고 링크를 붙이는 시간이 계속 쌓입니다.' },
@@ -45,6 +47,8 @@ const productDetailContent = {
     intro: '블로그 등급, 키워드 적합도, 운영 지표를 한 화면에서 보고 캠페인 후보를 빠르게 좁힙니다.',
     previewTitle: 'DEXOR 분석 현황',
     rows: [['후보 블로그', '인테리어 리뷰 채널', '분석 완료'], ['적합도 점수', 'A등급 · 87점', '추천'], ['검토 큐', '12개 후보 비교', '진행 중']],
+    bestFor: ['블로그 체험단 후보를 빠르게 걸러야 하는 팀', '선정 기준을 운영자마다 다르게 두고 싶지 않은 조직', '후보 수가 많아 엑셀 검토가 느린 캠페인'],
+    outputs: ['블로그 등급과 적합도', '후보 우선순위', '캠페인별 비교 기준'],
     whyTitle: '왜 덱서를 써야 하나',
     problems: [
       { title: '후보 검토 시간이 김', body: '블로그 지표와 콘텐츠 성향을 직접 확인하면 선정 시간이 길어집니다.' },
@@ -68,6 +72,8 @@ const productDetailContent = {
     intro: '캠페인 생성, 신청자 정리, 제출물 확인, 운영 리포트를 한곳에서 관리합니다.',
     previewTitle: 'SPREAD 캠페인 현황',
     rows: [['진행 캠페인', '신제품 리뷰 모집', '모집 중'], ['신청자 정리', '42명 후보', '분류 완료'], ['제출물 검수', '18건 대기', '확인 필요']],
+    bestFor: ['추천 캠페인을 반복 운영하는 브랜드', '신청자와 제출물 상태가 여러 채널에 흩어진 팀', '무료로 캠페인 운영 자동화를 먼저 검증하려는 운영자'],
+    outputs: ['캠페인 초안', '신청자 정리 목록', '제출물 상태와 운영 리포트'],
     whyTitle: '왜 스프레드를 써야 하나',
     problems: [
       { title: '신청자 정리가 반복됨', body: '신청자 정보, 조건, 제출 상태를 수동으로 맞추는 시간이 큽니다.' },
@@ -92,6 +98,8 @@ const productDetailContent = {
     intro: '고객 상담 맥락, 보장분석 자료, 추천 근거를 정리해 상담자가 다음 액션을 빠르게 판단하게 합니다.',
     previewTitle: 'POLIBOT 상담 현황',
     rows: [['고객 프로필', '30대 직장인', '입력 완료'], ['보장 분석', '실손·암 진단비 확인', '검토 완료'], ['추천 근거', '부족 보장 3건', '작성됨']],
+    bestFor: ['보험 상담 내용을 구조화해야 하는 설계사', '고객별 추천 근거를 남겨야 하는 팀', '상담 이력과 보장분석 자료를 함께 보는 조직'],
+    outputs: ['고객 프로필 요약', '부족 보장 체크', '추천 근거와 상담 히스토리'],
     whyTitle: '왜 폴리봇을 써야 하나',
     problems: [
       { title: '상담 맥락이 길어짐', body: '고객 정보와 기존 보장을 매번 다시 정리하면 상담 속도가 느려집니다.' },
@@ -115,6 +123,8 @@ const productDetailContent = {
     intro: '인스타그램 후보의 등급, 적합도, 리스크를 후보 1명 단위로 분석해 캠페인 선정 시간을 줄입니다.',
     previewTitle: 'INFLUDEX 분석 현황',
     rows: [['후보 계정', '@daily.creator', '분석 완료'], ['캠페인 적합도', 'B+ · 78점', '검토'], ['리스크 신호', '급성장 패턴 확인', '주의']],
+    bestFor: ['인스타그램 후보를 대량 검토하는 캠페인 팀', '팔로워 수만으로 선정하기 어려운 브랜드', '협업 전 리스크 신호를 먼저 확인하려는 운영자'],
+    outputs: ['후보별 등급', '캠페인 적합도', '리스크 체크 결과'],
     whyTitle: '왜 인플루덱스를 써야 하나',
     problems: [
       { title: '후보 계정 검토가 느림', body: '팔로워 수만으로는 캠페인 적합도와 리스크를 판단하기 어렵습니다.' },
@@ -138,6 +148,8 @@ const productDetailContent = {
     intro: '반복 결제되는 도구, 서비스, 계정 비용과 갱신 시점을 한 화면에서 확인합니다.',
     previewTitle: 'SUBLOG 비용 현황',
     rows: [['다가오는 결제', '디자인 툴 · 5월 25일', '예정'], ['비용 분류', '마케팅/운영/개발', '정리됨'], ['절감 후보', '중복 구독 2건', '확인 필요']],
+    bestFor: ['구독형 SaaS 지출이 늘어난 팀', '결제일과 담당자를 한곳에 묶고 싶은 운영자', '중복 구독과 불필요한 비용을 줄이고 싶은 조직'],
+    outputs: ['구독 비용 목록', '다가오는 결제 일정', '절감 후보'],
     whyTitle: '왜 서브로그를 써야 하나',
     problems: [
       { title: '반복 결제를 놓침', body: '소액 구독이 많아질수록 갱신일과 담당자 확인이 어려워집니다.' },
@@ -161,6 +173,8 @@ const productDetailContent = {
     intro: '상품 정보, 이미지, 스크립트, 업로드 준비를 연결해 쇼츠 제작 시간을 줄입니다.',
     previewTitle: 'AUVIBOT 제작 현황',
     rows: [['상품 소스', '생활용품 12개', '수집 완료'], ['스크립트 생성', '후킹 문구 36개', '작성됨'], ['업로드 큐', '오후 7:00 예약', '대기 중']],
+    bestFor: ['상품 쇼츠를 반복 제작하는 커머스 계정', '상품별 후킹 문구를 빠르게 뽑아야 하는 팀', '업로드 큐와 성과를 함께 관리하려는 운영자'],
+    outputs: ['상품별 쇼츠 초안', '후킹 문구와 장면 구성', '예약 큐와 성과 기록'],
     whyTitle: '왜 오비봇을 써야 하나',
     problems: [
       { title: '상품 영상 제작이 반복됨', body: '상품마다 소재 정리, 문구 작성, 영상 구성을 반복하면 시간이 많이 듭니다.' },
@@ -424,6 +438,33 @@ function ProductDetailDrawer({ product, open, onClose, onRegister, onLogin }) {
 
         <div className="grid gap-4 py-5">
           <ProductConsolePreview detail={detail} />
+
+          <section className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+              <div className="text-xs font-black uppercase tracking-[0.12em] text-zinc-500">Best Fit</div>
+              <h3 className="mt-2 text-base font-black text-zinc-50">이런 팀에 맞아요</h3>
+              <div className="mt-3 grid gap-2">
+                {detail.bestFor.map((item) => (
+                  <div key={item} className="flex gap-2 text-xs font-bold leading-5 text-zinc-400">
+                    <CheckCircle2 className="mt-0.5 shrink-0 text-red-200" size={14} />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+              <div className="text-xs font-black uppercase tracking-[0.12em] text-zinc-500">Outputs</div>
+              <h3 className="mt-2 text-base font-black text-zinc-50">시작하면 남는 것</h3>
+              <div className="mt-3 grid gap-2">
+                {detail.outputs.map((item) => (
+                  <div key={item} className="flex gap-2 text-xs font-bold leading-5 text-zinc-400">
+                    <CheckCircle2 className="mt-0.5 shrink-0 text-red-200" size={14} />
+                    <span>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
 
           <section className="rounded-[28px] border border-white/10 bg-black/20 p-5">
             <div className="text-xs font-black uppercase tracking-[0.12em] text-zinc-500">Why {product?.name || 'JASAIN'}</div>
