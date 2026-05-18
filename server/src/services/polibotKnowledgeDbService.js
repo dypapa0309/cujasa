@@ -1054,54 +1054,71 @@ async function listImportedPolibotSources() {
   if (importedSourceCache && Date.now() - importedSourceCache.createdAt < IMPORTED_SOURCE_CACHE_TTL_MS) {
     return importedSourceCache.value;
   }
-  const [docs, catalogRows, premiumRows] = await Promise.all([
-    dbList('parsed_documents', {}, {
-      select: 'id,filename,year_month,created_at,document_data',
-      order: 'created_at',
-      ascending: false,
-      limit: 500
-    }).catch(() => []),
-    listImportedCatalogRows().catch(() => []),
-    dbList('premium_examples', {}, {
-      select: 'id,document_id,catalog_item_id,company,product_name,premium,age,gender,label,source_page',
-      order: 'created_at',
-      ascending: false,
-      limit: 5000
-    }).catch(() => [])
-  ]);
-  if (!docs.length || !catalogRows.length) return [];
+  const catalogRows = await listImportedCatalogRows({ limit: 1200, includeExcerpt: false }).catch(() => []);
+  if (!catalogRows.length) return [];
   const catalogByDocument = catalogRows.reduce((acc, row) => {
-    if (!row.document_id) return acc;
-    acc[row.document_id] = acc[row.document_id] || [];
-    acc[row.document_id].push(row);
+    const sourceKey = row.document_id || `${row.effective_month || ''}-${row.source_filename || ''}` || row.id;
+    acc[sourceKey] = acc[sourceKey] || [];
+    acc[sourceKey].push(row);
     return acc;
   }, {});
-  const value = docs
-    .map((doc) => importedSourceFromDocument(doc, catalogByDocument[doc.id] || [], premiumRows))
+  const value = Object.entries(catalogByDocument)
+    .map(([sourceKey, rows]) => {
+      const first = rows[0] || {};
+      return importedSourceFromDocument({
+        id: sourceKey,
+        filename: first.source_filename || `catalog-${sourceKey}`,
+        year_month: first.effective_month || '',
+        created_at: first.updated_at || '',
+        document_data: null
+      }, rows, []);
+    })
     .filter((source) => source.catalogItems.length > 0)
     .sort((a, b) => String(b.month || '').localeCompare(String(a.month || '')) || String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')));
   importedSourceCache = { createdAt: Date.now(), value };
   return value;
 }
 
-async function listImportedCatalogRows() {
-  const select = 'id,document_id,product_name,company,product_group,item_type,customer_type,coverage_tags,min_age,max_age,premium,renewal_type,effective_month,source_filename,source_excerpt,source_page,confidence,value_confidence,review_status,updated_at';
+async function listImportedCatalogRows({ limit = 5000, includeExcerpt = true } = {}) {
+  const rowLimit = Math.max(1, Math.min(5000, Number(limit || 5000)));
+  const select = [
+    'id',
+    'document_id',
+    'product_name',
+    'company',
+    'product_group',
+    'item_type',
+    'customer_type',
+    'coverage_tags',
+    'min_age',
+    'max_age',
+    'premium',
+    'renewal_type',
+    'effective_month',
+    'source_filename',
+    includeExcerpt ? 'source_excerpt' : '',
+    'source_page',
+    'confidence',
+    'value_confidence',
+    'review_status',
+    'updated_at'
+  ].filter(Boolean).join(',');
   if (!supabase) {
     return dbList('catalog_items', {}, {
       select,
       order: 'updated_at',
       ascending: false,
-      limit: 3000
+      limit: rowLimit
     }).catch(() => []);
   }
   const pageSize = 1000;
   const rows = [];
-  for (let from = 0; from < 5000; from += pageSize) {
+  for (let from = 0; from < rowLimit; from += pageSize) {
     const { data, error } = await supabase
       .from('catalog_items')
       .select(select)
       .order('updated_at', { ascending: false })
-      .range(from, from + pageSize - 1);
+      .range(from, Math.min(rowLimit, from + pageSize) - 1);
     if (error) throw error;
     rows.push(...(data || []));
     if (!data || data.length < pageSize) break;

@@ -11,7 +11,6 @@ import {
   rankPolibotEvidence
 } from './polibotKnowledgeService.js';
 import {
-  getPolibotDbKnowledgeSummary,
   ingestPolibotKnowledge,
   listPolibotDbKnowledgeSources,
   searchPolibotCodeCandidates
@@ -1697,7 +1696,9 @@ async function updateWorkspaceAndConsumeCount(userId, productId, patchBuilder, c
 }
 
 export async function getProductWorkspace(userId, productId) {
+  const timing = productId === 'polibot' ? createPolibotTimingLogger('polibot_workspace_timing') : null;
   const grant = await getGrant(userId, productId);
+  timing?.mark('grant');
   const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
   const workspace = settings.workspace && typeof settings.workspace === 'object' ? settings.workspace : {};
   const next = { ...workspace };
@@ -1709,6 +1710,7 @@ export async function getProductWorkspace(userId, productId) {
       console.warn('[polibot_workspace_knowledge_load_failed]', error?.message || error);
       return [];
     });
+    timing?.mark('knowledge_load');
     const currentKnowledge = dbKnowledge.length ? [] : rawCurrentKnowledge;
     const seedKnowledge = dbKnowledge.length ? [] : polibotSeedKnowledgeSources();
     const catalogReviews = attachPolibotCatalogItemCache(normalizeCatalogReviews(next.catalogReviews));
@@ -1721,17 +1723,29 @@ export async function getProductWorkspace(userId, productId) {
         ...source,
         catalogItems: sourceCatalogItems(source, catalogReviews)
       }));
+    timing?.mark('catalog_items');
     next.catalogReviews = catalogReviews;
     next.latestKnowledgeMonth = next.knowledgeSources[0]?.month || next.latestKnowledgeMonth || '';
     next.catalog = buildPolibotCatalog(next.knowledgeSources);
+    timing?.mark('catalog');
     next.qualityReport = next.knowledgeSources.length && next.knowledgeSources.every((source) => source.dbSourceId)
       ? buildPolibotDbQualityReport(next.knowledgeSources)
       : buildPolibotQualityReport(next.knowledgeSources, catalogReviews);
-    next.knowledgeDbSummary = await getPolibotDbKnowledgeSummary(userId).catch((error) => {
-      console.warn('[polibot_workspace_summary_load_failed]', error?.message || error);
-      return EMPTY_POLIBOT_KNOWLEDGE_DB_SUMMARY;
+    timing?.mark('quality_report');
+    next.knowledgeDbSummary = {
+      ...EMPTY_POLIBOT_KNOWLEDGE_DB_SUMMARY,
+      ...buildPolibotLightKnowledgeSummary(next.knowledgeSources),
+      companies: (next.qualityReport?.companies || []).map((name) => ({ name, count: 0 })),
+      productGroups: (next.qualityReport?.productGroups || []).map((name) => ({ name, count: 0 }))
+    };
+    next.monthlyChangeReport = next.knowledgeSources.length <= 80
+      ? buildPolibotMonthlyChangeReport(next.knowledgeSources, catalogReviews)
+      : next.monthlyChangeReport || { added: [], changed: [], removed: [] };
+    timing?.mark('summary');
+    timing?.flush({
+      sourceCount: next.knowledgeSources.length,
+      catalogItemCount: next.knowledgeSources.reduce((sum, source) => sum + (Array.isArray(source.catalogItems) ? source.catalogItems.length : 0), 0)
     });
-    next.monthlyChangeReport = buildPolibotMonthlyChangeReport(next.knowledgeSources, catalogReviews);
   }
   return withUsage(next, { ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);
 }
