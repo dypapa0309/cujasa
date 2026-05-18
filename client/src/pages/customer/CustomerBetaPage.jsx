@@ -1602,7 +1602,7 @@ function TaskDrawer(props) {
           {action.key === 'spread-campaign' && <SpreadCampaignPanel assistantDraft={props.assistantDraft} reloadCurrentUser={props.reloadCurrentUser} />}
           {action.key === 'spread-applicants' && <SpreadApplicantsPanel reloadCurrentUser={props.reloadCurrentUser} />}
           {action.key === 'spread-review' && <SpreadReviewPanel reloadCurrentUser={props.reloadCurrentUser} />}
-          {action.key === 'polibot-upload' && <PolibotUploadPanel onOpenAction={props.onOpenAction} />}
+          {action.key === 'polibot-upload' && <PolibotUploadPanel currentUser={props.currentUser} onOpenAction={props.onOpenAction} />}
           {action.key === 'polibot-recommend' && <PolibotRecommendPanel assistantDraft={props.assistantDraft} reloadCurrentUser={props.reloadCurrentUser} onOpenAction={props.onOpenAction} currentUser={props.currentUser} />}
           {action.key === 'polibot-customers' && <PolibotCustomersPanel />}
           {action.key === 'polibot-download' && <PolibotDownloadPanel />}
@@ -4771,35 +4771,86 @@ function polibotMonthlyChangeItems(report = {}) {
   return items.length ? items : ['전월 비교 대상이 아직 부족합니다.'];
 }
 
-function PolibotUploadPanel({ onOpenAction }) {
+function buildLocalPolibotStatus(currentUser = {}) {
+  const grant = (currentUser?.products || []).find((item) => item?.productId === 'polibot' && item.status !== 'suspended');
+  if (!grant) {
+    return {
+      productId: 'polibot',
+      granted: false,
+      health: 'needs_setup',
+      summary: 'POLIBOT 사용 권한이 필요합니다.',
+      nextAction: '결제',
+      actionKey: 'billing',
+      usage: workspaceUsage({})
+    };
+  }
+  const summary = grant.settingsSummary?.workspaceSummary || grant.settings?.workspaceSummary || {};
+  const usage = getGrantUsage(grant, 'polibot');
+  if (summary.hasPolibotRecommendations) {
+    return {
+      productId: 'polibot',
+      granted: true,
+      status: grant.status || 'active',
+      health: 'ready',
+      summary: '저장된 추천 초안이 있습니다.',
+      nextAction: '결과 다운로드',
+      actionKey: 'polibot-download',
+      usage
+    };
+  }
+  return {
+    productId: 'polibot',
+    granted: true,
+    status: grant.status || 'active',
+    health: 'empty',
+    summary: summary.hasPolibotUpload
+      ? '업로드된 자료가 있습니다. 고객 조건을 넣어 추천을 만들 수 있습니다.'
+      : '공통 상품 자료 기준으로 고객 조건 입력과 추천 초안을 시작할 수 있습니다.',
+    nextAction: '상품 추천',
+    actionKey: 'polibot-recommend',
+    usage
+  };
+}
+
+function PolibotUploadPanel({ currentUser, onOpenAction }) {
   const toast = useToast();
-  const [status, setStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const localStatus = useMemo(() => buildLocalPolibotStatus(currentUser), [currentUser]);
+  const [status, setStatus] = useState(localStatus);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState('');
   const usage = status?.usage || workspaceUsage({});
   const isReady = ['ready', 'empty'].includes(status?.health);
 
-  const loadWorkspace = useCallback(() => {
-    setLoading(true);
+  const loadWorkspace = useCallback(({ silent = false } = {}) => {
+    if (silent) setRefreshing(true);
+    else setLoading(true);
     setLoadError('');
     api.get('/api/product-workspace/polibot/status', { timeoutMs: 5000 })
       .then((data) => setStatus(data || null))
       .catch((err) => {
-        setLoadError('자료 준비 상태를 불러오지 못했어요. 잠시 후 다시 시도해주세요.');
-        toast(err.message || '자료 준비 상태를 불러오지 못했어요.', 'error');
+        setLoadError('최신 상태 확인이 지연되고 있습니다. 현재 화면의 기본 상태로 계속 진행할 수 있습니다.');
+        if (!silent) toast(err.message || '자료 준비 상태를 불러오지 못했어요.', 'error');
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [toast]);
 
   useEffect(() => {
-    loadWorkspace();
-  }, [loadWorkspace]);
+    setStatus((prev) => prev || localStatus);
+  }, [localStatus]);
+
+  useEffect(() => {
+    loadWorkspace({ silent: Boolean(localStatus) });
+  }, [loadWorkspace, localStatus]);
 
   return (
     <>
       <PanelCard title="자료 상태">
         <ProductUsageStrip usage={usage} />
-        {loading && <Notice>추천 준비 상태를 확인하고 있어요.</Notice>}
+        {loading && !status && <Notice>추천 준비 상태를 확인하고 있어요.</Notice>}
         {loadError && <Notice tone="error">{loadError}</Notice>}
         <div className="grid gap-3 md:grid-cols-3">
           <div className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3">
@@ -4821,8 +4872,8 @@ function PolibotUploadPanel({ onOpenAction }) {
           </div>
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <DarkButton onClick={loadWorkspace} disabled={loading} className="w-auto">
-            <RefreshCw size={15} /> {loading ? '확인 중...' : '상태 새로고침'}
+          <DarkButton onClick={() => loadWorkspace()} disabled={loading || refreshing} className="w-auto">
+            <RefreshCw size={15} /> {loading || refreshing ? '확인 중...' : '상태 새로고침'}
           </DarkButton>
           {status?.actionKey && status.actionKey !== 'polibot-upload' && (
             <DarkButton variant="ghost" onClick={() => onOpenAction?.(status.actionKey)} className="w-auto">
