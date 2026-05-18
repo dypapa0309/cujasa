@@ -665,6 +665,18 @@ function isImportedCatalogProductLike(row = {}) {
   return ['product', 'plan'].includes(kind);
 }
 
+function shouldAutoConfirmImportedCatalogRow(row = {}, { productName = '', coverageKeywords = [], hasCoreValues = false, confidence = 0 } = {}) {
+  if (!row.company || !productName || !hasCoreValues) return false;
+  if (!isImportedCatalogProductLike({ ...row, product_name: productName })) return false;
+  const hasCoverage = Array.isArray(coverageKeywords) && coverageKeywords.length > 0;
+  const hasAge = Boolean(row.min_age || row.max_age);
+  const hasPremium = Boolean(row.premium);
+  const hasRenewal = Boolean(row.renewal_type);
+  const hasEvidence = Boolean(row.source_excerpt || row.source_filename || row.document_id);
+  const qualitySignals = [hasCoverage, hasAge, hasPremium, hasRenewal, hasEvidence].filter(Boolean).length;
+  return confidence >= 60 || qualitySignals >= 2;
+}
+
 function importedCoverageKeywords(value = []) {
   const list = Array.isArray(value) ? value : [];
   return [...new Set(list
@@ -834,7 +846,12 @@ function importedCatalogItemFromRow(row = {}, premiumRows = [], doc = {}) {
   const evidencePaymentTerm = importedEvidencePaymentTerm(evidenceText);
   const evidenceRenewalType = importedEvidenceRenewalType(evidenceText);
   const hasCoreValues = row.product_name && row.company && (row.min_age || row.max_age || evidenceAgeRange || premium || row.renewal_type || evidenceRenewalType);
-  const status = isCatalogNonProductName(productName, row.company) ? 'excluded' : normalizeImportedCatalogStatus(row.review_status);
+  const normalizedStatus = normalizeImportedCatalogStatus(row.review_status);
+  const status = isCatalogNonProductName(productName, row.company)
+    ? 'excluded'
+    : normalizedStatus === 'review' && shouldAutoConfirmImportedCatalogRow(row, { productName, coverageKeywords, hasCoreValues, confidence })
+      ? 'confirmed'
+      : normalizedStatus;
   const premiumExamples = matchedPremiums.map((item) => ({
     premium: formatImportedPremium(item.premium),
     rawPremium: item.premium,

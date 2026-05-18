@@ -184,7 +184,8 @@ test('getProductWorkspaceStatus includes POLIBOT common catalog readiness', asyn
 
   const status = await getProductWorkspaceStatus(userId, 'polibot');
 
-  assert.equal(status.health, 'empty');
+  assert.equal(status.health, 'ready');
+  assert.match(status.summary, /상품 자료로 추천을 시작/);
   assert.ok(status.qualityReport?.recommendableProducts >= 1);
   assert.ok(status.qualityReport?.companies?.includes('메리츠화재'));
   assert.ok(status.catalog?.companies?.includes('메리츠화재'));
@@ -241,7 +242,7 @@ test('POLIBOT customer flows use imported extraction catalog data', async () => 
     source_page: 1,
     confidence: 0.94,
     value_confidence: 0.92,
-    review_status: 'confirmed'
+    review_status: 'needs_review'
   });
   await dbInsert('premium_examples', {
     id: '11111111-2026-4110-8110-101010101017',
@@ -271,6 +272,8 @@ test('POLIBOT customer flows use imported extraction catalog data', async () => 
 
   assert.ok(status.qualityReport?.companies?.includes('메리츠화재'));
   assert.ok(status.qualityReport?.recommendableProducts >= 1);
+  assert.equal(status.health, 'ready');
+  assert.match(status.summary, /상품 자료로 추천을 시작/);
   assert.ok(workspace.recommendations.length >= 1);
   assert.ok(workspace.recommendations.some((recommendation) => /메리츠/.test(recommendation.name)));
   assert.ok(workspace.recommendations.some((recommendation) => (recommendation.catalogItems || []).some((item) => item.company === '메리츠화재')));

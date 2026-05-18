@@ -794,6 +794,18 @@ function summarizePolibotProduct({ product, grant } = {}) {
   return { health: 'empty', summary: '공통 상품 자료 기준으로 고객 조건 입력과 추천 초안을 시작할 수 있어요.', nextAction: '상품 추천', actionKey: 'polibot-recommend', usage };
 }
 
+function applyPolibotCatalogReadiness(status = {}, qualityReport = {}) {
+  const recommendableProducts = Number(qualityReport?.recommendableProducts || 0);
+  if (recommendableProducts <= 0 || status.health !== 'empty') return status;
+  return {
+    ...status,
+    health: 'ready',
+    summary: `${recommendableProducts.toLocaleString('ko-KR')}개 상품 자료로 추천을 시작할 수 있어요.`,
+    nextAction: '상품 추천',
+    actionKey: 'polibot-recommend'
+  };
+}
+
 function summarizeInfludexProduct({ product, grant } = {}) {
   const workspace = workspaceFromGrant(grant);
   const usage = productUsageFromGrant(grant, product.id);
@@ -920,7 +932,7 @@ export async function getProductWorkspaceStatus(userId, productId) {
     productGroups: (qualityReport?.productGroups || []).map((name) => ({ name, count: 0 }))
   };
   return {
-    ...status,
+    ...applyPolibotCatalogReadiness(status, qualityReport),
     qualityReport: compactPolibotClientQualityReport(qualityReport),
     knowledgeDbSummary,
     catalog: buildPolibotCatalog(knowledgeSources)
