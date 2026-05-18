@@ -3879,10 +3879,16 @@ export async function savePolibotRecommendation(userId, {
       recommendationNotice
     });
     timing.mark('hard_missing_patch');
-    const result = await updateWorkspace(userId, 'polibot', patch);
-    timing.mark('update');
+    updateWorkspace(userId, 'polibot', patch).catch((error) => {
+      console.warn('[polibot_incomplete_draft_save_failed]', error?.message || error);
+    });
+    timing.mark('queued_update');
     timing.flush({ mode: 'hard_missing', hardMissing });
-    return result;
+    return {
+      ...patch,
+      updatedAt: now(),
+      usage: normalizeUsage({}, 'polibot')
+    };
   }
   const timing = createPolibotTimingLogger('polibot_recommend_timing');
   const seed = hashText(JSON.stringify(profile));
