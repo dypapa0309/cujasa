@@ -191,6 +191,91 @@ test('getProductWorkspaceStatus includes POLIBOT common catalog readiness', asyn
   assert.ok(status.knowledgeDbSummary?.companies?.some((item) => item.name === '메리츠화재'));
 });
 
+test('POLIBOT customer flows use imported extraction catalog data', async () => {
+  const userId = '11111111-2026-4110-8110-101010101014';
+  const documentId = '11111111-2026-4110-8110-101010101015';
+  const catalogItemId = '11111111-2026-4110-8110-101010101016';
+  await dbInsert('users', {
+    id: userId,
+    email: 'polibot-imported-catalog-customer-test@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT Imported Catalog',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      usage: { polibot: { limit: 5, used: 0 } },
+      workspace: {}
+    }
+  });
+  await dbInsert('parsed_documents', {
+    id: documentId,
+    filename: '2026-05-메리츠화재-암플랜.pdf',
+    year_month: '2026-05',
+    document_data: {
+      pages: [{
+        page: 1,
+        text: '메리츠 암 진단비 든든 플랜 암 진단비 3000만원 가입연령 20-65세 비갱신형 월 보험료 89000원'
+      }]
+    }
+  });
+  await dbInsert('catalog_items', {
+    id: catalogItemId,
+    document_id: documentId,
+    product_name: '메리츠 암 진단비 든든 플랜',
+    company: '메리츠화재',
+    product_group: '암/뇌/심장',
+    item_type: 'product',
+    coverage_tags: ['암'],
+    min_age: 20,
+    max_age: 65,
+    premium: 89000,
+    renewal_type: '비갱신형',
+    effective_month: '2026-05',
+    source_filename: '2026-05-메리츠화재-암플랜.pdf',
+    source_excerpt: '암 진단비 3000만원 월 보험료 89000원',
+    source_page: 1,
+    confidence: 0.94,
+    value_confidence: 0.92,
+    review_status: 'confirmed'
+  });
+  await dbInsert('premium_examples', {
+    id: '11111111-2026-4110-8110-101010101017',
+    document_id: documentId,
+    catalog_item_id: catalogItemId,
+    company: '메리츠화재',
+    product_name: '메리츠 암 진단비 든든 플랜',
+    premium: 89000,
+    age: '45',
+    gender: '남성',
+    label: '45세 남성',
+    source_page: 1
+  });
+
+  const status = await getProductWorkspaceStatus(userId, 'polibot');
+  const workspace = await savePolibotRecommendation(userId, {
+    name: '추출DB 고객',
+    age: '45',
+    gender: '남성',
+    needs: ['암'],
+    budget: '12',
+    existingMedicalPlan: '있음',
+    medicalHistory: '없음',
+    existingPremium: '18',
+    purpose: '보험료 절감'
+  });
+
+  assert.ok(status.qualityReport?.companies?.includes('메리츠화재'));
+  assert.ok(status.qualityReport?.recommendableProducts >= 1);
+  assert.ok(workspace.recommendations.length >= 1);
+  assert.ok(workspace.recommendations.some((recommendation) => /메리츠/.test(recommendation.name)));
+  assert.ok(workspace.recommendations.some((recommendation) => (recommendation.catalogItems || []).some((item) => item.company === '메리츠화재')));
+});
+
 test('POLIBOT incomplete recommendation stores draft without consuming usage', async () => {
   const userId = '11111111-2026-4110-8110-202020202020';
   await dbInsert('users', {
