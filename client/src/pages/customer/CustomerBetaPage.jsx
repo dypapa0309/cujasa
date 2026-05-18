@@ -4051,7 +4051,7 @@ function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
   const usage = workspaceUsage(workspace);
   const gradeRows = dexorScoreRows.map(([grade, range, description]) => [
     grade,
-    results.filter((item) => (item.scoreLabel || item.grade) === grade).length,
+    results.filter((item) => (item.strengthenedGrade || item.scoreLabel || item.grade) === grade).length,
     `${range} · ${description}`
   ]);
 
@@ -4153,6 +4153,8 @@ function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
           <div className="grid gap-2">
           {results.slice(0, 10).map((item) => {
             const displayRank = ({ '씨랭크/다이아': 'S', '최적화': 'A', '준최적화': 'B', '일반': 'C', '제외/재검토': 'D' })[item.scoreLabel || item.grade] || item.scoreLabel || item.grade;
+            const strengthenedRank = item.strengthenedGrade || displayRank;
+            const adjusted = strengthenedRank !== displayRank;
             return (
               <div key={item.id} className="rounded-2xl bg-black/25 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
@@ -4161,11 +4163,26 @@ function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
                     <div className="mt-0.5 truncate text-xs text-zinc-600">{item.url}</div>
                   </div>
                   <div className="shrink-0 text-right">
-                    <div className="rounded-full border border-white/10 px-2.5 py-1 text-xs font-black text-zinc-100">{displayRank}</div>
-                    <div className="mt-1 text-xs font-black text-zinc-500">{item.score}점</div>
+                    <div className="inline-flex items-center gap-1 rounded-full border border-white/10 px-2.5 py-1 text-xs font-black text-zinc-100">
+                      {adjusted ? `${displayRank} → ${strengthenedRank}` : strengthenedRank}
+                    </div>
+                    <div className="mt-1 text-xs font-black text-zinc-500">{item.strengthenedScore || item.score}점</div>
                   </div>
                 </div>
-                <div className="mt-2 text-xs font-bold text-zinc-300">{item.scoreComment || dexorScoreComment(item.score)}</div>
+                <div className="mt-2 text-xs font-bold text-zinc-300">{item.strengthenedDecision || item.scoreComment || dexorScoreComment(item.score)}</div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                  <DexorSignal label="데이터 신뢰도" value={item.dataConfidence ? `${item.dataConfidence.level} ${item.dataConfidence.score}` : '미계산'} sub={item.dataConfidence?.sourceLabel || '기본'} />
+                  <DexorSignal label="기존 지수" value={item.legacyIndex || '없음'} sub={item.legacyIndex ? '충돌 여부 반영' : '입력 없음'} />
+                  <DexorSignal label="상위노출 검증" value={item.searchValidation?.label || '미검증'} sub="정밀 단계에서 검증" />
+                  <DexorSignal label="기준 조정" value={item.gradeStatus || '유지'} sub={adjusted ? '강화 기준 적용' : '등급 유지'} />
+                </div>
+                {Array.isArray(item.verificationFlags) && item.verificationFlags.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {item.verificationFlags.map((flag) => (
+                      <span key={flag} className="rounded-full border border-white/10 bg-black/30 px-2 py-1 text-[11px] font-bold text-zinc-500">{flag}</span>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -4173,6 +4190,16 @@ function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
         )}
       </PanelCard>
     </>
+  );
+}
+
+function DexorSignal({ label, value, sub }) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2">
+      <div className="text-[11px] font-black text-zinc-600">{label}</div>
+      <div className="mt-1 truncate text-xs font-black text-zinc-200">{value}</div>
+      <div className="mt-0.5 truncate text-[11px] font-bold text-zinc-600">{sub}</div>
+    </div>
   );
 }
 
@@ -4190,7 +4217,7 @@ function DexorDownloadPanel({ onOpenUpload }) {
   }, [toast]);
 
   const downloadCsv = () => {
-    const header = ['url', 'blogName', 'targetCategory', 'candidateCategory', 'rank', 'score', 'comment', 'summary'];
+    const header = ['url', 'blogName', 'targetCategory', 'candidateCategory', 'rank', 'score', 'strengthenedRank', 'strengthenedScore', 'dataConfidence', 'legacyIndex', 'searchValidation', 'flags', 'comment', 'summary'];
     const rows = results.map((item) => [
       item.url || '미입력',
       item.blogName || '미입력',
@@ -4198,7 +4225,13 @@ function DexorDownloadPanel({ onOpenUpload }) {
       item.candidateCategory || '미입력',
       item.scoreLabel || item.grade || '미입력',
       item.score ?? '미입력',
-      item.scoreComment || dexorScoreComment(item.score),
+      item.strengthenedGrade || item.scoreLabel || item.grade || '미입력',
+      item.strengthenedScore ?? item.score ?? '미입력',
+      item.dataConfidence?.level || '미입력',
+      item.legacyIndex || '미입력',
+      item.searchValidation?.label || '미검증',
+      Array.isArray(item.verificationFlags) ? item.verificationFlags.join(' | ') : '',
+      item.strengthenedDecision || item.scoreComment || dexorScoreComment(item.score),
       item.reasonSummary || item.reasons?.slice(0, 2).join(' | ') || '기본 지표 기준'
     ].map(csvEscape).join(','));
     const csv = `\uFEFF${[header.join(','), ...rows].join('\r\n')}`;
@@ -4821,18 +4854,12 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
     api.get('/api/product-workspace/polibot/status', { timeoutMs: 5000 })
       .then((data) => {
         if (cancelled) return;
-        setWorkspace((prev) => ({ ...prev, usage: data?.usage || prev.usage }));
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setWorkspaceLoaded(true);
-      });
-    api.get('/api/product-workspace/polibot', { timeoutMs: 45000 })
-      .then((data) => {
-        if (cancelled) return;
-        setWorkspace(data || {});
-        const firstCompany = data?.catalog?.companies?.[0];
-        setForm((prev) => ({ ...prev, company: prev.company || firstCompany || '전체 보험사' }));
+        setWorkspace((prev) => ({
+          ...prev,
+          usage: data?.usage || prev.usage,
+          status: data?.health || prev.status,
+          summary: data?.summary || prev.summary
+        }));
       })
       .catch((err) => {
         if (!cancelled) toast(err.message || '추천 데이터 일부를 불러오지 못했어요.', 'error');
