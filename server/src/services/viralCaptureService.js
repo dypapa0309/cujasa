@@ -129,6 +129,53 @@ function extractMetaContent(html = '', names = []) {
   return '';
 }
 
+function extractMetaContents(html = '', names = []) {
+  const values = [];
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patterns = [
+      new RegExp(`<meta\\s+[^>]*(?:property|name)=["']${escaped}["'][^>]*content=["']([^"']+)["'][^>]*>`, 'gi'),
+      new RegExp(`<meta\\s+[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["']${escaped}["'][^>]*>`, 'gi')
+    ];
+    for (const pattern of patterns) {
+      for (const match of html.matchAll(pattern)) {
+        if (match?.[1]) values.push(decodeHtml(match[1]).trim());
+      }
+    }
+  }
+  return values;
+}
+
+function threadsImageIdentity(rawUrl = '') {
+  try {
+    const parsed = new URL(rawUrl);
+    const file = parsed.pathname.split('/').pop() || parsed.pathname;
+    return parsed.searchParams.get('ig_cache_key') || file;
+  } catch {
+    return rawUrl.split('?')[0];
+  }
+}
+
+function extractThreadsImageUrls(html = '') {
+  const normalized = decodeHtml(html).replace(/\\\//g, '/');
+  const metaUrls = extractMetaContents(normalized, ['og:image', 'twitter:image']);
+  const embeddedUrls = [...normalized.matchAll(/https:\/\/scontent[^"'\\\s<>]+/g)]
+    .map((match) => match[0]);
+  const seen = new Set();
+  return [...metaUrls, ...embeddedUrls]
+    .map((item) => String(item || '').trim())
+    .filter((item) => /^https:\/\/scontent/i.test(item))
+    .filter((item) => /\/t51\.82787-15\//.test(item))
+    .filter((item) => /\.(?:jpe?g|webp|png)(?:[?#]|$)/i.test(item))
+    .filter((item) => {
+      const identity = threadsImageIdentity(item);
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    })
+    .slice(0, 10);
+}
+
 async function fetchThreadsMetadata(url) {
   const res = await fetch(url, {
     headers: {
@@ -143,7 +190,8 @@ async function fetchThreadsMetadata(url) {
     throw error;
   }
   const html = await res.text();
-  const imageUrl = extractMetaContent(html, ['og:image', 'twitter:image']);
+  const imageUrls = extractThreadsImageUrls(html);
+  const imageUrl = imageUrls[0] || '';
   const description = extractMetaContent(html, ['og:description', 'twitter:description', 'description']);
   const title = extractMetaContent(html, ['og:title', 'twitter:title']);
   if (!/^https?:\/\//i.test(imageUrl)) {
@@ -152,12 +200,11 @@ async function fetchThreadsMetadata(url) {
     error.code = 'VIRAL_CAPTURE_IMAGE_NOT_FOUND';
     throw error;
   }
-  return { imageUrl, description, title };
+  return { imageUrl, imageUrls, description, title };
 }
 
-async function captureUrlFromMetadata(url) {
-  const metadata = await fetchThreadsMetadata(url);
-  const imageRes = await fetch(metadata.imageUrl, {
+async function downloadThreadsImageAsCapture({ url, imageUrl, metadata, index }) {
+  const imageRes = await fetch(imageUrl, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; JASAINBot/1.0; +https://jasain.kr)',
       Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
@@ -181,18 +228,45 @@ async function captureUrlFromMetadata(url) {
     base64: output.toString('base64'),
     clip: null,
     kind: 'threads_og_image',
-    sourceImageUrl: metadata.imageUrl,
+    sourceImageUrl: imageUrl,
     sourceText: metadata.description,
     sourceTitle: metadata.title,
-    images: [{
-      mimeType: 'image/jpeg',
-      base64: output.toString('base64'),
-      clip: null,
-      kind: 'threads_og_image',
-      sourceImageUrl: metadata.imageUrl,
-      sourceText: metadata.description,
-      sourceTitle: metadata.title
-    }]
+    sourceIndex: index
+  };
+}
+
+async function captureUrlFromMetadata(url) {
+  const metadata = await fetchThreadsMetadata(url);
+  const captures = [];
+  for (const [index, imageUrl] of metadata.imageUrls.entries()) {
+    try {
+      captures.push(await downloadThreadsImageAsCapture({ url, imageUrl, metadata, index }));
+    } catch (error) {
+      await safeLogActivity({
+        action: 'viral_capture_image_fetch_failed',
+        level: 'warn',
+        message: error.message || 'Threads image fetch failed',
+        payload: { imageUrl, index }
+      }).catch(() => null);
+    }
+  }
+  if (!captures.length) {
+    const error = new Error('인기글 이미지를 내려받지 못했어요.');
+    error.status = 502;
+    error.code = 'VIRAL_CAPTURE_IMAGE_FETCH_FAILED';
+    throw error;
+  }
+  const primary = captures[0];
+  return {
+    url,
+    mimeType: primary.mimeType,
+    base64: primary.base64,
+    clip: primary.clip,
+    kind: primary.kind,
+    sourceImageUrl: primary.sourceImageUrl,
+    sourceText: metadata.description,
+    sourceTitle: metadata.title,
+    images: captures
   };
 }
 
@@ -405,6 +479,14 @@ async function saveCaptureForThreads(capture, accountId) {
   return `${publicBaseUrl()}/public/uploads/${relativePath.split(path.sep).map(encodeURIComponent).join('/')}`;
 }
 
+async function saveCapturesForThreads(captures, accountId) {
+  const urls = [];
+  for (const capture of captures) {
+    urls.push(await saveCaptureForThreads(capture, accountId));
+  }
+  return urls;
+}
+
 function fallbackDraft(account, url) {
   const scope = account.content_scope || '일상';
   return {
@@ -566,10 +648,11 @@ export async function runViralCapturePost({ accountId, url }) {
   const normalizedUrl = normalizeCaptureUrl(url);
   await assertViralCaptureDailyLimit(account.id);
   const capture = await captureUrl(normalizedUrl);
-  const captureImageUrl = await saveCaptureForThreads(capture, account.id);
   const capturedImages = Array.isArray(capture.images) && capture.images.length
     ? capture.images
     : [capture];
+  const captureImageUrls = await saveCapturesForThreads(capturedImages, account.id);
+  const captureImageUrl = captureImageUrls[0] || '';
   const draft = await generateDraftFromCapture(account, capture);
   const body = String(draft.body || '').trim();
   const topic = await createViralTopic(account, draft);
@@ -612,17 +695,21 @@ export async function runViralCapturePost({ accountId, url }) {
         clip: item.clip || null,
         naturalWidth: item.naturalWidth || null,
         naturalHeight: item.naturalHeight || null,
-        selectedForUpload: index === 0
+        sourceImageUrl: item.sourceImageUrl || null,
+        uploadedImageUrl: captureImageUrls[index] || null,
+        selectedForUpload: index < captureImageUrls.length
       })),
       imageAttachment: {
         attachImage: true,
         imageUrl: captureImageUrl,
+        imageUrls: captureImageUrls,
         imageSourceType: 'viral_capture',
         imageRisk: 'low'
       },
       visualPlan: {
         attachImage: true,
         imageUrl: captureImageUrl,
+        imageUrls: captureImageUrls,
         imageSourceType: 'viral_capture',
         imageRisk: 'low'
       },
@@ -654,6 +741,7 @@ export async function runViralCapturePost({ accountId, url }) {
         selectedProductId: selected.product.id,
         trackingLinkId: trackingLink.id,
         captureImageUrl,
+        captureImageUrls,
         postUrl: uploaded.postUrl || null,
         uploadRaw: uploaded.raw || null
       }
@@ -666,6 +754,7 @@ export async function runViralCapturePost({ accountId, url }) {
         selectedProductId: selected.product.id,
         trackingLinkId: trackingLink.id,
         captureImageUrl,
+        captureImageUrls,
         uploadError: error.message
       }
     }).catch(() => null);
@@ -691,6 +780,8 @@ export async function runViralCapturePost({ accountId, url }) {
     sourceUrl: normalizedUrl,
     capturePreview: `data:${capture.mimeType};base64,${capture.base64}`,
     captureImageUrl,
+    captureImageUrls,
+    capturedImageCount: captureImageUrls.length,
     captureClip: capture.clip || null,
     postUrl: uploaded.postUrl || null,
     product: {
