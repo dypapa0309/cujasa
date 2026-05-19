@@ -4,8 +4,8 @@ services:
     env: node
     plan: starter
     rootDir: .
-    buildCommand: npm install --prefix server && cd server && npx playwright install chromium
-    startCommand: cd server && npx playwright install chromium && npm start
+    buildCommand: npm install --prefix server
+    startCommand: npm start --prefix server
     healthCheckPath: /api/health
     autoDeploy: true
     envVars:
@@ -25,6 +25,8 @@ services:
         value: https://mkdvxofnnvyjuevqwfyb.supabase.co/storage/v1/object/public/auvibot-assets
       - key: PLAYWRIGHT_BROWSERS_PATH
         value: /opt/render/project/.cache/ms-playwright
+      - key: VIRAL_CAPTURE_USE_BROWSER
+        value: "false"
       - key: POLIBOT_STORAGE_BUCKET
         value: polibot-knowledge
       - key: ADMIN_EMAIL

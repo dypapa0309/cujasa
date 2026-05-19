@@ -2,6 +2,7 @@ import { getJson } from './openaiService.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import sharp from 'sharp';
 import { getAccount } from './accountService.js';
 import { dbInsert, dbList, dbUpdate, safeLogActivity, supabase } from './supabaseService.js';
 import { searchProductsForTopic } from './coupangService.js';
@@ -39,7 +40,20 @@ async function loadPlaywright() {
 }
 
 async function captureUrl(url) {
-  const { chromium } = await loadPlaywright();
+  if (process.env.VIRAL_CAPTURE_USE_BROWSER === 'false') {
+    return captureUrlFromMetadata(url);
+  }
+  let chromium;
+  try {
+    ({ chromium } = await loadPlaywright());
+  } catch (error) {
+    await safeLogActivity({
+      action: 'viral_capture_engine_unavailable',
+      level: 'warn',
+      message: error.message || 'Playwright import failed'
+    }).catch(() => null);
+    return captureUrlFromMetadata(url);
+  }
   let browser;
   try {
     browser = await chromium.launch({
@@ -47,11 +61,12 @@ async function captureUrl(url) {
       args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
   } catch (launchError) {
-    const error = new Error('배포 서버의 자동 캡처 브라우저가 아직 준비되지 않았어요. 잠시 후 다시 시도해주세요.');
-    error.status = 503;
-    error.code = 'CAPTURE_BROWSER_UNAVAILABLE';
-    error.cause = launchError;
-    throw error;
+    await safeLogActivity({
+      action: 'viral_capture_browser_unavailable',
+      level: 'warn',
+      message: launchError.message || 'Playwright browser launch failed'
+    }).catch(() => null);
+    return captureUrlFromMetadata(url);
   }
   try {
     const page = await browser.newPage({
@@ -86,6 +101,99 @@ async function captureUrl(url) {
   } finally {
     await browser.close().catch(() => null);
   }
+}
+
+function decodeHtml(value = '') {
+  return String(value || '')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(parseInt(code, 10)))
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+function extractMetaContent(html = '', names = []) {
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const patterns = [
+      new RegExp(`<meta\\s+[^>]*(?:property|name)=["']${escaped}["'][^>]*content=["']([^"']+)["'][^>]*>`, 'i'),
+      new RegExp(`<meta\\s+[^>]*content=["']([^"']+)["'][^>]*(?:property|name)=["']${escaped}["'][^>]*>`, 'i')
+    ];
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match?.[1]) return decodeHtml(match[1]).trim();
+    }
+  }
+  return '';
+}
+
+async function fetchThreadsMetadata(url) {
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; JASAINBot/1.0; +https://jasain.kr)',
+      Accept: 'text/html,application/xhtml+xml'
+    }
+  });
+  if (!res.ok) {
+    const error = new Error(`인기글 페이지를 불러오지 못했어요. (${res.status})`);
+    error.status = 502;
+    error.code = 'VIRAL_CAPTURE_SOURCE_FETCH_FAILED';
+    throw error;
+  }
+  const html = await res.text();
+  const imageUrl = extractMetaContent(html, ['og:image', 'twitter:image']);
+  const description = extractMetaContent(html, ['og:description', 'twitter:description', 'description']);
+  const title = extractMetaContent(html, ['og:title', 'twitter:title']);
+  if (!/^https?:\/\//i.test(imageUrl)) {
+    const error = new Error('인기글에서 사용할 이미지를 찾지 못했어요.');
+    error.status = 422;
+    error.code = 'VIRAL_CAPTURE_IMAGE_NOT_FOUND';
+    throw error;
+  }
+  return { imageUrl, description, title };
+}
+
+async function captureUrlFromMetadata(url) {
+  const metadata = await fetchThreadsMetadata(url);
+  const imageRes = await fetch(metadata.imageUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; JASAINBot/1.0; +https://jasain.kr)',
+      Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      Referer: url
+    }
+  });
+  if (!imageRes.ok) {
+    const error = new Error(`인기글 이미지를 내려받지 못했어요. (${imageRes.status})`);
+    error.status = 502;
+    error.code = 'VIRAL_CAPTURE_IMAGE_FETCH_FAILED';
+    throw error;
+  }
+  const input = Buffer.from(await imageRes.arrayBuffer());
+  const output = await sharp(input)
+    .rotate()
+    .jpeg({ quality: 90, mozjpeg: true })
+    .toBuffer();
+  return {
+    url,
+    mimeType: 'image/jpeg',
+    base64: output.toString('base64'),
+    clip: null,
+    kind: 'threads_og_image',
+    sourceImageUrl: metadata.imageUrl,
+    sourceText: metadata.description,
+    sourceTitle: metadata.title,
+    images: [{
+      mimeType: 'image/jpeg',
+      base64: output.toString('base64'),
+      clip: null,
+      kind: 'threads_og_image',
+      sourceImageUrl: metadata.imageUrl,
+      sourceText: metadata.description,
+      sourceTitle: metadata.title
+    }]
+  };
 }
 
 async function cleanThreadsCapturePage(page) {
@@ -262,7 +370,8 @@ function publicBaseUrl() {
 
 async function saveCaptureForThreads(capture, accountId) {
   const buffer = Buffer.from(capture.base64, 'base64');
-  const fileName = `${Date.now()}-${randomUUID()}.png`;
+  const extension = String(capture.mimeType || '').includes('jpeg') ? 'jpg' : 'png';
+  const fileName = `${Date.now()}-${randomUUID()}.${extension}`;
   const objectPath = ['viral-captures', accountId, fileName].join('/');
   const bucket = process.env.SUPABASE_STORAGE_BUCKET || process.env.AUVIBOT_STORAGE_BUCKET || '';
   if (supabase && bucket) {
@@ -333,9 +442,11 @@ async function generateDraftFromCapture(account, capture) {
             `Target audience: ${account.target_audience || ''}`,
             `Content scope: ${account.content_scope || ''}`,
             `Tone: ${account.tone || account.content_tone || ''}`,
+            capture.sourceTitle ? `Source post title: ${capture.sourceTitle}` : '',
+            capture.sourceText ? `Source post text: ${capture.sourceText}` : '',
             'Write one original Korean Threads post. Keep it natural, concise, and comment-inducing.',
             'Do not include URLs in the body. The product link will be posted separately.'
-          ].join('\n')
+          ].filter(Boolean).join('\n')
         },
         {
           type: 'image_url',
@@ -487,6 +598,9 @@ export async function runViralCapturePost({ accountId, url }) {
       sourceUrl: normalizedUrl,
       captureMimeType: capture.mimeType,
       captureKind: capture.kind || null,
+      sourceImageUrl: capture.sourceImageUrl || null,
+      sourceTitle: capture.sourceTitle || null,
+      sourceText: capture.sourceText || null,
       analysis: draft.analysis || null,
       searchKeywords: draftKeywords(account, draft),
       captureClip: capture.clip || null,
