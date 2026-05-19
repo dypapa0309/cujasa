@@ -310,7 +310,10 @@ app.get('/lead-forms/:slug', async (req, res, next) => {
 app.use((error, req, res, next) => {
   const status = error.status || 500;
   const hideInternalErrors = process.env.ERROR_DETAIL_MODE === 'internal' || process.env.NODE_ENV === 'production';
-  const exposeDetail = status < 500 || !hideInternalErrors || error.code === 'SUPABASE_UNAVAILABLE';
+  const exposeDetail = status < 500
+    || !hideInternalErrors
+    || error.code === 'SUPABASE_UNAVAILABLE'
+    || String(error.code || '').startsWith('CAPTURE_');
   console.error('[request_error]', redactSensitivePayload({
     path: req.path,
     method: req.method,
