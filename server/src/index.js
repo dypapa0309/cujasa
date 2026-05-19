@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cron from 'node-cron';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import authRouter from './routes/auth.js';
 import meRouter from './routes/me.js';
 import projectsRouter from './routes/projects.js';
@@ -45,6 +47,7 @@ import { loadSystemSettingsIntoEnv } from './services/systemSettingsService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const runningCronJobs = new Set();
 const enableInternalCron = process.env.ENABLE_INTERNAL_CRON !== 'false';
 const enableStartupDailyCatchUp = process.env.ENABLE_STARTUP_DAILY_CATCH_UP !== 'false';
@@ -124,6 +127,10 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(securityHeaders);
 app.use(express.json({ limit: '20mb' }));
+app.use('/public/uploads', express.static(path.join(__dirname, '..', 'public', 'uploads'), {
+  maxAge: '1d',
+  immutable: true
+}));
 app.use(requireAuth);
 
 app.get('/api/health', (req, res) => res.json({

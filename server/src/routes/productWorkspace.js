@@ -30,6 +30,7 @@ import { getAccount } from '../services/accountService.js';
 import { extractTrendReferenceFromImage } from '../services/trendReferenceOcrService.js';
 import { buildCujasaContentPreview } from '../services/contentPreviewService.js';
 import { buildCujasaQueueDiagnostics } from '../services/queueReliabilityService.js';
+import { runViralCapturePost } from '../services/viralCaptureService.js';
 import { productMaintenancePayload, productServiceClosedInProduction } from '../utils/productAvailability.js';
 
 const router = Router();
@@ -186,6 +187,23 @@ router.post('/cujasa/content-preview', async (req, res, next) => {
       return res.status(403).json({ error: 'Access denied' });
     }
     res.json(await buildCujasaContentPreview(accountId, req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/cujasa/viral-capture-run', async (req, res, next) => {
+  try {
+    const user = requireUser(req, res);
+    if (!user) return;
+    const accountId = req.body?.accountId;
+    if (!accountId || !user.allowedAccountIds?.includes(accountId)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    res.json(await runViralCapturePost({
+      accountId,
+      url: req.body?.url || ''
+    }));
   } catch (error) {
     next(error);
   }

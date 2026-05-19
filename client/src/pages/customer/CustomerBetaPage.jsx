@@ -182,6 +182,42 @@ function clampDailyPostCount(value, fallback = 1) {
   return Math.min(MAX_DAILY_POSTS, Math.max(0, Number.isFinite(number) ? number : fallback));
 }
 
+const DEFAULT_CUJASA_ACTIVE_TIME_WINDOWS = [{ start: '09:00', end: '23:00' }];
+
+function normalizeScheduleTime(value, fallback = '09:00') {
+  return /^\d{2}:\d{2}$/.test(String(value || '')) ? String(value) : fallback;
+}
+
+function scheduleTimeToMinutes(value) {
+  const [hours, minutes] = normalizeScheduleTime(value).split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function cujasaScheduleWindowsFromAccount(account) {
+  const windows = Array.isArray(account?.active_time_windows)
+    ? account.active_time_windows
+      .filter((window) => window?.start && window?.end)
+      .map((window) => ({
+        start: normalizeScheduleTime(window.start),
+        end: normalizeScheduleTime(window.end, normalizeScheduleTime(window.start))
+      }))
+    : [];
+  return windows.length ? windows : DEFAULT_CUJASA_ACTIVE_TIME_WINDOWS;
+}
+
+function buildCujasaScheduleWindows(existingWindows, firstUploadTime) {
+  const windows = Array.isArray(existingWindows) && existingWindows.length ? existingWindows : DEFAULT_CUJASA_ACTIVE_TIME_WINDOWS;
+  const start = normalizeScheduleTime(firstUploadTime);
+  return windows.map((window, index) => {
+    if (index > 0) return window;
+    const end = normalizeScheduleTime(window.end, start);
+    return {
+      start,
+      end: scheduleTimeToMinutes(end) >= scheduleTimeToMinutes(start) ? end : start
+    };
+  });
+}
+
 function statusLabel(status) {
   return {
     scheduled: '예약',
@@ -1784,8 +1820,113 @@ function BetaRunPanel({
         </div>
       </PanelCard>
 
+      <ViralCaptureTestPanel account={account} />
+
       {runError && <Notice tone="error">{runError}</Notice>}
     </>
+  );
+}
+
+function ViralCaptureTestPanel({ account }) {
+  const toast = useToast();
+  const [url, setUrl] = useState('');
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState('');
+
+  const normalizedUrl = url.trim();
+  const canRun = Boolean(normalizedUrl && account?.id && !running);
+
+  const runCapture = async () => {
+    if (!account?.id) {
+      toast('먼저 계정을 선택해주세요.', 'error');
+      return;
+    }
+    let parsed;
+    try {
+      parsed = new URL(normalizedUrl);
+    } catch {
+      toast('인기글 URL을 정확히 입력해주세요.', 'error');
+      setError('인기글 URL을 정확히 입력해주세요.');
+      return;
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      toast('http 또는 https URL만 사용할 수 있어요.', 'error');
+      setError('http 또는 https URL만 사용할 수 있어요.');
+      return;
+    }
+    setRunning(true);
+    setError('');
+    setResult(null);
+    try {
+      const payload = await api.post('/api/product-workspace/cujasa/viral-capture-run', {
+        accountId: account.id,
+        url: parsed.toString()
+      }, { timeoutMs: 90000 });
+      setResult(payload);
+      toast('포스팅을 올렸어요.', 'success');
+    } catch (err) {
+      const message = err.message || '실행에 실패했어요.';
+      setError(message);
+      toast(message, 'error');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  return (
+    <PanelCard
+      title={(
+        <span className="inline-flex items-center gap-2">
+          인기글 포스팅
+          <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-200">
+            beta
+          </span>
+        </span>
+      )}
+    >
+      <div className="mt-4 space-y-3">
+        <label className="block">
+          <input
+            className="w-full rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm font-semibold text-zinc-100 outline-none transition placeholder:text-zinc-700 focus:border-zinc-500"
+            value={url}
+            onChange={(event) => {
+              setUrl(event.target.value);
+              setError('');
+            }}
+            placeholder="https://www.threads.net/@..."
+          />
+        </label>
+
+        <div className="flex gap-2">
+          <DarkButton onClick={runCapture} disabled={!canRun}>
+            {running ? <span className="inline-flex items-center justify-center gap-2"><RefreshCw size={18} className="animate-spin" /> 실행 중...</span> : '실행하기'}
+          </DarkButton>
+        </div>
+        <div className="text-xs font-bold text-zinc-600">계정당 하루 1회 사용 가능</div>
+
+        {result?.post && (
+          <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+            <div className="font-black">포스팅 완료</div>
+            {result.capturePreview && (
+              <img
+                className="mt-3 max-h-80 w-full rounded-2xl border border-white/10 object-contain"
+                src={result.capturePreview}
+                alt="캡처된 인기글"
+              />
+            )}
+            <div className="mt-3 whitespace-pre-wrap leading-relaxed text-emerald-50">{result.post.body}</div>
+            {result.postUrl && (
+              <a className="mt-3 block break-all text-xs font-bold text-emerald-200 underline" href={result.postUrl} target="_blank" rel="noreferrer">
+                {result.postUrl}
+              </a>
+            )}
+          </div>
+        )}
+
+        {error && <Notice tone="error">{error}</Notice>}
+      </div>
+    </PanelCard>
   );
 }
 
@@ -1811,6 +1952,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
       setForm(null);
       return;
     }
+    const activeTimeWindows = cujasaScheduleWindowsFromAccount(account);
     setForm({
       name: account.name || '',
       account_handle: account.account_handle || '',
@@ -1836,7 +1978,8 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
       forbidden_topics: Array.isArray(account.forbidden_topics) ? account.forbidden_topics.join('\n') : '',
       forbidden_words: Array.isArray(account.forbidden_words) ? account.forbidden_words.join('\n') : '',
       daily_post_max: clampDailyPostCount(account.daily_post_max, 3),
-      first_upload_time: Array.isArray(account.active_time_windows) && account.active_time_windows[0]?.start ? account.active_time_windows[0].start : '09:00',
+      active_time_windows: activeTimeWindows,
+      first_upload_time: activeTimeWindows[0]?.start || '09:00',
       coupang_access_key: '',
       coupang_secret_key: '',
       coupang_partner_id: '',
@@ -1896,7 +2039,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
         blog_auto_publish_enabled: Boolean(account.blog_enabled && form.blog_auto_publish_enabled),
         daily_post_min: 0,
         daily_post_max: clampDailyPostCount(form.daily_post_max, 3),
-        active_time_windows: [{ start: form.first_upload_time || '09:00', end: '23:00' }],
+        active_time_windows: buildCujasaScheduleWindows(form.active_time_windows, form.first_upload_time),
         forbidden_topics: form.forbidden_topics.split('\n').map((item) => item.trim()).filter(Boolean),
         forbidden_words: form.forbidden_words.split('\n').map((item) => item.trim()).filter(Boolean)
       });
