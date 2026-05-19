@@ -26,12 +26,14 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [accountCreateBusyUserId, setAccountCreateBusyUserId] = useState('');
 
   const load = async () => {
-    const [nextUsers, nextProducts, nextConflicts, nextMisassignments, nextSetupTasks] = await Promise.all([
+    const [nextUsers, nextProducts] = await Promise.all([
       api.get(`/api/admin/users${showArchivedUsers ? '?includeArchived=1' : ''}`),
       api.get('/api/admin/products'),
-      api.get('/api/admin/account-conflicts'),
-      api.get('/api/admin/account-misassignments'),
-      api.get('/api/admin/setup-tasks'),
+    ]);
+    const [nextConflicts, nextMisassignments, nextSetupTasks] = await Promise.all([
+      api.get('/api/admin/account-conflicts').catch(() => []),
+      api.get('/api/admin/account-misassignments').catch(() => ({ separable: [], needsReview: [], healthy: [] })),
+      api.get('/api/admin/setup-tasks').catch(() => []),
     ]);
     setUsers(nextUsers);
     setProducts(nextProducts);
@@ -130,10 +132,15 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const saveProductSettings = async (userId, productId, settings) => {
     try {
       await api.patch(`/api/admin/users/${userId}/products/${productId}/settings`, settings);
-      await load();
-      toast('설정이 변경되었습니다.', 'success');
     } catch (err) {
       toast(err.message || '제품 설정 저장에 실패했습니다.', 'error');
+      return;
+    }
+    try {
+      await load();
+      toast('설정이 변경되었습니다.', 'success');
+    } catch {
+      toast('설정은 저장됐지만 목록 새로고침에 실패했습니다. 새로고침 후 확인해주세요.', 'info');
     }
   };
 
@@ -1007,7 +1014,14 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings, onSavePol
 
   const update = (key, value) => setDraft((prev) => ({ ...prev, [key]: value }));
   const save = () => onSaveSettings(userId, product.productId, draft);
-  const saveUsage = () => onSaveSettings(userId, product.productId, { usage: { limit: usageDraft.limit, used: usageDraft.used } });
+  const saveUsage = () => onSaveSettings(userId, product.productId, {
+    usage: {
+      [product.productId]: {
+        limit: usageDraft.limit,
+        used: usageDraft.used
+      }
+    }
+  });
   const saveBilling = (plan) => {
     if (plan === 'suspended' && !confirm(`${product.name || product.productId} 제품을 정지할까요?`)) return;
     onSaveSettings(userId, product.productId, { billing: { plan } });
