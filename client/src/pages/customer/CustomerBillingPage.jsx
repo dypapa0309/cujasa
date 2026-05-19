@@ -277,25 +277,6 @@ export default function CustomerBillingPage({ currentUser }) {
         />
       )}
 
-      {payments.length > 0 && (
-        <div className="rounded-2xl border border-gray-200 bg-white p-5">
-          <div className="mb-3 text-sm font-black">최근 결제</div>
-          <div className="grid gap-3">
-            {payments.slice(0, 5).map((payment) => (
-              <div key={payment.id} className="flex items-center justify-between gap-3 border-t border-gray-100 pt-3 first:border-t-0 first:pt-0">
-                <div>
-                  <div className="text-sm font-bold">{productsById[payment.productId]?.name || payment.productId}</div>
-                  <div className="text-xs text-gray-400">{payment.orderId}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-black">{price(payment.amount)}</div>
-                  <Status status={payment.status} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -326,27 +307,6 @@ function PlanCard({ icon: Icon, title, priceText, originalPriceText, caption, pr
         className="mt-4 w-full rounded-xl bg-coupang py-3 text-sm font-black text-white disabled:opacity-50">
         {busy ? '진행 중...' : '결제하기'}
       </button>
-    </div>
-  );
-}
-
-function Status({ status }) {
-  const label = {
-    created: '생성',
-    waiting_for_deposit: '입금 대기',
-    paid: '완료',
-    failed: '실패',
-    canceled: '취소'
-  }[status] || status;
-  const tone = status === 'paid'
-    ? 'text-emerald-600'
-    : status === 'failed' || status === 'canceled'
-      ? 'text-red-500'
-      : 'text-amber-600';
-  return (
-    <div className={`mt-0.5 flex items-center justify-end gap-1 text-xs font-bold ${tone}`}>
-      {status === 'paid' && <CheckCircle2 size={13} />}
-      {label}
     </div>
   );
 }

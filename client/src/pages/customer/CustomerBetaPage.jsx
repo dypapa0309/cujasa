@@ -3100,7 +3100,6 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
       currentUser={currentUser}
       billing={billing}
       productsById={productsById}
-      payments={payments}
       latestWaiting={latestWaiting}
       activeSubscription={activeSubscription}
       cujasaPlans={cujasaPlans}
@@ -3199,26 +3198,6 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
         </div>
       </PanelCard>
 
-      <PanelCard title="최근 결제">
-        {payments.length > 0 ? (
-          <div className="grid gap-3">
-            {payments.slice(0, 5).map((payment) => (
-              <div key={payment.id} className="flex items-center justify-between gap-3 border-t border-white/5 pt-3 first:border-t-0 first:pt-0">
-                <div>
-                  <div className="text-sm font-bold text-zinc-200">{productsById[payment.productId]?.name || payment.productId}</div>
-                  <div className="mt-0.5 text-xs text-zinc-600">{payment.orderId}</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-black text-zinc-100">{price(payment.amount)}</div>
-                  <BetaPaymentStatus status={payment.status} />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <Notice>아직 결제 내역이 없어요.</Notice>
-        )}
-      </PanelCard>
     </>
   );
 }
@@ -3418,7 +3397,6 @@ function TestBillingPricingPage({
   currentUser,
   billing,
   productsById,
-  payments,
   latestWaiting,
   activeSubscription,
   cujasaPlans,
@@ -3563,33 +3541,6 @@ function TestBillingPricingPage({
         </div>
       </section>
 
-      <section className="grid gap-3 lg:grid-cols-2">
-        <PanelCard title="최근 결제">
-          {payments.length > 0 ? (
-            <div className="grid gap-3">
-              {payments.slice(0, 4).map((payment) => (
-                <div key={payment.id} className="flex items-center justify-between gap-3 border-t border-white/5 pt-3 first:border-t-0 first:pt-0">
-                  <div>
-                    <div className="text-sm font-bold text-zinc-200">{productsById[payment.productId]?.name || payment.productId}</div>
-                    <div className="mt-0.5 text-xs text-zinc-600">{payment.orderId}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm font-black text-zinc-100">{price(payment.amount)}</div>
-                    <BetaPaymentStatus status={payment.status} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <Notice>아직 결제 내역이 없어요.</Notice>
-          )}
-        </PanelCard>
-        <PanelCard title="테스트 안내">
-          <Notice>
-            이 제품별 요금제 화면은 test1@test.com 전용 테스트입니다. 유료 상품은 Toss 가상계좌 결제로 검증할 수 있어요.
-          </Notice>
-        </PanelCard>
-      </section>
     </div>
   );
 }
@@ -3726,22 +3677,6 @@ function BetaPlanCard({ icon: Icon, title, priceText, originalPriceText, caption
       >
         {busy ? '진행 중...' : testOnly ? '상품 등록 후 활성화' : buttonLabel}
       </button>
-    </div>
-  );
-}
-
-function BetaPaymentStatus({ status }) {
-  const label = {
-    created: '생성',
-    waiting_for_deposit: '입금 대기',
-    paid: '완료',
-    failed: '실패',
-    canceled: '취소'
-  }[status] || status;
-  return (
-    <div className="mt-0.5 flex items-center justify-end gap-1 text-xs font-bold text-zinc-500">
-      {status === 'paid' && <CheckCircle2 size={13} />}
-      {label}
     </div>
   );
 }
