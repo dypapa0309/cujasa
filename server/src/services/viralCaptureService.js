@@ -40,10 +40,19 @@ async function loadPlaywright() {
 
 async function captureUrl(url) {
   const { chromium } = await loadPlaywright();
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
-  });
+  let browser;
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+  } catch (launchError) {
+    const error = new Error('배포 서버의 자동 캡처 브라우저가 아직 준비되지 않았어요. 잠시 후 다시 시도해주세요.');
+    error.status = 503;
+    error.code = 'CAPTURE_BROWSER_UNAVAILABLE';
+    error.cause = launchError;
+    throw error;
+  }
   try {
     const page = await browser.newPage({
       viewport: { width: 430, height: 900 },
