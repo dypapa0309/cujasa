@@ -145,12 +145,20 @@ export async function tossPost(path, body, secret = tossSecretKey()) {
   return payload;
 }
 
+function normalizeBillingProduct(product) {
+  if (!product) return product;
+  if (product.id === 'sponsored_monthly_19000') return { ...product, active: false };
+  if (product.id === 'monthly_59000') return { ...product, amount: 129000 };
+  return product;
+}
+
 async function activeProducts() {
-  return dbList('billing_products', { active: true }, { order: 'amount', ascending: false });
+  const rows = await dbList('billing_products', {}, { order: 'amount', ascending: false });
+  return rows.map(normalizeBillingProduct).filter((product) => product.active);
 }
 
 export async function getProduct(productId) {
-  const product = await dbGet('billing_products', { id: productId });
+  const product = normalizeBillingProduct(await dbGet('billing_products', { id: productId }));
   if (!product?.active) {
     const error = new Error('유효한 결제 상품을 선택해주세요.');
     error.status = 400;

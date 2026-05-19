@@ -196,7 +196,7 @@ const tables = {
       amount: 19000,
       billing_cycle: 'monthly',
       max_accounts: 1,
-      active: true,
+      active: false,
       created_at: now()
     },
     {
@@ -215,7 +215,7 @@ const tables = {
       app_product_id: 'cujasa',
       name: 'CUJASA 베이직 월정액',
       plan: 'monthly',
-      amount: 59000,
+      amount: 129000,
       billing_cycle: 'monthly',
       max_accounts: 2,
       active: true,

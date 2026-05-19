@@ -3070,28 +3070,10 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
   };
   const cujasaPlans = [
     {
-      id: 'sponsored_monthly_19000',
-      product: productsById.sponsored_monthly_19000 || {
-        id: 'sponsored_monthly_19000',
-        name: 'CUJASA 스폰서 스타터',
-        amount: 19000,
-        billing_cycle: 'monthly',
-        max_accounts: 1
-      },
-      title: '스폰서 스타터',
-      priceText: '19,000원 / 월',
-      caption: '가볍게 시작하는 광고 지원 플랜',
-      badge: '스폰서',
-      buttonLabel: '19,000원으로 시작',
-      icon: CreditCard,
-      features: ['Threads 계정 1개 운영', '주제 선정, 상품 검색, 글 생성', '예약 업로드와 기본 현황 확인', '스폰서/광고 라벨 노출 가능'],
-      testOnly: !productsById.sponsored_monthly_19000
-    },
-    {
       id: 'monthly_59000',
-      product: productsById.monthly_59000,
+      product: productsById.monthly_59000 ? { ...productsById.monthly_59000, amount: 129000 } : null,
       title: billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액',
-      priceText: '59,000원 / 월',
+      priceText: '129,000원 / 월',
       caption: activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '광고 없이 안정적으로 운영',
       badge: '추천',
       buttonLabel: billing?.status === 'past_due' ? '연장하기' : '월정액 시작',
@@ -3104,6 +3086,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
       product: productsById.onetime_590000 ? { ...productsById.onetime_590000, max_accounts: 4 } : null,
       title: '프로 영구구매',
       priceText: '590,000원',
+      originalPriceText: '990,000원',
       caption: '장기 운영용 일시불',
       badge: '평생 이용',
       buttonLabel: '영구구매 신청',
@@ -3177,6 +3160,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
           icon={Landmark}
           title="프로 영구구매"
           priceText="590,000원"
+          originalPriceText="990,000원"
           caption="가상계좌 결제"
           product={productsById.onetime_590000 ? { ...productsById.onetime_590000, max_accounts: 4 } : null}
           busy={busy === 'onetime_590000'}
@@ -3185,11 +3169,11 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
         <LegacyBetaPlanCard
           icon={CreditCard}
           title={billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액'}
-          priceText="59,000원 / 월"
+          priceText="129,000원 / 월"
           caption={activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '가상계좌 결제'}
-          product={productsById.monthly_59000}
+          product={productsById.monthly_59000 ? { ...productsById.monthly_59000, amount: 129000 } : null}
           busy={busy === 'monthly_59000'}
-          onClick={() => requestAgreement('monthly', productsById.monthly_59000, (snapshot) => startMonthly('monthly_59000', snapshot))}
+          onClick={() => requestAgreement('monthly', productsById.monthly_59000 ? { ...productsById.monthly_59000, amount: 129000 } : null, (snapshot) => startMonthly('monthly_59000', snapshot))}
         />
       </div>
 
@@ -3263,16 +3247,16 @@ function buildWorkspacePricingCatalog({ productsById, cujasaPlans, currentUser }
       id: 'cujasa',
       label: 'CUJASA',
       title: '쿠팡 파트너스 자동화',
-      modeLabel: '운영형 3단계 요금제',
+      modeLabel: '운영형 2단계 요금제',
       description: 'Threads 포스팅, 쿠팡 실상품 검색, 댓글 링크 운영까지 이어지는 자동화 상품입니다.',
       plans: cujasaPlans,
       comparisonRows: [
-        { label: 'Threads 계정', values: ['1개', '2개', '4개'] },
-        { label: '스폰서/광고 라벨', values: ['노출 가능', '없음', '없음'] },
-        { label: '콘텐츠 생성', values: [true, true, true] },
-        { label: '쿠팡 실상품 검색', values: [true, true, true] },
-        { label: '예약 업로드', values: [true, true, true] },
-        { label: '결제 방식', values: ['가상계좌', '가상계좌', '가상계좌'] }
+        { label: 'Threads 계정', values: ['2개', '4개'] },
+        { label: '스폰서/광고 라벨', values: ['없음', '없음'] },
+        { label: '콘텐츠 생성', values: [true, true] },
+        { label: '쿠팡 실상품 검색', values: [true, true] },
+        { label: '예약 업로드', values: [true, true] },
+        { label: '결제 방식', values: ['가상계좌', '가상계좌'] }
       ]
     },
     {
@@ -3525,7 +3509,7 @@ function TestBillingPricingPage({
           </div>
         )}
 
-        <div className="grid gap-0 border-t border-white/10 lg:grid-cols-3">
+        <div className={`grid gap-0 border-t border-white/10 ${activePricing.plans.length === 2 ? 'lg:grid-cols-2' : 'lg:grid-cols-3'}`}>
           {activePricing.plans.map((plan, index) => (
             <TestPricingColumn
               key={plan.id}
@@ -3611,12 +3595,12 @@ function TestBillingPricingPage({
 }
 
 function TestPricingColumn({ plan, index, busy, onClick }) {
-  const featured = index === 1;
+  const featured = Boolean(plan.featured);
   return (
     <article className={`flex min-h-[390px] flex-col border-b border-white/10 px-6 py-7 lg:border-b-0 lg:border-l lg:px-7 lg:py-8 lg:first:border-l-0 ${featured ? 'bg-white/[0.07]' : 'bg-[#171717]'}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-xs font-black uppercase tracking-[0.08em] text-zinc-500">{index === 0 ? 'Starter' : index === 1 ? 'Growth' : 'Lifetime'}</div>
+          <div className="text-xs font-black uppercase tracking-[0.08em] text-zinc-500">{plan.product?.billing_cycle === 'once' ? 'Lifetime' : 'Growth'}</div>
           <h3 className={`mt-4 text-2xl font-black leading-snug tracking-normal ${plan.testOnly ? 'text-zinc-500' : 'text-zinc-50'}`}>{plan.title}</h3>
           <p className="mt-3 text-sm font-bold leading-6 text-zinc-400">{plan.caption}</p>
         </div>
@@ -3626,7 +3610,7 @@ function TestPricingColumn({ plan, index, busy, onClick }) {
           </span>
         )}
       </div>
-      <div className="mt-9 text-3xl font-black leading-tight tracking-normal text-zinc-50">{plan.priceText}</div>
+      <PriceDisplay originalPriceText={plan.originalPriceText} priceText={plan.priceText} className="mt-9" />
       <ul className="mt-8 grid gap-5 text-sm font-bold leading-7 text-zinc-300">
         {plan.features.map((feature) => (
           <li key={feature} className="flex gap-3">
@@ -3657,7 +3641,7 @@ function AccountInfoRow({ label, value }) {
   );
 }
 
-function LegacyBetaPlanCard({ icon: Icon, title, priceText, caption, product, busy, onClick }) {
+function LegacyBetaPlanCard({ icon: Icon, title, priceText, originalPriceText, caption, product, busy, onClick }) {
   return (
     <PanelCard>
       <div className="flex items-start gap-3">
@@ -3672,7 +3656,7 @@ function LegacyBetaPlanCard({ icon: Icon, title, priceText, caption, product, bu
               계정 {product?.max_accounts ?? 2}개
             </span>
           </div>
-          <div className="mt-1 text-2xl font-black text-zinc-100">{priceText}</div>
+          <PriceDisplay originalPriceText={originalPriceText} priceText={priceText} className="mt-1" size="compact" />
           <div className="mt-1 text-sm text-zinc-500">{caption}</div>
         </div>
       </div>
@@ -3683,7 +3667,19 @@ function LegacyBetaPlanCard({ icon: Icon, title, priceText, caption, product, bu
   );
 }
 
-function BetaPlanCard({ icon: Icon, title, priceText, caption, badge, features = [], featured = false, testOnly = false, buttonLabel = '결제하기', product, busy, onClick }) {
+function PriceDisplay({ originalPriceText, priceText, className = '', size = 'default', featured = false }) {
+  const priceClass = size === 'compact' ? 'text-2xl' : 'text-3xl';
+  const originalClass = featured ? 'text-zinc-500' : 'text-zinc-500';
+  const currentClass = featured ? 'text-zinc-950' : 'text-zinc-50';
+  return (
+    <div className={`grid gap-1 leading-tight tracking-normal ${className}`}>
+      {originalPriceText && <span className={`text-sm font-black line-through ${originalClass}`}>{originalPriceText}</span>}
+      <span className={`${priceClass} font-black ${currentClass}`}>{priceText}</span>
+    </div>
+  );
+}
+
+function BetaPlanCard({ icon: Icon, title, priceText, originalPriceText, caption, badge, features = [], featured = false, testOnly = false, buttonLabel = '결제하기', product, busy, onClick }) {
   return (
     <div className={`flex min-h-[360px] flex-col rounded-3xl border p-4 ${featured ? 'border-white/30 bg-zinc-100 text-zinc-950' : 'border-white/10 bg-black/25 text-zinc-100'}`}>
       <div className="flex items-start gap-3">
@@ -3712,7 +3708,7 @@ function BetaPlanCard({ icon: Icon, title, priceText, caption, badge, features =
           </div>
         </div>
       </div>
-      <div className={`mt-5 text-2xl font-black ${featured ? 'text-zinc-950' : 'text-zinc-100'}`}>{priceText}</div>
+      <PriceDisplay originalPriceText={originalPriceText} priceText={priceText} className="mt-5" size="compact" featured={featured} />
       <div className={`mt-2 min-h-10 text-sm leading-relaxed ${featured ? 'text-zinc-600' : 'text-zinc-500'}`}>{caption}</div>
       <ul className={`mt-5 grid gap-2 text-xs font-bold leading-relaxed ${featured ? 'text-zinc-700' : 'text-zinc-300'}`}>
         {features.map((item) => (

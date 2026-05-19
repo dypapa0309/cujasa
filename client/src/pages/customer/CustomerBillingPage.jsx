@@ -185,7 +185,13 @@ export default function CustomerBillingPage({ currentUser }) {
     }
   };
 
-  const openAgreement = (type, productId) => setAgreementIntent({ type, product: productsById[productId] });
+  const openAgreement = (type, productId) => {
+    const product = productsById[productId];
+    setAgreementIntent({
+      type,
+      product: productId === 'monthly_59000' && product ? { ...product, amount: 129000 } : product
+    });
+  };
 
   const confirmAgreement = async (snapshot) => {
     const intent = agreementIntent;
@@ -244,6 +250,7 @@ export default function CustomerBillingPage({ currentUser }) {
           icon={Landmark}
           title="프로 영구구매"
           priceText="590,000원"
+          originalPriceText="990,000원"
           caption="가상계좌 결제"
           product={productsById.onetime_590000}
           busy={busy === 'onetime'}
@@ -252,9 +259,9 @@ export default function CustomerBillingPage({ currentUser }) {
         <PlanCard
           icon={CreditCard}
           title={billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액'}
-          priceText="59,000원 / 월"
+          priceText="129,000원 / 월"
           caption={activeSubscription ? `활성 · 다음 결제 ${formatDate(activeSubscription.nextBillingAt)}` : '가상계좌 결제'}
-          product={productsById.monthly_59000}
+          product={productsById.monthly_59000 ? { ...productsById.monthly_59000, amount: 129000 } : null}
           busy={busy === 'monthly'}
           onClick={() => openAgreement('monthly', 'monthly_59000')}
         />
@@ -293,7 +300,7 @@ export default function CustomerBillingPage({ currentUser }) {
   );
 }
 
-function PlanCard({ icon: Icon, title, priceText, caption, product, busy, onClick }) {
+function PlanCard({ icon: Icon, title, priceText, originalPriceText, caption, product, busy, onClick }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5">
       <div className="flex items-start gap-3">
@@ -308,7 +315,10 @@ function PlanCard({ icon: Icon, title, priceText, caption, product, busy, onClic
               계정 {product?.max_accounts ?? 2}개
             </span>
           </div>
-          <div className="mt-1 text-2xl font-black">{priceText}</div>
+          <div className="mt-1 grid gap-1 leading-tight">
+            {originalPriceText && <span className="text-sm font-black text-gray-400 line-through">{originalPriceText}</span>}
+            <span className="text-2xl font-black">{priceText}</span>
+          </div>
           <div className="mt-1 text-sm text-gray-400">{caption}</div>
         </div>
       </div>

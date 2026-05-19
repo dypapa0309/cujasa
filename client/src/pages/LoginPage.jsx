@@ -37,9 +37,8 @@ const productDetailContent = {
       { icon: BarChart3, title: '성과 확인', body: '클릭과 포스팅 성과를 계정별로 확인합니다.' }
     ],
     plans: [
-      { title: '스폰서 스타터', price: '19,000원 / 월', badge: '가볍게 시작', features: ['Threads 계정 1개', '주제·상품·글 생성', '예약 업로드'] },
-      { title: '베이직 월정액', price: '59,000원 / 월', badge: '추천', featured: true, features: ['Threads 계정 2개', '광고 없는 운영', '셋업·재연결 지원'] },
-      { title: '프로 영구구매', price: '590,000원', badge: '장기 운영', features: ['Threads 계정 4개', '일시불 이용', '장기 운영 셋업'] }
+      { title: '베이직 월정액', price: '129,000원 / 월', badge: '추천', featured: true, features: ['Threads 계정 2개', '광고 없는 운영', '셋업·재연결 지원'] },
+      { title: '프로 영구구매', price: '590,000원', originalPrice: '990,000원', badge: '장기 운영', features: ['Threads 계정 4개', '일시불 이용', '장기 운영 셋업'] }
     ]
   },
   dexor: {
@@ -503,7 +502,10 @@ function ProductDetailDrawer({ product, open, onClose, onRegister, onLogin }) {
                     <div className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-black ${plan.featured ? 'bg-zinc-950 text-white' : 'bg-white/10 text-zinc-300'}`}>{plan.badge}</div>
                     <h3 className="mt-3 text-lg font-black">{plan.title}</h3>
                   </div>
-                  <div className="text-right text-lg font-black">{plan.price}</div>
+                  <div className="grid gap-1 text-right leading-tight">
+                    {plan.originalPrice && <span className="text-sm font-black text-zinc-500 line-through">{plan.originalPrice}</span>}
+                    <span className="text-lg font-black">{plan.price}</span>
+                  </div>
                 </div>
                 <div className={`mt-4 flex flex-wrap gap-2 text-xs font-bold ${plan.featured ? 'text-zinc-700' : 'text-zinc-400'}`}>
                   {plan.features.map((feature) => (
