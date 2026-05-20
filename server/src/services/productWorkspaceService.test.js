@@ -115,6 +115,33 @@ test('getProductWorkspaceStatus returns lightweight POLIBOT customer status', as
   assert.equal(status.usage.remaining, 3);
 });
 
+test('getProductWorkspaceStatus honors POLIBOT unlimitedUsage stored on grant settings', async () => {
+  const userId = '11111111-2026-4110-8110-101010101099';
+  await dbInsert('users', {
+    id: userId,
+    email: 'polibot-unlimited-settings-test@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT Unlimited',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      unlimitedUsage: true,
+      usage: { polibot: { limit: 5, used: 5 } },
+      workspace: {}
+    }
+  });
+
+  const status = await getProductWorkspaceStatus(userId, 'polibot');
+
+  assert.equal(status.usage.unlimited, true);
+  assert.equal(status.usage.remaining, 999999);
+});
+
 test('getProductWorkspaceStatus includes POLIBOT common catalog readiness', async () => {
   const userId = '11111111-2026-4110-8110-101010101011';
   const sourceId = '11111111-2026-4110-8110-101010101012';
@@ -306,6 +333,39 @@ test('POLIBOT incomplete recommendation stores draft without consuming usage', a
   assert.match(workspace.recommendationNotice, /필요 보장/);
   assert.equal(workspace.usage.used, 0);
   assert.equal(workspace.usage.remaining, 5);
+});
+
+test('POLIBOT coverage analysis parses mixed 억 and 만 amounts precisely', async () => {
+  const userId = '11111111-2026-4110-8110-202020202021';
+  await dbInsert('users', {
+    id: userId,
+    email: 'polibot-coverage-amount-test@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT Coverage Amount',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      usage: { polibot: { limit: 5, used: 0 } },
+      workspace: {}
+    }
+  });
+
+  const workspace = await savePolibotRecommendation(userId, {
+    age: '45',
+    currentCoverage: {
+      death: { amount: '1억 6,100만' },
+      driver: { amount: '2억 1,000만' }
+    }
+  });
+
+  const rows = workspace.consultationDraft.currentCoverageAnalysis.rows;
+  assert.equal(rows.find((row) => row.key === 'death').amount, 16100);
+  assert.equal(rows.find((row) => row.key === 'driver').amount, 21000);
 });
 
 test('stores POLIBOT recommendation knowledge snapshot with source trace', async () => {

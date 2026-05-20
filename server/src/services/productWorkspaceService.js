@@ -681,6 +681,14 @@ function normalizeUsage(settings = {}, productId) {
   };
 }
 
+function grantHasUnlimitedUsage(grant = {}, user = null) {
+  const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  const email = String(user?.email || '').trim().toLowerCase();
+  return settings.unlimitedUsage === true
+    || grant.unlimitedUsage === true
+    || UNLIMITED_TEST_EMAILS.has(email);
+}
+
 function withUsage(workspace = {}, settings = {}, productId) {
   return {
     ...workspace,
@@ -690,7 +698,7 @@ function withUsage(workspace = {}, settings = {}, productId) {
 
 function productUsageFromGrant(grant = {}, productId = '') {
   const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
-  return normalizeUsage({ ...settings, unlimitedUsage: grant.unlimitedUsage }, productId);
+  return normalizeUsage({ ...settings, unlimitedUsage: grantHasUnlimitedUsage(grant) }, productId);
 }
 
 function workspaceFromGrant(grant = {}) {
@@ -854,7 +862,7 @@ export async function buildProductWorkspaceSummary({ userId, allowedAccountIds =
     dbGet('users', { id: userId }).catch(() => null)
   ]);
   const unlimitedUsage = UNLIMITED_TEST_EMAILS.has(String(user?.email || '').trim().toLowerCase());
-  const grants = rawGrants.map((grant) => ({ ...grant, unlimitedUsage }));
+  const grants = rawGrants.map((grant) => ({ ...grant, unlimitedUsage: grantHasUnlimitedUsage(grant, user) }));
   const grantByProductId = new Map(grants.map((grant) => [grant.product_id, grant]));
   const accountIds = Array.isArray(allowedAccountIds) ? allowedAccountIds.filter(Boolean) : [];
   const [accounts, queueGroups] = await Promise.all([
@@ -1185,11 +1193,16 @@ function parsePolibotCoverageAmount(value = '') {
   if (!text) return null;
   if (/있음|가입|유지|예/i.test(text)) return 1;
   if (/없음|미가입|무/i.test(text)) return 0;
+  if (/억/.test(text)) {
+    const eok = Number(text.match(/(\d+(?:\.\d+)?)\s*억/)?.[1] || 0);
+    const man = Number(text.match(/억\s*(\d+(?:\.\d+)?)\s*만?/)?.[1] || 0);
+    const amount = (Number.isFinite(eok) ? eok * 10000 : 0) + (Number.isFinite(man) ? man : 0);
+    return amount || null;
+  }
   const match = text.match(/\d+(?:\.\d+)?/);
   if (!match) return null;
   const amount = Number(match[0]);
   if (!Number.isFinite(amount)) return null;
-  if (/억/.test(text)) return amount * 10000;
   return amount;
 }
 
@@ -2208,7 +2221,7 @@ async function getGrant(userId, productId) {
   }
   return {
     ...grant,
-    unlimitedUsage: UNLIMITED_TEST_EMAILS.has(String(user?.email || '').trim().toLowerCase())
+    unlimitedUsage: grantHasUnlimitedUsage(grant, user)
   };
 }
 
