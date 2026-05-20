@@ -11,21 +11,161 @@ import { uploadPost as uploadThreads } from '../platformAdapters/threadsAdapter.
 import { evaluateProductTopicMatch } from '../utils/productMatching.js';
 import { isRealCoupangProduct } from '../utils/productQuality.js';
 
-function normalizeCaptureUrl(rawUrl = '') {
+const FETCH_TIMEOUT_MS = Math.max(1000, Number(process.env.VIRAL_CAPTURE_FETCH_TIMEOUT_MS || 15_000));
+const HTML_MAX_BYTES = Math.max(1024, Number(process.env.VIRAL_CAPTURE_HTML_MAX_BYTES || 3_000_000));
+const IMAGE_MAX_BYTES = Math.max(1024, Number(process.env.VIRAL_CAPTURE_IMAGE_MAX_BYTES || 10_000_000));
+const VIDEO_MAX_BYTES = Math.max(1024, Number(process.env.VIRAL_CAPTURE_VIDEO_MAX_BYTES || 30_000_000));
+const MAX_REDIRECTS = 4;
+const THREADS_SOURCE_HOSTS = new Set(['threads.com', 'www.threads.com', 'threads.net', 'www.threads.net']);
+
+function hostname(value = '') {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function isAllowedThreadsSourceUrl(value = '') {
+  return THREADS_SOURCE_HOSTS.has(hostname(value));
+}
+
+function isAllowedThreadsMediaUrl(value = '') {
+  const host = hostname(value);
+  return THREADS_SOURCE_HOSTS.has(host)
+    || host === 'cdninstagram.com'
+    || host.endsWith('.cdninstagram.com')
+    || host === 'fbcdn.net'
+    || host.endsWith('.fbcdn.net');
+}
+
+function assertAllowedUrl(value = '', predicate, code, message) {
   let parsed;
   try {
-    parsed = new URL(String(rawUrl || '').trim());
+    parsed = new URL(String(value || '').trim());
   } catch {
-    const error = new Error('인기글 URL을 정확히 입력해주세요.');
+    const error = new Error(message);
     error.status = 400;
+    error.code = code;
     throw error;
   }
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    const error = new Error('http 또는 https URL만 사용할 수 있어요.');
+  if (!['http:', 'https:'].includes(parsed.protocol) || !predicate(parsed.toString())) {
+    const error = new Error(message);
     error.status = 400;
+    error.code = code;
     throw error;
   }
   return parsed.toString();
+}
+
+function normalizeCaptureUrl(rawUrl = '') {
+  return assertAllowedUrl(
+    rawUrl,
+    isAllowedThreadsSourceUrl,
+    'VIRAL_CAPTURE_UNSUPPORTED_SOURCE_URL',
+    'Threads 게시글 URL만 사용할 수 있어요.'
+  );
+}
+
+function assertAllowedMediaUrl(rawUrl = '') {
+  return assertAllowedUrl(
+    rawUrl,
+    isAllowedThreadsMediaUrl,
+    'VIRAL_CAPTURE_UNSUPPORTED_MEDIA_URL',
+    'Threads에서 제공하는 공개 미디어 URL만 사용할 수 있어요.'
+  );
+}
+
+async function fetchWithGuards(url, options = {}, guards = {}) {
+  const validator = guards.validator || (() => true);
+  let currentUrl = assertAllowedUrl(
+    url,
+    validator,
+    guards.code || 'VIRAL_CAPTURE_UNSUPPORTED_URL',
+    guards.message || '지원하지 않는 URL입니다.'
+  );
+  for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.max(1000, Number(guards.timeoutMs || FETCH_TIMEOUT_MS)));
+    try {
+      const response = await fetch(currentUrl, {
+        ...options,
+        redirect: 'manual',
+        signal: controller.signal
+      });
+      if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
+        if (redirectCount >= MAX_REDIRECTS) {
+          const error = new Error('인기글 URL 리다이렉트가 너무 많아요.');
+          error.status = 400;
+          error.code = 'VIRAL_CAPTURE_TOO_MANY_REDIRECTS';
+          throw error;
+        }
+        currentUrl = assertAllowedUrl(
+          new URL(response.headers.get('location'), currentUrl).toString(),
+          validator,
+          guards.code || 'VIRAL_CAPTURE_UNSUPPORTED_URL',
+          guards.message || '지원하지 않는 URL입니다.'
+        );
+        continue;
+      }
+      return response;
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        const timeoutError = new Error('인기글 미디어 응답이 지연되어 중단했어요.');
+        timeoutError.status = 504;
+        timeoutError.code = 'VIRAL_CAPTURE_FETCH_TIMEOUT';
+        throw timeoutError;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  const error = new Error('인기글 URL 리다이렉트가 너무 많아요.');
+  error.status = 400;
+  error.code = 'VIRAL_CAPTURE_TOO_MANY_REDIRECTS';
+  throw error;
+}
+
+async function readResponseBufferWithLimit(response, maxBytes, code = 'VIRAL_CAPTURE_RESPONSE_TOO_LARGE') {
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  if (contentLength > maxBytes) {
+    const error = new Error(`인기글 미디어가 너무 커요. (${Math.ceil(maxBytes / 1024 / 1024)}MB 이하만 지원)`);
+    error.status = 413;
+    error.code = code;
+    throw error;
+  }
+  const chunks = [];
+  let total = 0;
+  if (response.body?.getReader) {
+    const reader = response.body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => null);
+        const error = new Error(`인기글 미디어가 너무 커요. (${Math.ceil(maxBytes / 1024 / 1024)}MB 이하만 지원)`);
+        error.status = 413;
+        error.code = code;
+        throw error;
+      }
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks, total);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > maxBytes) {
+    const error = new Error(`인기글 미디어가 너무 커요. (${Math.ceil(maxBytes / 1024 / 1024)}MB 이하만 지원)`);
+    error.status = 413;
+    error.code = code;
+    throw error;
+  }
+  return buffer;
+}
+
+async function readResponseTextWithLimit(response, maxBytes = HTML_MAX_BYTES) {
+  return (await readResponseBufferWithLimit(response, maxBytes, 'VIRAL_CAPTURE_HTML_TOO_LARGE')).toString('utf8');
 }
 
 async function loadPlaywright() {
@@ -217,22 +357,26 @@ function extensionFromVideoContentType(contentType = '') {
 
 async function probeVideoCandidate(candidateUrl, referer) {
   try {
-    const response = await fetch(candidateUrl, {
+    const safeCandidateUrl = assertAllowedMediaUrl(candidateUrl);
+    const response = await fetchWithGuards(safeCandidateUrl, {
       method: 'HEAD',
       headers: {
         'User-Agent': 'Mozilla/5.0 (compatible; JASAINBot/1.0; +https://jasain.kr)',
         Referer: referer
-      },
-      redirect: 'follow'
+      }
+    }, {
+      validator: isAllowedThreadsMediaUrl,
+      code: 'VIRAL_CAPTURE_UNSUPPORTED_MEDIA_URL',
+      message: 'Threads에서 제공하는 공개 미디어 URL만 사용할 수 있어요.'
     });
     const contentType = response.headers.get('content-type') || '';
     const contentLength = Number(response.headers.get('content-length') || 0);
     return {
-      url: candidateUrl,
+      url: safeCandidateUrl,
       status: response.status,
       contentType,
       contentLength,
-      usable: response.ok && /^video\//i.test(contentType)
+      usable: response.ok && /^video\//i.test(contentType) && (!contentLength || contentLength <= VIDEO_MAX_BYTES)
     };
   } catch (error) {
     return {
@@ -247,11 +391,15 @@ async function probeVideoCandidate(candidateUrl, referer) {
 }
 
 async function captureVideoUrlFromMetadata(url) {
-  const res = await fetch(url, {
+  const res = await fetchWithGuards(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; JASAINBot/1.0; +https://jasain.kr)',
       Accept: 'text/html,application/xhtml+xml'
     }
+  }, {
+    validator: isAllowedThreadsSourceUrl,
+    code: 'VIRAL_CAPTURE_UNSUPPORTED_SOURCE_URL',
+    message: 'Threads 게시글 URL만 사용할 수 있어요.'
   });
   if (!res.ok) {
     const error = new Error(`인기글 페이지를 불러오지 못했어요. (${res.status})`);
@@ -259,12 +407,15 @@ async function captureVideoUrlFromMetadata(url) {
     error.code = 'VIRAL_CAPTURE_SOURCE_FETCH_FAILED';
     throw error;
   }
-  const html = await res.text();
+  const html = await readResponseTextWithLimit(res);
   const candidates = uniqueUrls([
     ...extractMetaVideoUrls(html),
     ...extractVideoTagUrls(html),
     ...extractEmbeddedVideoUrls(html)
-  ]).map((candidate) => absolutizeUrl(candidate, url)).filter(Boolean);
+  ])
+    .map((candidate) => absolutizeUrl(candidate, url))
+    .filter(Boolean)
+    .filter(isAllowedThreadsMediaUrl);
   const probes = [];
   for (const candidate of candidates.slice(0, 20)) {
     probes.push(await probeVideoCandidate(candidate, url));
@@ -289,11 +440,15 @@ async function captureVideoUrlFromMetadata(url) {
 }
 
 async function fetchThreadsMetadata(url) {
-  const res = await fetch(url, {
+  const res = await fetchWithGuards(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; JASAINBot/1.0; +https://jasain.kr)',
       Accept: 'text/html,application/xhtml+xml'
     }
+  }, {
+    validator: isAllowedThreadsSourceUrl,
+    code: 'VIRAL_CAPTURE_UNSUPPORTED_SOURCE_URL',
+    message: 'Threads 게시글 URL만 사용할 수 있어요.'
   });
   if (!res.ok) {
     const error = new Error(`인기글 페이지를 불러오지 못했어요. (${res.status})`);
@@ -301,7 +456,7 @@ async function fetchThreadsMetadata(url) {
     error.code = 'VIRAL_CAPTURE_SOURCE_FETCH_FAILED';
     throw error;
   }
-  const html = await res.text();
+  const html = await readResponseTextWithLimit(res);
   const imageUrls = extractThreadsImageUrls(html);
   const imageUrl = imageUrls[0] || '';
   const description = extractMetaContent(html, ['og:description', 'twitter:description', 'description']);
@@ -316,12 +471,17 @@ async function fetchThreadsMetadata(url) {
 }
 
 async function downloadThreadsImageAsCapture({ url, imageUrl, metadata, index }) {
-  const imageRes = await fetch(imageUrl, {
+  const safeImageUrl = assertAllowedMediaUrl(imageUrl);
+  const imageRes = await fetchWithGuards(safeImageUrl, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; JASAINBot/1.0; +https://jasain.kr)',
       Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
       Referer: url
     }
+  }, {
+    validator: isAllowedThreadsMediaUrl,
+    code: 'VIRAL_CAPTURE_UNSUPPORTED_MEDIA_URL',
+    message: 'Threads에서 제공하는 공개 미디어 URL만 사용할 수 있어요.'
   });
   if (!imageRes.ok) {
     const error = new Error(`인기글 이미지를 내려받지 못했어요. (${imageRes.status})`);
@@ -329,7 +489,7 @@ async function downloadThreadsImageAsCapture({ url, imageUrl, metadata, index })
     error.code = 'VIRAL_CAPTURE_IMAGE_FETCH_FAILED';
     throw error;
   }
-  const input = Buffer.from(await imageRes.arrayBuffer());
+  const input = await readResponseBufferWithLimit(imageRes, IMAGE_MAX_BYTES, 'VIRAL_CAPTURE_IMAGE_TOO_LARGE');
   const output = await sharp(input)
     .rotate()
     .jpeg({ quality: 90, mozjpeg: true })
@@ -340,7 +500,7 @@ async function downloadThreadsImageAsCapture({ url, imageUrl, metadata, index })
     base64: output.toString('base64'),
     clip: null,
     kind: 'threads_og_image',
-    sourceImageUrl: imageUrl,
+    sourceImageUrl: safeImageUrl,
     sourceText: metadata.description,
     sourceTitle: metadata.title,
     sourceIndex: index
@@ -563,6 +723,16 @@ function publicBaseUrl() {
   return (process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`).split(',')[0].replace(/\/$/, '');
 }
 
+function assertProductionStorageAvailable({ uploadedUrl = '', bucket = '', objectPath = '', message = 'Supabase Storage upload failed' } = {}) {
+  if (uploadedUrl || process.env.NODE_ENV !== 'production') return;
+  const error = new Error('공개 미디어 저장소 업로드에 실패했어요. 잠시 후 다시 시도해주세요.');
+  error.status = 502;
+  error.code = 'VIRAL_CAPTURE_PUBLIC_STORAGE_FAILED';
+  error.storage = { bucket, objectPath };
+  error.causeMessage = message;
+  throw error;
+}
+
 async function saveCaptureForThreads(capture, accountId) {
   const buffer = Buffer.from(capture.base64, 'base64');
   const extension = String(capture.mimeType || '').includes('jpeg') ? 'jpg' : 'png';
@@ -590,7 +760,9 @@ async function saveCaptureForThreads(capture, accountId) {
       message: error?.message || 'Supabase Storage upload failed',
       payload: { bucket, objectPath }
     }).catch(() => null);
+    assertProductionStorageAvailable({ bucket, objectPath, message: error?.message || 'Supabase Storage upload failed' });
   }
+  assertProductionStorageAvailable({ bucket, objectPath, message: 'Supabase Storage is not configured' });
 
   const relativePath = path.join('viral-captures', accountId, fileName);
   const uploadRoot = path.join(process.cwd(), 'public', 'uploads');
@@ -609,13 +781,17 @@ async function saveCapturesForThreads(captures, accountId) {
 }
 
 async function saveVideoForThreads(capture, accountId) {
-  const videoRes = await fetch(capture.sourceVideoUrl, {
+  const safeVideoUrl = assertAllowedMediaUrl(capture.sourceVideoUrl);
+  const videoRes = await fetchWithGuards(safeVideoUrl, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (compatible; JASAINBot/1.0; +https://jasain.kr)',
       Accept: 'video/mp4,video/*,*/*',
       Referer: capture.url
-    },
-    redirect: 'follow'
+    }
+  }, {
+    validator: isAllowedThreadsMediaUrl,
+    code: 'VIRAL_CAPTURE_UNSUPPORTED_MEDIA_URL',
+    message: 'Threads에서 제공하는 공개 미디어 URL만 사용할 수 있어요.'
   });
   if (!videoRes.ok) {
     const error = new Error(`인기글 동영상을 내려받지 못했어요. (${videoRes.status})`);
@@ -630,7 +806,7 @@ async function saveVideoForThreads(capture, accountId) {
     error.code = 'VIRAL_CAPTURE_VIDEO_INVALID_CONTENT_TYPE';
     throw error;
   }
-  const buffer = Buffer.from(await videoRes.arrayBuffer());
+  const buffer = await readResponseBufferWithLimit(videoRes, VIDEO_MAX_BYTES, 'VIRAL_CAPTURE_VIDEO_TOO_LARGE');
   const extension = extensionFromVideoContentType(contentType);
   const fileName = `${Date.now()}-${randomUUID()}.${extension}`;
   const objectPath = ['viral-videos', accountId, fileName].join('/');
@@ -656,7 +832,9 @@ async function saveVideoForThreads(capture, accountId) {
       message: error?.message || 'Supabase Storage video upload failed',
       payload: { bucket, objectPath }
     }).catch(() => null);
+    assertProductionStorageAvailable({ bucket, objectPath, message: error?.message || 'Supabase Storage video upload failed' });
   }
+  assertProductionStorageAvailable({ bucket, objectPath, message: 'Supabase Storage is not configured' });
 
   const relativePath = path.join('viral-videos', accountId, fileName);
   const uploadRoot = path.join(process.cwd(), 'public', 'uploads');
@@ -838,6 +1016,17 @@ async function createViralPostProduct({ post, topic, product, match }) {
     rank: 1
   });
 }
+
+export const __viralCaptureInternals = {
+  normalizeCaptureUrl,
+  assertAllowedMediaUrl,
+  isAllowedThreadsSourceUrl,
+  isAllowedThreadsMediaUrl,
+  fetchWithGuards,
+  readResponseBufferWithLimit,
+  captureVideoUrlFromMetadata,
+  saveVideoForThreads
+};
 
 export async function runViralCapturePost({ accountId, url }) {
   const account = await getAccount(accountId);

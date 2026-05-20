@@ -313,7 +313,8 @@ app.use((error, req, res, next) => {
   const exposeDetail = status < 500
     || !hideInternalErrors
     || error.code === 'SUPABASE_UNAVAILABLE'
-    || String(error.code || '').startsWith('CAPTURE_');
+    || String(error.code || '').startsWith('CAPTURE_')
+    || String(error.code || '').startsWith('VIRAL_CAPTURE_');
   console.error('[request_error]', redactSensitivePayload({
     path: req.path,
     method: req.method,
