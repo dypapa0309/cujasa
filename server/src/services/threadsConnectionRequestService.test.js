@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { dbGet, dbInsert } from './supabaseService.js';
-import { markThreadsConnectionRequestConnected, updateThreadsConnectionRequest } from './threadsConnectionRequestService.js';
+import { dbGet, dbInsert, dbUpdate } from './supabaseService.js';
+import {
+  markThreadsConnectionRequestConnected,
+  syncLatestThreadsRequestToAccount,
+  updateThreadsConnectionRequest
+} from './threadsConnectionRequestService.js';
 
 async function createRequestFixture(name) {
   const project = await dbInsert('projects', {
@@ -57,4 +61,19 @@ test('mark connected syncs latest request handle to account', async () => {
   const saved = await dbGet('accounts', { id: account.id });
 
   assert.equal(saved.account_handle, '@first_handle');
+});
+
+test('oauth preflight sync uses latest open request handle before auth start', async () => {
+  const { account, request } = await createRequestFixture('threads-sync-preflight');
+  await dbUpdate('threads_connection_requests', { id: request.id }, {
+    threads_handle: '@latest_handle',
+    status: 'customer_action_required'
+  });
+  await dbUpdate('accounts', { id: account.id }, { account_handle: '@stale_handle' });
+
+  const result = await syncLatestThreadsRequestToAccount(account.id);
+  const saved = await dbGet('accounts', { id: account.id });
+
+  assert.equal(result.request.id, request.id);
+  assert.equal(saved.account_handle, '@latest_handle');
 });

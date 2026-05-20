@@ -2,8 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { normalizeQueueClassification } from './queueErrorService.js';
-import { dbGet, dbInsert } from './supabaseService.js';
-import { createThreadsAuthUrl, markPastTokenFailuresRetryable } from './threadsOAuthService.js';
+import { dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.js';
+import {
+  createThreadsAuthUrl,
+  markPastTokenFailuresRetryable,
+  recordThreadsOAuthFailure,
+  threadsOAuthErrorFromCallback
+} from './threadsOAuthService.js';
 
 function restoreEnv(key, value) {
   if (value === undefined) delete process.env[key];
@@ -49,6 +54,54 @@ test('createThreadsAuthUrl requests reply permissions for link comments', async 
   }
 });
 
+test('createThreadsAuthUrl syncs latest request handle and logs OAuth diagnostics', async () => {
+  const previousAppId = process.env.THREADS_APP_ID;
+  const previousSecret = process.env.THREADS_APP_SECRET;
+  const previousRedirect = process.env.THREADS_REDIRECT_URI;
+  process.env.THREADS_APP_ID = '123456789012345';
+  process.env.THREADS_APP_SECRET = 'threads-app-secret';
+  process.env.THREADS_REDIRECT_URI = 'https://api.example.test/api/auth/threads/callback';
+
+  try {
+    const project = await dbInsert('projects', {
+      name: 'oauth diagnostics project',
+      type: 'coupang',
+      status: 'active'
+    });
+    const account = await dbInsert('accounts', {
+      project_id: project.id,
+      name: 'oauth diagnostics account',
+      platform: 'threads',
+      account_handle: '@stale_handle',
+      status: 'active'
+    });
+    await dbInsert('threads_connection_requests', {
+      account_id: account.id,
+      user_id: 'user-1',
+      threads_handle: '@latest_handle',
+      status: 'customer_action_required'
+    });
+
+    await createThreadsAuthUrl({
+      accountId: account.id,
+      user: { type: 'user', userId: 'user-1', email: 'user@example.test', allowedAccountIds: [account.id] }
+    });
+
+    const saved = await dbGet('accounts', { id: account.id });
+    const logs = await dbList('activity_logs', { account_id: account.id }, { order: 'created_at', ascending: false, limit: 1 });
+
+    assert.equal(saved.account_handle, '@latest_handle');
+    assert.equal(logs[0].payload.appIdSuffix, '012345');
+    assert.equal(logs[0].payload.redirectHost, 'api.example.test');
+    assert.equal(logs[0].payload.latestRequestHandleMatchesAccount, true);
+    assert.equal(logs[0].payload.latestRequest.status, 'customer_action_required');
+  } finally {
+    restoreEnv('THREADS_APP_ID', previousAppId);
+    restoreEnv('THREADS_APP_SECRET', previousSecret);
+    restoreEnv('THREADS_REDIRECT_URI', previousRedirect);
+  }
+});
+
 test('markPastTokenFailuresRetryable clears stale reply permission messages after reconnect', async () => {
   const project = await dbInsert('projects', {
     name: 'retry marker project',
@@ -81,4 +134,15 @@ test('markPastTokenFailuresRetryable clears stale reply permission messages afte
   assert.equal(saved.error_message, 'Threads 재연결 후 재시도 가능');
   assert.equal(classified.category, 'retry_available');
   assert.equal(classified.severity, 'warn');
+});
+
+test('Threads tester invite callback errors are classified as Meta permission required', async () => {
+  const error = threadsOAuthErrorFromCallback({
+    error_message: 'Invalid Request: The user has not accepted the invite to test the app.',
+    error_code: '1349245'
+  });
+  const failure = await recordThreadsOAuthFailure({ state: '', error });
+
+  assert.equal(failure.code, 'THREADS_META_PERMISSION_REQUIRED');
+  assert.match(failure.message, /테스터 초대 수락/);
 });

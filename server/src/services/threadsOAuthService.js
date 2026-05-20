@@ -3,7 +3,7 @@ import { dbGet, dbList, dbUpdate, logActivity } from './supabaseService.js';
 import { normalizeQueueClassification } from './queueErrorService.js';
 import { autoHidePastTokenFailures } from './queueVisibilityService.js';
 import { sendOpsAlert } from './notificationService.js';
-import { markThreadsConnectionRequestConnected } from './threadsConnectionRequestService.js';
+import { markThreadsConnectionRequestConnected, syncLatestThreadsRequestToAccount } from './threadsConnectionRequestService.js';
 
 const THREADS_AUTH_URL = 'https://threads.net/oauth/authorize';
 const THREADS_GRAPH_URL = 'https://graph.threads.net';
@@ -129,13 +129,14 @@ export function peekThreadsState(state) {
 
 function oauthErrorCode(error = {}) {
   const status = Number(error.status || 0);
+  const metaCode = Number(error.metaErrorCode || error.error_code || 0);
   const message = String(error.message || '');
   if (status === 409 && /이미.*연결|다른 계정/i.test(message)) return 'THREADS_DUPLICATE_ACCOUNT';
   if (status === 409 && /선택한 계정|현재 Threads 로그인|핸들/i.test(message)) return 'THREADS_HANDLE_MISMATCH';
+  if (metaCode === 1349245 || /permission|review|scope|not authorized|not approved|invite|test the app/i.test(message)) return 'THREADS_META_PERMISSION_REQUIRED';
   if (status === 400 && /state|expired|invalid/i.test(message)) return 'THREADS_OAUTH_STATE_INVALID';
   if (status === 403 || /Access denied|Unauthorized/i.test(message)) return 'THREADS_OAUTH_ACCESS_DENIED';
   if (/redirect_uri|redirect uri/i.test(message)) return 'THREADS_REDIRECT_URI_MISMATCH';
-  if (/permission|review|scope|not authorized|not approved/i.test(message)) return 'THREADS_META_PERMISSION_REQUIRED';
   if (/configured/i.test(message)) return 'THREADS_OAUTH_NOT_CONFIGURED';
   return 'THREADS_OAUTH_FAILED';
 }
@@ -146,13 +147,24 @@ function userFacingOAuthMessage(error = {}) {
   if (code === 'THREADS_DUPLICATE_ACCOUNT') return error.message;
   if (code === 'THREADS_OAUTH_STATE_INVALID') return 'Threads 연결 요청이 만료됐어요. 설정 화면에서 다시 연결을 눌러주세요.';
   if (code === 'THREADS_REDIRECT_URI_MISMATCH') return 'Threads OAuth Redirect URI 설정이 맞지 않습니다. 운영자 확인이 필요합니다.';
-  if (code === 'THREADS_META_PERMISSION_REQUIRED') return 'Meta 앱 권한 또는 웹 승인 상태 확인이 필요합니다. 초대 수락 후 다시 연결해주세요.';
+  if (code === 'THREADS_META_PERMISSION_REQUIRED') return 'Meta 앱 권한 또는 테스터 초대 수락 상태 확인이 필요합니다. Meta 개발자센터 초대를 수락한 뒤 다시 연결해주세요.';
   if (code === 'THREADS_OAUTH_NOT_CONFIGURED') return 'Threads 연결 환경변수가 아직 설정되지 않았습니다.';
   return error.message || 'Threads 연결에 실패했습니다.';
 }
 
+export function threadsOAuthErrorFromCallback(query = {}) {
+  const message = String(query.error_message || query.error_description || query.error || '').trim();
+  if (!message) return null;
+  const error = new Error(`Threads OAuth failed: ${message}`);
+  error.status = 400;
+  if (query.error_code) error.metaErrorCode = Number(query.error_code);
+  if (query.error_subcode) error.metaErrorSubcode = Number(query.error_subcode);
+  return error;
+}
+
 export async function createThreadsAuthUrl({ accountId, user }) {
-  const account = await dbGet('accounts', { id: accountId });
+  const syncResult = await syncLatestThreadsRequestToAccount(accountId).catch(() => ({ request: null, account: null }));
+  const account = syncResult.account || await dbGet('accounts', { id: accountId });
   if (!account) {
     const error = new Error('Account not found');
     error.status = 404;
@@ -184,10 +196,20 @@ export async function createThreadsAuthUrl({ accountId, user }) {
     payload: {
       actorType: user?.type || 'admin',
       userId: user?.userId || user?.email || 'admin',
+      appIdSuffix: appId.slice(-6),
       redirectHost: (() => {
         try { return new URL(redirectUri).host; } catch { return null; }
       })(),
-      scope: THREADS_OAUTH_SCOPE
+      scope: THREADS_OAUTH_SCOPE,
+      expectedHandle: account.account_handle || null,
+      latestRequestHandleMatchesAccount: syncResult.request?.threads_handle
+        ? normalizeThreadsHandle(syncResult.request.threads_handle) === normalizeThreadsHandle(account.account_handle)
+        : null,
+      latestRequest: syncResult.request ? {
+        id: syncResult.request.id,
+        status: syncResult.request.status,
+        threadsHandle: syncResult.request.threads_handle || null
+      } : null
     }
   }).catch(() => null);
   return `${THREADS_AUTH_URL}?${params.toString()}`;
@@ -200,7 +222,11 @@ async function requestJson(url, options = {}) {
   try { json = text ? JSON.parse(text) : {}; } catch { json = { raw: text }; }
   if (!response.ok || json.error) {
     const message = json.error?.message || json.error || text || `HTTP ${response.status}`;
-    throw new Error(`Threads OAuth failed: ${message}`);
+    const error = new Error(`Threads OAuth failed: ${message}`);
+    error.status = response.status;
+    if (json.error?.code) error.metaErrorCode = Number(json.error.code);
+    if (json.error?.error_subcode) error.metaErrorSubcode = Number(json.error.error_subcode);
+    throw error;
   }
   return json;
 }

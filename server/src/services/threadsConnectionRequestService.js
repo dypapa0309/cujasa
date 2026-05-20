@@ -20,6 +20,19 @@ async function syncAccountHandle(accountId, handle) {
   return updated || null;
 }
 
+export async function latestOpenThreadsConnectionRequestForAccount(accountId) {
+  if (!accountId) return null;
+  const rows = await dbList('threads_connection_requests', { account_id: accountId }, { order: 'created_at', ascending: false });
+  return rows.find((row) => ['requested', 'meta_registered', 'customer_action_required'].includes(row.status)) || null;
+}
+
+export async function syncLatestThreadsRequestToAccount(accountId) {
+  const request = await latestOpenThreadsConnectionRequestForAccount(accountId);
+  if (!request?.threads_handle) return { request, account: null };
+  const account = await syncAccountHandle(accountId, request.threads_handle);
+  return { request, account };
+}
+
 async function notifyThreadsRequest(row, { user, account } = {}) {
   const text = [
     '[CUJASA Threads 연결 요청]',

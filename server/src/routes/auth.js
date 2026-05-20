@@ -3,7 +3,7 @@ import { DEFAULT_PRODUCT_ID, productById } from '../config/products.js';
 import { grantUserProduct, isAdminLoginCandidate, isAuthConfigured, listAvailableProducts, listUserProducts, loginAdmin, loginUser, registerFreeUser, shouldBypassAuth } from '../services/authService.js';
 import { createRateLimit } from '../middleware/rateLimit.js';
 import { clearAuthContextCache } from '../middleware/auth.js';
-import { completeThreadsOAuth, createThreadsAuthUrl, recordThreadsOAuthFailure } from '../services/threadsOAuthService.js';
+import { completeThreadsOAuth, createThreadsAuthUrl, recordThreadsOAuthFailure, threadsOAuthErrorFromCallback } from '../services/threadsOAuthService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
 import { productMaintenancePayload, productServiceClosedInProduction } from '../utils/productAvailability.js';
 
@@ -172,6 +172,8 @@ router.get('/threads/start', async (req, res, next) => {
 
 router.get('/threads/callback', async (req, res, next) => {
   try {
+    const callbackError = threadsOAuthErrorFromCallback(req.query || {});
+    if (callbackError) throw callbackError;
     const account = await completeThreadsOAuth({ code: req.query.code, state: req.query.state });
     const clientBase = (process.env.CLIENT_BASE_URL || 'http://localhost:5175').split(',')[0].trim();
     const params = new URLSearchParams({ threads: 'connected', accountId: account.id });
