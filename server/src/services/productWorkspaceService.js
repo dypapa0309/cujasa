@@ -619,8 +619,17 @@ function splitCandidateLine(line = '') {
 }
 
 function parseNumberLike(value = '') {
-  const number = Number(String(value || '').replace(/[^\d.-]/g, ''));
-  return Number.isFinite(number) ? number : null;
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const compact = raw.replace(/,/g, '').replace(/\s+/g, '').toLowerCase();
+  const multiplier = /억/.test(compact) ? 100000000
+    : /만/.test(compact) ? 10000
+      : /천/.test(compact) ? 1000
+        : /[\d.]m/.test(compact) ? 1000000
+          : /[\d.]k/.test(compact) ? 1000
+            : 1;
+  const number = Number(compact.replace(/[^\d.-]/g, ''));
+  return Number.isFinite(number) ? number * multiplier : null;
 }
 
 function normalizeDexorCategory(value = '') {
@@ -1031,7 +1040,10 @@ function parseInfludexRows(input = '', fileName = '') {
     }
     const byHeader = (patterns = []) => {
       if (!header) return '';
-      const columnIndex = header.findIndex((name) => patterns.some((pattern) => pattern.test(name)));
+      const columnIndex = header.findIndex((name) => {
+        const compactName = String(name || '').replace(/\s+/g, '');
+        return patterns.some((pattern) => pattern.test(name) || pattern.test(compactName));
+      });
       return columnIndex >= 0 ? cells[columnIndex] || '' : '';
     };
     const rawUrl = byHeader([/^url$/, /링크/]) || cells.find((cell) => /^https?:\/\//i.test(cell)) || '';

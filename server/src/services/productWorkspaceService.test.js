@@ -854,6 +854,41 @@ test('INFLUDEX link analysis uses deterministic campaign selection scoring', asy
   assert.ok(weak.riskFlags.includes('ad_memo_present'));
 });
 
+test('INFLUDEX parses Korean reel view headers and shorthand units', async () => {
+  const userId = '33333333-3333-4333-8333-333333333334';
+  await dbInsert('users', {
+    id: userId,
+    email: 'infludex-korean-reels-test@example.com',
+    password_hash: 'test',
+    name: 'INFLUDEX 릴스 조회수',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'infludex',
+    status: 'active',
+    role: 'customer',
+    settings: { usage: { infludex: { limit: 5, used: 0, remaining: 5 } } }
+  });
+
+  await saveInfludexCandidates(userId, {
+    fileName: 'infludex-korean.csv',
+    rows: [
+      '링크,닉네임,카테고리,팔로워,좋아요,댓글,최근 5개 릴스 평균 조회 수,최근 게시일',
+      'https://instagram.com/korean,@korean,뷰티,3.2만,1.1k,95,4.8만,2026-05-01'
+    ].join('\n')
+  });
+  const workspace = await getProductWorkspace(userId, 'infludex');
+  const analyzed = await analyzeInfludexCandidates(userId);
+  const target = analyzed.infludexResults.find((item) => item.handle === 'korean');
+
+  assert.equal(workspace.candidates[0].followerCount, 32000);
+  assert.equal(workspace.candidates[0].avgLikes, 1100);
+  assert.equal(workspace.candidates[0].avgReelsViews, 48000);
+  assert.equal(target.analysisStatus, 'scored');
+  assert.ok(target.scoreBreakdown.reelsViewScore > 0);
+});
+
 test('INFLUDEX caps risky high scores with confidence and quality signals', async () => {
   const userId = '33333333-3333-4333-8333-444444444444';
   await dbInsert('users', {
