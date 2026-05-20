@@ -76,3 +76,14 @@ test('video metadata capture ignores malicious embedded media URLs', async () =>
     restoreGlobalFetch(previousFetch);
   }
 });
+
+test('test1 user bypasses the viral capture daily limit for image and video posts', async () => {
+  const actor = { email: 'test1@test.com' };
+  assert.equal(__viralCaptureInternals.isViralCaptureUnlimitedActor(actor), true);
+  await assert.doesNotReject(
+    __viralCaptureInternals.assertViralCaptureDailyLimit('account-1', 'viral_capture_threads', actor)
+  );
+  await assert.doesNotReject(
+    __viralCaptureInternals.assertViralCaptureDailyLimit('account-1', 'viral_capture_video_threads', actor)
+  );
+});

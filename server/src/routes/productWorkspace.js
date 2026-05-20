@@ -203,7 +203,8 @@ router.post('/cujasa/viral-capture-run', async (req, res, next) => {
     }
     res.json(await runViralCapturePost({
       accountId,
-      url: req.body?.url || ''
+      url: req.body?.url || '',
+      actor: user
     }));
   } catch (error) {
     next(error);
@@ -220,7 +221,8 @@ router.post('/cujasa/viral-capture-video-run', async (req, res, next) => {
     }
     res.json(await runViralCaptureVideoPost({
       accountId,
-      url: req.body?.url || ''
+      url: req.body?.url || '',
+      actor: user
     }));
   } catch (error) {
     next(error);

@@ -17,6 +17,12 @@ const IMAGE_MAX_BYTES = Math.max(1024, Number(process.env.VIRAL_CAPTURE_IMAGE_MA
 const VIDEO_MAX_BYTES = Math.max(1024, Number(process.env.VIRAL_CAPTURE_VIDEO_MAX_BYTES || 30_000_000));
 const MAX_REDIRECTS = 4;
 const THREADS_SOURCE_HOSTS = new Set(['threads.com', 'www.threads.com', 'threads.net', 'www.threads.net']);
+const VIRAL_CAPTURE_UNLIMITED_TEST_EMAILS = new Set(
+  String(process.env.VIRAL_CAPTURE_UNLIMITED_TEST_EMAILS || 'test1@test.com')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+);
 
 function hostname(value = '') {
   try {
@@ -65,6 +71,10 @@ function normalizeCaptureUrl(rawUrl = '') {
     'VIRAL_CAPTURE_UNSUPPORTED_SOURCE_URL',
     'Threads 게시글 URL만 사용할 수 있어요.'
   );
+}
+
+function isViralCaptureUnlimitedActor(actor = {}) {
+  return VIRAL_CAPTURE_UNLIMITED_TEST_EMAILS.has(String(actor?.email || '').trim().toLowerCase());
 }
 
 function assertAllowedMediaUrl(rawUrl = '') {
@@ -942,7 +952,8 @@ function startOfKoreanDayUtc(date = new Date()) {
   )).toISOString();
 }
 
-async function assertViralCaptureDailyLimit(accountId, contentType = 'viral_capture_threads') {
+async function assertViralCaptureDailyLimit(accountId, contentType = 'viral_capture_threads', actor = {}) {
+  if (isViralCaptureUnlimitedActor(actor)) return;
   const rows = await dbList('posts', {
     account_id: accountId,
     content_type: contentType
@@ -1025,10 +1036,12 @@ export const __viralCaptureInternals = {
   fetchWithGuards,
   readResponseBufferWithLimit,
   captureVideoUrlFromMetadata,
-  saveVideoForThreads
+  saveVideoForThreads,
+  isViralCaptureUnlimitedActor,
+  assertViralCaptureDailyLimit
 };
 
-export async function runViralCapturePost({ accountId, url }) {
+export async function runViralCapturePost({ accountId, url, actor = {} }) {
   const account = await getAccount(accountId);
   if (!account) {
     const error = new Error('Account not found');
@@ -1036,7 +1049,7 @@ export async function runViralCapturePost({ accountId, url }) {
     throw error;
   }
   const normalizedUrl = normalizeCaptureUrl(url);
-  await assertViralCaptureDailyLimit(account.id);
+  await assertViralCaptureDailyLimit(account.id, 'viral_capture_threads', actor);
   const capture = await captureUrl(normalizedUrl);
   const capturedImages = Array.isArray(capture.images) && capture.images.length
     ? capture.images
@@ -1188,7 +1201,7 @@ export async function runViralCapturePost({ accountId, url }) {
   };
 }
 
-export async function runViralCaptureVideoPost({ accountId, url }) {
+export async function runViralCaptureVideoPost({ accountId, url, actor = {} }) {
   const account = await getAccount(accountId);
   if (!account) {
     const error = new Error('Account not found');
@@ -1196,7 +1209,7 @@ export async function runViralCaptureVideoPost({ accountId, url }) {
     throw error;
   }
   const normalizedUrl = normalizeCaptureUrl(url);
-  await assertViralCaptureDailyLimit(account.id, 'viral_capture_video_threads');
+  await assertViralCaptureDailyLimit(account.id, 'viral_capture_video_threads', actor);
   const capture = await captureVideoUrlFromMetadata(normalizedUrl);
   const videoUrl = await saveVideoForThreads(capture, account.id);
   const draft = await generateDraftFromCapture(account, capture);
