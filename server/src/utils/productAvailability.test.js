@@ -23,10 +23,10 @@ function withEnv(patch, callback) {
   }
 }
 
-test('closes gated products in production until the beta flag is enabled', () => {
+test('leaves launched products open in production by default', () => {
   withEnv({ NODE_ENV: 'production', SPREAD_SERVICE_OPEN: undefined, INFLUDEX_SERVICE_OPEN: undefined }, () => {
     assert.equal(productServiceClosedInProduction('spread'), false);
-    assert.equal(productServiceClosedInProduction('infludex'), true);
+    assert.equal(productServiceClosedInProduction('infludex'), false);
     assert.equal(productServiceClosedInProduction('dexor'), false);
     assert.deepEqual(productMaintenancePayload('infludex'), {
       error: 'INFLUDEX_SERVICE_MAINTENANCE',
@@ -36,9 +36,13 @@ test('closes gated products in production until the beta flag is enabled', () =>
   });
 });
 
-test('opens gated products outside production or with explicit production flag', () => {
+test('opens products outside production and can explicitly close INFLUDEX in production', () => {
   withEnv({ NODE_ENV: 'development', SPREAD_SERVICE_OPEN: undefined }, () => {
     assert.equal(productServiceClosedInProduction('spread'), false);
+  });
+  withEnv({ NODE_ENV: 'production', INFLUDEX_SERVICE_OPEN: 'false' }, () => {
+    assert.equal(productServiceClosedInProduction('infludex'), true);
+    assert.throws(() => throwIfProductServiceClosed('infludex'), /INFLUDEX/);
   });
   withEnv({ NODE_ENV: 'production', SPREAD_SERVICE_OPEN: 'true' }, () => {
     assert.equal(productServiceClosedInProduction('spread'), false);
