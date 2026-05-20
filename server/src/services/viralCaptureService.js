@@ -175,6 +175,119 @@ function extractThreadsImageUrls(html = '') {
     .slice(0, 10);
 }
 
+function extractMetaVideoUrls(html = '') {
+  return extractMetaContents(html, [
+    'og:video',
+    'og:video:url',
+    'og:video:secure_url',
+    'twitter:player:stream',
+    'twitter:player'
+  ]);
+}
+
+function extractEmbeddedVideoUrls(html = '') {
+  const normalized = decodeHtml(html).replace(/\\\//g, '/');
+  return [...normalized.matchAll(/https?:\/\/[^"'\\\s<>]+?\.(?:mp4|mov|m4v|webm)(?:\?[^"'\\\s<>]*)?/gi)]
+    .map((match) => match[0]);
+}
+
+function extractVideoTagUrls(html = '') {
+  return [...html.matchAll(/<(?:video|source)\s+[^>]*src=["']([^"']+)["'][^>]*>/gi)]
+    .map((match) => decodeHtml(match[1]));
+}
+
+function absolutizeUrl(candidate = '', baseUrl = '') {
+  try {
+    return new URL(candidate, baseUrl).toString();
+  } catch {
+    return '';
+  }
+}
+
+function uniqueUrls(values = []) {
+  return [...new Set(values.map((value) => String(value || '').trim()).filter(Boolean))];
+}
+
+function extensionFromVideoContentType(contentType = '') {
+  if (/mp4/i.test(contentType)) return 'mp4';
+  if (/quicktime/i.test(contentType)) return 'mov';
+  if (/webm/i.test(contentType)) return 'webm';
+  return 'mp4';
+}
+
+async function probeVideoCandidate(candidateUrl, referer) {
+  try {
+    const response = await fetch(candidateUrl, {
+      method: 'HEAD',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; JASAINBot/1.0; +https://jasain.kr)',
+        Referer: referer
+      },
+      redirect: 'follow'
+    });
+    const contentType = response.headers.get('content-type') || '';
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    return {
+      url: candidateUrl,
+      status: response.status,
+      contentType,
+      contentLength,
+      usable: response.ok && /^video\//i.test(contentType)
+    };
+  } catch (error) {
+    return {
+      url: candidateUrl,
+      status: 0,
+      contentType: '',
+      contentLength: 0,
+      usable: false,
+      error: error.message
+    };
+  }
+}
+
+async function captureVideoUrlFromMetadata(url) {
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; JASAINBot/1.0; +https://jasain.kr)',
+      Accept: 'text/html,application/xhtml+xml'
+    }
+  });
+  if (!res.ok) {
+    const error = new Error(`인기글 페이지를 불러오지 못했어요. (${res.status})`);
+    error.status = 502;
+    error.code = 'VIRAL_CAPTURE_SOURCE_FETCH_FAILED';
+    throw error;
+  }
+  const html = await res.text();
+  const candidates = uniqueUrls([
+    ...extractMetaVideoUrls(html),
+    ...extractVideoTagUrls(html),
+    ...extractEmbeddedVideoUrls(html)
+  ]).map((candidate) => absolutizeUrl(candidate, url)).filter(Boolean);
+  const probes = [];
+  for (const candidate of candidates.slice(0, 20)) {
+    probes.push(await probeVideoCandidate(candidate, url));
+  }
+  const usable = probes.find((probe) => probe.usable);
+  if (!usable) {
+    const error = new Error('인기글에서 직접 접근 가능한 동영상을 찾지 못했어요.');
+    error.status = 422;
+    error.code = 'VIRAL_CAPTURE_VIDEO_NOT_FOUND';
+    error.probes = probes;
+    throw error;
+  }
+  return {
+    url,
+    sourceVideoUrl: usable.url,
+    mimeType: usable.contentType || 'video/mp4',
+    contentLength: usable.contentLength || 0,
+    sourceTitle: extractMetaContent(html, ['og:title', 'twitter:title']),
+    sourceText: extractMetaContent(html, ['og:description', 'twitter:description', 'description']),
+    probes
+  };
+}
+
 async function fetchThreadsMetadata(url) {
   const res = await fetch(url, {
     headers: {
@@ -237,10 +350,12 @@ async function downloadThreadsImageAsCapture({ url, imageUrl, metadata, index })
 async function captureUrlFromMetadata(url) {
   const metadata = await fetchThreadsMetadata(url);
   const captures = [];
+  const failures = [];
   for (const [index, imageUrl] of metadata.imageUrls.entries()) {
     try {
       captures.push(await downloadThreadsImageAsCapture({ url, imageUrl, metadata, index }));
     } catch (error) {
+      failures.push({ imageUrl, index, message: error.message || 'Threads image fetch failed' });
       await safeLogActivity({
         action: 'viral_capture_image_fetch_failed',
         level: 'warn',
@@ -253,6 +368,13 @@ async function captureUrlFromMetadata(url) {
     const error = new Error('인기글 이미지를 내려받지 못했어요.');
     error.status = 502;
     error.code = 'VIRAL_CAPTURE_IMAGE_FETCH_FAILED';
+    throw error;
+  }
+  if (failures.length) {
+    const error = new Error(`인기글 이미지 중 일부를 내려받지 못했어요. (${captures.length}/${metadata.imageUrls.length}장 성공)`);
+    error.status = 502;
+    error.code = 'VIRAL_CAPTURE_PARTIAL_IMAGE_FETCH_FAILED';
+    error.failures = failures;
     throw error;
   }
   const primary = captures[0];
@@ -486,6 +608,64 @@ async function saveCapturesForThreads(captures, accountId) {
   return urls;
 }
 
+async function saveVideoForThreads(capture, accountId) {
+  const videoRes = await fetch(capture.sourceVideoUrl, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; JASAINBot/1.0; +https://jasain.kr)',
+      Accept: 'video/mp4,video/*,*/*',
+      Referer: capture.url
+    },
+    redirect: 'follow'
+  });
+  if (!videoRes.ok) {
+    const error = new Error(`인기글 동영상을 내려받지 못했어요. (${videoRes.status})`);
+    error.status = 502;
+    error.code = 'VIRAL_CAPTURE_VIDEO_FETCH_FAILED';
+    throw error;
+  }
+  const contentType = videoRes.headers.get('content-type') || capture.mimeType || 'video/mp4';
+  if (!/^video\//i.test(contentType)) {
+    const error = new Error('인기글 동영상 응답이 video 형식이 아니에요.');
+    error.status = 422;
+    error.code = 'VIRAL_CAPTURE_VIDEO_INVALID_CONTENT_TYPE';
+    throw error;
+  }
+  const buffer = Buffer.from(await videoRes.arrayBuffer());
+  const extension = extensionFromVideoContentType(contentType);
+  const fileName = `${Date.now()}-${randomUUID()}.${extension}`;
+  const objectPath = ['viral-videos', accountId, fileName].join('/');
+  const bucket = process.env.SUPABASE_STORAGE_BUCKET || process.env.AUVIBOT_STORAGE_BUCKET || '';
+  if (supabase && bucket) {
+    const { error } = await supabase.storage
+      .from(bucket)
+      .upload(objectPath, buffer, {
+        contentType,
+        cacheControl: '86400',
+        upsert: true
+      });
+    if (!error) {
+      const configuredPublicBase = process.env.SUPABASE_PUBLIC_ASSET_URL || process.env.AUVIBOT_PUBLIC_BASE_URL || '';
+      if (configuredPublicBase) return `${configuredPublicBase.replace(/\/$/, '')}/${objectPath.split('/').map(encodeURIComponent).join('/')}`;
+      const { data } = supabase.storage.from(bucket).getPublicUrl(objectPath);
+      if (data?.publicUrl) return data.publicUrl;
+    }
+    await safeLogActivity({
+      account_id: accountId,
+      action: 'viral_capture_video_storage_upload_failed',
+      level: 'warn',
+      message: error?.message || 'Supabase Storage video upload failed',
+      payload: { bucket, objectPath }
+    }).catch(() => null);
+  }
+
+  const relativePath = path.join('viral-videos', accountId, fileName);
+  const uploadRoot = path.join(process.cwd(), 'public', 'uploads');
+  const filePath = path.join(uploadRoot, relativePath);
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, buffer);
+  return `${publicBaseUrl()}/public/uploads/${relativePath.split(path.sep).map(encodeURIComponent).join('/')}`;
+}
+
 function fallbackDraft(account, url) {
   const scope = account.content_scope || '일상';
   return {
@@ -501,6 +681,31 @@ function fallbackDraft(account, url) {
 }
 
 async function generateDraftFromCapture(account, capture) {
+  const content = [
+    {
+      type: 'text',
+      text: [
+        `Account name: ${account.name || ''}`,
+        `Handle: ${account.account_handle || ''}`,
+        `Target audience: ${account.target_audience || ''}`,
+        `Content scope: ${account.content_scope || ''}`,
+        `Tone: ${account.tone || account.content_tone || ''}`,
+        capture.sourceTitle ? `Source post title: ${capture.sourceTitle}` : '',
+        capture.sourceText ? `Source post text: ${capture.sourceText}` : '',
+        capture.sourceVideoUrl ? 'Source media type: video' : '',
+        'Write one original Korean Threads post. Keep it natural, concise, and comment-inducing.',
+        'Do not include URLs in the body. The product link will be posted separately.'
+      ].filter(Boolean).join('\n')
+    }
+  ];
+  if (capture.base64 && capture.mimeType) {
+    content.push({
+      type: 'image_url',
+      image_url: {
+        url: `data:${capture.mimeType};base64,${capture.base64}`
+      }
+    });
+  }
   return getJson([
     {
       role: 'system',
@@ -514,28 +719,7 @@ async function generateDraftFromCapture(account, capture) {
     },
     {
       role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: [
-            `Account name: ${account.name || ''}`,
-            `Handle: ${account.account_handle || ''}`,
-            `Target audience: ${account.target_audience || ''}`,
-            `Content scope: ${account.content_scope || ''}`,
-            `Tone: ${account.tone || account.content_tone || ''}`,
-            capture.sourceTitle ? `Source post title: ${capture.sourceTitle}` : '',
-            capture.sourceText ? `Source post text: ${capture.sourceText}` : '',
-            'Write one original Korean Threads post. Keep it natural, concise, and comment-inducing.',
-            'Do not include URLs in the body. The product link will be posted separately.'
-          ].filter(Boolean).join('\n')
-        },
-        {
-          type: 'image_url',
-          image_url: {
-            url: `data:${capture.mimeType};base64,${capture.base64}`
-          }
-        }
-      ]
+      content
     }
   ], () => fallbackDraft(account, capture.url), {
     schemaName: 'viral_capture_post',
@@ -580,13 +764,14 @@ function startOfKoreanDayUtc(date = new Date()) {
   )).toISOString();
 }
 
-async function assertViralCaptureDailyLimit(accountId) {
+async function assertViralCaptureDailyLimit(accountId, contentType = 'viral_capture_threads') {
   const rows = await dbList('posts', {
     account_id: accountId,
-    content_type: 'viral_capture_threads'
+    content_type: contentType
   }, {
     gte: { created_at: startOfKoreanDayUtc() },
     select: 'id,status,created_at',
+    in: { status: ['posting', 'posted'] },
     limit: 1
   });
   if (!rows.length) return;
@@ -614,7 +799,7 @@ async function createViralTopic(account, draft) {
   });
 }
 
-function selectLinkableProduct(products = [], topic, account, body) {
+function selectLinkableProduct(products = [], topic, account, body, options = {}) {
   const candidates = products
     .filter((product) => !product.is_search_status && !product.is_fallback && isRealCoupangProduct(product))
     .map((product) => {
@@ -623,7 +808,24 @@ function selectLinkableProduct(products = [], topic, account, body) {
     })
     .filter(({ match }) => match.linkable)
     .sort((a, b) => Number(b.match.score || 0) - Number(a.match.score || 0));
-  return candidates[0] || null;
+  if (candidates[0]) return candidates[0];
+  if (!options.allowBestEffortRealProduct) return null;
+  return products
+    .filter((product) => !product.is_search_status && !product.is_fallback && isRealCoupangProduct(product))
+    .map((product) => {
+      const match = evaluateProductTopicMatch(product, topic, account, { body });
+      return {
+        product,
+        match: {
+          ...match,
+          score: Math.max(60, Number(match.score || 0)),
+          matchReasons: match.matchReasons?.length
+            ? match.matchReasons
+            : ['인기글 테스트용 실제 쿠팡 상품 연결']
+        }
+      };
+    })
+    .sort((a, b) => Number(b.match.score || 0) - Number(a.match.score || 0))[0] || null;
 }
 
 async function createViralPostProduct({ post, topic, product, match }) {
@@ -657,10 +859,10 @@ export async function runViralCapturePost({ accountId, url }) {
   const topic = await createViralTopic(account, draft);
   const products = await searchProductsForTopic(topic.id, {
     keywords: draftKeywords(account, draft),
-    keywordLimit: 2,
-    stopAfterRealCount: 3
+    keywordLimit: 4,
+    stopAfterRealCount: 5
   });
-  const selected = selectLinkableProduct(products, topic, account, body);
+  const selected = selectLinkableProduct(products, topic, account, body, { allowBestEffortRealProduct: true });
   if (!selected?.product) {
     const error = new Error('NO_REAL_COUPANG_LINKS: 인기글 내용과 연결할 수 있는 실제 쿠팡 상품 링크를 찾지 못했습니다.');
     error.status = 422;
@@ -782,6 +984,146 @@ export async function runViralCapturePost({ accountId, url }) {
     captureImageUrls,
     capturedImageCount: captureImageUrls.length,
     captureClip: capture.clip || null,
+    postUrl: uploaded.postUrl || null,
+    product: {
+      id: selected.product.id,
+      name: selected.product.product_name,
+      partnerUrl: selected.product.partner_url || selected.product.product_url
+    },
+    post: {
+      id: post.id,
+      body,
+      status: 'posted',
+      contentType: post.content_type
+    }
+  };
+}
+
+export async function runViralCaptureVideoPost({ accountId, url }) {
+  const account = await getAccount(accountId);
+  if (!account) {
+    const error = new Error('Account not found');
+    error.status = 404;
+    throw error;
+  }
+  const normalizedUrl = normalizeCaptureUrl(url);
+  await assertViralCaptureDailyLimit(account.id, 'viral_capture_video_threads');
+  const capture = await captureVideoUrlFromMetadata(normalizedUrl);
+  const videoUrl = await saveVideoForThreads(capture, account.id);
+  const draft = await generateDraftFromCapture(account, capture);
+  const body = String(draft.body || '').trim();
+  const topic = await createViralTopic(account, draft);
+  const products = await searchProductsForTopic(topic.id, {
+    keywords: draftKeywords(account, draft),
+    keywordLimit: 4,
+    stopAfterRealCount: 5
+  });
+  const selected = selectLinkableProduct(products, topic, account, body, { allowBestEffortRealProduct: true });
+  if (!selected?.product) {
+    const error = new Error('NO_REAL_COUPANG_LINKS: 인기글 내용과 연결할 수 있는 실제 쿠팡 상품 링크를 찾지 못했습니다.');
+    error.status = 422;
+    error.code = 'NO_REAL_COUPANG_LINKS';
+    throw error;
+  }
+  const post = await dbInsert('posts', {
+    project_id: account.project_id,
+    account_id: account.id,
+    topic_id: topic.id,
+    content_type: 'viral_capture_video_threads',
+    body,
+    risk_level: 'low',
+    status: 'posting',
+    metadata: {
+      source: 'viral_capture_video',
+      sourceUrl: normalizedUrl,
+      sourceVideoUrl: capture.sourceVideoUrl,
+      capturedVideoUrl: videoUrl,
+      videoMimeType: capture.mimeType,
+      videoContentLength: capture.contentLength || null,
+      sourceTitle: capture.sourceTitle || null,
+      sourceText: capture.sourceText || null,
+      analysis: draft.analysis || null,
+      searchKeywords: draftKeywords(account, draft),
+      videoProbeCount: Array.isArray(capture.probes) ? capture.probes.length : 0,
+      videoAttachment: {
+        attachVideo: true,
+        videoUrl,
+        videoSourceType: 'viral_capture',
+        videoRisk: 'low'
+      },
+      visualPlan: {
+        attachVideo: true,
+        videoUrl,
+        videoSourceType: 'viral_capture',
+        videoRisk: 'low'
+      },
+      uploadPolicy: 'direct_threads_video_upload_with_coupang_reply'
+    }
+  });
+  await createViralPostProduct({
+    post,
+    topic,
+    product: selected.product,
+    match: selected.match
+  });
+  const trackingLink = await createTrackingLink({
+    project_id: post.project_id,
+    account_id: post.account_id,
+    topic_id: topic.id,
+    post_id: post.id,
+    product_id: selected.product.id,
+    destination_url: selected.product.partner_url || selected.product.product_url,
+    link_type: 'coupang'
+  });
+  let uploaded;
+  try {
+    uploaded = await uploadThreads({ account, post, trackingLink });
+    await dbUpdate('posts', { id: post.id }, {
+      status: 'posted',
+      metadata: {
+        ...(post.metadata || {}),
+        selectedProductId: selected.product.id,
+        trackingLinkId: trackingLink.id,
+        videoUrl,
+        postUrl: uploaded.postUrl || null,
+        uploadRaw: uploaded.raw || null
+      }
+    });
+  } catch (error) {
+    await dbUpdate('posts', { id: post.id }, {
+      status: 'manual_required',
+      metadata: {
+        ...(post.metadata || {}),
+        selectedProductId: selected.product.id,
+        trackingLinkId: trackingLink.id,
+        videoUrl,
+        uploadError: error.message
+      }
+    }).catch(() => null);
+    throw error;
+  }
+  await safeLogActivity({
+    project_id: account.project_id,
+    account_id: account.id,
+    action: 'viral_capture_video_post_created',
+    level: 'info',
+    message: '인기글 동영상 URL 기반 포스팅을 Threads에 업로드했습니다.',
+    payload: {
+      sourceUrl: normalizedUrl,
+      sourceVideoUrl: capture.sourceVideoUrl,
+      videoUrl,
+      postId: post.id,
+      postUrl: uploaded.postUrl || null,
+      productId: selected.product.id,
+      trackingLinkId: trackingLink.id,
+      analysis: draft.analysis || null
+    }
+  });
+  return {
+    ok: true,
+    sourceUrl: normalizedUrl,
+    sourceVideoUrl: capture.sourceVideoUrl,
+    videoUrl,
     postUrl: uploaded.postUrl || null,
     product: {
       id: selected.product.id,

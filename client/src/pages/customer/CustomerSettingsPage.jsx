@@ -19,6 +19,42 @@ function clampDailyPostCount(value, fallback = 1) {
   return Math.min(MAX_DAILY_POSTS, Math.max(0, Number.isFinite(number) ? number : fallback));
 }
 
+const DEFAULT_ACTIVE_TIME_WINDOWS = [{ start: '09:00', end: '23:00' }];
+
+function normalizeTime(value, fallback = '09:00') {
+  return /^\d{2}:\d{2}$/.test(String(value || '')) ? String(value) : fallback;
+}
+
+function timeToMinutes(value) {
+  const [hours, minutes] = normalizeTime(value).split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+function scheduleWindowsFromAccount(account) {
+  const windows = Array.isArray(account?.active_time_windows)
+    ? account.active_time_windows
+      .filter((window) => window?.start && window?.end)
+      .map((window) => ({
+        start: normalizeTime(window.start),
+        end: normalizeTime(window.end, normalizeTime(window.start))
+      }))
+    : [];
+  return windows.length ? windows : DEFAULT_ACTIVE_TIME_WINDOWS;
+}
+
+function buildScheduleWindows(existingWindows, firstUploadTime) {
+  const windows = Array.isArray(existingWindows) && existingWindows.length ? existingWindows : DEFAULT_ACTIVE_TIME_WINDOWS;
+  const start = normalizeTime(firstUploadTime);
+  return windows.map((window, index) => {
+    if (index > 0) return window;
+    const end = normalizeTime(window.end, start);
+    return {
+      start,
+      end: timeToMinutes(end) >= timeToMinutes(start) ? end : start
+    };
+  });
+}
+
 export default function CustomerSettingsPage({ account, currentUser, reloadAccounts, trialStatus, reloadSetupStatus, setTab }) {
   const toast = useToast();
   const [form, setForm] = useState(null);
@@ -34,6 +70,7 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
       setForm(null);
       return;
     }
+    const activeTimeWindows = scheduleWindowsFromAccount(account);
     setForm({
       name: account.name || '',
       account_handle: account.account_handle || '',
@@ -58,9 +95,8 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
       coupang_secret_key: '',
       coupang_partner_id: '',
       coupang_tracking_code: '',
-      first_upload_time: Array.isArray(account.active_time_windows) && account.active_time_windows[0]?.start
-        ? account.active_time_windows[0].start
-        : '09:00',
+      active_time_windows: activeTimeWindows,
+      first_upload_time: activeTimeWindows[0]?.start || '09:00',
     });
   }, [account]);
 
@@ -75,7 +111,7 @@ export default function CustomerSettingsPage({ account, currentUser, reloadAccou
         ...accountPatch,
         daily_post_min: 0,
         daily_post_max: clampDailyPostCount(form.daily_post_max, 3),
-        active_time_windows: [{ start: first_upload_time || '09:00', end: '23:00' }],
+        active_time_windows: buildScheduleWindows(form.active_time_windows, first_upload_time),
         forbidden_topics: form.forbidden_topics.split('\n').map((s) => s.trim()).filter(Boolean),
         forbidden_words: form.forbidden_words.split('\n').map((s) => s.trim()).filter(Boolean),
       });

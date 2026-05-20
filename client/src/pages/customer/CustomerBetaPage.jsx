@@ -1878,19 +1878,28 @@ function BetaRunPanel({
         </div>
       </PanelCard>
 
-      <ViralCaptureTestPanel account={account} />
+      <ViralCaptureTestPanel account={account} mode="image" />
+      <ViralCaptureTestPanel account={account} mode="video" />
 
       {runError && <Notice tone="error">{runError}</Notice>}
     </>
   );
 }
 
-function ViralCaptureTestPanel({ account }) {
+function ViralCaptureTestPanel({ account, mode = 'image' }) {
   const toast = useToast();
   const [url, setUrl] = useState('');
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  const isVideo = mode === 'video';
+  const capturedImageUrls = Array.isArray(result?.captureImageUrls)
+    ? result.captureImageUrls.filter(Boolean)
+    : [];
+  const fallbackPreviewUrls = !capturedImageUrls.length && result?.capturePreview
+    ? [result.capturePreview]
+    : [];
+  const previewImageUrls = capturedImageUrls.length ? capturedImageUrls : fallbackPreviewUrls;
 
   const normalizedUrl = url.trim();
   const canRun = Boolean(normalizedUrl && account?.id && !running);
@@ -1917,7 +1926,9 @@ function ViralCaptureTestPanel({ account }) {
     setError('');
     setResult(null);
     try {
-      const payload = await api.post('/api/product-workspace/cujasa/viral-capture-run', {
+      const payload = await api.post(isVideo
+        ? '/api/product-workspace/cujasa/viral-capture-video-run'
+        : '/api/product-workspace/cujasa/viral-capture-run', {
         accountId: account.id,
         url: parsed.toString()
       }, { timeoutMs: 90000 });
@@ -1936,7 +1947,7 @@ function ViralCaptureTestPanel({ account }) {
     <PanelCard
       title={(
         <span className="inline-flex items-center gap-2">
-          인기글 포스팅
+          인기글 포스팅{isVideo ? '(동영상)' : '(이미지)'}
           <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-emerald-200">
             beta
           </span>
@@ -1952,7 +1963,7 @@ function ViralCaptureTestPanel({ account }) {
               setUrl(event.target.value);
               setError('');
             }}
-            placeholder="https://www.threads.net/@..."
+            placeholder="https://www.threads.com/@..."
           />
         </label>
 
@@ -1966,12 +1977,30 @@ function ViralCaptureTestPanel({ account }) {
         {result?.post && (
           <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
             <div className="font-black">포스팅 완료</div>
-            {result.capturePreview && (
-              <img
-                className="mt-3 max-h-80 w-full rounded-2xl border border-white/10 object-contain"
-                src={result.capturePreview}
-                alt="캡처된 인기글"
+            {result.videoUrl && (
+              <video
+                className="mt-3 max-h-80 w-full rounded-2xl border border-white/10 bg-black object-contain"
+                src={result.videoUrl}
+                controls
+                playsInline
               />
+            )}
+            {!isVideo && previewImageUrls.length > 0 && (
+              <div className="mt-3">
+                <div className="text-xs font-black text-emerald-200">
+                  캡처 이미지 {result.capturedImageCount || previewImageUrls.length}장
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {previewImageUrls.map((imageUrl, index) => (
+                    <img
+                      key={`${imageUrl}-${index}`}
+                      className="aspect-square w-full rounded-2xl border border-white/10 bg-black object-contain"
+                      src={imageUrl}
+                      alt={`캡처된 인기글 ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              </div>
             )}
             <div className="mt-3 whitespace-pre-wrap leading-relaxed text-emerald-50">{result.post.body}</div>
             {result.postUrl && (

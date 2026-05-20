@@ -21,6 +21,49 @@ const revealableAccountFields = new Set([
   'coupang_tracking_code'
 ]);
 
+const userEditableAccountFields = new Set([
+  'daily_post_min',
+  'daily_post_max',
+  'active_time_windows',
+  'min_interval_minutes',
+  'link_post_ratio',
+  'no_link_post_ratio',
+  'name',
+  'account_handle',
+  'target_audience',
+  'content_scope',
+  'tone',
+  'cta_style',
+  'content_mode',
+  'content_intensity',
+  'seasonality_enabled',
+  'comment_induction_style',
+  'product_mention_style',
+  'emoji_level',
+  'safe_debate_enabled',
+  'anonymous_learning_enabled',
+  'blog_auto_publish_enabled',
+  'blog_publish_mode',
+  'blog_base_url',
+  'toss_share_link_enabled',
+  'toss_share_link_url',
+  'toss_share_link_label',
+  'toss_share_link_memo',
+  'content_style_note',
+  'forbidden_topics',
+  'forbidden_words',
+  'coupang_access_key',
+  'coupang_secret_key',
+  'coupang_partner_id',
+  'coupang_tracking_code'
+]);
+
+function customerAccountPatchBody(body = {}) {
+  return Object.fromEntries(
+    Object.entries(body || {}).filter(([key, value]) => userEditableAccountFields.has(key) && value !== undefined)
+  );
+}
+
 function isDbUnavailableError(error = {}) {
   return error?.code === 'SUPABASE_UNAVAILABLE' || error?.status === 503;
 }
@@ -313,29 +356,7 @@ router.patch('/:accountId', async (req, res, next) => {
     }
     if (req.user?.type === 'user') await assertUserCanOperate(req.user.userId);
     // 유저는 안전한 필드만 수정 가능
-    const body = req.user?.type === 'user'
-      ? (({ daily_post_min, daily_post_max, active_time_windows, min_interval_minutes,
-             link_post_ratio, no_link_post_ratio,
-             name, account_handle, target_audience, content_scope, tone, cta_style,
-             content_mode, content_intensity, seasonality_enabled, comment_induction_style,
-             product_mention_style, emoji_level, safe_debate_enabled, anonymous_learning_enabled,
-             blog_auto_publish_enabled, blog_publish_mode, blog_base_url,
-             toss_share_link_enabled, toss_share_link_url, toss_share_link_label, toss_share_link_memo,
-             content_style_note,
-             forbidden_topics, forbidden_words,
-             coupang_access_key, coupang_secret_key, coupang_partner_id, coupang_tracking_code }) =>
-          ({ daily_post_min, daily_post_max, active_time_windows, min_interval_minutes,
-             link_post_ratio, no_link_post_ratio,
-             name, account_handle, target_audience, content_scope, tone, cta_style,
-             content_mode, content_intensity, seasonality_enabled, comment_induction_style,
-             product_mention_style, emoji_level, safe_debate_enabled, anonymous_learning_enabled,
-             blog_auto_publish_enabled, blog_publish_mode, blog_base_url,
-             toss_share_link_enabled, toss_share_link_url, toss_share_link_label, toss_share_link_memo,
-             content_style_note,
-             forbidden_topics, forbidden_words,
-             coupang_access_key, coupang_secret_key, coupang_partner_id, coupang_tracking_code })
-        )(req.body)
-      : req.body;
+    const body = req.user?.type === 'user' ? customerAccountPatchBody(req.body) : req.body;
     res.json(redactAccount(await updateAccount(req.params.accountId, stripBlankSensitiveAccountFields(body))));
   } catch (e) { next(e); }
 });

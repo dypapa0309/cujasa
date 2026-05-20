@@ -189,6 +189,64 @@ test('uploadPost stores no postUrl when Threads permalink lookup returns only me
   }
 });
 
+test('uploadPost creates a Threads carousel when multiple image urls are attached', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousMock = process.env.MOCK_UPLOAD;
+  delete process.env.MOCK_UPLOAD;
+  const requests = [];
+  const responses = [
+    { ok: true, json: async () => ({ id: 'child-1' }), text: async () => '{}' },
+    { ok: true, json: async () => ({ status_code: 'FINISHED' }), text: async () => JSON.stringify({ status_code: 'FINISHED' }) },
+    { ok: true, json: async () => ({ id: 'child-2' }), text: async () => '{}' },
+    { ok: true, json: async () => ({ status_code: 'FINISHED' }), text: async () => JSON.stringify({ status_code: 'FINISHED' }) },
+    { ok: true, json: async () => ({ id: 'carousel-1' }), text: async () => '{}' },
+    { ok: true, json: async () => ({ status_code: 'FINISHED' }), text: async () => JSON.stringify({ status_code: 'FINISHED' }) },
+    { ok: true, json: async () => ({ id: 'post-carousel-1' }), text: async () => '{}' },
+    { ok: true, json: async () => ({ id: 'post-carousel-1', permalink: 'https://www.threads.net/@carouseltest/post/SHORTC1', shortcode: 'SHORTC1', username: 'carouseltest' }), text: async () => JSON.stringify({ id: 'post-carousel-1', permalink: 'https://www.threads.net/@carouseltest/post/SHORTC1', shortcode: 'SHORTC1', username: 'carouseltest' }) }
+  ];
+  globalThis.fetch = async (url, options = {}) => {
+    requests.push({ url: String(url), body: options.body ? JSON.parse(options.body) : null });
+    return responses.shift();
+  };
+
+  try {
+    const uploaded = await uploadPost({
+      account: {
+        name: 'test',
+        account_handle: '@carouseltest',
+        threads_access_token: 'token'
+      },
+      post: {
+        id: 'post-carousel',
+        body: '집 정리할 때 기준은 은근 갈리죠. 여러분은 꺼내기 쉬운 쪽을 보세요, 보기 깔끔한 쪽을 보세요?',
+        metadata: {
+          visualPlan: {
+            attachImage: true,
+            imageUrls: ['https://cdn.example.com/one.jpg', 'https://cdn.example.com/two.jpg']
+          }
+        }
+      }
+    });
+
+    assert.equal(requests[0].body.media_type, 'IMAGE');
+    assert.equal(requests[0].body.image_url, 'https://cdn.example.com/one.jpg');
+    assert.equal(requests[0].body.is_carousel_item, true);
+    assert.match(requests[1].url, /child-1/);
+    assert.equal(requests[2].body.media_type, 'IMAGE');
+    assert.equal(requests[2].body.image_url, 'https://cdn.example.com/two.jpg');
+    assert.equal(requests[2].body.is_carousel_item, true);
+    assert.equal(requests[4].body.media_type, 'CAROUSEL');
+    assert.equal(requests[4].body.children, 'child-1,child-2');
+    assert.equal(requests[4].body.text, buildPostText({ body: '집 정리할 때 기준은 은근 갈리죠. 여러분은 꺼내기 쉬운 쪽을 보세요, 보기 깔끔한 쪽을 보세요?' }));
+    assert.equal(uploaded.postUrl, 'https://www.threads.net/@carouseltest/post/SHORTC1');
+    assert.equal(uploaded.raw.mediaType, 'CAROUSEL');
+    assert.deepEqual(uploaded.raw.childCreationIds, ['child-1', 'child-2']);
+  } finally {
+    globalThis.fetch = previousFetch;
+    restoreEnv('MOCK_UPLOAD', previousMock);
+  }
+});
+
 test('uploadVideoPost requires a public video URL', async () => {
   await assert.rejects(
     uploadVideoPost({

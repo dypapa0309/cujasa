@@ -102,6 +102,7 @@ function toFiniteNumber(value, fallback) {
 export function sanitizeAccountPayload(payload = {}) {
   return Object.fromEntries(Object.entries(payload || {}).filter(([key, value]) => {
     if (!ACCOUNT_COLUMNS.has(key)) return false;
+    if (value === undefined) return false;
     if (SENSITIVE_ACCOUNT_KEYS.has(key) && !String(value ?? '').trim()) return false;
     return true;
   }));

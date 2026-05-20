@@ -41,7 +41,7 @@ const editableAccountKeys = new Set([
 
 function sanitizeAccountPayload(form) {
   const payload = Object.fromEntries(
-    Object.entries(form || {}).filter(([key]) => editableAccountKeys.has(key))
+    Object.entries(form || {}).filter(([key, value]) => editableAccountKeys.has(key) && value !== undefined)
   );
   payload.daily_post_min = 0;
   for (const key of sensitiveAccountKeys) {

@@ -84,6 +84,37 @@ test('preserves stored sensitive account values when blanks are submitted', asyn
   assert.equal(updated.coupang_tracking_code, 'stored-track');
 });
 
+test('preserves existing schedule settings when undefined fields are submitted', async () => {
+  const projectId = randomUUID();
+  await dbInsert('projects', {
+    id: projectId,
+    name: 'Undefined schedule settings project',
+    type: 'coupang',
+    status: 'active'
+  });
+  const account = await createAccount({
+    project_id: projectId,
+    name: '부분 저장 계정',
+    target_audience: '기존 타겟',
+    content_scope: '기존 주제',
+    daily_post_max: 1,
+    active_time_windows: [{ start: '14:00', end: '14:00' }],
+    min_interval_minutes: 20
+  });
+
+  const updated = await updateAccount(account.id, {
+    target_audience: '수정 타겟',
+    daily_post_max: undefined,
+    active_time_windows: undefined,
+    min_interval_minutes: undefined
+  });
+
+  assert.equal(updated.target_audience, '수정 타겟');
+  assert.equal(updated.daily_post_max, 1);
+  assert.deepEqual(updated.active_time_windows, [{ start: '14:00', end: '14:00' }]);
+  assert.equal(updated.min_interval_minutes, 20);
+});
+
 test('normalizes customer-facing content and schedule settings', async () => {
   const projectId = randomUUID();
   await dbInsert('projects', {

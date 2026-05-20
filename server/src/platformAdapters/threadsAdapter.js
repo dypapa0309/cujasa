@@ -247,6 +247,14 @@ function postImageUrls(post = {}) {
   return [...new Set(urls)].slice(0, 10);
 }
 
+function postVideoUrl(post = {}) {
+  const videoPlan = post?.metadata?.videoAttachment || post?.metadata?.visualPlan || {};
+  const videoUrl = String(videoPlan.videoUrl || videoPlan.url || '').trim();
+  if (!videoPlan.attachVideo || !/^https?:\/\//i.test(videoUrl)) return '';
+  if (videoPlan.videoRisk === 'high') return '';
+  return videoUrl;
+}
+
 export async function uploadVideoPost({ account, videoUrl, text = '', poll = {} }) {
   const token = account?.threads_access_token;
   const baseUrl = process.env.APP_BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
@@ -340,11 +348,12 @@ export async function uploadPost({ account, post, cta, trackingLink, sponsoredRe
 
   if (process.env.MOCK_UPLOAD === 'true') {
     const url = `${baseUrl}/mock/threads/${post.id}`;
+    const videoUrl = postVideoUrl(post);
     const imageUrls = postImageUrls(post);
     const imageUrl = imageUrls[0] || '';
-    const mediaType = imageUrls.length > 1 ? 'CAROUSEL' : (imageUrl ? 'IMAGE' : 'TEXT');
-    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: text, imageUrl: imageUrl || null, imageUrls, comment: replyText || null, linkMode });
-    return { postUrl: url, raw: { mock: true, mediaType, imageUrl: imageUrl || null, imageUrls, linkDeliveryMode: replyText ? deliveryMode : 'none', linkMode, replyText, sponsoredReply: Boolean(sponsoredText) } };
+    const mediaType = videoUrl ? 'VIDEO' : (imageUrls.length > 1 ? 'CAROUSEL' : (imageUrl ? 'IMAGE' : 'TEXT'));
+    console.log('[MOCK THREADS UPLOAD]', { account: account.name, body: text, videoUrl: videoUrl || null, imageUrl: imageUrl || null, imageUrls, comment: replyText || null, linkMode });
+    return { postUrl: url, raw: { mock: true, mediaType, videoUrl: videoUrl || null, imageUrl: imageUrl || null, imageUrls, linkDeliveryMode: replyText ? deliveryMode : 'none', linkMode, replyText, sponsoredReply: Boolean(sponsoredText) } };
   }
   if (!token) {
     const error = new Error('Threads access token is required. 계정 관리에서 Threads 연결을 먼저 완료해주세요.');
@@ -354,11 +363,19 @@ export async function uploadPost({ account, post, cta, trackingLink, sponsoredRe
   }
 
   const imageUrls = postImageUrls(post);
+  const videoUrl = postVideoUrl(post);
   const imageUrl = imageUrls[0] || '';
   let creationId;
   let mediaStatus = null;
   let childCreationIds = [];
-  if (imageUrls.length > 1) {
+  if (videoUrl) {
+    creationId = await createThreadsContainer(token, {
+      media_type: 'VIDEO',
+      video_url: videoUrl,
+      text
+    });
+    mediaStatus = await waitForThreadsContainerReady(token, creationId);
+  } else if (imageUrls.length > 1) {
     for (const childImageUrl of imageUrls) {
       const childId = await createThreadsContainer(token, {
         media_type: 'IMAGE',
@@ -413,7 +430,8 @@ export async function uploadPost({ account, post, cta, trackingLink, sponsoredRe
           replyWarning,
           replyFailed: true,
           sponsoredReply: Boolean(sponsoredText),
-          mediaType: imageUrls.length > 1 ? 'CAROUSEL' : (imageUrl ? 'IMAGE' : 'TEXT'),
+          mediaType: videoUrl ? 'VIDEO' : (imageUrls.length > 1 ? 'CAROUSEL' : (imageUrl ? 'IMAGE' : 'TEXT')),
+          videoUrl: videoUrl || null,
           imageUrl: imageUrl || null,
           imageUrls,
           childCreationIds,
@@ -435,7 +453,8 @@ export async function uploadPost({ account, post, cta, trackingLink, sponsoredRe
       linkDeliveryMode: replyText ? deliveryMode : 'none',
       linkMode,
       sponsoredReply: Boolean(sponsoredText),
-      mediaType: imageUrls.length > 1 ? 'CAROUSEL' : (imageUrl ? 'IMAGE' : 'TEXT'),
+      mediaType: videoUrl ? 'VIDEO' : (imageUrls.length > 1 ? 'CAROUSEL' : (imageUrl ? 'IMAGE' : 'TEXT')),
+      videoUrl: videoUrl || null,
       imageUrl: imageUrl || null,
       imageUrls,
       mediaStatus
