@@ -1167,6 +1167,166 @@ function buildPolibotPremiumPlan(profile = {}) {
   return { targetPremium, currentPremium, additionalBudgetMemo };
 }
 
+const POLIBOT_COVERAGE_TARGETS = [
+  { key: 'cancer', label: '암 진단비', aliases: ['암', '일반암'], target: 5000, needs: ['암'] },
+  { key: 'similarCancer', label: '유사암/소액암', aliases: ['유사암', '소액암'], target: 1000, needs: ['암'] },
+  { key: 'brain', label: '뇌혈관/뇌졸중', aliases: ['뇌', '뇌혈관', '뇌졸중'], target: 2000, needs: ['뇌'] },
+  { key: 'heart', label: '허혈성/심근경색', aliases: ['심장', '허혈성', '심근경색'], target: 2000, needs: ['심장'] },
+  { key: 'surgery', label: '질병/상해 수술비', aliases: ['수술'], target: 300, needs: ['수술'] },
+  { key: 'hospital', label: '입원일당', aliases: ['입원'], target: 5, needs: ['입원'] },
+  { key: 'medical', label: '실손/실비', aliases: ['실손', '실비'], target: 1, needs: ['실손'] },
+  { key: 'care', label: '간병/치매/요양', aliases: ['간병', '치매', '요양'], target: 1000, needs: ['간병', '치매', '생활비'] },
+  { key: 'death', label: '사망/후유장해', aliases: ['사망', '후유장해'], target: 3000, needs: ['사망'] },
+  { key: 'driver', label: '운전자', aliases: ['운전자'], target: 1, needs: ['운전자'] }
+];
+
+function parsePolibotCoverageAmount(value = '') {
+  const text = String(value || '').replace(/,/g, '').trim();
+  if (!text) return null;
+  if (/있음|가입|유지|예/i.test(text)) return 1;
+  if (/없음|미가입|무/i.test(text)) return 0;
+  const match = text.match(/\d+(?:\.\d+)?/);
+  if (!match) return null;
+  const amount = Number(match[0]);
+  if (!Number.isFinite(amount)) return null;
+  if (/억/.test(text)) return amount * 10000;
+  return amount;
+}
+
+function normalizePolibotCurrentCoverage(raw = {}) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  return Object.fromEntries(POLIBOT_COVERAGE_TARGETS.map((item) => [
+    item.key,
+    source[item.key] && typeof source[item.key] === 'object'
+      ? {
+          amount: String(source[item.key].amount ?? '').trim(),
+          renewalType: String(source[item.key].renewalType ?? '').trim(),
+          maturity: String(source[item.key].maturity ?? '').trim(),
+          note: String(source[item.key].note ?? '').trim()
+        }
+      : {
+          amount: String(source[item.key] ?? '').trim(),
+          renewalType: '',
+          maturity: '',
+          note: ''
+        }
+  ]));
+}
+
+function normalizePolibotPolicyDetails(raw = []) {
+  const rows = Array.isArray(raw) ? raw : [];
+  return rows.map((item) => ({
+    company: String(item?.company || '').trim(),
+    productName: String(item?.productName || '').trim(),
+    startDate: String(item?.startDate || '').trim(),
+    renewalType: String(item?.renewalType || '').trim(),
+    premium: String(item?.premium || '').trim(),
+    paymentPeriod: String(item?.paymentPeriod || '').trim(),
+    maturity: String(item?.maturity || '').trim(),
+    status: String(item?.status || '').trim()
+  })).filter((item) => Object.values(item).some(Boolean)).slice(0, 12);
+}
+
+function normalizePolibotDisclosureDetails(raw = {}) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  return {
+    recent3Months: String(source.recent3Months || '').trim(),
+    recent1Year: String(source.recent1Year || '').trim(),
+    recent5Years: String(source.recent5Years || '').trim(),
+    recentExam: String(source.recentExam || '').trim(),
+    admissionSurgery: String(source.admissionSurgery || '').trim(),
+    longTreatment: String(source.longTreatment || '').trim(),
+    longMedication: String(source.longMedication || '').trim(),
+    currentMedication: String(source.currentMedication || '').trim(),
+    majorDisease: String(source.majorDisease || '').trim(),
+    completeCure: String(source.completeCure || '').trim(),
+    followUp: String(source.followUp || '').trim(),
+    details: String(source.details || '').trim()
+  };
+}
+
+function normalizePolibotUnderwritingAssessment(raw = {}) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  return {
+    route: String(source.route || '').trim(),
+    standardPossible: String(source.standardPossible || '').trim(),
+    burden: String(source.burden || '').trim(),
+    surcharge: String(source.surcharge || '').trim(),
+    simpleReview: String(source.simpleReview || '').trim(),
+    note: String(source.note || '').trim()
+  };
+}
+
+function normalizePolibotAnalysisResult(raw = {}) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  return {
+    gaps: String(source.gaps || '').trim(),
+    duplicates: String(source.duplicates || '').trim(),
+    premiumIssue: String(source.premiumIssue || '').trim(),
+    keepList: String(source.keepList || '').trim(),
+    remodelList: String(source.remodelList || '').trim(),
+    caution: String(source.caution || '').trim()
+  };
+}
+
+function polibotCurrentCoverageAnalysis(profile = {}) {
+  const currentCoverage = normalizePolibotCurrentCoverage(profile.currentCoverage);
+  const needs = Array.isArray(profile.needs) ? profile.needs : [];
+  const rows = POLIBOT_COVERAGE_TARGETS.map((target) => {
+    const rawEntry = currentCoverage[target.key] || {};
+    const raw = rawEntry.amount || '';
+    const amount = parsePolibotCoverageAmount(raw);
+    const needed = needs.some((need) => target.needs.some((term) => String(need || '').includes(term) || term.includes(String(need || ''))))
+      || target.aliases.some((alias) => needs.some((need) => String(need || '').includes(alias)));
+    let status = '미확인';
+    let reason = '현재 담보금액이 입력되지 않았습니다.';
+    if (amount === 0) {
+      status = needed ? '부족' : '미가입';
+      reason = needed ? '필요 보장인데 현재 가입이 없는 것으로 입력됐습니다.' : '현재 가입 없음으로 입력됐습니다.';
+    } else if (Number.isFinite(amount)) {
+      if (target.key === 'medical' || target.key === 'driver') {
+        status = amount > 0 ? '보유' : needed ? '부족' : '미가입';
+        reason = amount > 0 ? '보유 여부가 확인됐습니다.' : '보유 여부 확인이 필요합니다.';
+      } else if (amount >= target.target) {
+        status = needed ? '충분 후보' : '보유';
+        reason = `기준 ${target.target.toLocaleString('ko-KR')}만원 이상으로 입력됐습니다.`;
+      } else {
+        status = needed ? '부족' : '낮음';
+        reason = `기준 ${target.target.toLocaleString('ko-KR')}만원 대비 낮게 입력됐습니다.`;
+      }
+    } else if (raw) {
+      status = '확인 필요';
+      reason = '금액 대신 메모로 입력되어 증권 기준 확인이 필요합니다.';
+    }
+    return {
+      key: target.key,
+      label: target.label,
+      value: raw,
+      amount,
+      renewalType: rawEntry.renewalType || '',
+      maturity: rawEntry.maturity || '',
+      note: rawEntry.note || '',
+      needed,
+      status,
+      reason
+    };
+  });
+  const gaps = rows.filter((row) => row.needed && ['부족', '미가입', '미확인', '확인 필요'].includes(row.status));
+  const duplicates = rows.filter((row) => !row.needed && ['충분 후보', '보유'].includes(row.status));
+  const unknown = rows.filter((row) => ['미확인', '확인 필요'].includes(row.status));
+  return {
+    rows,
+    gaps,
+    duplicates,
+    unknown,
+    summary: [
+      gaps.length ? `부족/확인 보장 ${gaps.length}개` : '필요 보장 기준 큰 공백 없음',
+      duplicates.length ? `중복 점검 ${duplicates.length}개` : '',
+      unknown.length ? `미확인 ${unknown.length}개` : ''
+    ].filter(Boolean).join(' · ')
+  };
+}
+
 function polibotAgeValue(profile = {}) {
   const age = Number(String(profile.age || '').replace(/[^\d.]/g, ''));
   return Number.isFinite(age) && age > 0 ? age : null;
@@ -1191,10 +1351,12 @@ function polibotAgeRangeStatus(item = {}, profile = {}) {
 
 function polibotMedicalRisk(profile = {}) {
   const medical = String(profile.medicalHistory || '').trim();
+  const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
+  const disclosureText = Object.values(disclosure).filter(Boolean).join(' ');
   const family = String(profile.familyHistory || '').trim();
-  const text = `${medical} ${family}`;
-  if (!medical) return { level: 'unknown', label: '고지 확인 필요', reasons: ['최근 5년 입원/수술/투약/진단 여부를 확인해야 해요.'] };
-  if (/없음|무|해당\s*없/i.test(medical)) {
+  const text = `${medical} ${disclosureText} ${family}`;
+  if (!medical && !disclosureText) return { level: 'unknown', label: '고지 확인 필요', reasons: ['최근 3개월/1년/5년 고지와 현재 투약 여부를 확인해야 해요.'] };
+  if (/없음|무|해당\s*없/i.test(`${medical} ${disclosureText}`) && !/있음|예|수술|입원|투약|치료|진단|검사|추적|관찰/i.test(disclosureText)) {
     return {
       level: 'low',
       label: '고지 리스크 낮음',
@@ -1208,14 +1370,14 @@ function polibotMedicalRisk(profile = {}) {
   }
   const reasons = [];
   const flags = [];
-  if (/고혈압|혈압/i.test(medical)) flags.push({ key: 'hypertension', label: '고혈압/혈압', risk: 'moderate', question: '최근 혈압 수치, 복용 약, 합병증 여부를 확인해야 합니다.' });
-  if (/당뇨/i.test(medical)) flags.push({ key: 'diabetes', label: '당뇨', risk: 'high', question: '당화혈색소, 인슐린 사용 여부, 합병증 여부를 확인해야 합니다.' });
-  if (/고지혈|콜레스테롤|지질/i.test(medical)) flags.push({ key: 'dyslipidemia', label: '고지혈/지질', risk: 'moderate', question: '복용 약과 심혈관 합병증 동반 여부를 확인해야 합니다.' });
-  if (/입원|수술|시술/i.test(medical)) flags.push({ key: 'recent_admission_surgery', label: '입원/수술/시술', risk: 'high', question: '최근 5년 이력인지, 완치/추적관찰 여부를 확인해야 합니다.' });
-  if (/검사|추적|관찰|재검|소견|결절/i.test(medical)) flags.push({ key: 'followup_exam', label: '추적검사/결절/소견', risk: 'high', question: '최근 3개월 추가검사 소견과 최종 진단명을 확인해야 합니다.' });
-  if (/암|심근경색|협심증|뇌졸중|뇌출혈|뇌경색|심장|뇌/i.test(medical)) flags.push({ key: 'major_disease', label: '암/심뇌혈관 이력', risk: 'high', question: '진단 시점, 치료 종료일, 재발/전이/후유증 여부를 확인해야 합니다.' });
-  if (/디스크|관절|허리|목/i.test(medical)) flags.push({ key: 'musculoskeletal', label: '근골격계', risk: 'moderate', question: '부담보 가능성이 있어 부위, 치료 기간, 현재 증상을 확인해야 합니다.' });
-  if (/투약|복용|약|치료|진단/i.test(medical)) flags.push({ key: 'medication_treatment', label: '투약/치료/진단', risk: 'moderate', question: '투약 기간과 현재 치료 지속 여부를 확인해야 합니다.' });
+  if (/고혈압|혈압/i.test(text)) flags.push({ key: 'hypertension', label: '고혈압/혈압', risk: 'moderate', question: '최근 혈압 수치, 복용 약, 합병증 여부를 확인해야 합니다.' });
+  if (/당뇨/i.test(text)) flags.push({ key: 'diabetes', label: '당뇨', risk: 'high', question: '당화혈색소, 인슐린 사용 여부, 합병증 여부를 확인해야 합니다.' });
+  if (/고지혈|콜레스테롤|지질/i.test(text)) flags.push({ key: 'dyslipidemia', label: '고지혈/지질', risk: 'moderate', question: '복용 약과 심혈관 합병증 동반 여부를 확인해야 합니다.' });
+  if (/입원|수술|시술/i.test(text)) flags.push({ key: 'recent_admission_surgery', label: '입원/수술/시술', risk: 'high', question: '최근 5년 이력인지, 완치/추적관찰 여부를 확인해야 합니다.' });
+  if (/검사|추적|관찰|재검|소견|결절/i.test(text)) flags.push({ key: 'followup_exam', label: '추적검사/결절/소견', risk: 'high', question: '최근 3개월 추가검사 소견과 최종 진단명을 확인해야 합니다.' });
+  if (/암|심근경색|협심증|뇌졸중|뇌출혈|뇌경색|심장|뇌/i.test(text)) flags.push({ key: 'major_disease', label: '암/심뇌혈관 이력', risk: 'high', question: '진단 시점, 치료 종료일, 재발/전이/후유증 여부를 확인해야 합니다.' });
+  if (/디스크|관절|허리|목/i.test(text)) flags.push({ key: 'musculoskeletal', label: '근골격계', risk: 'moderate', question: '부담보 가능성이 있어 부위, 치료 기간, 현재 증상을 확인해야 합니다.' });
+  if (/투약|복용|약|치료|진단/i.test(text)) flags.push({ key: 'medication_treatment', label: '투약/치료/진단', risk: 'moderate', question: '투약 기간과 현재 치료 지속 여부를 확인해야 합니다.' });
   if (/암|심장|뇌|당뇨/i.test(family)) flags.push({ key: 'family_history', label: '가족력', risk: 'reference', question: '가족력은 본인 병력과 분리해 관련 담보 니즈와 고지 질문 해당 여부만 확인합니다.' });
   if (/수술|입원|치료|투약|약|진단|검사|추적|관찰|고혈압|당뇨|고지혈|디스크|결절|암|심장|뇌/i.test(text)) {
     reasons.push('병력/투약/검사 이력이 있어 표준체, 할증, 부담보, 간편심사 여부를 비교해야 해요.');
@@ -3860,17 +4022,38 @@ function isPolibotRecommendationEligibleSource(source = {}) {
 
 function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
   const needs = profile.needs || [];
+  const coverageAnalysis = polibotCurrentCoverageAnalysis(profile);
+  const policyDetails = normalizePolibotPolicyDetails(profile.existingPolicyDetails);
+  const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
+  const underwriting = normalizePolibotUnderwritingAssessment(profile.underwritingAssessment);
+  const analysisResult = normalizePolibotAnalysisResult(profile.analysisResult);
   const missing = [];
   if (!profile.age) missing.push('나이');
   if (!profile.gender) missing.push('성별');
   if (needs.length === 0) missing.push('필요 보장');
   if (!profile.budget) missing.push('예산');
   if (!profile.existingPremium) missing.push('현재 보험료');
+  if (!profile.existingPolicies) missing.push('현재 가입 보험');
+  if (profile.existingPolicies && policyDetails.length === 0) missing.push('기존 계약 상세');
+  if (coverageAnalysis.unknown.length >= 6) missing.push('담보별 담보금액');
   if (!profile.existingMedicalPlan) missing.push('기존 실손 여부');
   if (!profile.medicalHistory) missing.push('병력/고지 이슈');
+  if (!disclosure.recent3Months) missing.push('3개월 고지');
+  if (!disclosure.recent1Year) missing.push('1년 고지');
+  if (!disclosure.recent5Years) missing.push('5년 고지');
+  if (!underwriting.route) missing.push('인수심사 방향');
+  if (!analysisResult.gaps) missing.push('부족 보장');
+  if (!analysisResult.remodelList) missing.push('추천 방향');
   const nextQuestions = [
+    !profile.existingPolicies && '현재 가입 중인 보험사/상품명/월 보험료를 확인했나요?',
+    profile.existingPolicies && policyDetails.length === 0 && '기존 계약별 보험사, 상품명, 갱신 여부, 만기, 보험료를 분리했나요?',
+    coverageAnalysis.gaps.length > 0 && `현재 보장 기준 ${coverageAnalysis.gaps.slice(0, 3).map((item) => item.label).join(', ')} 공백을 우선 확인하세요.`,
     !profile.existingMedicalPlan && '기존 실손보험이 있나요?',
-    !profile.medicalHistory && '최근 5년 내 입원, 수술, 투약이나 고지 이슈가 있나요?',
+    (!profile.medicalHistory || !disclosure.recent5Years) && '최근 5년 내 입원, 수술, 투약이나 고지 이슈가 있나요?',
+    !disclosure.recent3Months && '최근 3개월 내 진찰/검사/추가검사 소견이 있었나요?',
+    !disclosure.recent1Year && '최근 1년 내 추가검사나 재검사 소견이 있었나요?',
+    !underwriting.route && '표준심사, 간편심사, 조건부 인수 중 어느 경로가 우선인가요?',
+    !analysisResult.remodelList && '유지할 계약과 보완할 담보를 분리했나요?',
     !profile.existingPremium && '현재 월 보험료는 얼마인가요?',
     !profile.renewalPreference && '갱신형 상품도 괜찮나요?',
     needs.includes('암') && '암 진단비 목표 금액이 있나요?',
@@ -3878,8 +4061,13 @@ function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
   ].filter(Boolean).slice(0, 6);
   const cautions = [
     '고지사항 확인 필요',
+    coverageAnalysis.gaps.length > 0 && `보장 공백 후보: ${coverageAnalysis.gaps.slice(0, 4).map((item) => item.label).join(', ')}`,
+    coverageAnalysis.duplicates.length > 0 && `중복/과다 여부 점검: ${coverageAnalysis.duplicates.slice(0, 3).map((item) => item.label).join(', ')}`,
+    analysisResult.duplicates && `상담자 중복 판단: ${analysisResult.duplicates}`,
+    analysisResult.caution && `해지/전환 주의: ${analysisResult.caution}`,
     !profile.existingMedicalPlan && '실손 중복 여부 확인 필요',
     !profile.medicalHistory && '병력/부담보 가능성 확인 필요',
+    Object.values(disclosure).some((value) => /있음|예|치료|투약|입원|수술|검사|진단/i.test(value)) && '상세 고지에 따라 표준/간편/부담보 심사 경로 확인 필요',
     profile.renewalPreference === '비갱신 선호' && '비갱신형 보험료 부담 확인 필요',
     qualityReport.recommendableProducts === 0 && '자동 확정 상품 자료 부족'
   ].filter(Boolean);
@@ -3892,6 +4080,12 @@ function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
       profile.purpose || ''
     ].filter(Boolean).join(' · ') || '고객 조건 미입력',
     needs,
+    existingPolicies: profile.existingPolicies || '',
+    existingPolicyDetails: policyDetails,
+    currentCoverageAnalysis: coverageAnalysis,
+    disclosureDetails: disclosure,
+    underwritingAssessment: underwriting,
+    analysisResult,
     missing,
     completeness,
     nextQuestions,
@@ -4217,9 +4411,15 @@ export async function savePolibotRecommendation(userId, {
   needs = '',
   budget = '',
   company = '',
+  existingPolicies = '',
+  existingPolicyDetails = [],
+  currentCoverage = {},
   existingMedicalPlan = '',
   existingPremium = '',
   medicalHistory = '',
+  disclosureDetails = {},
+  underwritingAssessment = {},
+  analysisResult = {},
   familyHistory = '',
   driving = '',
   renewalPreference = '',
@@ -4232,9 +4432,15 @@ export async function savePolibotRecommendation(userId, {
     needs: normalizeList(needs),
     budget: String(budget || '').trim(),
     company: String(company || '').trim() || '전체 보험사',
+    existingPolicies: String(existingPolicies || '').trim(),
+    existingPolicyDetails: normalizePolibotPolicyDetails(existingPolicyDetails),
+    currentCoverage: normalizePolibotCurrentCoverage(currentCoverage),
     existingMedicalPlan: String(existingMedicalPlan || '').trim(),
     existingPremium: String(existingPremium || '').trim(),
     medicalHistory: String(medicalHistory || '').trim(),
+    disclosureDetails: normalizePolibotDisclosureDetails(disclosureDetails),
+    underwritingAssessment: normalizePolibotUnderwritingAssessment(underwritingAssessment),
+    analysisResult: normalizePolibotAnalysisResult(analysisResult),
     familyHistory: String(familyHistory || '').trim(),
     driving: String(driving || '').trim(),
     renewalPreference: String(renewalPreference || '').trim(),
@@ -4259,8 +4465,17 @@ export async function savePolibotRecommendation(userId, {
     !profile.gender && '성별',
     profile.needs.length === 0 && '필요 보장',
     !profile.budget && '예산',
+    !profile.existingPolicies && '현재 가입 보험',
+    profile.existingPolicies && profile.existingPolicyDetails.length === 0 && '기존 계약 상세',
+    polibotCurrentCoverageAnalysis(profile).unknown.length >= 6 && '담보별 담보금액',
     !profile.existingMedicalPlan && '기존 실손 여부',
-    !profile.medicalHistory && '병력/고지 이슈'
+    !profile.medicalHistory && '병력/고지 이슈',
+    !profile.disclosureDetails.recent3Months && '3개월 고지',
+    !profile.disclosureDetails.recent1Year && '1년 고지',
+    !profile.disclosureDetails.recent5Years && '5년 고지',
+    !profile.underwritingAssessment.route && '인수심사 방향',
+    !profile.analysisResult.gaps && '부족 보장',
+    !profile.analysisResult.remodelList && '추천 방향'
   ].filter(Boolean);
   if (hardMissing.length > 0) {
     const timing = createPolibotTimingLogger('polibot_recommend_timing');
@@ -4308,7 +4523,11 @@ export async function savePolibotRecommendation(userId, {
     !profile.existingMedicalPlan && '기존 실손 여부',
     profile.existingMedicalPlan && profile.existingMedicalPlan !== '없음' && '실손 중복 여부',
     !profile.medicalHistory && '병력/고지 이슈',
+    (!profile.disclosureDetails.recent3Months || !profile.disclosureDetails.recent1Year || !profile.disclosureDetails.recent5Years) && '고지 기간별 상세',
+    !profile.underwritingAssessment.route && '인수심사 방향',
     /있음|예|확인|수술|입원|투약|치료|진단/i.test(profile.medicalHistory) && '고지 상세',
+    Object.values(profile.disclosureDetails || {}).some((value) => /있음|예|확인|수술|입원|투약|치료|진단|검사/i.test(value)) && '고지 상세',
+    Object.values(profile.underwritingAssessment || {}).some((value) => /부담보|할증|간편|조건부|어려움/i.test(value)) && '인수 조건',
     profile.budget && Number(String(profile.budget).replace(/[^\d.]/g, '')) > 0 && Number(String(profile.budget).replace(/[^\d.]/g, '')) < 5 && '예산 조건'
   ].filter(Boolean);
   const enrichedProfile = { ...profile, qualityReport, consultationDraft, catalogReviews, riskHoldReasons };
@@ -4434,9 +4653,15 @@ export async function savePolibotCustomer(userId, { id = '', name = '', age = ''
     gender: String(currentProfile.gender || '').trim(),
     needs: Array.isArray(currentProfile.needs) ? currentProfile.needs : [],
     budget: String(currentProfile.budget || '').trim(),
+    existingPolicies: String(currentProfile.existingPolicies || '').trim(),
+    existingPolicyDetails: normalizePolibotPolicyDetails(currentProfile.existingPolicyDetails),
+    currentCoverage: normalizePolibotCurrentCoverage(currentProfile.currentCoverage),
     existingMedicalPlan: String(currentProfile.existingMedicalPlan || '').trim(),
     existingPremium: String(currentProfile.existingPremium || '').trim(),
     medicalHistory: String(currentProfile.medicalHistory || '').trim(),
+    disclosureDetails: normalizePolibotDisclosureDetails(currentProfile.disclosureDetails),
+    underwritingAssessment: normalizePolibotUnderwritingAssessment(currentProfile.underwritingAssessment),
+    analysisResult: normalizePolibotAnalysisResult(currentProfile.analysisResult),
     familyHistory: String(currentProfile.familyHistory || '').trim(),
     driving: String(currentProfile.driving || '').trim(),
     renewalPreference: String(currentProfile.renewalPreference || '').trim(),

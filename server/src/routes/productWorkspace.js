@@ -28,6 +28,7 @@ import {
 import { buildReferencePatternContext, ingestTrendReferencesForAccount } from '../services/trendReferenceLearningService.js';
 import { getAccount } from '../services/accountService.js';
 import { extractTrendReferenceFromImage } from '../services/trendReferenceOcrService.js';
+import { analyzePolibotCoverageDocument } from '../services/polibotCoverageDocumentService.js';
 import { buildCujasaContentPreview } from '../services/contentPreviewService.js';
 import { buildCujasaQueueDiagnostics } from '../services/queueReliabilityService.js';
 import { runViralCapturePost } from '../services/viralCaptureService.js';
@@ -308,6 +309,17 @@ router.post('/polibot/recommend', async (req, res, next) => {
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await savePolibotRecommendation(user.userId, req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/polibot/coverage-document/analyze', async (req, res, next) => {
+  try {
+    if (!requireWorkspaceServiceOpen(req, res, 'polibot')) return;
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await analyzePolibotCoverageDocument(req.body || {}));
   } catch (error) {
     next(error);
   }
