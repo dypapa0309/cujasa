@@ -149,8 +149,7 @@ function extractMetaContents(html = '', names = []) {
 function threadsImageIdentity(rawUrl = '') {
   try {
     const parsed = new URL(rawUrl);
-    const file = parsed.pathname.split('/').pop() || parsed.pathname;
-    return parsed.searchParams.get('ig_cache_key') || file;
+    return parsed.pathname.split('/').pop() || parsed.pathname;
   } catch {
     return rawUrl.split('?')[0];
   }
