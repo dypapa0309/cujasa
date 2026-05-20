@@ -10,3 +10,4 @@ supabase/.temp
 npm-debug.log*
 marketing/**/chrome-profile/
 marketing/**/tmp/
+.vercel
