@@ -464,7 +464,11 @@ function infludexRiskLabel(flag = '') {
     suspicious_high_engagement: '반응 확인 필요',
     high_engagement_review: '반응 확인 필요',
     comments_missing_for_likes: '댓글 확인 필요',
-    low_comment_depth: '댓글 확인 필요'
+    low_comment_depth: '댓글 확인 필요',
+    reels_views_missing: '릴스 평균 조회수 필요',
+    invalid_reels_views: '릴스 조회수 확인 필요',
+    low_reels_views_for_size: '릴스 조회수 낮음',
+    weak_reels_view_rate: '릴스 조회수 확인 필요'
   };
   return labels[flag] || flag;
 }
@@ -6951,7 +6955,7 @@ function InfludexUploadPanel({ onOpenGrade }) {
   const [parsing, setParsing] = useState(false);
   const usage = workspaceUsage(workspace);
   const savedCandidates = Array.isArray(workspace.candidates) ? workspace.candidates : [];
-  const candidateCount = savedCandidates.length || rows.split(/\n|\r/).map((line) => line.trim()).filter(Boolean).filter((line, index) => !(index === 0 && /url|handle|category|followers|팔로워|카테고리/i.test(line))).length;
+  const candidateCount = savedCandidates.length || rows.split(/\n|\r/).map((line) => line.trim()).filter(Boolean).filter((line, index) => !(index === 0 && /url|handle|category|followers|팔로워|카테고리|조회수|views?/i.test(line))).length;
 
   const persistCandidates = async ({ nextRows = rows, nextFileName = fileName, nextFiles = candidateFiles, silent = false } = {}) => {
     const next = await api.post('/api/product-workspace/infludex/candidates', { rows: nextRows, fileName: nextFileName, files: nextFiles });
@@ -7082,7 +7086,7 @@ function InfludexUploadPanel({ onOpenGrade }) {
               onChange={(event) => loadCandidateFile(event.target.files?.[0])}
             />
           </label>
-          <p className="mt-3 text-xs leading-relaxed text-zinc-600">CSV, TXT, DOCX 지원</p>
+          <p className="mt-3 text-xs leading-relaxed text-zinc-600">CSV, TXT, DOCX 지원 · 최근 5개 릴스 평균 조회수 필수</p>
         </div>
         <label className={labelClass}>
           후보 목록
@@ -7091,7 +7095,7 @@ function InfludexUploadPanel({ onOpenGrade }) {
             rows="7"
             value={rows}
             onChange={(event) => setRows(event.target.value)}
-            placeholder={'인스타그램 URL 또는 @계정을 한 줄씩 입력해 주세요.\nCSV/TXT/DOCX 파일을 올려도 됩니다.'}
+            placeholder={'url,handle,category,followers,avgLikes,avgComments,avgReelsViews,recentPostAt,adMemo\nhttps://instagram.com/example,@example,뷰티,30000,1500,180,42000,2026-05-01,'}
           />
         </label>
         <div className="mt-3 rounded-2xl bg-black/25 px-4 py-3 text-sm text-zinc-500">
@@ -7107,10 +7111,11 @@ function InfludexUploadPanel({ onOpenGrade }) {
           <div className="grid gap-2">
             {savedCandidates.slice(0, 8).map((item) => {
               const followers = Number(item.followerCount || 0);
+              const reelsViews = Number(item.avgReelsViews || 0);
               return (
                 <div key={item.id || item.handle || item.url} className="rounded-2xl bg-black/25 px-4 py-3">
                   <div className="text-sm font-black text-zinc-200">{infludexCandidateLabel(item)}</div>
-                  <div className="mt-1 text-xs font-bold text-zinc-500">{[item.displayName || item.description, item.category, followers ? `팔로워 ${followers.toLocaleString('ko-KR')}` : '분석 대기'].filter(Boolean).join(' · ')}</div>
+                  <div className="mt-1 text-xs font-bold text-zinc-500">{[item.displayName || item.description, item.category, followers ? `팔로워 ${followers.toLocaleString('ko-KR')}` : '분석 대기', reelsViews ? `릴스 평균 조회 ${reelsViews.toLocaleString('ko-KR')}` : '릴스 조회수 필요'].filter(Boolean).join(' · ')}</div>
                 </div>
               );
             })}
@@ -7221,6 +7226,7 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-zinc-500">
                   <span>{item.decision || (Number(item.score || 0) >= 72 ? '추천' : Number(item.score || 0) >= 58 ? '검토' : '추가 확인')}</span>
+                  {Number(item.avgReelsViews || item.reelsViews || 0) > 0 && <span>릴스 평균 조회 {Number(item.avgReelsViews || item.reelsViews || 0).toLocaleString('ko-KR')}</span>}
                   {item.recentPostAt && <span>최근 활동 확인</span>}
                 </div>
                 {item.riskFlags?.length > 0 && <div className="mt-2 text-[11px] font-bold text-amber-400">{[...new Set(item.riskFlags.map(infludexRiskLabel))].slice(0, 2).join(' · ')}</div>}
@@ -7265,7 +7271,7 @@ function InfludexDownloadPanel({ onOpenUpload }) {
   }, [toast]);
 
   const downloadCsv = () => {
-    const header = ['url', 'handle', 'displayName', 'category', 'grade', 'score', 'decision', 'status', 'followers', 'recentPostAt', 'contactMemo', 'summary'];
+    const header = ['url', 'handle', 'displayName', 'category', 'grade', 'score', 'decision', 'status', 'followers', 'avgLikes', 'avgComments', 'avgReelsViews', 'recentPostAt', 'contactMemo', 'summary'];
     const rows = results.map((item) => [
       item.url,
       item.handle,
@@ -7276,6 +7282,9 @@ function InfludexDownloadPanel({ onOpenUpload }) {
       item.decision || '',
       item.analysisStatus === 'data_missing' || !item.grade ? '확인 필요' : ['S', 'A'].includes(item.grade) ? '추천' : '검토',
       item.followerCount,
+      item.avgLikes,
+      item.avgComments,
+      item.avgReelsViews || item.reelsViews,
       item.recentPostAt,
       item.contactMemo,
       [...new Set((item.riskFlags || []).map(infludexRiskLabel))].slice(0, 2).join(' | ') || (item.gradeReason || item.reasons)?.slice(0, 2).join(' | ') || ''

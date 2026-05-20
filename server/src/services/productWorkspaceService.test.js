@@ -833,9 +833,9 @@ test('INFLUDEX link analysis uses deterministic campaign selection scoring', asy
   await saveInfludexCandidates(userId, {
     fileName: 'infludex.csv',
     rows: [
-      'url,handle,category,followers,avgLikes,avgComments,recentPostAt,adMemo',
-      'https://instagram.com/good,@good,뷰티,30000,1500,180,2026-05-01,',
-      'https://instagram.com/weak,@weak,,30000,60,1,2025-01-01,협찬 많음'
+      'url,handle,category,followers,avgLikes,avgComments,avgReelsViews,recentPostAt,adMemo',
+      'https://instagram.com/good,@good,뷰티,30000,1500,180,42000,2026-05-01,',
+      'https://instagram.com/weak,@weak,,30000,60,1,1200,2025-01-01,협찬 많음'
     ].join('\n')
   });
   const first = await analyzeInfludexCandidates(userId);
@@ -850,6 +850,7 @@ test('INFLUDEX link analysis uses deterministic campaign selection scoring', asy
   assert.equal(good.score, goodAgain.score);
   assert.match(good.grade, /^[SABCD]$/);
   assert.ok(good.scoreBreakdown.engagementScore > weak.scoreBreakdown.engagementScore);
+  assert.ok(good.scoreBreakdown.reelsViewScore > weak.scoreBreakdown.reelsViewScore);
   assert.ok(weak.riskFlags.includes('ad_memo_present'));
 });
 
@@ -873,8 +874,8 @@ test('INFLUDEX caps risky high scores with confidence and quality signals', asyn
   await saveInfludexCandidates(userId, {
     fileName: 'infludex-risk.csv',
     rows: [
-      'url,handle,campaign,category,followers,avgLikes,avgComments,recentPostAt,adMemo',
-      'https://instagram.com/suspicious,@suspicious,뷰티,가전,30000,12000,0,,광고 많음'
+      'url,handle,campaign,category,followers,avgLikes,avgComments,avgReelsViews,recentPostAt,adMemo',
+      'https://instagram.com/suspicious,@suspicious,뷰티,가전,30000,12000,0,10000,,광고 많음'
     ].join('\n')
   });
   const analyzed = await analyzeInfludexCandidates(userId);
@@ -906,7 +907,7 @@ test('INFLUDEX candidate upload reads DOCX files', async () => {
   });
 
   const zip = new AdmZip();
-  zip.addFile('word/document.xml', Buffer.from('<w:document><w:body><w:t>url,handle,category,followers,avgLikes,avgComments,recentPostAt,adMemo</w:t><w:t> https://instagram.com/docx,@docx,생활,12000,520,44,2026-05-02,</w:t></w:body></w:document>'));
+  zip.addFile('word/document.xml', Buffer.from('<w:document><w:body><w:t>url,handle,category,followers,avgLikes,avgComments,avgReelsViews,recentPostAt,adMemo</w:t><w:t> https://instagram.com/docx,@docx,생활,12000,520,44,18000,2026-05-02,</w:t></w:body></w:document>'));
   const workspace = await saveInfludexCandidates(userId, {
     fileName: 'infludex.docx',
     files: [{
@@ -918,6 +919,7 @@ test('INFLUDEX candidate upload reads DOCX files', async () => {
   assert.equal(workspace.candidates.length, 1);
   assert.equal(workspace.candidates[0].handle, 'docx');
   assert.equal(workspace.candidates[0].category, '생활');
+  assert.equal(workspace.candidates[0].avgReelsViews, 18000);
   assert.match(workspace.candidateRows, /instagram\.com\/docx/);
 });
 
@@ -941,8 +943,8 @@ test('INFLUDEX candidate upload reads DOCX table rows and keeps saved draft', as
   const zip = new AdmZip();
   zip.addFile('word/document.xml', Buffer.from([
     '<w:document><w:body><w:tbl>',
-    '<w:tr><w:tc><w:p><w:t>url</w:t></w:p></w:tc><w:tc><w:p><w:t>handle</w:t></w:p></w:tc><w:tc><w:p><w:t>category</w:t></w:p></w:tc><w:tc><w:p><w:t>followers</w:t></w:p></w:tc><w:tc><w:p><w:t>avgLikes</w:t></w:p></w:tc><w:tc><w:p><w:t>avgComments</w:t></w:p></w:tc></w:tr>',
-    '<w:tr><w:tc><w:p><w:t>https://instagram.com/table</w:t></w:p></w:tc><w:tc><w:p><w:t>@table</w:t></w:p></w:tc><w:tc><w:p><w:t>육아</w:t></w:p></w:tc><w:tc><w:p><w:t>22000</w:t></w:p></w:tc><w:tc><w:p><w:t>700</w:t></w:p></w:tc><w:tc><w:p><w:t>80</w:t></w:p></w:tc></w:tr>',
+    '<w:tr><w:tc><w:p><w:t>url</w:t></w:p></w:tc><w:tc><w:p><w:t>handle</w:t></w:p></w:tc><w:tc><w:p><w:t>category</w:t></w:p></w:tc><w:tc><w:p><w:t>followers</w:t></w:p></w:tc><w:tc><w:p><w:t>avgLikes</w:t></w:p></w:tc><w:tc><w:p><w:t>avgComments</w:t></w:p></w:tc><w:tc><w:p><w:t>avgReelsViews</w:t></w:p></w:tc></w:tr>',
+    '<w:tr><w:tc><w:p><w:t>https://instagram.com/table</w:t></w:p></w:tc><w:tc><w:p><w:t>@table</w:t></w:p></w:tc><w:tc><w:p><w:t>육아</w:t></w:p></w:tc><w:tc><w:p><w:t>22000</w:t></w:p></w:tc><w:tc><w:p><w:t>700</w:t></w:p></w:tc><w:tc><w:p><w:t>80</w:t></w:p></w:tc><w:tc><w:p><w:t>30000</w:t></w:p></w:tc></w:tr>',
     '</w:tbl></w:body></w:document>'
   ].join('')));
   const workspace = await saveInfludexCandidates(userId, {
@@ -957,6 +959,7 @@ test('INFLUDEX candidate upload reads DOCX table rows and keeps saved draft', as
   assert.equal(workspace.candidates.length, 1);
   assert.equal(workspace.candidates[0].handle, 'table');
   assert.equal(workspace.candidates[0].category, '육아');
+  assert.equal(workspace.candidates[0].avgReelsViews, 30000);
   assert.equal(savedAgain.candidates.length, 1);
 });
 

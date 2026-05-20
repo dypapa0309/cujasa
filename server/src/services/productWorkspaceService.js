@@ -390,16 +390,17 @@ function infludexDataConfidence(candidate = {}, metrics = {}) {
   let confidence = 0;
   if (candidate.url || candidate.handle) confidence += 15;
   if (candidate.category) confidence += 15;
-  if (metrics.followers > 0) confidence += 18;
-  if (metrics.likes > 0) confidence += 14;
-  if (metrics.comments > 0) confidence += 14;
+  if (metrics.followers > 0) confidence += 16;
+  if (metrics.likes > 0) confidence += 13;
+  if (metrics.comments > 0) confidence += 13;
+  if (metrics.reelsViews > 0) confidence += 12;
   if (candidate.recentPostAt) confidence += 12;
   if (candidate.displayName || candidate.description || candidate.bio) confidence += 6;
   if (candidate.targetCategory || candidate.campaignCategory) confidence += 6;
   return Math.max(0, Math.min(100, confidence));
 }
 
-function infludexQualitySignal({ followers = 0, likes = 0, comments = 0, engagementRate = 0, commentShare = 0, daysSinceRecent = null, adMemo = '' } = {}) {
+function infludexQualitySignal({ followers = 0, likes = 0, comments = 0, reelsViews = 0, engagementRate = 0, reelsViewRate = 0, commentShare = 0, daysSinceRecent = null, adMemo = '' } = {}) {
   const riskFlags = [];
   let penalty = 0;
   let gradeCap = '';
@@ -434,6 +435,20 @@ function infludexQualitySignal({ followers = 0, likes = 0, comments = 0, engagem
     gradeCap = infludexMinGrade(gradeCap || 'S', 'A');
   }
 
+  if (reelsViews > 0 && likes > reelsViews) {
+    riskFlags.push('invalid_reels_views');
+    penalty += 10;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'C');
+  } else if (followers >= 10000 && reelsViewRate < 3) {
+    riskFlags.push('low_reels_views_for_size');
+    penalty += 10;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'C');
+  } else if (followers >= 10000 && reelsViewRate < 8) {
+    riskFlags.push('weak_reels_view_rate');
+    penalty += 6;
+    gradeCap = infludexMinGrade(gradeCap || 'S', 'B');
+  }
+
   if (daysSinceRecent === null) {
     riskFlags.push('recent_post_missing');
     penalty += 6;
@@ -463,16 +478,19 @@ function analyzeInfludexCandidate(candidate = {}) {
   const followers = Math.max(0, Number(candidate.followerCount || 0));
   const likes = Math.max(0, Number(candidate.avgLikes || 0));
   const comments = Math.max(0, Number(candidate.avgComments || 0));
-  const hasScoringData = followers > 0 && (likes > 0 || comments > 0);
+  const reelsViews = Math.max(0, Number(candidate.avgReelsViews || candidate.reelsViews || 0));
+  const hasScoringData = followers > 0 && reelsViews > 0 && (likes > 0 || comments > 0);
   const engagementRate = followers > 0 ? ((likes + comments) / followers) * 100 : 0;
+  const reelsViewRate = followers > 0 ? (reelsViews / followers) * 100 : 0;
   const commentShare = likes + comments > 0 ? (comments / (likes + comments)) * 100 : 0;
   const recentTime = candidate.recentPostAt ? new Date(String(candidate.recentPostAt).replace(/[./]/g, '-')).getTime() : 0;
   const daysSinceRecent = recentTime ? Math.floor((Date.now() - recentTime) / (24 * 60 * 60 * 1000)) : null;
   const hasAdRisk = Boolean(candidate.adMemo);
-  const dataConfidence = infludexDataConfidence(candidate, { followers, likes, comments });
+  const dataConfidence = infludexDataConfidence(candidate, { followers, likes, comments, reelsViews });
   const riskFlags = [
     !candidate.category ? 'category_missing' : '',
     !followers ? 'followers_missing' : '',
+    !reelsViews ? 'reels_views_missing' : '',
     engagementRate <= 0 ? 'engagement_missing' : '',
     hasAdRisk ? 'ad_memo_present' : ''
   ].filter(Boolean);
@@ -482,7 +500,9 @@ function analyzeInfludexCandidate(candidate = {}) {
       followers,
       likes,
       comments,
+      reelsViews,
       engagementRate: 0,
+      reelsViewRate: 0,
       commentShare: 0,
       daysSinceRecent,
       score: null,
@@ -492,6 +512,7 @@ function analyzeInfludexCandidate(candidate = {}) {
       gradeReason: [
         candidate.category ? `추정 카테고리 ${candidate.category}` : '카테고리 보강 필요',
         !followers ? '팔로워 수 필요' : `팔로워 ${followers.toLocaleString('ko-KR')}`,
+        !reelsViews ? '최근 5개 릴스 평균 조회수 필요' : `최근 5개 릴스 평균 조회수 ${reelsViews.toLocaleString('ko-KR')}`,
         likes + comments <= 0 ? '좋아요/댓글 평균 필요' : '반응 지표 확인됨',
         daysSinceRecent === null ? '최근 게시일 필요' : daysSinceRecent <= 30 ? '최근 활동 양호' : '최근 활동 확인 필요'
       ],
@@ -504,18 +525,19 @@ function analyzeInfludexCandidate(candidate = {}) {
   const categorySignal = infludexCategorySignal(candidate);
   const categoryFitScore = categorySignal.score;
   const engagementScore = scoreRange(engagementRate, [[6, 30], [3.5, 25], [2, 20], [1, 13], [0.5, 7]]);
+  const reelsViewScore = scoreRange(reelsViewRate, [[80, 6], [50, 5], [25, 4], [10, 2], [3, 1]]);
   const commentScore = scoreRange(commentShare, [[8, 15], [5, 12], [2, 8], [0.5, 4]]);
   const followerScore = scoreRange(followers, [[100000, 15], [30000, 13], [10000, 10], [3000, 7], [1000, 4]]);
   const freshnessScore = daysSinceRecent === null ? 0 : daysSinceRecent <= 10 ? 10 : daysSinceRecent <= 30 ? 7 : daysSinceRecent <= 60 ? 3 : 0;
   const adPenalty = hasAdRisk ? 10 : 0;
-  const qualitySignal = infludexQualitySignal({ followers, likes, comments, engagementRate, commentShare, daysSinceRecent, adMemo: candidate.adMemo });
+  const qualitySignal = infludexQualitySignal({ followers, likes, comments, reelsViews, engagementRate, reelsViewRate, commentShare, daysSinceRecent, adMemo: candidate.adMemo });
   let gradeCap = qualitySignal.gradeCap || '';
   if (categorySignal.gradeCap) gradeCap = infludexMinGrade(gradeCap || 'S', categorySignal.gradeCap);
   if (dataConfidence < 55) gradeCap = infludexMinGrade(gradeCap || 'S', 'C');
   else if (dataConfidence < 75) gradeCap = infludexMinGrade(gradeCap || 'S', 'B');
   else if (dataConfidence < 88) gradeCap = infludexMinGrade(gradeCap || 'S', 'A');
 
-  const rawScore = Math.max(0, Math.min(100, Math.round(categoryFitScore + engagementScore + commentScore + followerScore + freshnessScore - adPenalty)));
+  const rawScore = Math.max(0, Math.min(100, Math.round(categoryFitScore + engagementScore + reelsViewScore + commentScore + followerScore + freshnessScore - adPenalty)));
   const scorePenalty = (categorySignal.penalty || 0) + qualitySignal.penalty + (dataConfidence < 75 ? 6 : 0);
   const score = Math.max(0, Math.min(98, Math.round(rawScore - scorePenalty)));
   const scoreGrade = infludexGradeFromScore(score);
@@ -523,6 +545,7 @@ function analyzeInfludexCandidate(candidate = {}) {
   const gradeReason = [
     categorySignal.status === 'match' ? `카테고리 적합` : categoryFitScore ? `카테고리 ${candidate.category}` : '카테고리 미입력',
     followers ? `팔로워 ${followers.toLocaleString('ko-KR')}` : '팔로워 미입력',
+    reelsViews ? `최근 5개 릴스 평균 조회수 ${reelsViews.toLocaleString('ko-KR')}` : '최근 5개 릴스 평균 조회수 미입력',
     engagementRate ? `반응률 ${engagementRate.toFixed(2)}%` : '반응 지표 미입력',
     commentShare ? `댓글 비중 ${commentShare.toFixed(1)}%` : '댓글 지표 미입력',
     daysSinceRecent === null ? '최근 게시일 미입력' : daysSinceRecent <= 30 ? '최근 활동 양호' : '최근 활동 확인 필요',
@@ -533,7 +556,9 @@ function analyzeInfludexCandidate(candidate = {}) {
     followers,
     likes,
     comments,
+    reelsViews,
     engagementRate: Number(engagementRate.toFixed(2)),
+    reelsViewRate: Number(reelsViewRate.toFixed(1)),
     commentShare: Number(commentShare.toFixed(1)),
     daysSinceRecent,
     score,
@@ -548,6 +573,7 @@ function analyzeInfludexCandidate(candidate = {}) {
     scoreBreakdown: {
       categoryFitScore,
       engagementScore,
+      reelsViewScore,
       commentScore,
       followerScore,
       freshnessScore,
@@ -996,7 +1022,7 @@ function parseInfludexRows(input = '', fileName = '') {
   rows.forEach((line, index) => {
     const cells = splitCandidateLine(line);
     const joined = cells.join(' ');
-    const looksLikeHeader = /url|계정|닉네임|핸들|handle|category|카테고리|followers|팔로워|likes|좋아요|댓글|이름\/설명|이메일\/문의/i.test(joined)
+    const looksLikeHeader = /url|계정|닉네임|핸들|handle|category|카테고리|followers|팔로워|likes|좋아요|댓글|reels?|views?|조회수|이름\/설명|이메일\/문의/i.test(joined)
       && !/^https?:\/\//i.test(cells[0] || '')
       && !String(cells[0] || '').startsWith('@');
     if (looksLikeHeader) {
@@ -1017,6 +1043,7 @@ function parseInfludexRows(input = '', fileName = '') {
     const followerCount = parseNumberLike(byHeader([/follower/, /팔로워/]));
     const avgLikes = parseNumberLike(byHeader([/avglike/, /likes?/, /좋아요/]));
     const avgComments = parseNumberLike(byHeader([/avgcomment/, /comments?/, /댓글/]));
+    const avgReelsViews = parseNumberLike(byHeader([/avgreels?views?/, /reels?views?/, /avgviews?/, /views?/, /릴스.*조회/, /조회수/]));
     const numbers = metaCells.map(parseNumberLike).filter((value) => value !== null);
     const displayName = byHeader([/이름/, /설명/, /name/, /description/]) || '';
     const bio = byHeader([/bio/, /소개/, /프로필/, /설명/]) || '';
@@ -1039,6 +1066,7 @@ function parseInfludexRows(input = '', fileName = '') {
       followerCount: followerCount ?? numbers[0] ?? null,
       avgLikes: avgLikes ?? numbers[1] ?? null,
       avgComments: avgComments ?? numbers[2] ?? null,
+      avgReelsViews: avgReelsViews ?? numbers[3] ?? null,
       recentPostAt,
       contactMemo,
       adMemo,
@@ -2799,6 +2827,7 @@ export async function analyzeInfludexCandidates(userId) {
       followerCount: candidate.followerCount,
       avgLikes: candidate.avgLikes,
       avgComments: candidate.avgComments,
+      avgReelsViews: candidate.avgReelsViews,
       recentPostAt: candidate.recentPostAt || '',
       displayName: candidate.displayName || '',
       description: candidate.description || '',
@@ -2807,6 +2836,7 @@ export async function analyzeInfludexCandidates(userId) {
       contactMemo: candidate.contactMemo || '',
       adMemo: candidate.adMemo || '',
       engagementRate: analysis.engagementRate,
+      reelsViewRate: analysis.reelsViewRate,
       commentShare: analysis.commentShare,
       score: analysis.score,
       grade: analysis.grade,
