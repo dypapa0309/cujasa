@@ -814,7 +814,7 @@ function summarizeInfludexProduct({ product, grant } = {}) {
   const results = Array.isArray(workspace.infludexResults) ? workspace.infludexResults.length : 0;
   const missing = Array.isArray(workspace.infludexResults) ? workspace.infludexResults.filter((item) => item.analysisStatus === 'data_missing').length : 0;
   if (results > 0) return { health: missing > 0 ? 'needs_attention' : 'ready', summary: missing > 0 ? `${missing}개 후보 데이터 보강이 필요해요.` : `${results}개 인플루언서 분석 결과가 준비됐어요.`, nextAction: '결과 다운로드', actionKey: 'infludex-download', usage };
-  if (candidates > 0) return { health: usage.remaining <= 0 ? 'needs_attention' : 'needs_setup', summary: `${candidates}개 후보가 분석 대기 중이에요.`, nextAction: usage.remaining <= 0 ? '크레딧 충전' : '링크 분석', actionKey: usage.remaining <= 0 ? 'billing' : 'infludex-grade', usage };
+  if (candidates > 0) return { health: usage.remaining <= 0 ? 'needs_attention' : 'needs_setup', summary: `${candidates}개 후보가 분석 대기 중이에요.`, nextAction: usage.remaining <= 0 ? '크레딧 충전' : '후보 분석', actionKey: usage.remaining <= 0 ? 'billing' : 'infludex-grade', usage };
   return { health: 'empty', summary: '인스타그램 후보를 업로드하면 등급 분석을 시작할 수 있어요.', nextAction: '후보 업로드', actionKey: 'infludex-upload', usage };
 }
 

@@ -6,7 +6,7 @@ import { applyPaidEntitlement } from './billingEntitlementService.js';
 
 test('applyPaidEntitlement adds INFLUDEX credits', async () => {
   const user = await createUser(`infludex-credit-${Date.now()}-${Math.random().toString(16).slice(2)}@example.com`, 'password123', 2, '인플루덱스');
-  const product = await dbGet('billing_products', { id: 'infludex_credit_49000' });
+  const product = await dbGet('billing_products', { id: 'infludex_credit_10000' });
 
   await applyPaidEntitlement({ userId: user.id, product, payment: { id: 'payment-infludex' }, paidAt: new Date('2026-05-10T00:00:00.000Z'), source: 'test' });
 

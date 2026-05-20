@@ -16,9 +16,9 @@ export const DEXOR_CREDIT_PRODUCTS = {
   dexor_credit_100000: 350
 };
 export const INFLUDEX_CREDIT_PRODUCTS = {
-  infludex_credit_19000: 30,
-  infludex_credit_49000: 100,
-  infludex_credit_99000: 250
+  infludex_credit_5000: 30,
+  infludex_credit_10000: 100,
+  infludex_credit_50000: 250
 };
 export const MONTHLY_USAGE_PRODUCTS = {
   spread_starter_monthly_49000: { productId: 'spread', limit: 3 },

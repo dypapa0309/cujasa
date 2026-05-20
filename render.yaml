@@ -93,6 +93,8 @@ services:
         value: "1"
       - key: THREADS_REPLY_LINK_MODE_ENABLED
         value: "true"
+      - key: INFLUDEX_SERVICE_OPEN
+        value: "true"
       - key: THREADS_COUPANG_LINK_MODE
         value: direct
       - key: TELEGRAM_BOT_TOKEN

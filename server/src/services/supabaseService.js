@@ -277,7 +277,7 @@ const tables = {
       created_at: now()
     },
     {
-      id: 'infludex_credit_19000',
+      id: 'infludex_credit_5000',
       app_product_id: 'infludex',
       name: 'INFLUDEX 라이트 분석 30회',
       plan: 'onetime',
@@ -288,7 +288,7 @@ const tables = {
       created_at: now()
     },
     {
-      id: 'infludex_credit_49000',
+      id: 'infludex_credit_10000',
       app_product_id: 'infludex',
       name: 'INFLUDEX 베이직 분석 100회',
       plan: 'onetime',
@@ -299,7 +299,7 @@ const tables = {
       created_at: now()
     },
     {
-      id: 'infludex_credit_99000',
+      id: 'infludex_credit_50000',
       app_product_id: 'infludex',
       name: 'INFLUDEX 프로 분석 250회',
       plan: 'onetime',

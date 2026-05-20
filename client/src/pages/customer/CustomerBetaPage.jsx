@@ -56,7 +56,7 @@ const polibotActions = [
 
 const infludexActions = [
   { key: 'infludex-upload', productId: 'infludex', label: '후보 업로드', icon: Upload, hint: '인스타그램 계정 URL, 카테고리, 반응 지표를 넣어요.' },
-  { key: 'infludex-grade', productId: 'infludex', label: '링크 분석', icon: Search, hint: 'S/A/B/C/D 등급과 캠페인 선정 기준을 확인해요.' },
+  { key: 'infludex-grade', productId: 'infludex', label: '후보 분석', icon: Search, hint: 'S/A/B/C/D 등급과 캠페인 선정 기준을 확인해요.' },
   { key: 'infludex-download', productId: 'infludex', label: '결과 다운로드', icon: Download, hint: '분석 결과를 CSV로 내려받아요.' }
 ];
 
@@ -3506,20 +3506,20 @@ function buildWorkspacePricingCatalog({ productsById, cujasaPlans, currentUser }
       description: '인스타그램 후보 1명 단위로 등급, 적합도, 리스크를 분석하는 사용량 기반 상품입니다.',
       usage: usageFor('infludex'),
       plans: [
-        pricingPlan(productsById, 'infludex_credit_19000', { name: 'INFLUDEX 라이트 분석 30회', app_product_id: 'infludex', amount: 5000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+        pricingPlan(productsById, 'infludex_credit_5000', { name: 'INFLUDEX 라이트 분석 30회', app_product_id: 'infludex', amount: 5000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
           title: '라이트 분석',
           caption: '작은 후보군 검토',
           buttonLabel: '30회 충전',
           features: ['후보 분석 30회', '등급/리스크 확인', '가상계좌 입금 확인 후 반영']
         }),
-        pricingPlan(productsById, 'infludex_credit_49000', { name: 'INFLUDEX 베이직 분석 100회', app_product_id: 'infludex', amount: 10000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+        pricingPlan(productsById, 'infludex_credit_10000', { name: 'INFLUDEX 베이직 분석 100회', app_product_id: 'infludex', amount: 10000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
           title: '베이직 분석',
           caption: '캠페인 후보 선별용',
           badge: '추천',
           buttonLabel: '100회 충전',
           features: ['후보 분석 100회', '캠페인 후보 비교', '가상계좌 입금 확인 후 반영']
         }),
-        pricingPlan(productsById, 'infludex_credit_99000', { name: 'INFLUDEX 프로 분석 250회', app_product_id: 'infludex', amount: 50000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+        pricingPlan(productsById, 'infludex_credit_50000', { name: 'INFLUDEX 프로 분석 250회', app_product_id: 'infludex', amount: 50000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
           title: '프로 분석',
           caption: '대량 후보 검토',
           buttonLabel: '250회 충전',
@@ -6610,9 +6610,9 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
       const next = await api.post('/api/product-workspace/infludex/analyze');
       setWorkspace(next);
       await reloadCurrentUser?.();
-      toast('링크 분석을 완료했어요.', 'success');
+      toast('후보 분석을 완료했어요.', 'success');
     } catch (err) {
-      toast(err.message || '링크 분석에 실패했어요.', 'error');
+      toast(err.message || '후보 분석에 실패했어요.', 'error');
     } finally {
       setAnalyzing(false);
     }
@@ -6634,7 +6634,7 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
 
   return (
     <>
-      <PanelCard title="링크 분석">
+      <PanelCard title="후보 분석">
         <ProductUsageStrip usage={usage} />
         {results.length > 0 && (
           <div className="mb-3 grid grid-cols-3 gap-2">
@@ -6671,7 +6671,7 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
       </PanelCard>
       <PanelCard title="분석 결과">
         {results.length === 0 ? (
-          <Notice>후보를 저장하고 링크 분석을 실행하면 결과가 표시돼요.</Notice>
+          <Notice>후보를 저장하고 후보 분석을 실행하면 결과가 표시돼요.</Notice>
         ) : (
           <div className="grid gap-2">
             {scoredResults.map((item) => (
