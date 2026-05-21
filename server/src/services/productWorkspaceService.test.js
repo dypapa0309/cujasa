@@ -1137,9 +1137,10 @@ test('INFLUDEX URL-only analysis can score candidates through Apify profile enri
         followersCount: 32000,
         postsCount: 300,
         latestPosts: [
-          { likesCount: 1500, commentsCount: 120, videoViewCount: 48000, timestamp: '2026-05-10T00:00:00.000Z' },
-          { likesCount: 1300, commentsCount: 110, videoViewCount: 42000, timestamp: '2026-05-08T00:00:00.000Z' },
-          { likesCount: 1200, commentsCount: 90, videoViewCount: 39000, timestamp: '2026-05-06T00:00:00.000Z' }
+          { type: 'Image', likesCount: 9000, commentsCount: 900, timestamp: '2026-05-11T00:00:00.000Z' },
+          { productType: 'clips', likesCount: 1500, commentsCount: 120, videoViewCount: 48000, timestamp: '2026-05-10T00:00:00.000Z' },
+          { url: 'https://www.instagram.com/reel/test2/', likesCount: 1300, commentsCount: 110, videoViewCount: 42000, timestamp: '2026-05-08T00:00:00.000Z' },
+          { mediaType: 'GraphVideo', likesCount: 1200, commentsCount: 90, videoViewCount: 39000, timestamp: '2026-05-06T00:00:00.000Z' }
         ]
       }]
     };
@@ -1157,9 +1158,11 @@ test('INFLUDEX URL-only analysis can score candidates through Apify profile enri
     assert.equal(target.enrichmentStatus, 'apify_profile');
     assert.equal(target.followerCount, 32000);
     assert.equal(target.category, '맛집');
-    assert.equal(target.avgLikes, 1333);
-    assert.equal(target.avgComments, 107);
-    assert.equal(target.avgReelsViews, 43000);
+    assert.equal(target.avgLikes, 1400);
+    assert.equal(target.avgComments, 115);
+    assert.equal(target.avgReelsViews, 45000);
+    assert.equal(target.recentReelsCount, 2);
+    assert.equal(target.recentReelsMetricSource, 'recent_reels');
     assert.equal(target.analysisStatus, 'scored');
     assert.match(target.grade, /^[SABCD]$/);
   } finally {

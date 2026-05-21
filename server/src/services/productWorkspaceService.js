@@ -435,6 +435,27 @@ function firstValue(source = {}, keys = []) {
   return '';
 }
 
+function apifyPostTimestamp(post = {}) {
+  const value = firstValue(post, ['timestamp', 'takenAt', 'takenAtTimestamp', 'date', 'createdAt']);
+  if (!value) return '';
+  if (typeof value === 'number') return new Date(value * (value < 10_000_000_000 ? 1000 : 1)).toISOString().slice(0, 10);
+  return String(value).slice(0, 10);
+}
+
+function apifyPostViewCount(post = {}) {
+  const value = parseNumberLike(firstValue(post, ['videoViewCount', 'videoPlayCount', 'viewsCount', 'viewCount', 'views', 'playCount', 'plays']));
+  return Number.isFinite(value) ? value : null;
+}
+
+function apifyPostIsReel(post = {}) {
+  const productType = String(firstValue(post, ['productType', 'product_type', 'mediaProductType']) || '').toLowerCase();
+  const mediaType = String(firstValue(post, ['type', 'mediaType', '__typename']) || '').toLowerCase();
+  const url = String(firstValue(post, ['url', 'shortCodeUrl', 'displayUrl']) || '').toLowerCase();
+  const caption = String(firstValue(post, ['caption', 'text']) || '').toLowerCase();
+  if (/reels?|clips?/.test(productType) || /reels?|clips?/.test(mediaType) || /\/reel\//.test(url)) return true;
+  return /reels?|릴스/.test(caption) && apifyPostViewCount(post) !== null;
+}
+
 function normalizeApifyInstagramProfile(item = {}) {
   const nested = item.profile && typeof item.profile === 'object' ? item.profile : {};
   const source = { ...nested, ...item };
@@ -447,20 +468,17 @@ function normalizeApifyInstagramProfile(item = {}) {
     ...(Array.isArray(source.latestPosts) ? source.latestPosts : []),
     ...(Array.isArray(source.posts) ? source.posts : []),
     ...(Array.isArray(source.latestIgtvVideos) ? source.latestIgtvVideos : [])
-  ].filter((post) => post && typeof post === 'object').slice(0, 12);
-  const metricPosts = latestPosts.slice(0, 5);
+  ].filter((post) => post && typeof post === 'object').slice(0, 24);
+  const recentReels = latestPosts.filter(apifyPostIsReel).slice(0, 5);
+  const metricPosts = recentReels.length ? recentReels : latestPosts.filter((post) => apifyPostViewCount(post) !== null).slice(0, 5);
   const sumMetric = (keys = []) => metricPosts.reduce((sum, post) => {
     const value = parseNumberLike(firstValue(post, keys));
     return sum + (Number.isFinite(value) ? value : 0);
   }, 0);
   const avgLikes = metricPosts.length ? Math.round(sumMetric(['likesCount', 'likes', 'likes_count']) / metricPosts.length) : null;
   const avgComments = metricPosts.length ? Math.round(sumMetric(['commentsCount', 'comments', 'comments_count']) / metricPosts.length) : null;
-  const avgReelsViews = metricPosts.length ? Math.round(sumMetric(['videoViewCount', 'videoPlayCount', 'videoViewCount', 'viewsCount', 'views', 'playCount', 'plays']) / metricPosts.length) : null;
-  const latestTimestamp = latestPosts
-    .map((post) => firstValue(post, ['timestamp', 'takenAt', 'takenAtTimestamp', 'date', 'createdAt']))
-    .filter(Boolean)
-    .map((value) => typeof value === 'number' ? new Date(value * (value < 10_000_000_000 ? 1000 : 1)).toISOString().slice(0, 10) : String(value).slice(0, 10))
-    .find(Boolean) || '';
+  const avgReelsViews = metricPosts.length ? Math.round(metricPosts.reduce((sum, post) => sum + (apifyPostViewCount(post) || 0), 0) / metricPosts.length) : null;
+  const latestTimestamp = (metricPosts.length ? metricPosts : latestPosts).map(apifyPostTimestamp).filter(Boolean).find(Boolean) || '';
   const profile = {
     handle: username,
     displayName,
@@ -471,6 +489,8 @@ function normalizeApifyInstagramProfile(item = {}) {
     avgLikes,
     avgComments,
     avgReelsViews: avgReelsViews && avgReelsViews > 0 ? avgReelsViews : null,
+    recentReelsCount: recentReels.length,
+    recentReelsMetricSource: recentReels.length ? 'recent_reels' : metricPosts.length ? 'recent_video_posts' : '',
     recentPostAt: latestTimestamp,
     category: inferInfludexCategoryFromProfile({ displayName, bio, description: bio }),
     enrichmentStatus: 'apify_profile'
@@ -588,6 +608,8 @@ async function enrichInfludexCandidates(candidates = []) {
         avgLikes: candidate.avgLikes ?? profile.avgLikes ?? null,
         avgComments: candidate.avgComments ?? profile.avgComments ?? null,
         avgReelsViews: candidate.avgReelsViews ?? profile.avgReelsViews ?? null,
+        recentReelsCount: candidate.recentReelsCount ?? profile.recentReelsCount ?? null,
+        recentReelsMetricSource: candidate.recentReelsMetricSource || profile.recentReelsMetricSource || '',
         recentPostAt: candidate.recentPostAt || profile.recentPostAt || '',
         postsCount: candidate.postsCount ?? profile.postsCount ?? null,
         enrichmentStatus: profile.enrichmentStatus || candidate.enrichmentStatus || ''
@@ -3078,6 +3100,8 @@ export async function analyzeInfludexCandidates(userId) {
       avgLikes: candidate.avgLikes,
       avgComments: candidate.avgComments,
       avgReelsViews: candidate.avgReelsViews,
+      recentReelsCount: candidate.recentReelsCount ?? null,
+      recentReelsMetricSource: candidate.recentReelsMetricSource || '',
       recentPostAt: candidate.recentPostAt || '',
       displayName: candidate.displayName || '',
       description: candidate.description || '',

@@ -7226,7 +7226,8 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-zinc-500">
                   <span>{item.decision || (Number(item.score || 0) >= 72 ? '추천' : Number(item.score || 0) >= 58 ? '검토' : '추가 확인')}</span>
-                  {Number(item.avgReelsViews || item.reelsViews || 0) > 0 && <span>릴스 평균 조회 {Number(item.avgReelsViews || item.reelsViews || 0).toLocaleString('ko-KR')}</span>}
+                  {Number(item.avgReelsViews || item.reelsViews || 0) > 0 && <span>최근 5개 릴스 평균 조회 {Number(item.avgReelsViews || item.reelsViews || 0).toLocaleString('ko-KR')}</span>}
+                  {Number(item.recentReelsCount || 0) > 0 && <span>릴스 {Number(item.recentReelsCount).toLocaleString('ko-KR')}개 기준</span>}
                   {item.recentPostAt && <span>최근 활동 확인</span>}
                 </div>
                 {item.riskFlags?.length > 0 && <div className="mt-2 text-[11px] font-bold text-amber-400">{[...new Set(item.riskFlags.map(infludexRiskLabel))].slice(0, 2).join(' · ')}</div>}
@@ -7272,7 +7273,7 @@ function InfludexDownloadPanel({ onOpenUpload }) {
   }, [toast]);
 
   const downloadCsv = () => {
-    const header = ['url', 'handle', 'displayName', 'category', 'grade', 'score', 'decision', 'status', 'followers', 'avgLikes', 'avgComments', 'avgReelsViews', 'recentPostAt', 'contactMemo', 'summary'];
+    const header = ['url', 'handle', 'displayName', 'category', 'grade', 'score', 'decision', 'status', 'followers', 'recent5ReelsAvgLikes', 'recent5ReelsAvgComments', 'recent5ReelsAvgViews', 'recentReelsCount', 'recentReelsMetricSource', 'recentPostAt', 'contactMemo', 'summary'];
     const rows = results.map((item) => [
       item.url,
       item.handle,
@@ -7286,6 +7287,8 @@ function InfludexDownloadPanel({ onOpenUpload }) {
       item.avgLikes,
       item.avgComments,
       item.avgReelsViews || item.reelsViews,
+      item.recentReelsCount,
+      item.recentReelsMetricSource,
       item.recentPostAt,
       item.contactMemo,
       [...new Set((item.riskFlags || []).map(infludexRiskLabel))].slice(0, 2).join(' | ') || (item.gradeReason || item.reasons)?.slice(0, 2).join(' | ') || ''
@@ -7310,7 +7313,7 @@ function InfludexDownloadPanel({ onOpenUpload }) {
             <div className="font-black text-zinc-200">INFLUDEX 주요 기준</div>
             <div className="mt-2 grid gap-1.5">
               <div>반응률 = 평균 좋아요+댓글 / 팔로워</div>
-              <div>릴스 조회율 = 평균 릴스 조회수 / 팔로워</div>
+              <div>릴스 조회율 = 최근 5개 릴스 평균 조회수 / 팔로워</div>
               <div>댓글 비중 = 평균 댓글 / 전체 반응</div>
               <div>최근 게시일, 카테고리 적합도, 팔로워 규모를 함께 반영</div>
               <div>대형 계정의 낮은 반응률/조회율, 댓글 부족, 릴스 조회수 누락은 감점 및 등급 상한</div>
