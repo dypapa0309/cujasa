@@ -7,6 +7,13 @@ const LANDING_URL = process.env.LANDING_URL || 'https://jasain.kr';
 const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3000';
 const BLOG_IMAGE_URL = process.env.BLOG_IMAGE_URL || `${LANDING_URL}/images/products.png`;
 const BLOG_AUTHOR = 'CUJASA';
+const DEFAULT_BLOG_KEYWORDS = [
+  '쿠팡 파트너스 자동화',
+  '쿠팡 파트너스 부업',
+  'CUJASA',
+  '자사인',
+  '추천 콘텐츠 자동화'
+];
 
 function formatDate(dateStr) {
   return new Date(dateStr).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
@@ -29,6 +36,14 @@ function seoJson(data) {
   return JSON.stringify(data).replaceAll('<', '\\u003c');
 }
 
+function normalizeKeywords(value = []) {
+  const source = Array.isArray(value) ? value : [];
+  return [...new Set([...source, ...DEFAULT_BLOG_KEYWORDS]
+    .map((item) => String(item || '').trim())
+    .filter(Boolean))]
+    .slice(0, 12);
+}
+
 function cujasaBanner() {
   return `
   <div style="margin:48px 0 0;padding:32px;background:linear-gradient(135deg,#1e1e2e,#2d1a1a);border-radius:16px;color:#fff;text-align:center;">
@@ -43,11 +58,29 @@ function cujasaBanner() {
   </div>`;
 }
 
-function blogLayout({ title, metaDescription, canonical, body, ogType = 'article', publishedAt, modifiedAt, structuredData, siteName = 'CUJASA 블로그', homeHref = `${APP_BASE_URL}/blog`, navCta = '자동화 프로그램 →' }) {
+function blogLayout({
+  title,
+  metaDescription,
+  canonical,
+  body,
+  ogType = 'article',
+  publishedAt,
+  modifiedAt,
+  structuredData,
+  siteName = 'CUJASA 블로그',
+  homeHref = `${APP_BASE_URL}/blog`,
+  navCta = '자동화 프로그램 →',
+  keywords = DEFAULT_BLOG_KEYWORDS,
+  imageUrl = BLOG_IMAGE_URL
+}) {
   const safeTitle = escapeHtml(title);
   const safeDescription = escapeHtml(metaDescription);
   const safeCanonical = escapeHtml(canonical);
-  const safeImage = escapeHtml(BLOG_IMAGE_URL);
+  const safeImage = escapeHtml(imageUrl || BLOG_IMAGE_URL);
+  const safeKeywords = escapeHtml(normalizeKeywords(keywords).join(', '));
+  const articleTags = normalizeKeywords(keywords)
+    .map((keyword) => `<meta property="article:tag" content="${escapeHtml(keyword)}">`)
+    .join('\n  ');
   const jsonLd = structuredData ? seoJson(structuredData) : null;
   return `<!DOCTYPE html>
 <html lang="ko">
@@ -56,6 +89,8 @@ function blogLayout({ title, metaDescription, canonical, body, ogType = 'article
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${safeTitle}</title>
   <meta name="description" content="${safeDescription}">
+  <meta name="keywords" content="${safeKeywords}">
+  <meta name="author" content="${escapeHtml(BLOG_AUTHOR)}">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="${safeCanonical}">
   <meta property="og:type" content="${ogType}">
@@ -68,6 +103,7 @@ function blogLayout({ title, metaDescription, canonical, body, ogType = 'article
   <meta property="og:site_name" content="${escapeHtml(siteName)}">
   ${publishedAt ? `<meta property="article:published_time" content="${escapeHtml(new Date(publishedAt).toISOString())}">` : ''}
   ${modifiedAt ? `<meta property="article:modified_time" content="${escapeHtml(new Date(modifiedAt).toISOString())}">` : ''}
+  ${ogType === 'article' ? articleTags : ''}
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${safeTitle}">
   <meta name="twitter:description" content="${safeDescription}">
@@ -150,6 +186,7 @@ router.get('/', async (req, res, next) => {
       metaDescription: '쿠팡 파트너스 수익화 꿀팁, 추천 상품 정보를 AI가 자동으로 작성합니다.',
       canonical,
       ogType: 'website',
+      keywords: ['쿠팡 파트너스 블로그', '쿠팡 파트너스 자동화', 'CUJASA', '자사인'],
       structuredData: {
         '@context': 'https://schema.org',
         '@type': 'Blog',
@@ -157,6 +194,7 @@ router.get('/', async (req, res, next) => {
         description: '쿠팡 파트너스 수익화 꿀팁, 추천 상품 정보를 AI가 자동으로 작성합니다.',
         url: canonical,
         image: BLOG_IMAGE_URL,
+        keywords: normalizeKeywords(['쿠팡 파트너스 블로그', '쿠팡 파트너스 자동화']),
         publisher: {
           '@type': 'Organization',
           name: BLOG_AUTHOR,
@@ -195,19 +233,21 @@ router.get('/a/:blogSlug', async (req, res, next) => {
 
     const canonical = `${APP_BASE_URL}/blog/a/${encodeURIComponent(account.blog_slug)}`;
     res.type('html').send(blogLayout({
-      title: `${blogTitle} — JASAIN`,
-      metaDescription: `${blogTitle}에 게시된 추천 콘텐츠를 확인하세요.`,
+      title: `${blogTitle} | 쿠팡 파트너스 자동화 콘텐츠`,
+      metaDescription: `${blogTitle}에서 쿠팡 파트너스 자동화, 추천 콘텐츠 운영, CUJASA 활용법을 확인하세요.`,
       canonical,
       ogType: 'website',
       siteName: blogTitle,
       homeHref,
+      keywords: [blogTitle, account.content_scope, '쿠팡 파트너스 자동화', 'CUJASA', '자사인 블로그'],
       structuredData: {
         '@context': 'https://schema.org',
         '@type': 'Blog',
         name: blogTitle,
-        description: `${blogTitle}에 게시된 추천 콘텐츠입니다.`,
+        description: `${blogTitle}에서 쿠팡 파트너스 자동화와 추천 콘텐츠 운영법을 다룹니다.`,
         url: canonical,
         image: BLOG_IMAGE_URL,
+        keywords: normalizeKeywords([blogTitle, account.content_scope, '추천 콘텐츠 운영']),
         publisher: {
           '@type': 'Organization',
           name: BLOG_AUTHOR,
@@ -230,6 +270,8 @@ router.get('/a/:blogSlug/:postSlug', async (req, res, next) => {
     const canonical = `${APP_BASE_URL}/blog/a/${encodeURIComponent(account.blog_slug)}/${encodeURIComponent(post.slug)}`;
     const title = `${post.title} | ${blogTitle}`;
     const metaDescription = post.meta_description || stripHtml(post.content).slice(0, 150);
+    const keywords = normalizeKeywords([...(post.seo_keywords || []), ...(post.tags || []), account.content_scope]);
+    const imageUrl = post.cover_image_url || BLOG_IMAGE_URL;
     const body = `
       <div class="breadcrumb"><a href="${homeHref}">블로그</a> / ${escapeHtml(post.title)}</div>
       <div class="post-header">
@@ -246,6 +288,8 @@ router.get('/a/:blogSlug/:postSlug', async (req, res, next) => {
       canonical,
       siteName: blogTitle,
       homeHref,
+      keywords,
+      imageUrl,
       publishedAt: post.published_at,
       modifiedAt: post.updated_at || post.published_at,
       structuredData: {
@@ -253,7 +297,8 @@ router.get('/a/:blogSlug/:postSlug', async (req, res, next) => {
         '@type': 'BlogPosting',
         headline: post.title,
         description: metaDescription,
-        image: BLOG_IMAGE_URL,
+        image: imageUrl,
+        keywords,
         datePublished: new Date(post.published_at).toISOString(),
         dateModified: new Date(post.updated_at || post.published_at).toISOString(),
         author: {
@@ -285,6 +330,8 @@ router.get('/:slug', async (req, res, next) => {
     const canonical = `${APP_BASE_URL}/blog/${post.slug}`;
     const title = `${post.title} | CUJASA 블로그`;
     const metaDescription = post.meta_description || stripHtml(post.content).slice(0, 150);
+    const keywords = normalizeKeywords([...(post.seo_keywords || []), ...(post.tags || [])]);
+    const imageUrl = post.cover_image_url || BLOG_IMAGE_URL;
     const body = `
       <div class="breadcrumb"><a href="${APP_BASE_URL}/blog">블로그</a> / ${escapeHtml(post.title)}</div>
       <div class="post-header">
@@ -299,6 +346,8 @@ router.get('/:slug', async (req, res, next) => {
       title,
       metaDescription,
       canonical,
+      keywords,
+      imageUrl,
       publishedAt: post.published_at,
       modifiedAt: post.updated_at || post.published_at,
       structuredData: {
@@ -306,7 +355,8 @@ router.get('/:slug', async (req, res, next) => {
         '@type': 'BlogPosting',
         headline: post.title,
         description: metaDescription,
-        image: BLOG_IMAGE_URL,
+        image: imageUrl,
+        keywords,
         datePublished: new Date(post.published_at).toISOString(),
         dateModified: new Date(post.updated_at || post.published_at).toISOString(),
         author: {

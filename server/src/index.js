@@ -34,7 +34,7 @@ import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { processCoreDueQueue } from './services/cujasaCoreService.js';
 import { runDueMetricJobs } from './services/metricsJobService.js';
-import { listBlogPosts } from './services/blogService.js';
+import { listAccountBlogPosts, listBlogPosts } from './services/blogService.js';
 import { refreshExpiringThreadsTokens } from './services/threadsOAuthService.js';
 import { expireDueEntitlements } from './services/billingEntitlementService.js';
 import { sendOpsAlert } from './services/notificationService.js';
@@ -44,6 +44,7 @@ import { dailyPipelineStatus, runDailyPipelineOnce } from './services/schedulerR
 import { replyLinkModeStatus } from './utils/replyLinkMode.js';
 import { getPublicLeadForm } from './services/automationStudioService.js';
 import { loadSystemSettingsIntoEnv } from './services/systemSettingsService.js';
+import { dbList } from './services/supabaseService.js';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -62,6 +63,15 @@ const allowedOrigins = new Set([
   'https://cujasa.vercel.app',
   'https://cujasa.onrender.com'
 ]);
+
+function xmlEscape(value = '') {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
+}
 
 function isAllowedOrigin(origin = '') {
   const normalized = origin.replace(/\/$/, '');
@@ -174,6 +184,17 @@ app.use('/api/public/lead-forms', leadFormsRouter);
 app.use('/api/support', supportRouter);
 app.post('/api/webhooks/toss', tossWebhook);
 
+app.get('/robots.txt', (req, res) => {
+  const baseUrl = process.env.APP_BASE_URL || `http://localhost:${port}`;
+  res.type('text/plain').send([
+    'User-agent: *',
+    'Allow: /blog',
+    'Disallow: /api/',
+    'Disallow: /admin',
+    `Sitemap: ${baseUrl}/sitemap.xml`
+  ].join('\n'));
+});
+
 // sitemap.xml (블로그 글 포함 자동 생성)
 app.get('/sitemap.xml', async (req, res) => {
   try {
@@ -181,18 +202,40 @@ app.get('/sitemap.xml', async (req, res) => {
     const posts = await listBlogPosts({ limit: 1000 });
     const postUrls = posts.map((p) => `
   <url>
-    <loc>${baseUrl}/blog/${p.slug}</loc>
+    <loc>${xmlEscape(`${baseUrl}/blog/${encodeURIComponent(p.slug)}`)}</loc>
     <lastmod>${new Date(p.published_at).toISOString().split('T')[0]}</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>`).join('');
+    const accountBlogs = await dbList('accounts', { blog_enabled: true, status: 'active' }, {
+      select: 'id,blog_slug,blog_created_at,updated_at'
+    });
+    const accountBlogUrls = [];
+    for (const account of accountBlogs.filter((row) => row.blog_slug)) {
+      const blogUrl = `${baseUrl}/blog/a/${encodeURIComponent(account.blog_slug)}`;
+      accountBlogUrls.push(`
+  <url>
+    <loc>${xmlEscape(blogUrl)}</loc>
+    <lastmod>${new Date(account.updated_at || account.blog_created_at || Date.now()).toISOString().split('T')[0]}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
+  </url>`);
+      const { posts: accountPosts } = await listAccountBlogPosts(account.blog_slug, { limit: 1000 });
+      accountBlogUrls.push(...accountPosts.map((p) => `
+  <url>
+    <loc>${xmlEscape(`${blogUrl}/${encodeURIComponent(p.slug)}`)}</loc>
+    <lastmod>${new Date(p.updated_at || p.published_at).toISOString().split('T')[0]}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>`));
+    }
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>${baseUrl}/blog</loc>
+    <loc>${xmlEscape(`${baseUrl}/blog`)}</loc>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
-  </url>${postUrls}
+  </url>${postUrls}${accountBlogUrls.join('')}
 </urlset>`);
   } catch {
     res.status(500).send('sitemap error');
