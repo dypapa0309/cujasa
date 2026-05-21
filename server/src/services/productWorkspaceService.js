@@ -368,6 +368,235 @@ function normalizeInfludexText(value = '') {
   return String(value || '').toLowerCase().replace(/\s+/g, '');
 }
 
+function htmlEntityDecode(value = '') {
+  return String(value || '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+function extractHtmlMetaContent(html = '', patterns = []) {
+  for (const pattern of patterns) {
+    const match = String(html || '').match(pattern);
+    if (match?.[1]) return htmlEntityDecode(match[1]);
+  }
+  return '';
+}
+
+function inferInfludexCategoryFromProfile(profile = {}) {
+  const text = normalizeInfludexText([profile.displayName, profile.bio, profile.description].filter(Boolean).join(' '));
+  if (!text) return '';
+  const categories = [
+    ['맛집', /맛집|먹방|푸드|음식|요리|카페|디저트|mukbang|food|cafe/],
+    ['뷰티', /뷰티|화장품|스킨케어|메이크업|코스메틱|beauty|makeup|cosmetic/],
+    ['육아', /육아|맘|엄마|아기|아이|키즈|베이비|mom|baby|kids/],
+    ['패션', /패션|옷|코디|룩북|fashion|style|ootd/],
+    ['여행', /여행|호텔|숙소|캠핑|travel|trip|hotel/],
+    ['생활/리빙', /리빙|살림|집밥|인테리어|생활|홈|living|home/],
+    ['반려동물', /강아지|고양이|반려|댕댕|냥|pet|dog|cat/],
+    ['건강', /운동|헬스|필라테스|요가|다이어트|건강|fitness|health|pilates|yoga/],
+    ['마케팅/브랜딩', /마케팅|브랜딩|브랜드|콘텐츠|marketing|branding|creator/],
+    ['부업/수익화', /부업|수익|n잡|재테크|머니|money|sidejob/]
+  ];
+  return categories.find(([, pattern]) => pattern.test(text))?.[0] || '';
+}
+
+function instagramHandleFromCandidate(candidate = {}) {
+  const fromHandle = String(candidate.handle || '').replace(/^@/, '').trim();
+  if (fromHandle) return fromHandle;
+  return String(candidate.url || '').match(/instagram\.com\/([^/?#]+)/i)?.[1] || '';
+}
+
+function parseInstagramCount(value = '') {
+  const text = String(value || '').replace(/,/g, '').trim();
+  const followerMatch = text.match(/([\d.]+)\s*([kKmM]|만|천|억)?\s*(?:Followers?|팔로워)/i)
+    || text.match(/(?:Followers?|팔로워)\s*([\d.]+)\s*([kKmM]|만|천|억)?/i);
+  if (!followerMatch) return null;
+  return parseNumberLike(`${followerMatch[1]}${followerMatch[2] || ''}`);
+}
+
+function instagramEnrichmentEnabled() {
+  if (process.env.INFLUDEX_PROFILE_ENRICHMENT === 'false') return false;
+  if (process.env.NODE_ENV === 'test' && process.env.INFLUDEX_PROFILE_ENRICHMENT !== 'true') return false;
+  return typeof fetch === 'function';
+}
+
+function infludexApifyToken() {
+  return String(process.env.APIFY_API_TOKEN || process.env.INFLUDEX_APIFY_API_TOKEN || '').trim();
+}
+
+function firstValue(source = {}, keys = []) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return '';
+}
+
+function normalizeApifyInstagramProfile(item = {}) {
+  const nested = item.profile && typeof item.profile === 'object' ? item.profile : {};
+  const source = { ...nested, ...item };
+  const username = String(firstValue(source, ['username', 'userName', 'handle', 'id']) || '').replace(/^@/, '');
+  const displayName = String(firstValue(source, ['fullName', 'full_name', 'name', 'displayName']) || '').trim();
+  const bio = String(firstValue(source, ['biography', 'bio', 'description']) || '').trim();
+  const followerCount = parseNumberLike(firstValue(source, ['followersCount', 'followers', 'followerCount', 'followedByCount']));
+  const postsCount = parseNumberLike(firstValue(source, ['postsCount', 'posts', 'mediaCount']));
+  const latestPosts = [
+    ...(Array.isArray(source.latestPosts) ? source.latestPosts : []),
+    ...(Array.isArray(source.posts) ? source.posts : []),
+    ...(Array.isArray(source.latestIgtvVideos) ? source.latestIgtvVideos : [])
+  ].filter((post) => post && typeof post === 'object').slice(0, 12);
+  const metricPosts = latestPosts.slice(0, 5);
+  const sumMetric = (keys = []) => metricPosts.reduce((sum, post) => {
+    const value = parseNumberLike(firstValue(post, keys));
+    return sum + (Number.isFinite(value) ? value : 0);
+  }, 0);
+  const avgLikes = metricPosts.length ? Math.round(sumMetric(['likesCount', 'likes', 'likes_count']) / metricPosts.length) : null;
+  const avgComments = metricPosts.length ? Math.round(sumMetric(['commentsCount', 'comments', 'comments_count']) / metricPosts.length) : null;
+  const avgReelsViews = metricPosts.length ? Math.round(sumMetric(['videoViewCount', 'videoPlayCount', 'videoViewCount', 'viewsCount', 'views', 'playCount', 'plays']) / metricPosts.length) : null;
+  const latestTimestamp = latestPosts
+    .map((post) => firstValue(post, ['timestamp', 'takenAt', 'takenAtTimestamp', 'date', 'createdAt']))
+    .filter(Boolean)
+    .map((value) => typeof value === 'number' ? new Date(value * (value < 10_000_000_000 ? 1000 : 1)).toISOString().slice(0, 10) : String(value).slice(0, 10))
+    .find(Boolean) || '';
+  const profile = {
+    handle: username,
+    displayName,
+    bio,
+    description: bio || displayName,
+    followerCount,
+    postsCount,
+    avgLikes,
+    avgComments,
+    avgReelsViews: avgReelsViews && avgReelsViews > 0 ? avgReelsViews : null,
+    recentPostAt: latestTimestamp,
+    category: inferInfludexCategoryFromProfile({ displayName, bio, description: bio }),
+    enrichmentStatus: 'apify_profile'
+  };
+  return Object.fromEntries(Object.entries(profile).filter(([, value]) => value !== null && value !== ''));
+}
+
+async function fetchInfludexProfilesFromApify(candidates = []) {
+  const token = infludexApifyToken();
+  if (!token || !instagramEnrichmentEnabled()) return new Map();
+  const handles = candidates.map(instagramHandleFromCandidate).filter(Boolean);
+  if (!handles.length) return new Map();
+  const actorId = encodeURIComponent(process.env.INFLUDEX_APIFY_ACTOR || 'apify/instagram-profile-scraper').replace('%2F', '~');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.max(10_000, Number(process.env.INFLUDEX_APIFY_TIMEOUT_MS || 120_000)));
+  try {
+    const response = await fetch(`https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${encodeURIComponent(token)}&clean=true`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ usernames: [...new Set(handles)] })
+    });
+    if (!response.ok) return new Map(handles.map((handle) => [handle, { enrichmentStatus: `apify_http_${response.status}` }]));
+    const items = await response.json();
+    const profiles = new Map();
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      const profile = normalizeApifyInstagramProfile(item);
+      if (profile.handle) profiles.set(profile.handle, profile);
+    });
+    return profiles;
+  } catch (error) {
+    return new Map(handles.map((handle) => [handle, { enrichmentStatus: error?.name === 'AbortError' ? 'apify_timeout' : 'apify_failed' }]));
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function shouldEnrichInfludexCandidate(candidate = {}) {
+  const handle = instagramHandleFromCandidate(candidate);
+  if (!handle) return false;
+  const hasFollowers = Number(candidate.followerCount || 0) > 0;
+  const hasProfileText = Boolean(candidate.category || candidate.displayName || candidate.bio || candidate.description);
+  return !hasFollowers || !hasProfileText;
+}
+
+async function fetchInfludexInstagramProfile(candidate = {}) {
+  if (!instagramEnrichmentEnabled() || !shouldEnrichInfludexCandidate(candidate)) return {};
+  const handle = instagramHandleFromCandidate(candidate);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 7000);
+  try {
+    const response = await fetch(`https://www.instagram.com/${encodeURIComponent(handle)}/`, {
+      signal: controller.signal,
+      headers: {
+        'accept': 'text/html,application/xhtml+xml',
+        'accept-language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36'
+      }
+    });
+    if (!response.ok) return { enrichmentStatus: `http_${response.status}` };
+    const html = await response.text();
+    const description = extractHtmlMetaContent(html, [
+      /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i,
+      /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i
+    ]);
+    const title = extractHtmlMetaContent(html, [
+      /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i,
+      /<title[^>]*>([^<]+)<\/title>/i
+    ]);
+    const biography = htmlEntityDecode(html.match(/"biography"\s*:\s*"([^"]*)"/)?.[1] || '').replace(/\\n/g, '\n');
+    const displayName = title.replace(/\s*\(@[^)]*\).*$/i, '').replace(/\s*•\s*Instagram.*$/i, '').trim();
+    const followerCount = parseInstagramCount(description);
+    const hasMeaningfulProfile = Boolean(description || biography || followerCount || (displayName && displayName !== 'Instagram'));
+    if (!hasMeaningfulProfile) return { enrichmentStatus: 'no_public_profile_meta' };
+    const profile = {
+      displayName: displayName === 'Instagram' ? '' : displayName,
+      bio: biography,
+      description,
+      followerCount,
+      category: inferInfludexCategoryFromProfile({ displayName, bio: biography, description }),
+      enrichmentStatus: 'public_profile'
+    };
+    return Object.fromEntries(Object.entries(profile).filter(([, value]) => value !== null && value !== ''));
+  } catch (error) {
+    return { enrichmentStatus: error?.name === 'AbortError' ? 'timeout' : 'failed' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function enrichInfludexCandidates(candidates = []) {
+  const enriched = [];
+  const apifyProfiles = await fetchInfludexProfilesFromApify(candidates.filter(shouldEnrichInfludexCandidate));
+  const concurrency = 4;
+  for (let index = 0; index < candidates.length; index += concurrency) {
+    const batch = candidates.slice(index, index + concurrency);
+    const profiles = await Promise.all(batch.map((candidate) => {
+      const handle = instagramHandleFromCandidate(candidate);
+      const apifyProfile = apifyProfiles.get(handle);
+      if (apifyProfile && apifyProfile.enrichmentStatus === 'apify_profile') return apifyProfile;
+      return fetchInfludexInstagramProfile(candidate).then((profile) => (
+        profile.enrichmentStatus ? profile : (apifyProfile || profile)
+      ));
+    }));
+    profiles.forEach((profile, batchIndex) => {
+      const candidate = batch[batchIndex] || {};
+      enriched.push({
+        ...candidate,
+        handle: candidate.handle || profile.handle || '',
+        displayName: candidate.displayName || profile.displayName || '',
+        description: candidate.description || profile.description || profile.displayName || '',
+        bio: candidate.bio || profile.bio || '',
+        category: candidate.category || profile.category || '',
+        followerCount: candidate.followerCount ?? profile.followerCount ?? null,
+        avgLikes: candidate.avgLikes ?? profile.avgLikes ?? null,
+        avgComments: candidate.avgComments ?? profile.avgComments ?? null,
+        avgReelsViews: candidate.avgReelsViews ?? profile.avgReelsViews ?? null,
+        recentPostAt: candidate.recentPostAt || profile.recentPostAt || '',
+        postsCount: candidate.postsCount ?? profile.postsCount ?? null,
+        enrichmentStatus: profile.enrichmentStatus || candidate.enrichmentStatus || ''
+      });
+    });
+  }
+  return enriched;
+}
+
 function infludexCategorySignal(candidate = {}) {
   const target = normalizeInfludexText(candidate.targetCategory || candidate.campaignCategory || '');
   const category = normalizeInfludexText(candidate.category || '');
@@ -479,7 +708,7 @@ function analyzeInfludexCandidate(candidate = {}) {
   const likes = Math.max(0, Number(candidate.avgLikes || 0));
   const comments = Math.max(0, Number(candidate.avgComments || 0));
   const reelsViews = Math.max(0, Number(candidate.avgReelsViews || candidate.reelsViews || 0));
-  const hasScoringData = followers > 0 && reelsViews > 0 && (likes > 0 || comments > 0);
+  const hasScoringData = followers > 0 && (reelsViews > 0 || likes > 0 || comments > 0);
   const engagementRate = followers > 0 ? ((likes + comments) / followers) * 100 : 0;
   const reelsViewRate = followers > 0 ? (reelsViews / followers) * 100 : 0;
   const commentShare = likes + comments > 0 ? (comments / (likes + comments)) * 100 : 0;
@@ -530,14 +759,16 @@ function analyzeInfludexCandidate(candidate = {}) {
   const followerScore = scoreRange(followers, [[100000, 15], [30000, 13], [10000, 10], [3000, 7], [1000, 4]]);
   const freshnessScore = daysSinceRecent === null ? 0 : daysSinceRecent <= 10 ? 10 : daysSinceRecent <= 30 ? 7 : daysSinceRecent <= 60 ? 3 : 0;
   const adPenalty = hasAdRisk ? 10 : 0;
+  const reelsMissingPenalty = reelsViews ? 0 : 8;
   const qualitySignal = infludexQualitySignal({ followers, likes, comments, reelsViews, engagementRate, reelsViewRate, commentShare, daysSinceRecent, adMemo: candidate.adMemo });
   let gradeCap = qualitySignal.gradeCap || '';
   if (categorySignal.gradeCap) gradeCap = infludexMinGrade(gradeCap || 'S', categorySignal.gradeCap);
+  if (!reelsViews) gradeCap = infludexMinGrade(gradeCap || 'S', 'C');
   if (dataConfidence < 55) gradeCap = infludexMinGrade(gradeCap || 'S', 'C');
   else if (dataConfidence < 75) gradeCap = infludexMinGrade(gradeCap || 'S', 'B');
   else if (dataConfidence < 88) gradeCap = infludexMinGrade(gradeCap || 'S', 'A');
 
-  const rawScore = Math.max(0, Math.min(100, Math.round(categoryFitScore + engagementScore + reelsViewScore + commentScore + followerScore + freshnessScore - adPenalty)));
+  const rawScore = Math.max(0, Math.min(100, Math.round(categoryFitScore + engagementScore + reelsViewScore + commentScore + followerScore + freshnessScore - adPenalty - reelsMissingPenalty)));
   const scorePenalty = (categorySignal.penalty || 0) + qualitySignal.penalty + (dataConfidence < 75 ? 6 : 0);
   const score = Math.max(0, Math.min(98, Math.round(rawScore - scorePenalty)));
   const scoreGrade = infludexGradeFromScore(score);
@@ -578,12 +809,13 @@ function analyzeInfludexCandidate(candidate = {}) {
       followerScore,
       freshnessScore,
       adPenalty,
+      reelsMissingPenalty,
       qualityPenalty: qualitySignal.penalty,
       confidencePenalty: dataConfidence < 75 ? 6 : 0,
       categoryPenalty: categorySignal.penalty || 0
     },
     gradeReason,
-    riskFlags: [...new Set([...riskFlags, ...qualitySignal.riskFlags, categorySignal.status === 'mismatch' ? 'category_mismatch' : ''].filter(Boolean))],
+    riskFlags: [...new Set([...riskFlags, !reelsViews ? 'reels_views_missing' : '', ...qualitySignal.riskFlags, categorySignal.status === 'mismatch' ? 'category_mismatch' : ''].filter(Boolean))],
     categorySignal,
     gradeStatus: grade === infludexGradeFromScore(rawScore) ? '유지' : `${infludexGradeFromScore(rawScore)} → ${grade}`
   };
@@ -1038,12 +1270,15 @@ function parseInfludexRows(input = '', fileName = '') {
       header = cells.map((cell) => String(cell || '').trim().toLowerCase());
       return;
     }
-    const byHeader = (patterns = []) => {
+    const headerIndex = (patterns = []) => {
       if (!header) return '';
-      const columnIndex = header.findIndex((name) => {
+      return header.findIndex((name) => {
         const compactName = String(name || '').replace(/\s+/g, '');
         return patterns.some((pattern) => pattern.test(name) || pattern.test(compactName));
       });
+    };
+    const byHeader = (patterns = []) => {
+      const columnIndex = headerIndex(patterns);
       return columnIndex >= 0 ? cells[columnIndex] || '' : '';
     };
     const rawUrl = byHeader([/^url$/, /링크/]) || cells.find((cell) => /^https?:\/\//i.test(cell)) || '';
@@ -1055,7 +1290,9 @@ function parseInfludexRows(input = '', fileName = '') {
     const followerCount = parseNumberLike(byHeader([/follower/, /팔로워/]));
     const avgLikes = parseNumberLike(byHeader([/avglike/, /likes?/, /좋아요/]));
     const avgComments = parseNumberLike(byHeader([/avgcomment/, /comments?/, /댓글/]));
-    const avgReelsViews = parseNumberLike(byHeader([/avgreels?views?/, /reels?views?/, /avgviews?/, /views?/, /릴스.*조회/, /조회수/]));
+    const avgReelsViewPatterns = [/avgreels?views?/, /reels?views?/, /avgviews?/, /views?/, /릴스.*조회/, /조회수/];
+    const hasAvgReelsViewHeader = headerIndex(avgReelsViewPatterns) >= 0;
+    const avgReelsViews = parseNumberLike(byHeader(avgReelsViewPatterns));
     const numbers = metaCells.map(parseNumberLike).filter((value) => value !== null);
     const displayName = byHeader([/이름/, /설명/, /name/, /description/]) || '';
     const bio = byHeader([/bio/, /소개/, /프로필/, /설명/]) || '';
@@ -1078,7 +1315,7 @@ function parseInfludexRows(input = '', fileName = '') {
       followerCount: followerCount ?? numbers[0] ?? null,
       avgLikes: avgLikes ?? numbers[1] ?? null,
       avgComments: avgComments ?? numbers[2] ?? null,
-      avgReelsViews: avgReelsViews ?? numbers[3] ?? null,
+      avgReelsViews: avgReelsViews ?? (hasAvgReelsViewHeader ? null : numbers[3]) ?? null,
       recentPostAt,
       contactMemo,
       adMemo,
@@ -2829,7 +3066,8 @@ export async function analyzeInfludexCandidates(userId) {
     error.status = 400;
     throw error;
   }
-  const infludexResults = sortInfludexResults(candidates.map((candidate) => {
+  const enrichedCandidates = await enrichInfludexCandidates(candidates);
+  const infludexResults = sortInfludexResults(enrichedCandidates.map((candidate) => {
     const analysis = analyzeInfludexCandidate(candidate);
     return {
       id: candidate.id,
@@ -2847,6 +3085,7 @@ export async function analyzeInfludexCandidates(userId) {
       targetCategory: candidate.targetCategory || candidate.campaignCategory || '',
       contactMemo: candidate.contactMemo || '',
       adMemo: candidate.adMemo || '',
+      enrichmentStatus: candidate.enrichmentStatus || '',
       engagementRate: analysis.engagementRate,
       reelsViewRate: analysis.reelsViewRate,
       commentShare: analysis.commentShare,
@@ -2868,7 +3107,7 @@ export async function analyzeInfludexCandidates(userId) {
       analyzedAt: now()
     };
   }));
-  return updateWorkspaceAndConsume(userId, 'infludex', { infludexResults });
+  return updateWorkspaceAndConsume(userId, 'infludex', { candidates: enrichedCandidates, infludexResults });
 }
 
 export async function resetInfludexWorkspace(userId) {

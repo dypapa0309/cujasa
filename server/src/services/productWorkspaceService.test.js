@@ -1044,6 +1044,167 @@ test('INFLUDEX candidate upload ignores document title and Korean header rows', 
   assert.equal(analyzed.infludexResults.every((item) => item.grade === null), true);
 });
 
+test('INFLUDEX enriches URL-only candidates from public Instagram profile metadata', async () => {
+  const userId = '66666666-6666-4666-8666-777777777777';
+  await dbInsert('users', {
+    id: userId,
+    email: 'infludex-public-profile-test@example.com',
+    password_hash: 'test',
+    name: 'INFLUDEX Public Profile',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'infludex',
+    status: 'active',
+    role: 'customer',
+    settings: { usage: { infludex: { limit: 5, used: 0, remaining: 5 } } }
+  });
+
+  const originalFetch = globalThis.fetch;
+  const originalFlag = process.env.INFLUDEX_PROFILE_ENRICHMENT;
+  const originalApifyToken = process.env.APIFY_API_TOKEN;
+  const originalInfludexApifyToken = process.env.INFLUDEX_APIFY_API_TOKEN;
+  process.env.INFLUDEX_PROFILE_ENRICHMENT = 'true';
+  delete process.env.APIFY_API_TOKEN;
+  delete process.env.INFLUDEX_APIFY_API_TOKEN;
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => [
+      '<html><head>',
+      '<meta property="og:title" content="맛집로그 (@foodlog) • Instagram photos and videos">',
+      '<meta property="og:description" content="12.3K Followers, 200 Following, 40 Posts - 집밥과 맛집 기록">',
+      '</head><body></body></html>'
+    ].join('')
+  });
+
+  try {
+    await saveInfludexCandidates(userId, {
+      fileName: 'infludex-url-only.txt',
+      rows: 'https://instagram.com/foodlog'
+    });
+    const analyzed = await analyzeInfludexCandidates(userId);
+    const target = analyzed.infludexResults.find((item) => item.handle === 'foodlog');
+
+    assert.ok(target);
+    assert.equal(target.followerCount, 12300);
+    assert.equal(target.category, '맛집');
+    assert.equal(target.displayName, '맛집로그');
+    assert.equal(target.enrichmentStatus, 'public_profile');
+    assert.equal(target.analysisStatus, 'data_missing');
+    assert.ok(target.riskFlags.includes('reels_views_missing'));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalFlag === undefined) delete process.env.INFLUDEX_PROFILE_ENRICHMENT;
+    else process.env.INFLUDEX_PROFILE_ENRICHMENT = originalFlag;
+    if (originalApifyToken === undefined) delete process.env.APIFY_API_TOKEN;
+    else process.env.APIFY_API_TOKEN = originalApifyToken;
+    if (originalInfludexApifyToken === undefined) delete process.env.INFLUDEX_APIFY_API_TOKEN;
+    else process.env.INFLUDEX_APIFY_API_TOKEN = originalInfludexApifyToken;
+  }
+});
+
+test('INFLUDEX URL-only analysis can score candidates through Apify profile enrichment', async () => {
+  const userId = '66666666-6666-4666-8666-888888888888';
+  await dbInsert('users', {
+    id: userId,
+    email: 'infludex-apify-profile-test@example.com',
+    password_hash: 'test',
+    name: 'INFLUDEX Apify Profile',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'infludex',
+    status: 'active',
+    role: 'customer',
+    settings: { usage: { infludex: { limit: 5, used: 0, remaining: 5 } } }
+  });
+
+  const originalFetch = globalThis.fetch;
+  const originalFlag = process.env.INFLUDEX_PROFILE_ENRICHMENT;
+  const originalApifyToken = process.env.APIFY_API_TOKEN;
+  process.env.INFLUDEX_PROFILE_ENRICHMENT = 'true';
+  process.env.APIFY_API_TOKEN = 'test-token';
+  globalThis.fetch = async (url) => {
+    assert.match(String(url), /api\.apify\.com/);
+    return {
+      ok: true,
+      json: async () => [{
+        username: 'muklog',
+        fullName: '먹로그',
+        biography: '서울 맛집과 카페 기록',
+        followersCount: 32000,
+        postsCount: 300,
+        latestPosts: [
+          { likesCount: 1500, commentsCount: 120, videoViewCount: 48000, timestamp: '2026-05-10T00:00:00.000Z' },
+          { likesCount: 1300, commentsCount: 110, videoViewCount: 42000, timestamp: '2026-05-08T00:00:00.000Z' },
+          { likesCount: 1200, commentsCount: 90, videoViewCount: 39000, timestamp: '2026-05-06T00:00:00.000Z' }
+        ]
+      }]
+    };
+  };
+
+  try {
+    await saveInfludexCandidates(userId, {
+      fileName: 'infludex-apify-url-only.txt',
+      rows: 'https://instagram.com/muklog'
+    });
+    const analyzed = await analyzeInfludexCandidates(userId);
+    const target = analyzed.infludexResults.find((item) => item.handle === 'muklog');
+
+    assert.ok(target);
+    assert.equal(target.enrichmentStatus, 'apify_profile');
+    assert.equal(target.followerCount, 32000);
+    assert.equal(target.category, '맛집');
+    assert.equal(target.avgLikes, 1333);
+    assert.equal(target.avgComments, 107);
+    assert.equal(target.avgReelsViews, 43000);
+    assert.equal(target.analysisStatus, 'scored');
+    assert.match(target.grade, /^[SABCD]$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalFlag === undefined) delete process.env.INFLUDEX_PROFILE_ENRICHMENT;
+    else process.env.INFLUDEX_PROFILE_ENRICHMENT = originalFlag;
+    if (originalApifyToken === undefined) delete process.env.APIFY_API_TOKEN;
+    else process.env.APIFY_API_TOKEN = originalApifyToken;
+  }
+});
+
+test('INFLUDEX scores candidates with follower engagement even when reels views are missing', async () => {
+  const userId = '66666666-6666-4666-8666-999999999999';
+  await dbInsert('users', {
+    id: userId,
+    email: 'infludex-no-reels-score-test@example.com',
+    password_hash: 'test',
+    name: 'INFLUDEX No Reels Score',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'infludex',
+    status: 'active',
+    role: 'customer',
+    settings: { usage: { infludex: { limit: 5, used: 0, remaining: 5 } } }
+  });
+
+  await saveInfludexCandidates(userId, {
+    fileName: 'infludex-no-reels.csv',
+    rows: [
+      'url,handle,category,followers,avgLikes,avgComments,avgReelsViews,recentPostAt',
+      'https://instagram.com/no_reels,@no_reels,맛집,12000,600,40,,2026-05-10'
+    ].join('\n')
+  });
+  const analyzed = await analyzeInfludexCandidates(userId);
+  const target = analyzed.infludexResults.find((item) => item.handle === 'no_reels');
+
+  assert.ok(target);
+  assert.equal(target.analysisStatus, 'scored');
+  assert.equal(target.riskFlags.includes('reels_views_missing'), true);
+  assert.equal(['C', 'D'].includes(target.grade), true);
+  assert.equal(target.scoreBreakdown.reelsMissingPenalty, 8);
+});
+
 test('SPREAD campaign draft becomes an operating campaign card', async () => {
   const userId = '77777777-7777-4777-8777-777777777777';
   await dbInsert('users', {

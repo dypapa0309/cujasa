@@ -7262,6 +7262,7 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
 function InfludexDownloadPanel({ onOpenUpload }) {
   const toast = useToast();
   const [workspace, setWorkspace] = useState({});
+  const [showCriteria, setShowCriteria] = useState(false);
   const results = sortInfludexResults(Array.isArray(workspace.infludexResults) ? workspace.infludexResults : []);
 
   useEffect(() => {
@@ -7295,6 +7296,27 @@ function InfludexDownloadPanel({ onOpenUpload }) {
   return (
     <PanelCard title="결과 다운로드">
       <div className="grid gap-2">
+        <div className="flex items-center justify-end">
+          <button
+            type="button"
+            onClick={() => setShowCriteria((value) => !value)}
+            className="rounded-full border border-white/10 px-3 py-1.5 text-[11px] font-black text-zinc-300 hover:bg-white/5"
+          >
+            분석 기준
+          </button>
+        </div>
+        {showCriteria && (
+          <div className="rounded-2xl border border-white/10 bg-black/25 p-4 text-xs font-bold leading-relaxed text-zinc-400">
+            <div className="font-black text-zinc-200">INFLUDEX 주요 기준</div>
+            <div className="mt-2 grid gap-1.5">
+              <div>반응률 = 평균 좋아요+댓글 / 팔로워</div>
+              <div>릴스 조회율 = 평균 릴스 조회수 / 팔로워</div>
+              <div>댓글 비중 = 평균 댓글 / 전체 반응</div>
+              <div>최근 게시일, 카테고리 적합도, 팔로워 규모를 함께 반영</div>
+              <div>대형 계정의 낮은 반응률/조회율, 댓글 부족, 릴스 조회수 누락은 감점 및 등급 상한</div>
+            </div>
+          </div>
+        )}
         <DarkButton onClick={downloadCsv} disabled={results.length === 0}>
           <Download size={16} />
           CSV 다운로드

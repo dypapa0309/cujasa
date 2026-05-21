@@ -95,6 +95,8 @@ services:
         value: "true"
       - key: INFLUDEX_SERVICE_OPEN
         value: "true"
+      - key: APIFY_API_TOKEN
+        sync: false
       - key: THREADS_COUPANG_LINK_MODE
         value: direct
       - key: TELEGRAM_BOT_TOKEN
