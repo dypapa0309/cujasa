@@ -23,7 +23,7 @@ const UNLIMITED_TEST_EMAILS = new Set(['test1@test.com']);
 const UNLIMITED_USAGE_LIMIT = 999999;
 const DEXOR_SCORE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
 const INFLUDEX_GRADE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
-const DEXOR_CATEGORIES = ['맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
+const DEXOR_CATEGORIES = ['자동', '맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
 const POLIBOT_RECOMMEND_TIMING_WARN_MS = 1000;
 
 const EMPTY_POLIBOT_KNOWLEDGE_DB_SUMMARY = {
@@ -72,17 +72,17 @@ function hashText(text = '') {
 
 function dexorScoreLabel(score) {
   if (score >= 90) return 'S';
-  if (score >= 80) return 'A';
-  if (score >= 70) return 'B';
-  if (score >= 60) return 'C';
+  if (score >= 70) return 'A';
+  if (score >= 60) return 'B';
+  if (score >= 40) return 'C';
   return 'D';
 }
 
 function dexorScoreComment(score) {
   if (score >= 90) return '우선 추천';
-  if (score >= 80) return '추천';
-  if (score >= 70) return '검토';
-  if (score >= 60) return '추가 확인';
+  if (score >= 70) return '추천';
+  if (score >= 60) return '검토';
+  if (score >= 40) return '추가 확인';
   return '비추천';
 }
 
@@ -889,6 +889,7 @@ function parseNumberLike(value = '') {
 function normalizeDexorCategory(value = '') {
   const text = String(value || '').trim();
   if (!text) return '';
+  if (/자동|auto/i.test(text)) return '기타';
   return DEXOR_CATEGORIES.find((category) => text.includes(category) || category.includes(text)) || text;
 }
 

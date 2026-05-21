@@ -107,13 +107,13 @@ function isProductInMaintenance(product = {}) {
 const inputClass = 'w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-700 outline-none focus:border-white/25';
 const invalidFieldClass = 'ring-1 ring-red-400/45 bg-red-950/10';
 const labelClass = 'grid gap-2 text-sm font-bold text-zinc-300';
-const dexorCategoryOptions = ['맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
+const dexorCategoryOptions = ['자동', '맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
 const dexorScoreRows = [
   ['S', '90점 이상', '우선 추천'],
-  ['A', '80-89점', '추천'],
-  ['B', '70-79점', '검토'],
-  ['C', '60-69점', '추가 확인'],
-  ['D', '60점 미만', '비추천']
+  ['A', '70-89점', '추천'],
+  ['B', '60-69점', '검토'],
+  ['C', '40-59점', '추가 확인'],
+  ['D', '40점 미만', '비추천']
 ];
 const polibotNeedOptions = ['암', '뇌', '심장', '수술', '입원', '실손', '생활비', '운전자'];
 const polibotCoverageFields = [
@@ -4072,7 +4072,7 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
   const toast = useToast();
   const [urls, setUrls] = useState('');
   const [fileName, setFileName] = useState('');
-  const [targetCategory, setTargetCategory] = useState('맛집');
+  const [targetCategory, setTargetCategory] = useState('자동');
   const [saving, setSaving] = useState(false);
   const [workspace, setWorkspace] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -4135,7 +4135,7 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
       setWorkspace(next);
       setUrls('');
       setFileName('');
-      setTargetCategory('맛집');
+      setTargetCategory('자동');
       setConfirmOpen(false);
       toast('새 후보를 올릴 준비가 됐어요.', 'success');
     } catch (err) {
@@ -4149,27 +4149,16 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
     <>
       <PanelCard title="후보 입력">
         <ProductUsageStrip usage={usage} />
-        <div className="grid gap-3 sm:grid-cols-[160px_minmax(0,1fr)]">
-          <label className={labelClass}>
-            기본 카테고리
-            <select
-              className={inputClass}
-              value={dexorCategoryOptions.includes(targetCategory) ? targetCategory : '기타'}
-              onChange={(event) => setTargetCategory(event.target.value)}
-            >
-              {dexorCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
-            </select>
-          </label>
-          <label className={labelClass}>
-            분석 카테고리
-            <input
-              className={inputClass}
-              value={targetCategory}
-              onChange={(event) => setTargetCategory(event.target.value)}
-              placeholder="예: 맛집, 뷰티, 육아"
-            />
-          </label>
-        </div>
+        <label className={labelClass}>
+          분석 기준
+          <select
+            className={inputClass}
+            value={dexorCategoryOptions.includes(targetCategory) ? targetCategory : '자동'}
+            onChange={(event) => setTargetCategory(event.target.value)}
+          >
+            {dexorCategoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </label>
         <label className={labelClass}>
           블로그 URL
           <textarea
@@ -4181,7 +4170,7 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
           />
         </label>
         <div className="mt-3 rounded-2xl bg-black/25 px-4 py-3 text-sm text-zinc-500">
-          현재 입력 후보 {urlCount}개 · {targetCategory || '선택한'} 카테고리 기준으로 S/A/B/C/D 랭크를 분석해요.
+          현재 입력 후보 {urlCount}개 · {targetCategory === '자동' ? '파일/후보 정보 우선' : targetCategory} 기준으로 S/A/B/C/D 랭크를 분석해요.
         </div>
         <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
         <DarkButton onClick={save} disabled={saving || (urlCount === 0 && !fileName)} loading={saving} loadingLabel="저장 중">
