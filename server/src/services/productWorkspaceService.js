@@ -24,6 +24,33 @@ const UNLIMITED_USAGE_LIMIT = 999999;
 const DEXOR_SCORE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
 const INFLUDEX_GRADE_ORDER = { S: 0, A: 1, B: 2, C: 3, D: 4 };
 const DEXOR_CATEGORIES = ['자동', '맛집', '뷰티', '육아', '생활/리빙', '가전', '건강', '패션', '여행', '기타'];
+const DEXOR_INDUSTRY_KEYWORDS = {
+  food: ['맛집', '식당', '카페', '메뉴', '예약', '방문', '후기', '점심', '저녁', '디저트'],
+  beauty: ['뷰티', '피부', '화장품', '관리', '시술', '헤어', '네일', '메이크업', '후기'],
+  travel: ['여행', '숙소', '호텔', '코스', '가볼만한곳', '예약', '일정', '방문', '후기'],
+  living: ['리빙', '인테리어', '살림', '가구', '주방', '생활', '정리', '후기'],
+  parenting: ['육아', '아이', '아기', '키즈', '교육', '놀이', '엄마', '가족', '후기'],
+  it: ['IT', '앱', '서비스', '기기', '노트북', '모바일', '설치', '리뷰', '사용기'],
+  fashion: ['패션', '코디', '의류', '신발', '가방', '스타일', '착용', '후기'],
+  pet: ['반려동물', '강아지', '고양이', '펫', '간식', '용품', '동물병원', '후기']
+};
+const DEXOR_INDUSTRY_LABELS = {
+  food: '맛집',
+  beauty: '뷰티',
+  travel: '여행',
+  living: '리빙',
+  parenting: '육아',
+  it: 'IT',
+  fashion: '패션',
+  pet: '반려동물'
+};
+const DEXOR_KEYWORD_STOPWORDS = new Set([
+  '그리고', '하지만', '있는', '없는', '해서', '하는', '하면', '이번', '오늘', '내일', '정말', '너무', '같은',
+  '블로그', '네이버', '후기', '리뷰', '추천', '방문', '사용', '직접', '콘텐츠', '포스팅', '좋은', '많이'
+]);
+const DEXOR_DAILY_VISITOR_MINIMUMS = { s: 500, a: 200, b: 80 };
+DEXOR_INDUSTRY_KEYWORDS.auto = [...new Set(Object.values(DEXOR_INDUSTRY_KEYWORDS).flat())];
+DEXOR_INDUSTRY_LABELS.auto = '자동';
 const POLIBOT_RECOMMEND_TIMING_WARN_MS = 1000;
 
 const EMPTY_POLIBOT_KNOWLEDGE_DB_SUMMARY = {
@@ -84,6 +111,367 @@ function dexorScoreComment(score) {
   if (score >= 60) return '검토';
   if (score >= 40) return '추가 확인';
   return '비추천';
+}
+
+function dexorDecisionFromGrade(grade) {
+  if (grade === 'S') return '바로 섭외 추천';
+  if (grade === 'A') return '섭외 가능';
+  if (grade === 'B') return '조건부 섭외';
+  if (grade === 'C') return '우선순위 낮음';
+  return '섭외 비추천';
+}
+
+function dexorClamp(value, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function dexorHash(input = '') {
+  return [...String(input)].reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) % 9973, 7);
+}
+
+function dexorParseBlogUrl(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  let match = trimmed.match(/[?&]blogId=([a-zA-Z0-9._-]+).*?[?&]logNo=([0-9]+)/i)
+    || trimmed.match(/[?&]logNo=([0-9]+).*?[?&]blogId=([a-zA-Z0-9._-]+)/i);
+  if (match && /blogId=/i.test(match[0]) && /logNo=/i.test(match[0])) {
+    return /[?&]blogId=/i.test(match[0])
+      ? { blogId: match[1], logNo: match[2] }
+      : { blogId: match[2], logNo: match[1] };
+  }
+  match = trimmed.match(/(?:https?:\/\/)?(?:m\.)?blog\.naver\.com\/([a-zA-Z0-9._-]+)(?:\/([0-9]+))?/i);
+  if (match) return { blogId: match[1], logNo: match[2] || null };
+  return null;
+}
+
+function dexorNormalizeBlogUrl(raw) {
+  const parsed = dexorParseBlogUrl(raw);
+  if (!parsed) return null;
+  return parsed.logNo
+    ? `https://blog.naver.com/${parsed.blogId}/${parsed.logNo}`
+    : `https://blog.naver.com/${parsed.blogId}`;
+}
+
+function dexorGetBlogId(url) {
+  return dexorParseBlogUrl(dexorNormalizeBlogUrl(url) || url)?.blogId || null;
+}
+
+function dexorStripHtml(input = '') {
+  return String(input).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function dexorHtmlDecode(input = '') {
+  return String(input)
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(Number.parseInt(hex, 16)))
+    .replace(/&#([0-9]+);/g, (_, code) => String.fromCharCode(Number.parseInt(code, 10)));
+}
+
+function dexorExtractXmlTag(xml = '', tag = '') {
+  const escaped = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(xml).match(new RegExp(`<${escaped}[^>]*>([\\s\\S]*?)<\\/${escaped}>`, 'i'));
+  return dexorStripHtml(dexorHtmlDecode(match?.[1] || ''));
+}
+
+function dexorNormalizeCampaign(input = {}) {
+  const industry = DEXOR_INDUSTRY_LABELS[input.industry] ? input.industry : 'auto';
+  const rawKeyword = String(input.keyword || '').trim();
+  const keyword = (rawKeyword || (industry === 'auto' ? '' : DEXOR_INDUSTRY_LABELS[industry])).slice(0, 40);
+  return { industry, industryLabel: DEXOR_INDUSTRY_LABELS[industry], keyword, keywordProvided: rawKeyword.length > 0 };
+}
+
+function dexorWeightedTopicScore(text, words) {
+  const source = String(text || '').toLowerCase();
+  return words.reduce((sum, word) => sum + (source.includes(String(word).toLowerCase()) ? 1 : 0), 0);
+}
+
+function dexorTextIncludesAnyTerm(text, terms) {
+  const source = String(text || '').toLowerCase();
+  return terms.some((term) => {
+    const value = String(term || '').trim().toLowerCase();
+    return value.length >= 2 && source.includes(value);
+  });
+}
+
+function dexorKeywordTerms(campaign) {
+  const industryWords = DEXOR_INDUSTRY_KEYWORDS[campaign.industry] || [];
+  const keywordParts = String(campaign.keyword || '').split(/[\s,/·|]+/).filter((word) => word.length >= 2);
+  return [...new Set([...industryWords, campaign.keyword, ...keywordParts].filter(Boolean))];
+}
+
+function dexorKeywordSearchTerms(campaign) {
+  const keyword = String(campaign.keyword || '').trim();
+  const keywordParts = keyword.split(/[\s,/·|]+/).filter((word) => word.length >= 2);
+  const defaultIndustryKeyword = !campaign.keywordProvided || keyword === DEXOR_INDUSTRY_LABELS[campaign.industry];
+  const industryWords = defaultIndustryKeyword
+    ? (DEXOR_INDUSTRY_KEYWORDS[campaign.industry] || []).filter((word) => !['후기', '리뷰'].includes(word))
+    : [];
+  return [...new Set([keyword, ...keywordParts, ...industryWords].filter((word) => String(word).trim().length >= 2))];
+}
+
+function dexorExtractCandidateKeywords(posts, campaign, limit = 2) {
+  const campaignTerms = new Set(dexorKeywordTerms(campaign).map((word) => String(word).toLowerCase()));
+  const counts = new Map();
+  posts.forEach((post, index) => {
+    const weight = Math.max(1, 6 - index);
+    const tokens = String(`${post.title || ''} ${post.description || ''}`).match(/[가-힣A-Za-z0-9]{2,}/g) || [];
+    tokens.forEach((token) => {
+      const normalized = token.toLowerCase();
+      if (DEXOR_KEYWORD_STOPWORDS.has(normalized) || campaignTerms.has(normalized)) return;
+      if (/^\d+$/.test(normalized)) return;
+      counts.set(normalized, (counts.get(normalized) || 0) + weight);
+    });
+  });
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ko'))
+    .slice(0, limit)
+    .map(([keyword, weight]) => ({ keyword, weight }));
+}
+
+function dexorEstimateDailyVisitorSignal(posts, seed) {
+  if (!posts.length) return null;
+  const engagementAverage = posts.reduce((sum, post) => sum + post.comments * 3 + post.likes, 0) / posts.length;
+  const recencyBoost = posts.filter((post) => post.daysAgo <= 7).length * 25;
+  const estimatedAverage = Math.round(dexorClamp(engagementAverage * 8 + recencyBoost + (seed % 90), 20, 900));
+  return {
+    status: 'estimated',
+    label: '공개 반응 기반 추정',
+    estimatedAverage,
+    estimatedMin: Math.max(10, Math.round(estimatedAverage * 0.55)),
+    estimatedMax: Math.round(estimatedAverage * 1.45),
+    minimums: DEXOR_DAILY_VISITOR_MINIMUMS
+  };
+}
+
+function dexorCategoryToIndustry(category = '') {
+  const normalized = normalizeDexorCategory(category);
+  if (normalized === '맛집') return 'food';
+  if (normalized === '뷰티') return 'beauty';
+  if (normalized === '육아') return 'parenting';
+  if (normalized === '패션') return 'fashion';
+  if (normalized === '여행') return 'travel';
+  if (['생활/리빙', '가전', '건강'].includes(normalized)) return 'living';
+  return 'auto';
+}
+
+async function dexorCollectPublicBlogSignals(url, mode, campaign) {
+  const blogId = dexorGetBlogId(url);
+  if (!blogId) throw new Error('유효한 네이버 블로그 ID를 찾지 못했습니다.');
+
+  const response = await fetch(`https://rss.blog.naver.com/${encodeURIComponent(blogId)}.xml`, {
+    signal: AbortSignal.timeout(4500),
+    headers: { 'User-Agent': 'DEXOR exposure analysis bot' }
+  });
+  if (!response.ok) throw new Error(`네이버 RSS 접근 실패 (${response.status})`);
+  const xml = await response.text();
+  const rawItems = [...xml.matchAll(/<item\b[^>]*>([\s\S]*?)<\/item>/gi)]
+    .map((match) => match[1])
+    .slice(0, mode === 'deep' ? 30 : 12);
+  if (rawItems.length === 0) throw new Error('분석 가능한 공개 RSS 글이 없습니다.');
+  const seed = dexorHash(`${url}:${mode}:${campaign.industry}:${campaign.keyword}`);
+  const industryWords = DEXOR_INDUSTRY_KEYWORDS[campaign.industry] || [];
+  const posts = rawItems.map((item, index) => {
+    const title = dexorExtractXmlTag(item, 'title');
+    const description = dexorExtractXmlTag(item, 'description');
+    const body = `${title} ${description}`;
+    const pubDateText = dexorExtractXmlTag(item, 'pubDate');
+    const pubDate = pubDateText ? new Date(pubDateText) : null;
+    const daysAgo = pubDate && !Number.isNaN(pubDate.getTime())
+      ? Math.max(0, Math.floor((Date.now() - pubDate.getTime()) / (1000 * 60 * 60 * 24)))
+      : index * 7;
+    const adSignals = ['제공', '협찬', '광고', '체험단', '원고료', '소정의'].filter((word) => body.includes(word));
+    return {
+      title: title || `${campaign.keyword} 공개 글 ${index + 1}`,
+      description,
+      daysAgo,
+      topicHits: dexorWeightedTopicScore(body, [...industryWords, campaign.keyword]),
+      hasExperience: ['방문', '사용', '먹어', '다녀', '직접', '후기', '느꼈'].some((word) => body.includes(word)),
+      adSignals: adSignals.length ? adSignals : ['공개 글'],
+      comments: 2 + ((seed + index) % 16),
+      likes: 5 + ((seed + index * 7) % 45)
+    };
+  });
+  return {
+    sourceStatus: 'public-rss',
+    subscriberSignal: 30 + (seed % 65),
+    dailyVisitorSignal: dexorEstimateDailyVisitorSignal(posts, seed),
+    topCompetitorStrength: 42 + (dexorHash(`${campaign.keyword}:competition`) % 49),
+    posts
+  };
+}
+
+async function dexorAnalyzeExposurePotential(url, mode = 'quick', campaignInput = {}) {
+  const campaign = dexorNormalizeCampaign(campaignInput);
+  const seed = dexorHash(`${url}:${mode}:${campaign.industry}:${campaign.keyword}`);
+  const signals = await dexorCollectPublicBlogSignals(url, mode, campaign);
+  const dailyVisitorSignal = signals.dailyVisitorSignal;
+  const latestPostDays = Math.min(...signals.posts.map((post) => post.daysAgo));
+  const recentPostCount = signals.posts.filter((post) => post.daysAgo <= 30).length;
+  const adPostCount = signals.posts.filter((post) => post.adSignals.some((signal) => ['제공', '협찬', '광고'].includes(signal))).length;
+  const adRatio = Math.round((adPostCount / signals.posts.length) * 100);
+  const industryWords = dexorKeywordTerms(campaign);
+  const recentTenPosts = signals.posts.slice(0, 10);
+  const recentFivePosts = signals.posts.slice(0, 5);
+  const searchTerms = dexorKeywordSearchTerms(campaign);
+  const recentFiveKeywordHitPosts = recentFivePosts
+    .map((post, index) => ({
+      index: index + 1,
+      title: post.title,
+      matched: dexorTextIncludesAnyTerm(`${post.title || ''} ${post.description || ''}`, searchTerms)
+    }))
+    .filter((post) => post.matched);
+  const recentKeywordHitPosts = recentTenPosts
+    .map((post, index) => ({
+      index: index + 1,
+      title: post.title,
+      matched: dexorTextIncludesAnyTerm(`${post.title || ''} ${post.description || ''}`, searchTerms)
+    }))
+    .filter((post) => post.matched);
+  const recentKeywordCoverage = signals.posts.length
+    ? Math.round((recentKeywordHitPosts.length / Math.min(10, signals.posts.length)) * 100)
+    : 0;
+  const recentKeywordCheck = {
+    status: recentKeywordHitPosts.length > 0 ? 'passed' : 'failed',
+    label: recentKeywordHitPosts.length > 0 ? '최근 10개 내 키워드 콘텐츠 확인' : '최근 10개 내 키워드 콘텐츠 없음',
+    coverage: recentKeywordCoverage,
+    matchedCount: recentKeywordHitPosts.length,
+    recentFiveMatchedCount: recentFiveKeywordHitPosts.length,
+    checkedCount: Math.min(10, signals.posts.length),
+    recentFiveCheckedCount: Math.min(5, signals.posts.length),
+    terms: searchTerms,
+    matchedTitles: recentKeywordHitPosts.slice(0, 3).map((post) => post.title),
+    recentFiveMatchedTitles: recentFiveKeywordHitPosts.slice(0, 3).map((post) => post.title)
+  };
+  const derivedKeywords = dexorExtractCandidateKeywords(recentFivePosts, campaign, 2);
+  const derivedKeywordBonus = Math.min(8, derivedKeywords.reduce((sum, item) => sum + item.weight, 0) / 4);
+  const topicHits = signals.posts.reduce((sum, post) => sum + post.topicHits + dexorWeightedTopicScore(post.title, industryWords), 0);
+  const maxTopicHits = signals.posts.length * 5;
+  const topicFit = Math.round(dexorClamp((topicHits / maxTopicHits) * 100));
+  const activityFit = Math.round(dexorClamp((recentPostCount / Math.min(signals.posts.length, mode === 'deep' ? 16 : 8)) * 100));
+  const experienceFit = Math.round((signals.posts.filter((post) => post.hasExperience).length / signals.posts.length) * 100);
+  const engagementFit = Math.round(dexorClamp((signals.posts.reduce((sum, post) => sum + post.comments + post.likes / 4, 0) / signals.posts.length) * 3));
+  const keywordCompetition = signals.topCompetitorStrength;
+  const competitorSimilarity = Math.round(dexorClamp((topicFit * 0.45) + (activityFit * 0.25) + (experienceFit * 0.2) + (engagementFit * 0.1) - Math.max(0, keywordCompetition - 70) * 0.35));
+  const cRankFit = Math.round(dexorClamp(topicFit * 0.42 + activityFit * 0.28 + engagementFit * 0.18 + signals.subscriberSignal * 0.12));
+  const diaFit = Math.round(dexorClamp(experienceFit * 0.36 + topicFit * 0.28 + (100 - adRatio) * 0.16 + activityFit * 0.12 + competitorSimilarity * 0.08));
+  const riskFlags = [];
+  let riskPenalty = 0;
+  let gradeCap = null;
+
+  if (latestPostDays > 45) {
+    riskFlags.push('최근 활동 약함');
+    riskPenalty += 14;
+  }
+  if (adRatio >= 65) {
+    riskFlags.push('대가성 콘텐츠 비중 높음');
+    riskPenalty += 10;
+  }
+  if (topicFit < 35) {
+    riskFlags.push('캠페인 주제 적합도 낮음');
+    riskPenalty += 10;
+  }
+  if (recentKeywordCheck.status === 'failed') {
+    riskFlags.push('최근 10개 내 키워드 콘텐츠 없음');
+    riskPenalty += 10;
+  } else if (recentKeywordCheck.recentFiveMatchedCount === 0) {
+    riskFlags.push('최근 5개 내 세부키워드 노출 없음');
+    riskPenalty += 7;
+  } else if (recentKeywordCheck.matchedCount === 1 && signals.posts.length >= 8) {
+    riskFlags.push('최근 키워드 콘텐츠 빈도 낮음');
+    riskPenalty += 4;
+  }
+  if (!dailyVisitorSignal) {
+    riskFlags.push('일방문자수 실측 미확인');
+    riskPenalty += 2;
+  } else if ((dailyVisitorSignal.estimatedAverage || 0) < DEXOR_DAILY_VISITOR_MINIMUMS.b) {
+    riskFlags.push('일방문자수 기준 미달');
+    riskPenalty += 8;
+  } else if ((dailyVisitorSignal.estimatedAverage || 0) < DEXOR_DAILY_VISITOR_MINIMUMS.a) {
+    riskFlags.push('일방문자수 낮음');
+    riskPenalty += 6;
+  } else if ((dailyVisitorSignal.estimatedAverage || 0) < DEXOR_DAILY_VISITOR_MINIMUMS.s) {
+    riskFlags.push('S랭크 방문자 기준 미달');
+    riskPenalty += 3;
+  }
+  if (keywordCompetition >= 82 && competitorSimilarity < 68) {
+    riskFlags.push('키워드 경쟁 강도 높음');
+    riskPenalty += 6;
+  }
+
+  const rssScore = cRankFit * 0.36 + diaFit * 0.34 + competitorSimilarity * 0.2 + (100 - keywordCompetition) * 0.1;
+  const exposureScore = Math.round(dexorClamp(rssScore + recentKeywordCoverage * 0.05 + derivedKeywordBonus - riskPenalty));
+  const dailyVisitorAverage = dailyVisitorSignal?.estimatedAverage || 0;
+  const strongRecentTopicExposure = topicFit >= 35
+    && (recentKeywordCheck.recentFiveMatchedCount >= 3 || recentKeywordCheck.matchedCount >= 5);
+  const severeExposureRisk = Boolean(latestPostDays > 45
+    || adRatio >= 65
+    || topicFit < 25
+    || (dailyVisitorSignal && dailyVisitorAverage < DEXOR_DAILY_VISITOR_MINIMUMS.b));
+  const exposureSignal = {
+    status: strongRecentTopicExposure && !severeExposureRisk ? 'strong' : 'normal',
+    label: strongRecentTopicExposure && !severeExposureRisk ? '최근 주제 노출 강함' : '종합 점수 기준',
+    recentFiveMatchedCount: recentKeywordCheck.recentFiveMatchedCount,
+    matchedCount: recentKeywordCheck.matchedCount,
+    severeExposureRisk
+  };
+  const scoreGrade = dexorScoreLabel(exposureScore);
+  const grade = exposureSignal.status === 'strong' && !gradeCap ? 'S' : dexorMinGrade(scoreGrade, gradeCap);
+  const campaignScope = campaign.keyword ? `${campaign.industryLabel}·${campaign.keyword}` : `${campaign.industryLabel} 전체`;
+  const reasons = [
+    `${campaignScope} 맥락에서 최근 ${recentPostCount}개 글이 공개 신호로 확인되어 노출 가능성을 추정했습니다.`,
+    `블로그 최근 글 기준 주제 적합도 ${topicFit}점, 문서 적합도 ${diaFit}점으로 블로그 전체 흐름을 보조 반영했습니다.`,
+    `${recentKeywordCheck.label}: 최근 ${recentKeywordCheck.checkedCount}개 중 ${recentKeywordCheck.matchedCount}개, 최근 5개 중 ${recentKeywordCheck.recentFiveMatchedCount}개가 "${campaign.keyword || campaign.industryLabel}" 관련 표현을 포함했습니다.`,
+    derivedKeywords.length
+      ? `최근 5개 글에서 보조 검토 키워드로 ${derivedKeywords.map((item) => item.keyword).join(', ')}를 추렸습니다.`
+      : '최근 5개 글에서 뚜렷한 보조 검토 키워드는 추출되지 않았습니다.',
+    keywordCompetition >= 75
+      ? `입력 키워드의 경쟁 강도가 ${keywordCompetition}점으로 높아 상위 노출은 보수적으로 봐야 합니다.`
+      : `입력 키워드 경쟁 강도가 ${keywordCompetition}점으로 과열 구간은 아닙니다.`
+  ];
+
+  return {
+    id: `result_${Date.now()}_${seed}`,
+    url,
+    mode,
+    score: exposureScore,
+    grade,
+    decision: dexorDecisionFromGrade(grade),
+    adRatio,
+    recentActivity: latestPostDays <= 7 ? '매우 활발' : latestPostDays <= 30 ? '활발' : latestPostDays <= 60 ? '주의' : '비활성',
+    category: campaign.industryLabel,
+    riskFlags,
+    reasons,
+    breakdown: {
+      exposureScore,
+      cRankFit,
+      diaFit,
+      topicFit,
+      keywordCompetition,
+      competitorSimilarity,
+      activityFit,
+      riskPenalty,
+      campaign,
+      recentPostCount,
+      latestPostDays,
+      recentKeywordCheck,
+      derivedKeywords,
+      dailyVisitorSignal,
+      exposureSignal,
+      sourceStatus: signals.sourceStatus,
+      recommendation: ['S', 'A'].includes(grade) ? '체험 후기형 원고' : grade === 'B' ? '롱테일 키워드 후기' : '브랜드 인지도 보조 캠페인'
+    },
+    recentPosts: signals.posts.slice(0, 5).map((post) => ({
+      title: post.title,
+      adSignals: post.adSignals,
+      comments: post.comments,
+      daysAgo: post.daysAgo
+    }))
+  };
 }
 
 function dexorGradeRank(grade = '') {
@@ -2951,15 +3339,7 @@ export async function saveDexorCandidates(userId, { urls = '', fileName = '', ta
   });
 }
 
-export async function analyzeDexorCandidates(userId) {
-  const workspace = await getProductWorkspace(userId, 'dexor');
-  const candidates = Array.isArray(workspace.candidates) ? workspace.candidates : [];
-  if (candidates.length === 0) {
-    const error = new Error('분석할 후보가 없습니다.');
-    error.status = 400;
-    throw error;
-  }
-  const analysisResults = sortDexorResults(candidates.map((candidate) => {
+function buildDexorFallbackAnalysisResult(candidate, workspace = {}) {
     const hash = hashText(candidate.url);
     const targetCategory = normalizeDexorCategory(workspace.targetCategory) || '기타';
     const candidateCategory = normalizeDexorCategory(candidate.candidateCategory) || '미입력';
@@ -3046,8 +3426,111 @@ export async function analyzeDexorCandidates(userId) {
       reasons: [reasonSummary],
       analyzedAt: now()
     };
-  }));
-  return updateWorkspaceAndConsume(userId, 'dexor', { analysisResults });
+}
+
+function buildDexorRssAnalysisResult(candidate, workspace = {}, exposureResult) {
+  const targetCategory = normalizeDexorCategory(workspace.targetCategory) || '기타';
+  const candidateCategory = normalizeDexorCategory(candidate.candidateCategory) || '미입력';
+  const breakdown = exposureResult.breakdown || {};
+  const latestPostDays = Number.isFinite(Number(breakdown.latestPostDays)) ? Number(breakdown.latestPostDays) : null;
+  const recentPostAt = latestPostDays === null
+    ? ''
+    : formatDexorDate(new Date(Date.now() - latestPostDays * 24 * 60 * 60 * 1000));
+  const contentQualityScore = Math.round(dexorClamp(
+    (Number(breakdown.topicFit || 0) * 0.4)
+    + (Number(breakdown.diaFit || 0) * 0.35)
+    + (Number(breakdown.activityFit || 0) * 0.25)
+  ));
+  const sourceStatus = breakdown.sourceStatus || 'public-rss';
+  const dataConfidence = {
+    level: sourceStatus === 'public-rss' ? '높음' : '보통',
+    score: sourceStatus === 'public-rss' ? 88 : 66,
+    sourceLabel: sourceStatus === 'public-rss' ? '네이버 RSS 실측' : '공개 신호 추정',
+    reason: sourceStatus === 'public-rss'
+      ? '최근 공개 RSS 글을 직접 읽어 주제, 활동성, 광고 신호를 계산했습니다.'
+      : '공개 데이터 일부만 확인되어 추정 신호를 함께 반영했습니다.'
+  };
+  const score = Math.max(0, Math.min(100, Math.round(Number(exposureResult.score || 0))));
+  const grade = exposureResult.grade || dexorScoreLabel(score);
+  const recentKeywordCheck = breakdown.recentKeywordCheck || {};
+  const reasonSummary = [
+    exposureResult.category ? `${exposureResult.category} 기준` : '',
+    `주제 ${breakdown.topicFit ?? '-'}점`,
+    `최근 10개 중 ${recentKeywordCheck.matchedCount ?? 0}개 관련`,
+    `최근 5개 중 ${recentKeywordCheck.recentFiveMatchedCount ?? 0}개 관련`,
+    latestPostDays === null ? '' : latestPostDays <= 45 ? '최근 활동 양호' : '최근 활동 확인'
+  ].filter(Boolean).join(' · ');
+  return {
+    id: candidate.id,
+    url: candidate.url,
+    blogName: candidate.blogName || deriveBlogNameFromUrl(candidate.url) || '미입력',
+    targetCategory,
+    candidateCategory,
+    legacyIndex: normalizeLegacyDexorIndex(candidate.legacyIndex),
+    score,
+    grade,
+    scoreLabel: grade,
+    scoreComment: dexorScoreComment(score),
+    originalScore: score,
+    originalGrade: grade,
+    strengthenedScore: score,
+    strengthenedGrade: grade,
+    strengthenedDecision: exposureResult.decision || dexorScoreComment(score),
+    dataConfidence,
+    verificationFlags: [...new Set(exposureResult.riskFlags || [])],
+    searchValidation: {
+      status: breakdown.exposureSignal?.status || recentKeywordCheck.status || 'normal',
+      score: Number(breakdown.topicFit || 0),
+      rank: null,
+      keywordCount: recentKeywordCheck.matchedCount || 0,
+      label: breakdown.exposureSignal?.label || recentKeywordCheck.label || 'RSS 공개 신호 확인'
+    },
+    contentQualityScore,
+    gradeStatus: '유지',
+    visitEstimate: breakdown.dailyVisitorSignal?.estimatedAverage || candidate.visitEstimate || null,
+    reactionEstimate: candidate.reactionEstimate ?? null,
+    recentPostAt,
+    searchRank: candidate.searchRank ?? null,
+    exposureKeywordCount: recentKeywordCheck.matchedCount || candidate.exposureKeywordCount || 0,
+    riskFlags: exposureResult.riskFlags || [],
+    reasonSummary,
+    reasons: exposureResult.reasons || [reasonSummary],
+    breakdown,
+    analyzedAt: now()
+  };
+}
+
+async function analyzeDexorCandidateWithRss(candidate, workspace = {}) {
+  const targetCategory = normalizeDexorCategory(workspace.targetCategory) || '기타';
+  const candidateCategory = normalizeDexorCategory(candidate.candidateCategory) || '';
+  const industry = targetCategory === '기타'
+    ? dexorCategoryToIndustry(candidateCategory)
+    : dexorCategoryToIndustry(targetCategory);
+  const exposureResult = await dexorAnalyzeExposurePotential(candidate.url, 'quick', {
+    industry,
+    keyword: ''
+  });
+  return buildDexorRssAnalysisResult(candidate, workspace, exposureResult);
+}
+
+export async function analyzeDexorCandidates(userId) {
+  const workspace = await getProductWorkspace(userId, 'dexor');
+  const candidates = Array.isArray(workspace.candidates) ? workspace.candidates : [];
+  if (candidates.length === 0) {
+    const error = new Error('분석할 후보가 없습니다.');
+    error.status = 400;
+    throw error;
+  }
+  const analysisResults = [];
+  for (const candidate of candidates) {
+    try {
+      analysisResults.push(await analyzeDexorCandidateWithRss(candidate, workspace));
+    } catch {
+      analysisResults.push(buildDexorFallbackAnalysisResult(candidate, workspace));
+    }
+  }
+  const sortedResults = sortDexorResults(analysisResults);
+  return updateWorkspaceAndConsume(userId, 'dexor', { analysisResults: sortedResults });
 }
 
 export async function resetDexorWorkspace(userId) {
