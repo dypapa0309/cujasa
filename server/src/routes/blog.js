@@ -3,9 +3,12 @@ import { generateBlogPost, getAccountBlogPost, getBlogPost, listAccountBlogPosts
 
 const router = Router();
 
-const LANDING_URL = process.env.LANDING_URL || 'https://jasain.kr';
+const rawLandingUrl = process.env.LANDING_URL || 'https://jasain.kr/cujasa';
+const LANDING_URL = /landing-phi-flame\.vercel\.app/i.test(rawLandingUrl)
+  ? 'https://jasain.kr/cujasa'
+  : rawLandingUrl;
 const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3000';
-const BLOG_IMAGE_URL = process.env.BLOG_IMAGE_URL || `${LANDING_URL}/images/products.png`;
+const BLOG_IMAGE_URL = process.env.BLOG_IMAGE_URL || 'https://jasain.kr/images/products.png';
 const BLOG_AUTHOR = 'CUJASA';
 const DEFAULT_BLOG_KEYWORDS = [
   '쿠팡 파트너스 자동화',
