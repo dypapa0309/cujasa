@@ -1869,15 +1869,13 @@ function BetaRunPanel({
       <PanelCard title="사전 점검">
         {lastCheck ? <PreflightSummary check={lastCheck} /> : <Notice>글을 올리지 않고 현재 설정과 토큰만 확인해요.</Notice>}
         <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          <DarkButton variant="ghost" onClick={() => runPreflight()} disabled={checking || actioning}>
-            {checking ? '점검 중...' : '사전 점검'}
+          <DarkButton variant="ghost" onClick={() => runPreflight()} disabled={checking || actioning} loading={checking} loadingLabel="점검 중">
+            사전 점검
           </DarkButton>
-          <DarkButton onClick={() => setAutomation(automationRunning ? 'paused' : 'running')} disabled={checking || actioning}>
-            {actioning
-              ? '처리 중...'
-              : automationRunning
-                ? <span className="inline-flex items-center justify-center gap-2"><PauseCircle size={18} /> 자동화 중지</span>
-                : '자동화 시작'}
+          <DarkButton onClick={() => setAutomation(automationRunning ? 'paused' : 'running')} disabled={checking || actioning} loading={actioning} loadingLabel="처리 중">
+            {automationRunning
+              ? <span className="inline-flex items-center justify-center gap-2"><PauseCircle size={18} /> 자동화 중지</span>
+              : '자동화 시작'}
           </DarkButton>
         </div>
       </PanelCard>
@@ -1972,8 +1970,8 @@ function ViralCaptureTestPanel({ account, mode = 'image' }) {
         </label>
 
         <div className="flex gap-2">
-          <DarkButton onClick={runCapture} disabled={!canRun}>
-            {running ? <span className="inline-flex items-center justify-center gap-2"><RefreshCw size={18} className="animate-spin" /> 실행 중...</span> : '실행하기'}
+          <DarkButton onClick={runCapture} disabled={!canRun} loading={running} loadingLabel="실행 중">
+            실행하기
           </DarkButton>
         </div>
         <div className="text-xs font-bold text-zinc-600">계정당 하루 1회 사용 가능</div>
@@ -2257,9 +2255,9 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
               접수되면 관리자 셋업 대기에 등록되고 담당자에게 알림이 갑니다.
             </p>
           </div>
-          <DarkButton variant="ghost" size="sm" onClick={requestSetup} disabled={requestingSetup}>
+          <DarkButton variant="ghost" size="sm" onClick={requestSetup} disabled={requestingSetup} loading={requestingSetup} loadingLabel="요청 중">
             <Settings size={15} />
-            {requestingSetup ? '요청 중...' : '관리자에게 셋업 요청'}
+            관리자에게 셋업 요청
           </DarkButton>
         </div>
       </div>
@@ -2282,14 +2280,14 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
               )}
             </div>
             {threadsOAuthReady ? (
-              <DarkButton variant="ghost" size="sm" onClick={() => setConfirmingThreadsApproval(true)} disabled={connectingThreads}>
+              <DarkButton variant="ghost" size="sm" onClick={() => setConfirmingThreadsApproval(true)} disabled={connectingThreads} loading={connectingThreads} loadingLabel="이동 중">
                 <Link2 size={15} />
-                {connectingThreads ? '이동 중...' : account?.has_threads_access_token ? '다시 연결' : '승인 후 연결'}
+                {account?.has_threads_access_token ? '다시 연결' : '승인 후 연결'}
               </DarkButton>
             ) : (
-              <DarkButton variant="ghost" size="sm" onClick={requestThreadsRegistration} disabled={requestingThreads}>
+              <DarkButton variant="ghost" size="sm" onClick={requestThreadsRegistration} disabled={requestingThreads} loading={requestingThreads} loadingLabel="요청 중">
                 <Link2 size={15} />
-                {requestingThreads ? '요청 중...' : activeThreadsRequest ? '요청 업데이트' : '등록 요청'}
+                {activeThreadsRequest ? '요청 업데이트' : '등록 요청'}
               </DarkButton>
             )}
           </div>
@@ -2573,7 +2571,7 @@ function BetaSettingsPanel({ account, trialStatus, setupStatus, reloadAccounts, 
         </div>
       </CollapsiblePanel>
 
-      <DarkButton onClick={save} disabled={saving}>{saving ? '저장 중...' : '설정 저장'}</DarkButton>
+      <DarkButton onClick={save} disabled={saving} loading={saving} loadingLabel="저장 중">설정 저장</DarkButton>
     </>
   );
 }
@@ -2810,7 +2808,7 @@ function TrendReferencesPanel({ account, currentUser, reloadAccounts }) {
           <DarkSelect label="이모지" value={previewForm.emojiLevel} onChange={(value) => setPreviewForm((prev) => ({ ...prev, emojiLevel: value }))} options={emojiLevelOptions} />
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <DarkButton onClick={runPreview} disabled={previewLoading}>{previewLoading ? '생성 중...' : '예시 글 생성'}</DarkButton>
+          <DarkButton onClick={runPreview} disabled={previewLoading} loading={previewLoading} loadingLabel="생성 중">예시 글 생성</DarkButton>
           <DarkButton variant="ghost" onClick={() => setPreview(null)} disabled={previewLoading || !preview}>미리보기 초기화</DarkButton>
         </div>
         {preview && (
@@ -2941,7 +2939,7 @@ function TrendReferencesPanel({ account, currentUser, reloadAccounts }) {
           학습할 글 {samples.length}개 · 품질 향상 참여 {learningEnabled ? '켜짐' : '꺼짐'}
         </div>
         <div className="mt-3 flex gap-2">
-          <DarkButton onClick={analyze} disabled={loading || ocrLoading || samples.length === 0}>{loading ? '저장 중...' : '이 글 학습하기'}</DarkButton>
+          <DarkButton onClick={analyze} disabled={loading || ocrLoading || samples.length === 0} loading={loading} loadingLabel="저장 중">이 글 학습하기</DarkButton>
           <DarkButton variant="ghost" onClick={() => { setText(''); setOcrSamples([]); setResult(null); }} disabled={loading || ocrLoading}>초기화</DarkButton>
         </div>
       </PanelCard>
@@ -2975,8 +2973,8 @@ function TrendReferencesPanel({ account, currentUser, reloadAccounts }) {
             </p>
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
               {!learningEnabled && (
-                <DarkButton onClick={() => updateAnonymousLearning(true)} disabled={savingLearning}>
-                  {savingLearning ? '저장 중...' : '참여하고 글 품질 높이기'}
+                <DarkButton onClick={() => updateAnonymousLearning(true)} disabled={savingLearning} loading={savingLearning} loadingLabel="저장 중">
+                  참여하고 글 품질 높이기
                 </DarkButton>
               )}
               <DarkButton variant="ghost" onClick={() => setShowLearningInfo(false)} disabled={savingLearning}>
@@ -3134,9 +3132,10 @@ function BetaAccountAddForm({ accountCreation }) {
       <button
         type="submit"
         disabled={accountCreation.adding || !String(draft.name || '').trim()}
-        className="rounded-xl bg-zinc-100 px-3 py-2 text-sm font-black text-zinc-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-100 px-3 py-2 text-sm font-black text-zinc-950 hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {accountCreation.adding ? '추가 중...' : '추가하기'}
+        {accountCreation.adding && <RefreshCw size={15} className="shrink-0 animate-spin" />}
+        {accountCreation.adding ? '추가 중' : '추가하기'}
       </button>
       <p className="text-[11px] leading-relaxed text-zinc-700">
         생성 후 자동화는 바로 시작하지 않습니다. 먼저 Threads 연결과 게시 조건을 확인합니다.
@@ -3808,9 +3807,10 @@ function TestPricingColumn({ plan, index, busy, onClick }) {
         type="button"
         onClick={onClick}
         disabled={busy || !plan.product || plan.testOnly}
-        className={`mt-10 w-full rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${featured ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-white/10 text-zinc-50 hover:bg-white/15'}`}
+        className={`mt-10 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${featured ? 'bg-zinc-100 text-zinc-950 hover:bg-white' : 'bg-white/10 text-zinc-50 hover:bg-white/15'}`}
       >
-        {busy ? '진행 중...' : plan.testOnly ? '상품 등록 후 활성화' : plan.buttonLabel}
+        {busy && <RefreshCw size={16} className="shrink-0 animate-spin" />}
+        {busy ? '진행 중' : plan.testOnly ? '상품 등록 후 활성화' : plan.buttonLabel}
       </button>
       {plan.testOnly && <div className="mt-3 text-center text-xs font-bold text-amber-600">테스트 표시 · 결제 미연동</div>}
     </article>
@@ -3845,8 +3845,8 @@ function LegacyBetaPlanCard({ icon: Icon, title, priceText, originalPriceText, c
           <div className="mt-1 text-sm text-zinc-500">{caption}</div>
         </div>
       </div>
-      <DarkButton onClick={onClick} disabled={busy || !product} className="mt-4 w-full">
-        {busy ? '진행 중...' : '결제하기'}
+      <DarkButton onClick={onClick} disabled={busy || !product} loading={busy} loadingLabel="진행 중" className="mt-4 w-full">
+        결제하기
       </DarkButton>
     </PanelCard>
   );
@@ -3907,9 +3907,10 @@ function BetaPlanCard({ icon: Icon, title, priceText, originalPriceText, caption
         type="button"
         onClick={onClick}
         disabled={busy || !product || testOnly}
-        className={`mt-auto w-full rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${featured ? 'bg-zinc-950 text-white hover:bg-black' : 'bg-white text-zinc-950 hover:bg-zinc-200'}`}
+        className={`mt-auto inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${featured ? 'bg-zinc-950 text-white hover:bg-black' : 'bg-white text-zinc-950 hover:bg-zinc-200'}`}
       >
-        {busy ? '진행 중...' : testOnly ? '상품 등록 후 활성화' : buttonLabel}
+        {busy && <RefreshCw size={16} className="shrink-0 animate-spin" />}
+        {busy ? '진행 중' : testOnly ? '상품 등록 후 활성화' : buttonLabel}
       </button>
     </div>
   );
@@ -3980,7 +3981,7 @@ function BetaPostsPanel({ account, currentUser, queue, posts, loading, reloadWor
       <PanelCard title="계정별 E2E 진단">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm font-bold leading-relaxed text-zinc-400">글 품질, 상품 매칭, 큐 모드, 본문 업로드, 댓글 링크 실패 원인을 한 줄로 확인해요.</div>
-          <DarkButton variant="ghost" onClick={loadDiagnostics} disabled={diagnosticsLoading}>{diagnosticsLoading ? '진단 중...' : '진단 새로고침'}</DarkButton>
+          <DarkButton variant="ghost" onClick={loadDiagnostics} disabled={diagnosticsLoading} loading={diagnosticsLoading} loadingLabel="진단 중">진단 새로고침</DarkButton>
         </div>
         {diagnostics && (
           <div className="mt-4 grid gap-3">
@@ -4183,8 +4184,8 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
           현재 입력 후보 {urlCount}개 · {targetCategory || '선택한'} 카테고리 기준으로 S/A/B/C/D 랭크를 분석해요.
         </div>
         <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-        <DarkButton onClick={save} disabled={saving || (urlCount === 0 && !fileName)}>
-          {saving ? '저장 중...' : '후보 저장'}
+        <DarkButton onClick={save} disabled={saving || (urlCount === 0 && !fileName)} loading={saving} loadingLabel="저장 중">
+          후보 저장
         </DarkButton>
           <DarkButton variant="ghost" onClick={reset} disabled={saving || (!workspace?.candidates?.length && !workspace?.analysisResults?.length && !fileName)}>
             새로 올리기
@@ -4399,8 +4400,8 @@ function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
           ))}
         </div>
         <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-          <DarkButton onClick={analyze} disabled={analyzing || candidates.length === 0 || usage.remaining <= 0}>
-            {analyzing ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : `후보 ${candidates.length}개 분석`}
+          <DarkButton onClick={analyze} disabled={analyzing || candidates.length === 0 || usage.remaining <= 0} loading={analyzing} loadingLabel="분석 중">
+            {usage.remaining <= 0 ? '남은 횟수 없음' : `후보 ${candidates.length}개 분석`}
           </DarkButton>
           <DarkButton variant="ghost" onClick={reset} disabled={analyzing || (candidates.length === 0 && results.length === 0)}>
             새로 올리기
@@ -4660,7 +4661,7 @@ function SpreadCampaignOperationsCard({ campaign, workspace, setWorkspace, reloa
             <div className="mt-3 grid gap-3">
               <label className={labelClass}>신청자 목록<textarea className={inputClass} rows="4" value={applicantForm.applicants} onChange={(event) => setApplicantForm((prev) => ({ ...prev, applicants: event.target.value }))} placeholder={'신청자 A\n신청자 B\n신청자 C'} /></label>
               <label className={labelClass}>선정 기준<textarea className={inputClass} rows="3" value={applicantForm.criteria} onChange={(event) => setApplicantForm((prev) => ({ ...prev, criteria: event.target.value }))} placeholder={'최근 활동성\n카테고리 적합도\n제출 가능 일정'} /></label>
-              <DarkButton onClick={saveApplicants} disabled={savingApplicants || usage.remaining <= 0}>{savingApplicants ? '정리 중...' : '참여자 선정 정리'}</DarkButton>
+              <DarkButton onClick={saveApplicants} disabled={savingApplicants || usage.remaining <= 0} loading={savingApplicants} loadingLabel="정리 중">참여자 선정 정리</DarkButton>
             </div>
             {(campaign.applicants || []).length > 0 && (
               <div className="mt-3 grid gap-2">
@@ -4683,7 +4684,7 @@ function SpreadCampaignOperationsCard({ campaign, workspace, setWorkspace, reloa
               <label className={labelClass}>제출 URL<input className={inputClass} value={reviewForm.url} onChange={(event) => setReviewForm((prev) => ({ ...prev, url: event.target.value }))} placeholder="https://..." /></label>
               <label className={labelClass}>필수 키워드<textarea className={inputClass} rows="3" value={reviewForm.required} onChange={(event) => setReviewForm((prev) => ({ ...prev, required: event.target.value }))} placeholder={'브랜드명\n제품명\n필수 해시태그'} /></label>
               <label className={labelClass}>금지 표현<textarea className={inputClass} rows="3" value={reviewForm.forbidden} onChange={(event) => setReviewForm((prev) => ({ ...prev, forbidden: event.target.value }))} placeholder={'100% 보장\n치료\n과장 표현'} /></label>
-              <DarkButton onClick={saveReview} disabled={savingReview || usage.remaining <= 0}>{savingReview ? '검수 중...' : '제출물 검수'}</DarkButton>
+              <DarkButton onClick={saveReview} disabled={savingReview || usage.remaining <= 0} loading={savingReview} loadingLabel="검수 중">제출물 검수</DarkButton>
             </div>
             {campaign.submissionReview?.checks?.length > 0 && (
               <div className="mt-3 grid gap-2">
@@ -4797,7 +4798,7 @@ function SpreadCampaignPanel({ assistantDraft, reloadCurrentUser }) {
             <label className={labelClass}>목표<input className={inputClass} value={draft.goal} onChange={(event) => update('goal', event.target.value)} placeholder="예: 신제품 체험단 모집" /></label>
             <label className={labelClass}>채널<input className={inputClass} value={draft.channel} onChange={(event) => update('channel', event.target.value)} placeholder="예: 블로그, Threads, 인스타그램" /></label>
             <label className={labelClass}>상품 유형<input className={inputClass} value={draft.product} onChange={(event) => update('product', event.target.value)} placeholder="예: 주방용품, 뷰티, 생활가전" /></label>
-            <DarkButton onClick={save} disabled={saving || usage.remaining <= 0}>{saving ? '등록 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '캠페인 등록'}</DarkButton>
+            <DarkButton onClick={save} disabled={saving || usage.remaining <= 0} loading={saving} loadingLabel="등록 중">{usage.remaining <= 0 ? '남은 횟수 없음' : '캠페인 등록'}</DarkButton>
             {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
           </div>
         </PanelCard>
@@ -4855,7 +4856,7 @@ function SpreadApplicantsPanel({ reloadCurrentUser }) {
         <div className="grid gap-3">
           <label className={labelClass}>신청자 목록<textarea className={inputClass} rows="4" value={form.applicants} onChange={(event) => setForm((prev) => ({ ...prev, applicants: event.target.value }))} placeholder={'신청자 A\n신청자 B\n신청자 C'} /></label>
           <label className={labelClass}>선정 기준<textarea className={inputClass} rows="3" value={form.criteria} onChange={(event) => setForm((prev) => ({ ...prev, criteria: event.target.value }))} placeholder={'최근 활동성\n카테고리 적합도\n제출 가능 일정'} /></label>
-          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0 || !selectedCampaign}>{saving ? '정리 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '참여자 선정 정리'}</DarkButton>
+          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0 || !selectedCampaign} loading={saving} loadingLabel="정리 중">{usage.remaining <= 0 ? '남은 횟수 없음' : '참여자 선정 정리'}</DarkButton>
           {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
@@ -4917,7 +4918,7 @@ function SpreadReviewPanel({ reloadCurrentUser }) {
           <label className={labelClass}>제출 URL<input className={inputClass} value={form.url} onChange={(event) => setForm((prev) => ({ ...prev, url: event.target.value }))} placeholder="https://..." /></label>
           <label className={labelClass}>필수 키워드<textarea className={inputClass} rows="3" value={form.required} onChange={(event) => setForm((prev) => ({ ...prev, required: event.target.value }))} placeholder={'브랜드명\n제품명\n필수 해시태그'} /></label>
           <label className={labelClass}>금지 표현<textarea className={inputClass} rows="3" value={form.forbidden} onChange={(event) => setForm((prev) => ({ ...prev, forbidden: event.target.value }))} placeholder={'100% 보장\n치료\n과장 표현'} /></label>
-          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0 || !selectedCampaign}>{saving ? '검수 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '제출물 검수'}</DarkButton>
+          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0 || !selectedCampaign} loading={saving} loadingLabel="검수 중">{usage.remaining <= 0 ? '남은 횟수 없음' : '제출물 검수'}</DarkButton>
           {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
       </PanelCard>
@@ -5053,8 +5054,8 @@ function PolibotUploadPanel({ currentUser, onOpenAction }) {
           </div>
         )}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <DarkButton onClick={() => loadWorkspace()} disabled={loading || refreshing} className="w-auto">
-            <RefreshCw size={15} /> {loading || refreshing ? '확인 중...' : '상태 새로고침'}
+          <DarkButton onClick={() => loadWorkspace()} disabled={loading || refreshing} loading={loading || refreshing} loadingLabel="확인 중" className="w-auto">
+            <RefreshCw size={15} /> 상태 새로고침
           </DarkButton>
           {status?.actionKey && status.actionKey !== 'polibot-upload' && (
             <DarkButton variant="ghost" onClick={() => onOpenAction?.(status.actionKey)} className="w-auto">
@@ -5450,9 +5451,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
               <DarkSelect label="가입 목적" value={form.purpose} onChange={(value) => setForm((prev) => ({ ...prev, purpose: value }))} options={[{ value: '', label: '미확인' }, { value: '보장 강화', label: '보장 강화' }, { value: '보험료 절감', label: '보험료 절감' }, { value: '리모델링', label: '리모델링' }, { value: '신규 가입', label: '신규 가입' }]} />
             </div>
           )}
-          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0} className="w-full">
-            {saving && <RefreshCw size={15} className="animate-spin" />}
-            {saving ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}
+          <DarkButton onClick={save} disabled={saving || usage.remaining <= 0} loading={saving} loadingLabel="분석 중" className="w-full">
+            {usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}
           </DarkButton>
           {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
         </div>
@@ -6281,9 +6281,8 @@ function PolibotCompanyHint({ companies = [], selectedCompany = '전체 보험�
 function PolibotGenerateButton({ saving, canGenerate, usage, onGenerate }) {
   return (
     <div className="grid min-w-0 gap-2 rounded-2xl border border-white/10 bg-black/20 p-2.5">
-      <DarkButton size="sm" onClick={onGenerate} disabled={!canGenerate}>
-        {saving && <RefreshCw size={15} className="animate-spin" />}
-        {saving ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}
+      <DarkButton size="sm" onClick={onGenerate} disabled={!canGenerate} loading={saving} loadingLabel="분석 중">
+        {usage.remaining <= 0 ? '남은 횟수 없음' : '추천 초안 만들기'}
       </DarkButton>
       {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
     </div>
@@ -6715,9 +6714,10 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
               type="button"
               onClick={submitFeedback}
               disabled={!feedback || savingFeedback}
-              className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-black text-zinc-200 hover:bg-white/5 disabled:opacity-40"
+              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-black text-zinc-200 hover:bg-white/5 disabled:opacity-40"
             >
-              {savingFeedback ? '피드백 저장 중...' : '피드백 저장'}
+              {savingFeedback && <RefreshCw size={15} className="shrink-0 animate-spin" />}
+              {savingFeedback ? '피드백 저장 중' : '피드백 저장'}
             </button>
           </div>
           <CollapsiblePanel title="근거 자료">
@@ -6808,7 +6808,7 @@ function PolibotCustomersPanel() {
                 <label className={labelClass}>고객명<input className={inputClass} value={editForm.name} onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))} /></label>
                 <label className={labelClass}>나이<input className={inputClass} value={editForm.age} onChange={(event) => setEditForm((prev) => ({ ...prev, age: event.target.value }))} /></label>
                 <label className={labelClass}>메모<textarea className={inputClass} rows="4" value={editForm.memo} onChange={(event) => setEditForm((prev) => ({ ...prev, memo: event.target.value }))} /></label>
-                <DarkButton onClick={saveEdit} disabled={saving}>{saving ? '저장 중...' : '수정 저장'}</DarkButton>
+                <DarkButton onClick={saveEdit} disabled={saving} loading={saving} loadingLabel="저장 중">수정 저장</DarkButton>
               </div>
             ) : (
               <div className="mt-5 grid gap-3 text-sm text-zinc-400">
@@ -7102,7 +7102,7 @@ function InfludexUploadPanel({ onOpenGrade }) {
           {parsing ? '파일 분석 중...' : `현재 후보 ${candidateCount}개`}
         </div>
         <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-          <DarkButton onClick={save} disabled={saving || parsing || (!rows.trim() && candidateFiles.length === 0 && savedCandidates.length === 0)}>{saving ? '저장 중...' : '후보 저장'}</DarkButton>
+          <DarkButton onClick={save} disabled={saving || parsing || (!rows.trim() && candidateFiles.length === 0 && savedCandidates.length === 0)} loading={saving} loadingLabel="저장 중">후보 저장</DarkButton>
           <DarkButton variant="ghost" onClick={reset} disabled={saving || parsing || (savedCandidates.length === 0 && !rows.trim() && !fileName)}>새로 올리기</DarkButton>
         </div>
       </PanelCard>
@@ -7204,8 +7204,8 @@ function InfludexGradePanel({ reloadCurrentUser, onOpenUpload }) {
           </div>
         )}
         <div className="grid grid-cols-[1fr_auto] gap-2">
-          <DarkButton onClick={analyze} disabled={analyzing || candidates.length === 0 || usage.remaining <= 0}>
-            {analyzing ? '분석 중...' : usage.remaining <= 0 ? '남은 횟수 없음' : `후보 ${candidates.length}개 분석`}
+          <DarkButton onClick={analyze} disabled={analyzing || candidates.length === 0 || usage.remaining <= 0} loading={analyzing} loadingLabel="분석 중">
+            {usage.remaining <= 0 ? '남은 횟수 없음' : `후보 ${candidates.length}개 분석`}
           </DarkButton>
           <DarkButton variant="ghost" onClick={reset} disabled={analyzing || (candidates.length === 0 && results.length === 0)}>초기화</DarkButton>
         </div>
@@ -7567,9 +7567,9 @@ function AuvibotThreadsConnection({ account, reloadAccounts }) {
           Threads 핸들
           <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_112px]">
             <input className={inputClass} value={handleDraft} onChange={(event) => setHandleDraft(event.target.value)} placeholder="@myhandle" />
-            <DarkButton type="button" variant="ghost" size="sm" className="h-full min-h-11 w-full justify-center whitespace-nowrap px-3" onClick={saveHandle} disabled={savingHandle || !account?.id}>
+            <DarkButton type="button" variant="ghost" size="sm" className="h-full min-h-11 w-full justify-center whitespace-nowrap px-3" onClick={saveHandle} disabled={savingHandle || !account?.id} loading={savingHandle} loadingLabel="저장 중">
               <CheckCircle2 size={15} />
-              {savingHandle ? '저장 중...' : '저장'}
+              저장
             </DarkButton>
           </div>
         </label>
@@ -7586,9 +7586,11 @@ function AuvibotThreadsConnection({ account, reloadAccounts }) {
             size="sm"
             onClick={threadsOAuthReady ? () => setConfirmingThreadsApproval(true) : requestThreadsRegistration}
             disabled={connecting || requestingThreads || savingHandle || !account?.id}
+            loading={connecting || requestingThreads}
+            loadingLabel={connecting ? '이동 중' : '요청 중'}
           >
             <Link2 size={15} />
-            {connecting ? '이동 중...' : requestingThreads ? '요청 중...' : actionLabel}
+            {actionLabel}
           </DarkButton>
         </div>
         {!connected && !threadsOAuthReady && (
@@ -7653,8 +7655,8 @@ function ThreadsWebApprovalModal({ account, connecting, onCancel, onConfirm }) {
           <DarkButton type="button" variant="ghost" className="flex-1 justify-center" onClick={onCancel} disabled={connecting}>
             취소
           </DarkButton>
-          <DarkButton type="button" className="flex-1 justify-center" onClick={onConfirm} disabled={connecting}>
-            {connecting ? '이동 중...' : '승인 확인 후 연결'}
+          <DarkButton type="button" className="flex-1 justify-center" onClick={onConfirm} disabled={connecting} loading={connecting} loadingLabel="이동 중">
+            승인 확인 후 연결
           </DarkButton>
         </div>
       </div>
@@ -7689,9 +7691,9 @@ function AuvibotAccountSetup({ account, accountCreation }) {
         {accountCreation?.show ? (
           <BetaAccountAddForm accountCreation={accountCreation} />
         ) : (
-          <DarkButton type="button" variant="ghost" size="sm" onClick={accountCreation?.open} disabled={!accountCreation?.canAdd || accountCreation?.adding}>
+          <DarkButton type="button" variant="ghost" size="sm" onClick={accountCreation?.open} disabled={!accountCreation?.canAdd || accountCreation?.adding} loading={accountCreation?.adding} loadingLabel="추가 중">
             <Plus size={15} />
-            {accountCreation?.adding ? '추가 중...' : '새 채널 추가'}
+            새 채널 추가
           </DarkButton>
         )}
         {!accountCreation?.canAdd && (
@@ -7949,16 +7951,16 @@ function AuvibotCustomerSettings({ account, reloadAccounts }) {
               <span className="text-xs font-black text-zinc-500">JASAIN 설정</span>
             </div>
           ))}
-          <DarkButton type="button" variant="ghost" size="sm" onClick={requestSetup} disabled={requestingSetup}>
+          <DarkButton type="button" variant="ghost" size="sm" onClick={requestSetup} disabled={requestingSetup} loading={requestingSetup} loadingLabel="요청 중">
             <Settings size={15} />
-            {requestingSetup ? '요청 중...' : '관리자 셋업 요청'}
+            관리자 셋업 요청
           </DarkButton>
         </div>
       </details>
 
-      <DarkButton type="button" onClick={save} disabled={saving}>
+      <DarkButton type="button" onClick={save} disabled={saving} loading={saving} loadingLabel="저장 중">
         <CheckCircle2 size={16} />
-        {saving ? '저장 중...' : '설정 저장'}
+        설정 저장
       </DarkButton>
     </div>
   );
@@ -8044,8 +8046,8 @@ function AuvibotPanel({ mode = 'run', account, reloadAccounts, accountCreation, 
               <DarkButton type="button" variant="ghost" onClick={() => onOpenAction?.('auvibot-settings')}>
                 설정 확인
               </DarkButton>
-              <DarkButton type="button" onClick={runAuvibot} disabled={running}>
-                {running ? '처리 중...' : '자동화 시작'}
+              <DarkButton type="button" onClick={runAuvibot} disabled={running} loading={running} loadingLabel="처리 중">
+                자동화 시작
               </DarkButton>
             </div>
           </div>
@@ -8557,7 +8559,7 @@ function SublogPanel({ currentUser }) {
               <textarea className={`${inputClass} min-h-[74px]`} value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="메모 예: 가족 공유, 해지 예정, 업무용" />
               <div className="grid grid-cols-2 gap-2">
                 <DarkButton type="button" variant="ghost" onClick={closeForm}>취소</DarkButton>
-                <DarkButton type="submit" disabled={saving}>{saving ? '저장 중...' : editingId ? '저장하기' : '구독 추가'}</DarkButton>
+                <DarkButton type="submit" disabled={saving} loading={saving} loadingLabel="저장 중">{editingId ? '저장하기' : '구독 추가'}</DarkButton>
               </div>
             </form>
           </div>
@@ -8584,9 +8586,10 @@ function ProductPreview({ action, onStartProduct, starting }) {
         type="button"
         onClick={() => onStartProduct?.(action.key)}
         disabled={starting || preparing}
-        className="mt-4 inline-flex w-full items-center justify-center rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-950 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
+        className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-zinc-950 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {preparing ? '서비스 준비중' : starting ? '시작하는 중...' : product.cta}
+        {starting && <RefreshCw size={16} className="shrink-0 animate-spin" />}
+        {preparing ? '서비스 준비중' : starting ? '시작하는 중' : product.cta}
       </button>
     </PanelCard>
   );
@@ -8695,8 +8698,8 @@ function QueueSection({ title, rows, posts, expandedId, detail, loadingDetailId,
                       {row.post_url && isTrustedThreadsPostUrl(row.post_url) && <a href={row.post_url} target="_blank" rel="noreferrer" className="text-sm font-bold text-zinc-100 hover:text-white">게시글 보기</a>}
                       {row.post_url && !isTrustedThreadsPostUrl(row.post_url) && <div className="text-sm font-bold text-amber-200">Threads 링크 확인 필요</div>}
                       {onDismiss && (
-                        <DarkButton variant="ghost" size="sm" onClick={() => onDismiss(row.id)} disabled={dismissingId === row.id}>
-                          {dismissingId === row.id ? '정리 중...' : '확인 완료'}
+                        <DarkButton variant="ghost" size="sm" onClick={() => onDismiss(row.id)} disabled={dismissingId === row.id} loading={dismissingId === row.id} loadingLabel="정리 중">
+                          확인 완료
                         </DarkButton>
                       )}
                     </>
@@ -9010,14 +9013,15 @@ function DarkConfirmModal({ title, description, primaryLabel, secondaryLabel, on
   );
 }
 
-function DarkButton({ children, variant = 'primary', size = 'md', className = '', ...props }) {
+function DarkButton({ children, variant = 'primary', size = 'md', className = '', loading = false, loadingLabel = '', disabled = false, ...props }) {
   const variantClass = variant === 'ghost'
     ? 'border border-white/10 bg-white/[0.03] text-zinc-200 hover:bg-white/10'
     : 'bg-zinc-100 text-zinc-950 hover:bg-white';
   const sizeClass = size === 'sm' ? 'px-3 py-2 text-xs' : 'px-4 py-3 text-sm';
   return (
-    <button type="button" className={`inline-flex items-center justify-center gap-2 rounded-2xl font-black disabled:cursor-not-allowed disabled:opacity-50 ${variantClass} ${sizeClass} ${className}`} {...props}>
-      {children}
+    <button type="button" className={`inline-flex items-center justify-center gap-2 rounded-2xl font-black disabled:cursor-not-allowed disabled:opacity-50 ${variantClass} ${sizeClass} ${className}`} disabled={disabled || loading} {...props}>
+      {loading && <RefreshCw size={size === 'sm' ? 14 : 16} className="shrink-0 animate-spin" aria-hidden="true" />}
+      {loading ? (loadingLabel || children) : children}
     </button>
   );
 }
