@@ -140,7 +140,15 @@ export async function updateThreadsConnectionRequest(id, patch = {}, actor = {})
       next.meta_registered_at = current.meta_registered_at || new Date().toISOString();
       next.status = 'customer_action_required';
     }
-    if (patch.status === 'connected') next.connected_at = current.connected_at || new Date().toISOString();
+    if (patch.status === 'connected') {
+      const account = await dbGet('accounts', { id: current.account_id });
+      if (!account?.threads_access_token) {
+        const error = new Error('고객의 Threads 웹 승인이 아직 완료되지 않았습니다. 먼저 Meta 등록 완료 상태로 변경해 주세요.');
+        error.status = 400;
+        throw error;
+      }
+      next.connected_at = current.connected_at || new Date().toISOString();
+    }
     if (patch.status === 'canceled') next.canceled_at = current.canceled_at || new Date().toISOString();
   }
   if (patch.adminMemo !== undefined || patch.admin_memo !== undefined) {

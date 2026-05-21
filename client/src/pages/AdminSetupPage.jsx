@@ -287,9 +287,6 @@ export default function AdminSetupPage() {
                         {request.status === 'requested' && (
                           <button disabled={savingId === request.id} onClick={() => updateThreadsRequest(request, 'customer_action_required')} className="rounded bg-slate-900 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-50">Meta 등록 완료</button>
                         )}
-                        {request.status !== 'connected' && (
-                          <button disabled={savingId === request.id} onClick={() => updateThreadsRequest(request, 'connected')} className="rounded border border-line px-3 py-1.5 text-xs font-bold hover:bg-panel disabled:opacity-50">연결 완료 처리</button>
-                        )}
                         <button disabled={savingId === request.id} onClick={() => updateThreadsRequest(request, 'canceled')} className="rounded border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-50">취소</button>
                       </div>
                     </td>

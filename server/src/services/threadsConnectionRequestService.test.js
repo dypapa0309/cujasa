@@ -63,6 +63,15 @@ test('mark connected syncs latest request handle to account', async () => {
   assert.equal(saved.account_handle, '@first_handle');
 });
 
+test('admin cannot mark request connected before customer oauth token exists', async () => {
+  const { request } = await createRequestFixture('threads-admin-connected-without-token');
+
+  await assert.rejects(
+    updateThreadsConnectionRequest(request.id, { status: 'connected' }, { email: 'admin@example.test' }),
+    /웹 승인이 아직 완료되지 않았습니다/
+  );
+});
+
 test('oauth preflight sync uses latest open request handle before auth start', async () => {
   const { account, request } = await createRequestFixture('threads-sync-preflight');
   await dbUpdate('threads_connection_requests', { id: request.id }, {
