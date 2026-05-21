@@ -10,6 +10,10 @@ const LANDING_URL = /landing-phi-flame\.vercel\.app/i.test(rawLandingUrl)
 const APP_BASE_URL = process.env.APP_BASE_URL || 'http://localhost:3000';
 const BLOG_IMAGE_URL = process.env.BLOG_IMAGE_URL || 'https://jasain.kr/images/products.png';
 const BLOG_AUTHOR = 'CUJASA';
+const BLOG_CANONICAL_HOST = 'blog.jasain.kr';
+const DEFAULT_ACCOUNT_BLOG_SLUG = 'jasain-cujasa-lab';
+const NAVER_SITE_VERIFICATION = 'aed88b20e103365b174eea083db5c019997d8e6c';
+const GOOGLE_SITE_VERIFICATION = 'm86b1pmlHCpiA_K9v0qSjs54ip7RyvZQ7IpVBEAjtXI';
 const DEFAULT_BLOG_KEYWORDS = [
   '쿠팡 파트너스 자동화',
   '쿠팡 파트너스 부업',
@@ -45,6 +49,24 @@ function normalizeKeywords(value = []) {
     .map((item) => String(item || '').trim())
     .filter(Boolean))]
     .slice(0, 12);
+}
+
+function requestHost(req) {
+  return String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim().split(':')[0].toLowerCase();
+}
+
+function isCanonicalBlogHost(req) {
+  return requestHost(req) === BLOG_CANONICAL_HOST;
+}
+
+function baseUrlForRequest(req) {
+  return isCanonicalBlogHost(req) ? `https://${BLOG_CANONICAL_HOST}` : APP_BASE_URL;
+}
+
+function accountBlogHref(req, account) {
+  const baseUrl = baseUrlForRequest(req);
+  if (isCanonicalBlogHost(req) && account?.blog_slug === DEFAULT_ACCOUNT_BLOG_SLUG) return baseUrl;
+  return `${baseUrl}/blog/a/${encodeURIComponent(account.blog_slug)}`;
 }
 
 function cujasaBanner() {
@@ -94,6 +116,8 @@ function blogLayout({
   <meta name="description" content="${safeDescription}">
   <meta name="keywords" content="${safeKeywords}">
   <meta name="author" content="${escapeHtml(BLOG_AUTHOR)}">
+  <meta name="naver-site-verification" content="${NAVER_SITE_VERIFICATION}">
+  <meta name="google-site-verification" content="${GOOGLE_SITE_VERIFICATION}">
   <meta name="robots" content="index, follow">
   <link rel="canonical" href="${safeCanonical}">
   <meta property="og:type" content="${ogType}">
@@ -165,6 +189,12 @@ function accountBlogTitle(account) {
 // 블로그 목록
 router.get('/', async (req, res, next) => {
   try {
+    if (isCanonicalBlogHost(req)) {
+      const { account, posts } = await listAccountBlogPosts(DEFAULT_ACCOUNT_BLOG_SLUG, { limit: 20 });
+      if (!account) return res.status(404).type('html').send('<h1>블로그를 찾을 수 없습니다</h1>');
+      return sendAccountBlogIndex(req, res, account, posts);
+    }
+
     const posts = await listBlogPosts({ limit: 20 });
     const cards = posts.map((p) => `
       <a href="${APP_BASE_URL}/blog/${escapeHtml(p.slug)}" style="text-decoration:none">
@@ -209,15 +239,10 @@ router.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// 계정별 블로그 목록
-router.get('/a/:blogSlug', async (req, res, next) => {
-  try {
-    const { account, posts } = await listAccountBlogPosts(req.params.blogSlug, { limit: 20 });
-    if (!account) return res.status(404).type('html').send('<h1>블로그를 찾을 수 없습니다</h1>');
-
-    const blogTitle = accountBlogTitle(account);
-    const homeHref = `${APP_BASE_URL}/blog/a/${escapeHtml(account.blog_slug)}`;
-    const cards = posts.map((p) => `
+function sendAccountBlogIndex(req, res, account, posts) {
+  const blogTitle = accountBlogTitle(account);
+  const homeHref = accountBlogHref(req, account);
+  const cards = posts.map((p) => `
       <a href="${homeHref}/${escapeHtml(p.slug)}" style="text-decoration:none">
         <div class="post-card">
           <div class="post-card-date">${formatDate(p.published_at)}</div>
@@ -226,7 +251,7 @@ router.get('/a/:blogSlug', async (req, res, next) => {
         </div>
       </a>`).join('');
 
-    const body = `
+  const body = `
       <div style="margin-bottom:32px">
         <h1 style="font-size:26px;font-weight:900;margin-bottom:8px">${escapeHtml(blogTitle)}</h1>
         <p style="color:#666;font-size:15px">${escapeHtml(account.content_scope || '자동으로 정리되는 추천 콘텐츠')}</p>
@@ -234,31 +259,39 @@ router.get('/a/:blogSlug', async (req, res, next) => {
       ${posts.length ? `<div class="card-grid">${cards}</div>` : '<p style="color:#aaa">아직 게시된 글이 없습니다.</p>'}
       ${cujasaBanner()}`;
 
-    const canonical = `${APP_BASE_URL}/blog/a/${encodeURIComponent(account.blog_slug)}`;
-    res.type('html').send(blogLayout({
-      title: `${blogTitle} | 쿠팡 파트너스 자동화 콘텐츠`,
-      metaDescription: `${blogTitle}에서 쿠팡 파트너스 자동화, 추천 콘텐츠 운영, CUJASA 활용법을 확인하세요.`,
-      canonical,
-      ogType: 'website',
-      siteName: blogTitle,
-      homeHref,
-      keywords: [blogTitle, account.content_scope, '쿠팡 파트너스 자동화', 'CUJASA', '자사인 블로그'],
-      structuredData: {
-        '@context': 'https://schema.org',
-        '@type': 'Blog',
-        name: blogTitle,
-        description: `${blogTitle}에서 쿠팡 파트너스 자동화와 추천 콘텐츠 운영법을 다룹니다.`,
-        url: canonical,
-        image: BLOG_IMAGE_URL,
-        keywords: normalizeKeywords([blogTitle, account.content_scope, '추천 콘텐츠 운영']),
-        publisher: {
-          '@type': 'Organization',
-          name: BLOG_AUTHOR,
-          url: LANDING_URL
-        }
-      },
-      body
-    }));
+  const canonical = homeHref;
+  return res.type('html').send(blogLayout({
+    title: `${blogTitle} | 쿠팡 파트너스 자동화 콘텐츠`,
+    metaDescription: `${blogTitle}에서 쿠팡 파트너스 자동화, 추천 콘텐츠 운영, CUJASA 활용법을 확인하세요.`,
+    canonical,
+    ogType: 'website',
+    siteName: blogTitle,
+    homeHref,
+    keywords: [blogTitle, account.content_scope, '쿠팡 파트너스 자동화', 'CUJASA', '자사인 블로그'],
+    structuredData: {
+      '@context': 'https://schema.org',
+      '@type': 'Blog',
+      name: blogTitle,
+      description: `${blogTitle}에서 쿠팡 파트너스 자동화와 추천 콘텐츠 운영법을 다룹니다.`,
+      url: canonical,
+      image: BLOG_IMAGE_URL,
+      keywords: normalizeKeywords([blogTitle, account.content_scope, '추천 콘텐츠 운영']),
+      publisher: {
+        '@type': 'Organization',
+        name: BLOG_AUTHOR,
+        url: LANDING_URL
+      }
+    },
+    body
+  }));
+}
+
+// 계정별 블로그 목록
+router.get('/a/:blogSlug', async (req, res, next) => {
+  try {
+    const { account, posts } = await listAccountBlogPosts(req.params.blogSlug, { limit: 20 });
+    if (!account) return res.status(404).type('html').send('<h1>블로그를 찾을 수 없습니다</h1>');
+    return sendAccountBlogIndex(req, res, account, posts);
   } catch (e) { next(e); }
 });
 
@@ -269,8 +302,8 @@ router.get('/a/:blogSlug/:postSlug', async (req, res, next) => {
     if (!account || !post) return res.status(404).type('html').send('<h1>글을 찾을 수 없습니다</h1>');
 
     const blogTitle = accountBlogTitle(account);
-    const homeHref = `${APP_BASE_URL}/blog/a/${escapeHtml(account.blog_slug)}`;
-    const canonical = `${APP_BASE_URL}/blog/a/${encodeURIComponent(account.blog_slug)}/${encodeURIComponent(post.slug)}`;
+    const homeHref = accountBlogHref(req, account);
+    const canonical = `${homeHref}/${encodeURIComponent(post.slug)}`;
     const title = `${post.title} | ${blogTitle}`;
     const metaDescription = post.meta_description || stripHtml(post.content).slice(0, 150);
     const keywords = normalizeKeywords([...(post.seo_keywords || []), ...(post.tags || []), account.content_scope]);
@@ -327,6 +360,65 @@ router.get('/a/:blogSlug/:postSlug', async (req, res, next) => {
 // 블로그 글 상세
 router.get('/:slug', async (req, res, next) => {
   try {
+    if (isCanonicalBlogHost(req)) {
+      const { account, post } = await getAccountBlogPost(DEFAULT_ACCOUNT_BLOG_SLUG, req.params.slug);
+      if (!account || !post) return res.status(404).type('html').send('<h1>글을 찾을 수 없습니다</h1>');
+
+      const blogTitle = accountBlogTitle(account);
+      const homeHref = accountBlogHref(req, account);
+      const canonical = `${homeHref}/${encodeURIComponent(post.slug)}`;
+      const title = `${post.title} | ${blogTitle}`;
+      const metaDescription = post.meta_description || stripHtml(post.content).slice(0, 150);
+      const keywords = normalizeKeywords([...(post.seo_keywords || []), ...(post.tags || []), account.content_scope]);
+      const imageUrl = post.cover_image_url || BLOG_IMAGE_URL;
+      const body = `
+      <div class="breadcrumb"><a href="${homeHref}">블로그</a> / ${escapeHtml(post.title)}</div>
+      <div class="post-header">
+        <div class="tag">추천 콘텐츠</div>
+        <h1 class="post-title">${escapeHtml(post.title)}</h1>
+        <div class="post-meta">${formatDate(post.published_at)}</div>
+      </div>
+      <div class="post-body">${post.content}</div>
+      ${cujasaBanner()}`;
+
+      return res.type('html').send(blogLayout({
+        title,
+        metaDescription,
+        canonical,
+        siteName: blogTitle,
+        homeHref,
+        keywords,
+        imageUrl,
+        publishedAt: post.published_at,
+        modifiedAt: post.updated_at || post.published_at,
+        structuredData: {
+          '@context': 'https://schema.org',
+          '@type': 'BlogPosting',
+          headline: post.title,
+          description: metaDescription,
+          image: imageUrl,
+          keywords,
+          datePublished: new Date(post.published_at).toISOString(),
+          dateModified: new Date(post.updated_at || post.published_at).toISOString(),
+          author: {
+            '@type': 'Organization',
+            name: blogTitle,
+            url: homeHref
+          },
+          publisher: {
+            '@type': 'Organization',
+            name: BLOG_AUTHOR,
+            url: LANDING_URL
+          },
+          mainEntityOfPage: {
+            '@type': 'WebPage',
+            '@id': canonical
+          }
+        },
+        body
+      }));
+    }
+
     const post = await getBlogPost(req.params.slug);
     if (!post) return res.status(404).type('html').send('<h1>글을 찾을 수 없습니다</h1>');
 

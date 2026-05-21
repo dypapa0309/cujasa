@@ -63,6 +63,7 @@ const allowedOrigins = new Set([
   'https://cujasa.vercel.app',
   'https://cujasa.onrender.com'
 ]);
+const BLOG_CANONICAL_HOST = 'blog.jasain.kr';
 
 function xmlEscape(value = '') {
   return String(value)
@@ -71,6 +72,20 @@ function xmlEscape(value = '') {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&apos;');
+}
+
+function requestHost(req) {
+  return String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim().split(':')[0].toLowerCase();
+}
+
+function isCanonicalBlogHost(req) {
+  return requestHost(req) === BLOG_CANONICAL_HOST;
+}
+
+function publicBaseUrl(req) {
+  return isCanonicalBlogHost(req)
+    ? `https://${BLOG_CANONICAL_HOST}`
+    : (process.env.APP_BASE_URL || `http://localhost:${port}`);
 }
 
 function isAllowedOrigin(origin = '') {
@@ -173,6 +188,11 @@ app.use('/api/announcements', announcementsRouter);
 app.use('/api/product-workspace', productWorkspaceRouter);
 app.use('/api/workspace-assistant', workspaceAssistantRouter);
 app.use('/r', trackingRouter);
+app.use((req, res, next) => {
+  if (!isCanonicalBlogHost(req)) return next();
+  if (req.path.startsWith('/api/') || ['/robots.txt', '/sitemap.xml'].includes(req.path)) return next();
+  return blogRouter(req, res, next);
+});
 app.use('/blog', blogRouter);
 app.use('/support', supportWidgetRouter);
 app.use('/api/admin', adminRouter);
@@ -185,10 +205,10 @@ app.use('/api/support', supportRouter);
 app.post('/api/webhooks/toss', tossWebhook);
 
 app.get('/robots.txt', (req, res) => {
-  const baseUrl = process.env.APP_BASE_URL || `http://localhost:${port}`;
+  const baseUrl = publicBaseUrl(req);
   res.type('text/plain').send([
     'User-agent: *',
-    'Allow: /blog',
+    `Allow: ${isCanonicalBlogHost(req) ? '/' : '/blog'}`,
     'Disallow: /api/',
     'Disallow: /admin',
     `Sitemap: ${baseUrl}/sitemap.xml`
@@ -198,8 +218,8 @@ app.get('/robots.txt', (req, res) => {
 // sitemap.xml (블로그 글 포함 자동 생성)
 app.get('/sitemap.xml', async (req, res) => {
   try {
-    const baseUrl = process.env.APP_BASE_URL || `http://localhost:${port}`;
-    const posts = await listBlogPosts({ limit: 1000 });
+    const baseUrl = publicBaseUrl(req);
+    const posts = isCanonicalBlogHost(req) ? [] : await listBlogPosts({ limit: 1000 });
     const postUrls = posts.map((p) => `
   <url>
     <loc>${xmlEscape(`${baseUrl}/blog/${encodeURIComponent(p.slug)}`)}</loc>
@@ -211,15 +231,22 @@ app.get('/sitemap.xml', async (req, res) => {
       select: 'id,blog_slug,blog_created_at,updated_at'
     });
     const accountBlogUrls = [];
-    for (const account of accountBlogs.filter((row) => row.blog_slug)) {
-      const blogUrl = `${baseUrl}/blog/a/${encodeURIComponent(account.blog_slug)}`;
-      accountBlogUrls.push(`
+    const visibleAccountBlogs = accountBlogs
+      .filter((row) => row.blog_slug)
+      .filter((row) => !isCanonicalBlogHost(req) || row.blog_slug === 'jasain-cujasa-lab');
+    for (const account of visibleAccountBlogs) {
+      const blogUrl = isCanonicalBlogHost(req) && account.blog_slug === 'jasain-cujasa-lab'
+        ? baseUrl
+        : `${baseUrl}/blog/a/${encodeURIComponent(account.blog_slug)}`;
+      if (blogUrl !== baseUrl || !isCanonicalBlogHost(req)) {
+        accountBlogUrls.push(`
   <url>
     <loc>${xmlEscape(blogUrl)}</loc>
     <lastmod>${new Date(account.updated_at || account.blog_created_at || Date.now()).toISOString().split('T')[0]}</lastmod>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>`);
+      }
       const { posts: accountPosts } = await listAccountBlogPosts(account.blog_slug, { limit: 1000 });
       accountBlogUrls.push(...accountPosts.map((p) => `
   <url>
@@ -232,7 +259,7 @@ app.get('/sitemap.xml', async (req, res) => {
     res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>${xmlEscape(`${baseUrl}/blog`)}</loc>
+    <loc>${xmlEscape(isCanonicalBlogHost(req) ? baseUrl : `${baseUrl}/blog`)}</loc>
     <changefreq>daily</changefreq>
     <priority>0.9</priority>
   </url>${postUrls}${accountBlogUrls.join('')}
