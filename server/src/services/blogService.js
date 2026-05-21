@@ -165,12 +165,18 @@ export async function maybeGenerateBlogPostForQueue({ account, post, queue } = {
 }
 
 export async function listBlogPosts({ limit = 20, offset = 0 } = {}) {
-  const all = await dbList('blog_posts', { status: 'published' }, { order: 'published_at', ascending: false });
+  const all = await dbList('blog_posts', { status: 'published' }, {
+    lte: { published_at: new Date().toISOString() },
+    order: 'published_at',
+    ascending: false
+  });
   return all.slice(offset, offset + limit);
 }
 
 export async function getBlogPost(slug) {
-  const all = await dbList('blog_posts', { slug });
+  const all = await dbList('blog_posts', { slug, status: 'published' }, {
+    lte: { published_at: new Date().toISOString() }
+  });
   return all[0] || null;
 }
 
@@ -182,13 +188,19 @@ export async function getAccountBlog(blogSlug) {
 export async function listAccountBlogPosts(blogSlug, { limit = 20, offset = 0 } = {}) {
   const account = await getAccountBlog(blogSlug);
   if (!account) return { account: null, posts: [] };
-  const all = await dbList('blog_posts', { account_id: account.id, status: 'published' }, { order: 'published_at', ascending: false });
+  const all = await dbList('blog_posts', { account_id: account.id, status: 'published' }, {
+    lte: { published_at: new Date().toISOString() },
+    order: 'published_at',
+    ascending: false
+  });
   return { account, posts: all.slice(offset, offset + limit) };
 }
 
 export async function getAccountBlogPost(blogSlug, postSlug) {
   const account = await getAccountBlog(blogSlug);
   if (!account) return { account: null, post: null };
-  const all = await dbList('blog_posts', { account_id: account.id, slug: postSlug });
-  return { account, post: all.find((post) => post.status === 'published') || null };
+  const all = await dbList('blog_posts', { account_id: account.id, slug: postSlug, status: 'published' }, {
+    lte: { published_at: new Date().toISOString() }
+  });
+  return { account, post: all[0] || null };
 }
