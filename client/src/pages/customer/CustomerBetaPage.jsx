@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, Clapperboard, ClipboardCheck, CreditCard, DatabaseZap, Download, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, Plus, RefreshCw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, Wand2, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, Clapperboard, ClipboardCheck, CreditCard, DatabaseZap, Download, ExternalLink, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, Plus, RefreshCw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, Wand2, X } from 'lucide-react';
 import { api, postEvent } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 import { useToast } from '../../lib/toast.jsx';
@@ -16,7 +16,19 @@ import {
 } from '../../config/contentStrategy.js';
 
 const MAX_DAILY_POSTS = 5;
+const HIRA_CERT_URL = 'https://ptl.hira.or.kr/mainCert.do?pageType=certByJ&domain=https://www.hira.or.kr&uri=JTJGcmIlMkZjbW1uJTJGcmJDZXJ0UmV0dXJuLmRvJTNGc3RyUGFnZVR5cGUlM0RESUFH';
 const infludexMaintenanceEnabled = import.meta.env.PROD && import.meta.env.VITE_ENABLE_INFLUDEX_BETA !== 'true';
+
+function calculateAgeFromBirthdate(birthdate) {
+  if (!birthdate) return '';
+  const birth = new Date(`${birthdate}T00:00:00`);
+  if (Number.isNaN(birth.getTime())) return '';
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) age -= 1;
+  return String(age);
+}
 
 const cujasaActions = [
   { key: 'run', label: '자동화 실행', icon: PlayCircle, hint: '오늘 예약을 만들고 실행 상태를 확인해요.' },
@@ -2843,7 +2855,7 @@ function TrendReferencesPanel({ account, currentUser, reloadAccounts }) {
                     ))}
                   </div>
                   {(candidate.productPreview?.matches || []).length > 0 ? (
-                    <div className="grid gap-2 sm:grid-cols-3">
+                    <div className="grid gap-2 md:grid-cols-3">
                       {candidate.productPreview.matches.map((product) => (
                         <div key={product.id || product.productId || product.name} className={`rounded-2xl border p-3 ${product.linkable ? 'border-emerald-300/20 bg-emerald-400/10' : 'border-white/10 bg-black/25'}`}>
                           <div className="aspect-[4/3] overflow-hidden rounded-xl bg-white/5">
@@ -3348,7 +3360,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
   return (
     <>
       <PanelCard>
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-xs font-black uppercase tracking-wide text-zinc-500">내 결제 상태</div>
             <h2 className="mt-2 text-xl font-black text-zinc-100">{billingTitle(billing)}</h2>
@@ -5099,6 +5111,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const localStatus = useMemo(() => buildLocalPolibotStatus(currentUser), [currentUser]);
   const [form, setForm] = useState({
     name: '',
+    phone: '',
+    birthdate: '',
     age: '',
     gender: '',
     needs: '',
@@ -5132,6 +5146,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const [workspaceLoaded, setWorkspaceLoaded] = useState(Boolean(localStatus));
   const [coverageDocumentParsing, setCoverageDocumentParsing] = useState(false);
   const [coverageDocumentFileName, setCoverageDocumentFileName] = useState('');
+  const [hiraFileName, setHiraFileName] = useState('');
   const workspaceLoading = !workspaceLoaded;
   const usage = workspaceUsage(workspace);
   const summaryCompanies = Array.isArray(workspace.knowledgeDbSummary?.companies)
@@ -5200,6 +5215,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
     setForm((prev) => ({
       ...prev,
       name: values.name ?? prev.name,
+      phone: values.phone ?? prev.phone,
+      birthdate: values.birthdate ?? prev.birthdate,
       age: values.age ?? prev.age,
       gender: values.gender ?? prev.gender,
       needs: Array.isArray(values.needs) ? values.needs.join(', ') : values.needs ?? prev.needs,
@@ -5225,15 +5242,23 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
     setSubmitAttempted(true);
     setSaving(true);
     try {
+      const effectiveAge = form.age || calculateAgeFromBirthdate(form.birthdate);
       const next = await api.post('/api/product-workspace/polibot/recommend', {
         ...form,
+        age: effectiveAge,
         needs: selectedNeeds.join(', '),
-        budget: normalizePolibotPremiumInput(form.budget)
+        budget: normalizePolibotPremiumInput(form.budget),
+        medicalHistory: [
+          form.medicalHistory,
+          form.phone ? `전화번호: ${form.phone}` : '',
+          form.birthdate ? `생년월일: ${form.birthdate}` : '',
+          hiraFileName ? `심평원 파일: ${hiraFileName}` : ''
+        ].filter(Boolean).join('\n')
       });
       setWorkspace(next);
       await reloadCurrentUser?.();
       setSelectedRecommendation(null);
-      if (useStepperRecommendationFlow) setTestStep(5);
+      if (useStepperRecommendationFlow) setTestStep(3);
       const hasNextRecommendations = Array.isArray(next?.recommendations) && next.recommendations.length > 0;
       toast(
         hasNextRecommendations ? '추천 초안을 만들었어요.' : '추천 보류 조건을 확인해 주세요.',
@@ -5243,6 +5268,25 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       toast(err.message || '추천 생성에 실패했어요.', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const loadHiraMedicalFile = async (file) => {
+    if (!file) return;
+    setHiraFileName(file.name);
+    if (!/\.(txt|csv)$/i.test(file.name)) {
+      toast('현재 화면에서는 TXT/CSV 병력자료만 바로 읽습니다. PDF/기관 연동 파서는 API 연결 단계에서 붙입니다.', 'info');
+      return;
+    }
+    try {
+      const text = await file.text();
+      setForm((prev) => ({
+        ...prev,
+        medicalHistory: [prev.medicalHistory, text.slice(0, 12000)].filter(Boolean).join('\n')
+      }));
+      toast('심평원 자료 내용을 병력/고지 메모에 넣었어요.', 'success');
+    } catch (err) {
+      toast(err.message || '파일을 읽지 못했어요.', 'error');
     }
   };
 
@@ -5344,6 +5388,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           onAnalyzeCoverageDocument={analyzeCoverageDocument}
           coverageDocumentParsing={coverageDocumentParsing}
           coverageDocumentFileName={coverageDocumentFileName}
+          onLoadHiraMedicalFile={loadHiraMedicalFile}
+          hiraFileName={hiraFileName}
         />
         {workspace.qualityReport && (
           <CollapsiblePanel title="자료 상태">
@@ -5512,593 +5558,214 @@ function PolibotRecommendStepper({
   setSaveMemo,
   setSelectedRecommendation,
   onOpenKnowledge,
-  onAnalyzeCoverageDocument,
-  coverageDocumentParsing = false,
-  coverageDocumentFileName = ''
+  onLoadHiraMedicalFile,
+  hiraFileName = ''
 }) {
   const steps = [
-    { id: 1, title: '보장분석', caption: '현재 보험 상태' },
-    { id: 2, title: '기본 조건', caption: '고객과 보장 니즈' },
-    { id: 3, title: '고지/상세', caption: '고지, 실손, 선호' },
-    { id: 4, title: '판단 결과', caption: '인수와 리모델링' },
-    { id: 5, title: '상품 추천', caption: '초안과 후보 검토' }
+    { id: 1, title: '고객정보', caption: '개인정보와 심평원 자료' },
+    { id: 2, title: '기준 필터', caption: 'polidoc 조건 대조' },
+    { id: 3, title: '상품추천', caption: '후보 확인과 저장' }
   ];
   const canGenerate = workspaceLoaded && !saving && usage.remaining > 0;
-  const draftMissing = Array.isArray(workspace.consultationDraft?.missing) ? workspace.consultationDraft.missing : [];
   const notice = workspace.recommendationNotice || '';
   const hardMissingLabels = [
     !form.age && '나이',
     selectedNeeds.length === 0 && '필요 보장',
     !form.budget && '예산'
   ].filter(Boolean);
-  const verifyMissingLabels = [
-    !form.gender && '성별',
-    !form.existingPolicies && '현재 가입 보험',
-    Object.values(form.currentCoverage || {}).filter((value) => coverageAmountValue(value)).length < 3 && '담보별 담보금액',
-    !form.existingPremium && '현재 보험료',
+  const filterMissingLabels = [
+    !form.medicalHistory && '심평원/병력 자료',
     !form.existingMedicalPlan && '기존 실손 여부',
-    !form.medicalHistory && '병력/고지 이슈',
-    !form.disclosureDetails?.recent3Months && '3개월 고지',
-    !form.disclosureDetails?.recent1Year && '1년 고지',
-    !form.disclosureDetails?.recent5Years && '5년 고지',
-    !form.underwritingAssessment?.route && '인수심사 방향',
-    !form.analysisResult?.gaps && '부족 보장',
-    !form.analysisResult?.remodelList && '추천 방향'
+    !form.renewalPreference && '갱신 선호',
+    !form.purpose && '가입 목적'
   ].filter(Boolean);
-  const currentMissingLabels = [...hardMissingLabels, ...verifyMissingLabels];
-  const localMissing = submitAttempted ? currentMissingLabels : [];
-  const missingSet = new Set([
-    ...localMissing,
-    ...draftMissing.filter((label) => currentMissingLabels.includes(label)),
-    ...currentMissingLabels.filter((label) => notice.includes(label))
-  ]);
+  const localMissing = submitAttempted ? [...hardMissingLabels, ...filterMissingLabels] : [];
+  const missingSet = new Set([...localMissing, ...hardMissingLabels.filter((label) => notice.includes(label))]);
   const isMissing = (label) => missingSet.has(label);
-  const badgeForStep = (stepId) => {
-    const hardLabels = stepId === 2 ? ['나이', '필요 보장', '예산'].filter(isMissing) : [];
-    const verifyLabels = stepId === 1
-      ? ['현재 가입 보험', '담보별 담보금액', '현재 보험료'].filter(isMissing)
-      : stepId === 2
-        ? ['성별'].filter(isMissing)
-        : stepId === 3
-          ? ['기존 실손 여부', '병력/고지 이슈', '3개월 고지', '1년 고지', '5년 고지'].filter(isMissing)
-          : stepId === 4
-            ? ['인수심사 방향', '부족 보장', '추천 방향'].filter(isMissing)
-            : [];
-    if (hardLabels.length) return { label: `필수 ${hardLabels.length}`, tone: 'hard' };
-    if (verifyLabels.length) return { label: `확인 ${verifyLabels.length}`, tone: 'verify' };
-    return null;
-  };
   const fieldClass = (label) => `${inputClass} ${isMissing(label) ? invalidFieldClass : ''}`;
-  const invalidPanelClass = 'rounded-2xl border border-red-400/35 bg-red-950/10 p-2.5';
-  const premiumHint = polibotBudgetHint({
-    budget: form.budget,
-    existingPremium: form.existingPremium,
-    purpose: form.purpose
-  });
-  const [visibleCoverageKeys, setVisibleCoverageKeys] = useState([polibotCoverageFields[0].key]);
-  const [expandedPolicyRows, setExpandedPolicyRows] = useState([]);
-  useEffect(() => {
-    const filledKeys = polibotCoverageFields
-      .filter((field) => {
-        const value = form.currentCoverage?.[field.key];
-        return value && typeof value === 'object'
-          ? Object.values(value).some(Boolean)
-          : Boolean(value);
-      })
-      .map((field) => field.key);
-    if (!filledKeys.length) return;
-    setVisibleCoverageKeys((prev) => [...new Set([...prev, ...filledKeys])]);
-  }, [form.currentCoverage]);
-  const visibleCoverageFields = polibotCoverageFields.filter((field) => visibleCoverageKeys.includes(field.key));
-  const addCoverageField = () => {
-    const next = polibotCoverageFields.find((field) => !visibleCoverageKeys.includes(field.key));
-    if (next) setVisibleCoverageKeys((prev) => [...prev, next.key]);
-  };
-  const updateCoverageKey = (index, nextKey) => {
-    if (!nextKey) return;
-    const currentKey = visibleCoverageKeys[index];
-    if (currentKey === nextKey || visibleCoverageKeys.includes(nextKey)) return;
-    setForm((formPrev) => {
-      const currentValue = formPrev.currentCoverage?.[currentKey];
-      const nextValue = formPrev.currentCoverage?.[nextKey];
-      if (!currentValue || nextValue && typeof nextValue === 'object' && Object.values(nextValue).some(Boolean)) return formPrev;
-      return {
-        ...formPrev,
-        currentCoverage: {
-          ...(formPrev.currentCoverage || {}),
-          [nextKey]: currentValue,
-          [currentKey]: { amount: '', renewalType: '', maturity: '', note: '' }
-        }
-      };
-    });
-    setVisibleCoverageKeys((prev) => prev.map((item, itemIndex) => (itemIndex === index ? nextKey : item)));
-  };
-  const addPolicyDetail = () => setForm((prev) => ({
-    ...prev,
-    existingPolicyDetails: [...(prev.existingPolicyDetails || []), { ...polibotPolicyTemplate }]
-  }));
-  const removePolicyDetail = (index) => setForm((prev) => ({
-    ...prev,
-    existingPolicyDetails: (prev.existingPolicyDetails || []).filter((_, itemIndex) => itemIndex !== index).length
-      ? (prev.existingPolicyDetails || []).filter((_, itemIndex) => itemIndex !== index)
-      : [{ ...polibotPolicyTemplate }]
-  }));
-  const removeCoverageField = (key) => {
-    setVisibleCoverageKeys((prev) => prev.length > 1 ? prev.filter((item) => item !== key) : prev);
-  };
-  const togglePolicyExpanded = (index) => {
-    setExpandedPolicyRows((prev) => (
-      prev.includes(index) ? prev.filter((item) => item !== index) : [...prev, index]
-    ));
+  const profileReady = Boolean(form.name && (form.birthdate || form.age) && form.medicalHistory);
+  const filterReady = hardMissingLabels.length === 0;
+  const premiumHint = polibotBudgetHint({ budget: form.budget, existingPremium: form.existingPremium, purpose: form.purpose });
+  const quickDisclosure = [
+    ['recent3Months', '3개월', '진찰/검사/추가검사'],
+    ['recent1Year', '1년', '추가검사/재검사'],
+    ['recent5Years', '5년', '입원/수술/7일치료/30일투약']
+  ];
+  const filterCodes = collectPolibotCodes(workspace, workspace.consultationDraft, form.disclosureDetails, form.medicalHistory);
+  const filterCodeGroups = groupPolibotCodes(filterCodes, workspace);
+  const recommendationCodes = collectPolibotCodes(workspace, recommendations);
+  const recommendationCodeGroups = groupPolibotCodes(recommendationCodes, workspace);
+  const stepBadge = (stepId) => {
+    if (stepId === 1 && !profileReady) return '입력';
+    if (stepId === 2 && hardMissingLabels.length) return `필수 ${hardMissingLabels.length}`;
+    if (stepId === 3 && !hasRecommendations) return '대기';
+    return '완료';
   };
 
   return (
     <div className="grid min-w-0 gap-3">
       {!workspaceLoaded && <PolibotLoadingBanner label="월별 상품 DB와 보험사 자료를 불러오는 중" />}
-      <div className="min-w-0 rounded-2xl border border-white/10 bg-black/20 p-2.5">
-          <div className="grid min-w-0 gap-2">
-          <div className="grid min-w-0 gap-1.5 sm:grid-cols-5">
-            {steps.map((item) => {
-              const active = step === item.id;
-              const badge = badgeForStep(item.id);
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onStepChange(item.id)}
-                  className={`flex min-w-0 items-center gap-2 rounded-xl px-2.5 py-2 text-left transition ${active ? 'bg-white text-zinc-950' : 'bg-white/[0.03] text-zinc-500 hover:bg-white/10 hover:text-zinc-200'}`}
-                >
-                  <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-black ${active ? 'bg-zinc-950 text-white' : 'bg-black/25 text-zinc-500'}`}>{item.id}</span>
-                  <span className="min-w-0">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span className="truncate text-xs font-black">{item.title}</span>
-                      {badge && (
-                        <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-black ${badge.tone === 'hard' ? 'bg-red-500/15 text-red-200' : 'bg-amber-500/15 text-amber-200'}`}>
-                          {badge.label}
-                        </span>
-                      )}
-                    </span>
-                    <span className={`block truncate text-[11px] font-bold ${active ? 'text-zinc-600' : 'text-zinc-600'}`}>{item.caption}</span>
+      <div className="rounded-2xl border border-white/10 bg-black/20 p-2.5">
+        <div className="grid gap-2 md:grid-cols-3">
+          {steps.map((item) => {
+            const active = step === item.id;
+            const badge = stepBadge(item.id);
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onStepChange(item.id)}
+                className={`flex min-w-0 items-center gap-2 rounded-xl px-2.5 py-2 text-left transition ${active ? 'bg-white text-zinc-950' : 'bg-white/[0.03] text-zinc-500 hover:bg-white/10 hover:text-zinc-200'}`}
+              >
+                <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-black ${active ? 'bg-zinc-950 text-white' : 'bg-black/25 text-zinc-500'}`}>{item.id}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="truncate text-xs font-black">{item.title}</span>
+                    <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-black ${badge === '완료' ? 'bg-emerald-500/15 text-emerald-200' : badge === '대기' ? 'bg-white/10 text-zinc-500' : 'bg-amber-500/15 text-amber-200'}`}>{badge}</span>
                   </span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex min-w-0 items-center justify-between gap-2 rounded-xl bg-black/25 px-3 py-2">
-            <div className="text-[10px] font-black text-zinc-600">남은 사용</div>
-            <div className="truncate text-xs font-black text-zinc-100">
-              {usage.unlimited ? '무제한' : `${usage.remaining}회 / ${usage.limit}`}
-            </div>
-          </div>
+                  <span className={`block truncate text-[11px] font-bold ${active ? 'text-zinc-600' : 'text-zinc-600'}`}>{item.caption}</span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2 flex min-w-0 items-center justify-between gap-2 rounded-xl bg-black/25 px-3 py-2">
+          <div className="text-[10px] font-black text-zinc-600">남은 사용</div>
+          <div className="truncate text-xs font-black text-zinc-100">{usage.unlimited ? '무제한' : `${usage.remaining}회 / ${usage.limit}`}</div>
         </div>
       </div>
 
       {step === 1 && (
-        <PanelCard title="1. 보장분석" className="min-w-0 p-4">
+        <PanelCard title="1. 고객정보 입력" className="min-w-0 p-4">
           <div className="grid gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5">
-              <div className="min-w-0">
-                <div className="text-sm font-black text-zinc-200">고객 보장분석 PDF</div>
-                <div className="mt-0.5 text-xs font-bold text-zinc-600">PDF를 넣으면 현재 계약, 담보, 보험료, 고지 메모를 자동 입력합니다.</div>
-                {coverageDocumentFileName && (
-                  <div className="mt-1 truncate text-xs font-black text-zinc-300">
-                    분석 파일: {coverageDocumentFileName}
-                  </div>
-                )}
-              </div>
-              <label className={`inline-flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100 ${coverageDocumentParsing ? 'pointer-events-none opacity-60' : ''}`}>
-                {coverageDocumentParsing ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
-                {coverageDocumentParsing ? '분석 중' : 'PDF로 채우기'}
-                <input
-                  type="file"
-                  accept=".pdf,application/pdf"
-                  className="hidden"
-                  disabled={coverageDocumentParsing}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    event.target.value = '';
-                    onAnalyzeCoverageDocument?.(file);
-                  }}
-                />
-              </label>
-            </div>
-            <label className={labelClass}>
-              현재 가입 보험
-              <textarea
-                className={`${fieldClass('현재 가입 보험')} min-h-[92px]`}
-                value={form.existingPolicies}
-                onChange={(event) => setForm((prev) => ({ ...prev, existingPolicies: event.target.value }))}
-                placeholder={'예: 삼성화재 건강보험 월 12만원 갱신형\n현대해상 실손 월 3만원\n메리츠 암보험 월 5만원 비갱신'}
-              />
-            </label>
-            <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-bold text-zinc-300">기존 계약 상세</div>
-                <button
-                  type="button"
-                  onClick={addPolicyDetail}
-                  className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100"
-                >
-                  <Plus size={14} />
-                  추가
-                </button>
-              </div>
-              {(form.existingPolicyDetails || []).map((policy, index) => (
-                <div key={index} className="grid gap-2 rounded-xl bg-white/[0.03] p-2.5">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="text-[11px] font-black text-zinc-600">계약 {index + 1}</div>
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => togglePolicyExpanded(index)}
-                        className="grid h-7 w-7 place-items-center rounded-lg text-zinc-600 hover:bg-white/10 hover:text-zinc-200"
-                        aria-label={`계약 ${index + 1} 상세 ${expandedPolicyRows.includes(index) ? '접기' : '펼치기'}`}
-                      >
-                        <ChevronDown size={14} className={`transition-transform ${expandedPolicyRows.includes(index) ? 'rotate-180' : ''}`} />
-                      </button>
-                      {(form.existingPolicyDetails || []).length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => removePolicyDetail(index)}
-                        className="grid h-7 w-7 place-items-center rounded-lg text-zinc-600 hover:bg-white/10 hover:text-zinc-200"
-                        aria-label={`계약 ${index + 1} 삭제`}
-                      >
-                        <X size={14} />
-                      </button>
-                      )}
-                    </div>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_96px_120px]">
-                    {[
-                      ['company', '보험사', '예: 삼성화재'],
-                      ['productName', '상품명', '예: 건강보험'],
-                      ['premium', '월 보험료', '예: 12'],
-                      ['status', '유지 판단', '유지/해지검토/감액']
-                    ].map(([key, label, placeholder]) => (
-                      <label key={key} className={labelClass}>
-                        {label}
-                        <input
-                          className={inputClass}
-                          value={policy?.[key] || ''}
-                          onChange={(event) => setForm((prev) => ({
-                            ...prev,
-                            existingPolicyDetails: (prev.existingPolicyDetails || createPolibotPolicyRows()).map((item, itemIndex) => (
-                              itemIndex === index ? { ...item, [key]: event.target.value } : item
-                            ))
-                          }))}
-                          placeholder={placeholder}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                  {expandedPolicyRows.includes(index) && (
-                    <div className="grid gap-2 border-t border-white/10 pt-2 sm:grid-cols-2 lg:grid-cols-4">
-                      {[
-                        ['startDate', '가입일', '예: 2021-03'],
-                        ['renewalType', '갱신 여부', '갱신/비갱신'],
-                        ['paymentPeriod', '납입기간', '예: 20년납'],
-                        ['maturity', '만기', '예: 90세']
-                      ].map(([key, label, placeholder]) => (
-                        <label key={key} className={labelClass}>
-                          {label}
-                          <input
-                            className={inputClass}
-                            value={policy?.[key] || ''}
-                            onChange={(event) => setForm((prev) => ({
-                              ...prev,
-                              existingPolicyDetails: (prev.existingPolicyDetails || createPolibotPolicyRows()).map((item, itemIndex) => (
-                                itemIndex === index ? { ...item, [key]: event.target.value } : item
-                              ))
-                            }))}
-                            placeholder={placeholder}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  )}
+            <div className="grid gap-2.5 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-black text-zinc-200">개인정보</div>
+                  <div className="mt-0.5 text-xs font-bold text-zinc-600">고객 식별과 나이 계산에 필요한 최소 정보입니다.</div>
                 </div>
-              ))}
-            </div>
-            <div className={isMissing('담보별 담보금액') ? invalidPanelClass : 'grid gap-2'}>
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-bold text-zinc-300">담보별 현재 담보금액</div>
-                <button
-                  type="button"
-                  onClick={addCoverageField}
-                  disabled={visibleCoverageKeys.length >= polibotCoverageFields.length}
-                  className="inline-flex h-8 shrink-0 items-center gap-1 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Plus size={14} />
-                  담보 추가
-                </button>
               </div>
-              <div className="text-[11px] font-bold text-zinc-600">만원 기준 · 갱신/만기/감액은 계약 상세 또는 원문 확인 시 입력</div>
-              <div className="grid gap-2">
-                {visibleCoverageFields.map((field, fieldIndex) => (
-                  <div key={field.key} className="grid gap-2 rounded-xl bg-white/[0.03] p-2.5 sm:grid-cols-[minmax(120px,0.8fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]">
-                    <div className="grid gap-1">
-                      <DarkSelect
-                        label="담보명"
-                        value={field.key}
-                        onChange={(value) => updateCoverageKey(fieldIndex, value)}
-                        options={polibotCoverageFields.map((item) => ({ value: item.key, label: item.label }))}
-                      />
-                      {visibleCoverageFields.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeCoverageField(field.key)}
-                          className="grid h-7 w-7 place-items-center rounded-lg text-zinc-600 hover:bg-white/10 hover:text-zinc-200 sm:mt-2"
-                          aria-label={`${field.label} 숨기기`}
-                        >
-                          <X size={14} />
-                        </button>
-                      )}
-                    </div>
-                    {[
-                      ['amount', '담보금액', field.placeholder],
-                      ['renewalType', '갱신', '계약 상세 확인'],
-                      ['maturity', '만기', '계약 상세 확인'],
-                      ['note', '감액/부담보', '부담보/감액/메모']
-                    ].map(([key, label, placeholder]) => (
-                      <label key={key} className={labelClass}>
-                        {label}
-                        <input
-                          className={inputClass}
-                          value={(form.currentCoverage?.[field.key] && typeof form.currentCoverage[field.key] === 'object' ? form.currentCoverage[field.key][key] : key === 'amount' ? form.currentCoverage?.[field.key] : '') || ''}
-                          onChange={(event) => setForm((prev) => {
-                            const current = prev.currentCoverage?.[field.key];
-                            const nextValue = current && typeof current === 'object' ? current : { amount: current || '', renewalType: '', maturity: '', note: '' };
-                            return {
-                              ...prev,
-                              currentCoverage: {
-                                ...(prev.currentCoverage || {}),
-                                [field.key]: { ...nextValue, [key]: event.target.value }
-                              }
-                            };
-                          })}
-                          placeholder={placeholder}
-                        />
-                      </label>
-                    ))}
-                  </div>
-                ))}
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_150px_78px]">
+                <label className={labelClass}>이름<input className={inputClass} value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="홍길동" /></label>
+                <label className={labelClass}>전화번호<input className={inputClass} value={form.phone || ''} onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))} placeholder="010-0000-0000" /></label>
+                <label className={labelClass}>생년월일<input type="date" className={inputClass} value={form.birthdate || ''} onChange={(event) => { const birthdate = event.target.value; setForm((prev) => ({ ...prev, birthdate, age: calculateAgeFromBirthdate(birthdate) || prev.age })); }} /></label>
+                <label className={labelClass}>나이<input type="number" min="0" className={fieldClass('나이')} value={form.age} onChange={(event) => setForm((prev) => ({ ...prev, age: event.target.value }))} placeholder="45" /></label>
+                <div className="md:col-span-2 xl:col-span-1"><DarkSelect label="성별" value={form.gender} onChange={(value) => setForm((prev) => ({ ...prev, gender: value }))} options={polibotGenderOptions} /></div>
               </div>
             </div>
-            <label className={labelClass}>
-              현재 납입 보험료 합계
-              <input type="number" min="0" className={fieldClass('현재 보험료')} value={form.existingPremium} onChange={(event) => setForm((prev) => ({ ...prev, existingPremium: event.target.value }))} placeholder="예: 30" />
-            </label>
+
+            <div className="grid gap-2.5 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-black text-zinc-200">심평원 5년 자료</div>
+                  <div className="mt-0.5 text-xs font-bold text-zinc-600">고객 인증 후 받은 진료/투약/검사 내역을 넣습니다.</div>
+                </div>
+                <a href={HIRA_CERT_URL} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">
+                  <ExternalLink size={14} />
+                  심평원 인증
+                </a>
+              </div>
+              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 px-3 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">
+                <Upload size={14} />
+                TXT/CSV 불러오기
+                <input type="file" accept=".txt,.csv,text/plain,text/csv" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; onLoadHiraMedicalFile?.(file); }} />
+              </label>
+              {hiraFileName && <div className="truncate text-xs font-black text-zinc-400">심평원 자료: {hiraFileName}</div>}
+              <textarea className={`${fieldClass('심평원/병력 자료')} min-h-[150px]`} value={form.medicalHistory} onChange={(event) => setForm((prev) => ({ ...prev, medicalHistory: event.target.value }))} placeholder="예: 고혈압 투약, 당뇨 통원, 입원/수술/검사 내역" />
+            </div>
+
+            <DarkButton onClick={() => onStepChange(2)} disabled={!form.age && !form.birthdate} className="w-full">기준 필터로 이동</DarkButton>
           </div>
         </PanelCard>
       )}
 
       {step === 2 && (
-        <PanelCard title="2. 기본 조건" className="min-w-0 p-4">
+        <PanelCard title="2. polidoc 기준 필터" className="min-w-0 p-4">
           <div className="grid gap-3">
-            {saving && <PolibotLoadingBanner label="고객 조건 분석 및 확정 상품 DB 대조 중" />}
-            <div className="grid gap-2.5 sm:grid-cols-[minmax(0,1fr)_76px_92px]">
-              <label className={labelClass}>고객명<input className={inputClass} value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="이효진" /></label>
-              <label className={labelClass}>나이<input type="number" min="0" className={fieldClass('나이')} value={form.age} onChange={(event) => setForm((prev) => ({ ...prev, age: event.target.value }))} placeholder="45" /></label>
-              <DarkSelect label="성별" value={form.gender} onChange={(value) => setForm((prev) => ({ ...prev, gender: value }))} options={polibotGenderOptions} invalid={isMissing('성별')} />
-            </div>
-            <div className="flex min-w-0 gap-1.5 overflow-x-auto">
-              {polibotAgeQuickOptions.map((age) => (
-                <button
-                  key={age}
-                  type="button"
-                  onClick={() => setForm((prev) => ({ ...prev, age }))}
-                  className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-black transition ${form.age === age ? 'border-white bg-white text-zinc-950' : 'border-white/10 bg-black/20 text-zinc-500 hover:border-white/25 hover:text-zinc-200'}`}
-                >
-                  {age}세
-                </button>
-              ))}
-            </div>
-            <div className="grid gap-2">
+            {saving && <PolibotLoadingBanner label="고객 병력과 polidoc 기준을 대조하는 중" />}
+            <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm font-bold text-zinc-300">필요 보장</div>
-                <div className="text-[11px] font-bold text-zinc-600">{selectedNeeds.length || 0}개 선택</div>
+                <div>
+                  <div className="text-sm font-black text-zinc-200">추천 목적</div>
+                  <div className="mt-0.5 text-xs font-bold text-zinc-600">필터는 필요한 보장, 예산, 고지조건만 기준으로 잡습니다.</div>
+                </div>
+                <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-black text-zinc-500">polidoc</span>
               </div>
-              <div className={isMissing('필요 보장') ? invalidPanelClass : 'grid gap-2'}>
+              <div className={isMissing('필요 보장') ? 'rounded-2xl border border-red-400/35 bg-red-950/10 p-2.5' : 'grid gap-2'}>
                 <div className="flex flex-wrap gap-2">
                   {polibotNeedOptions.map((need) => (
-                    <button
-                      key={need}
-                      type="button"
-                      onClick={() => toggleNeed(need)}
-                      className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-2 text-center text-xs font-black leading-none transition ${selectedNeeds.includes(need) ? 'border-white bg-white text-zinc-950 shadow-sm shadow-white/10' : 'border-white/10 bg-black/20 text-zinc-400 hover:border-white/25 hover:text-zinc-200'}`}
-                    >
-                      {need}
-                    </button>
+                    <button key={need} type="button" onClick={() => toggleNeed(need)} className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-2 text-center text-xs font-black leading-none transition ${selectedNeeds.includes(need) ? 'border-white bg-white text-zinc-950 shadow-sm shadow-white/10' : 'border-white/10 bg-black/20 text-zinc-400 hover:border-white/25 hover:text-zinc-200'}`}>{need}</button>
                   ))}
                 </div>
+                <input className={`${fieldClass('필요 보장')} text-xs text-zinc-500`} value={form.needs} onChange={(event) => setForm((prev) => ({ ...prev, needs: event.target.value }))} placeholder="암, 뇌, 심장" />
               </div>
-              <input
-                className={`${fieldClass('필요 보장')} text-xs text-zinc-500`}
-                value={form.needs}
-                onChange={(event) => setForm((prev) => ({ ...prev, needs: event.target.value }))}
-                placeholder="암, 뇌, 심장"
-              />
+              <div className="grid gap-2 md:grid-cols-2">
+                <label className={labelClass}>목표 월 보험료<input inputMode="decimal" className={fieldClass('예산')} value={form.budget} onChange={(event) => setForm((prev) => ({ ...prev, budget: event.target.value }))} onBlur={() => setForm((prev) => ({ ...prev, budget: normalizePolibotPremiumInput(prev.budget) }))} placeholder="예: 30" /></label>
+                <DarkSelect label="보험사 범위" value={form.company} onChange={(value) => setForm((prev) => ({ ...prev, company: value }))} options={companies.map((company) => ({ value: company, label: company === '전체 보험사' ? `전체 보험사 (${catalogCompanies.length}개)` : company }))} searchable searchPlaceholder="보험사 검색" />
+              </div>
+              <PolibotCompanyHint companies={catalogCompanies} selectedCompany={form.company} loading={!workspaceLoaded} onOpenKnowledge={onOpenKnowledge} />
             </div>
-            <div className="grid gap-2.5">
-              <div className="grid gap-2">
-                <label className={labelClass}>
-                  목표 월 보험료
-                  <input
-                    inputMode="decimal"
-                    className={fieldClass('예산')}
-                    value={form.budget}
-                    onChange={(event) => setForm((prev) => ({ ...prev, budget: event.target.value }))}
-                    onBlur={() => setForm((prev) => ({ ...prev, budget: normalizePolibotPremiumInput(prev.budget) }))}
-                    placeholder="예: 30"
-                  />
-                </label>
-                <div className="flex min-w-0 gap-1.5 overflow-x-auto">
-                  {polibotTargetPremiumQuickOptions.map((amount) => (
-                    <button
-                      key={amount}
-                      type="button"
-                      onClick={() => setForm((prev) => ({ ...prev, budget: amount }))}
-                      className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-black transition ${parsePolibotPremiumValue(form.budget) === Number(amount) ? 'border-white bg-white text-zinc-950' : 'border-white/10 bg-black/20 text-zinc-500 hover:border-white/25 hover:text-zinc-200'}`}
-                    >
-                      {amount}만원
-                    </button>
-                  ))}
-                </div>
+
+            <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="text-sm font-black text-zinc-200">고지 기준</div>
+              <div className="grid gap-2 md:grid-cols-2">
+                <DarkSelect label="기존 실손 여부" value={form.existingMedicalPlan} onChange={(value) => setForm((prev) => ({ ...prev, existingMedicalPlan: value }))} options={[{ value: '', label: '미확인' }, { value: '있음', label: '있음' }, { value: '없음', label: '없음' }, { value: '확인 필요', label: '확인 필요' }]} invalid={isMissing('기존 실손 여부')} />
+                <DarkSelect label="갱신 선호" value={form.renewalPreference} onChange={(value) => setForm((prev) => ({ ...prev, renewalPreference: value }))} options={[{ value: '', label: '미확인' }, { value: '비갱신 선호', label: '비갱신 선호' }, { value: '허용', label: '허용' }, { value: '상관 없음', label: '상관 없음' }]} />
+                <DarkSelect label="가입 목적" value={form.purpose} onChange={(value) => setForm((prev) => ({ ...prev, purpose: value }))} options={[{ value: '', label: '미확인' }, { value: '보장 강화', label: '보장 강화' }, { value: '보험료 절감', label: '보험료 절감' }, { value: '리모델링', label: '리모델링' }, { value: '신규 가입', label: '신규 가입' }]} />
+                <label className={labelClass}>현재 보험료<input className={inputClass} value={form.existingPremium} onChange={(event) => setForm((prev) => ({ ...prev, existingPremium: event.target.value }))} placeholder="예: 18" /></label>
               </div>
               <div className="grid gap-2">
-                <DarkSelect
-                  label="보험사 범위"
-                  value={form.company}
-                  onChange={(value) => setForm((prev) => ({ ...prev, company: value }))}
-                  options={companies.map((company) => ({
-                    value: company,
-                    label: company === '전체 보험사' ? `전체 보험사 (${catalogCompanies.length}개)` : company
-                  }))}
-                  searchable
-                  searchPlaceholder="보험사 검색"
-                />
-                <PolibotCompanyHint companies={catalogCompanies} selectedCompany={form.company} loading={!workspaceLoaded} onOpenKnowledge={onOpenKnowledge} />
+                {quickDisclosure.map(([key, label, placeholder]) => (
+                  <label key={key} className={labelClass}>{label} 고지<input className={inputClass} value={form.disclosureDetails?.[key] || ''} onChange={(event) => setForm((prev) => ({ ...prev, disclosureDetails: { ...(prev.disclosureDetails || {}), [key]: event.target.value } }))} placeholder={placeholder} /></label>
+                ))}
               </div>
+              <textarea className={`${inputClass} min-h-[80px]`} value={form.disclosureDetails?.details || ''} onChange={(event) => setForm((prev) => ({ ...prev, disclosureDetails: { ...(prev.disclosureDetails || {}), details: event.target.value } }))} placeholder="기타 고지 메모, 코드 후보, 부담보 예상 등을 입력" />
+              <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-bold leading-relaxed text-zinc-500">{premiumHint}</div>
             </div>
+
+            <PolibotCodeSummary
+              title="분석된 고지 코드"
+              description="입력 자료와 polidoc 기준에서 추출된 코드 후보입니다."
+              groups={filterCodeGroups}
+              empty="추천 실행 후 매칭 코드가 표시됩니다."
+            />
+
+            <DarkButton onClick={save} disabled={!canGenerate} loading={saving} loadingLabel="필터링 중" className="w-full">
+              {usage.remaining <= 0 ? '남은 횟수 없음' : filterReady ? '필터 적용하고 상품추천' : '필수값 확인 필요'}
+            </DarkButton>
+            {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
           </div>
         </PanelCard>
       )}
 
       {step === 3 && (
-        <PanelCard title="3. 고지/상세 조건" className="min-w-0 p-4">
+        <PanelCard title="3. 상품 추천" className="min-w-0 p-4">
           <div className="grid gap-3">
-            <div className="grid gap-2.5">
-              <DarkSelect label="기존 실손 여부" value={form.existingMedicalPlan} onChange={(value) => setForm((prev) => ({ ...prev, existingMedicalPlan: value }))} options={[{ value: '', label: '미확인' }, { value: '있음', label: '있음' }, { value: '없음', label: '없음' }, { value: '확인 필요', label: '확인 필요' }]} invalid={isMissing('기존 실손 여부')} />
-              <DarkSelect label="병력/고지 이슈" value={form.medicalHistory} onChange={(value) => setForm((prev) => ({ ...prev, medicalHistory: value }))} options={[{ value: '', label: '미확인' }, { value: '없음', label: '없음' }, { value: '있음', label: '있음' }, { value: '확인 필요', label: '확인 필요' }]} invalid={isMissing('병력/고지 이슈')} />
-              <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
-                <div className="text-sm font-bold text-zinc-300">고지사항 상세</div>
-                {polibotDisclosureFields.map((field) => (
-                  <label key={field.key} className={labelClass}>
-                    {field.label}
-                    <input
-                      className={fieldClass(field.label.includes('3개월') ? '3개월 고지' : field.label.includes('1년') ? '1년 고지' : field.label.includes('5년') ? '5년 고지' : field.label)}
-                      value={form.disclosureDetails?.[field.key] || ''}
-                      onChange={(event) => setForm((prev) => ({
-                        ...prev,
-                        disclosureDetails: { ...(prev.disclosureDetails || {}), [field.key]: event.target.value }
-                      }))}
-                      placeholder={field.placeholder}
-                    />
-                  </label>
-                ))}
-                <label className={labelClass}>
-                  기타 고지 메모
-                  <textarea
-                    className={`${inputClass} min-h-[70px]`}
-                    value={form.disclosureDetails?.details || ''}
-                    onChange={(event) => setForm((prev) => ({
-                      ...prev,
-                      disclosureDetails: { ...(prev.disclosureDetails || {}), details: event.target.value }
-                    }))}
-                    placeholder="검사명, 진단명, 치료기간, 완치 여부, 부담보 예상 부위 등"
-                  />
-                </label>
-              </div>
-              <DarkSelect label="가족력" value={form.familyHistory} onChange={(value) => setForm((prev) => ({ ...prev, familyHistory: value }))} options={polibotFamilyHistoryOptions} />
-              <DarkSelect label="운전 여부" value={form.driving} onChange={(value) => setForm((prev) => ({ ...prev, driving: value }))} options={[{ value: '', label: '미확인' }, { value: '운전함', label: '운전함' }, { value: '운전 안함', label: '운전 안함' }]} />
-              <DarkSelect label="갱신형 허용" value={form.renewalPreference} onChange={(value) => setForm((prev) => ({ ...prev, renewalPreference: value }))} options={[{ value: '', label: '미확인' }, { value: '허용', label: '허용' }, { value: '비갱신 선호', label: '비갱신 선호' }, { value: '상관 없음', label: '상관 없음' }]} />
+            <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 md:grid-cols-3">
+              <PolibotStatusRow label="고객" value={[form.name, form.age ? `${form.age}세` : '', form.gender].filter(Boolean).join(' · ') || '미입력'} />
+              <PolibotStatusRow label="필요 보장" value={selectedNeeds.join(', ') || '미입력'} />
+              <PolibotStatusRow label="추천 후보" value={`${recommendations.length}개`} />
             </div>
-            <DarkSelect label="가입 목적" value={form.purpose} onChange={(value) => setForm((prev) => ({ ...prev, purpose: value }))} options={[{ value: '', label: '미확인' }, { value: '보장 강화', label: '보장 강화' }, { value: '보험료 절감', label: '보험료 절감' }, { value: '리모델링', label: '리모델링' }, { value: '신규 가입', label: '신규 가입' }]} />
-            <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-bold leading-relaxed text-zinc-500">
-              {premiumHint}
-            </div>
-          </div>
-        </PanelCard>
-      )}
-
-      {step === 4 && (
-        <PanelCard title="4. 판단 결과" className="min-w-0 p-4">
-          <div className="grid gap-3">
-            <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="text-sm font-bold text-zinc-300">가입 가능성 판단</div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <DarkSelect
-                  label="인수심사 방향"
-                  value={form.underwritingAssessment?.route || ''}
-                  onChange={(value) => setForm((prev) => ({ ...prev, underwritingAssessment: { ...(prev.underwritingAssessment || {}), route: value } }))}
-                  options={[{ value: '', label: '미확인' }, { value: '표준심사 우선', label: '표준심사 우선' }, { value: '표준/간편 동시비교', label: '표준/간편 동시비교' }, { value: '간편심사 우선', label: '간편심사 우선' }, { value: '조건부 인수 검토', label: '조건부 인수 검토' }]}
-                  invalid={isMissing('인수심사 방향')}
-                />
-                <DarkSelect
-                  label="표준체 가능성"
-                  value={form.underwritingAssessment?.standardPossible || ''}
-                  onChange={(value) => setForm((prev) => ({ ...prev, underwritingAssessment: { ...(prev.underwritingAssessment || {}), standardPossible: value } }))}
-                  options={[{ value: '', label: '미확인' }, { value: '가능 후보', label: '가능 후보' }, { value: '확인 필요', label: '확인 필요' }, { value: '어려움', label: '어려움' }]}
-                />
-                <label className={labelClass}>부담보 예상<input className={inputClass} value={form.underwritingAssessment?.burden || ''} onChange={(event) => setForm((prev) => ({ ...prev, underwritingAssessment: { ...(prev.underwritingAssessment || {}), burden: event.target.value } }))} placeholder="예: 척추 부담보 가능" /></label>
-                <label className={labelClass}>할증 가능성<input className={inputClass} value={form.underwritingAssessment?.surcharge || ''} onChange={(event) => setForm((prev) => ({ ...prev, underwritingAssessment: { ...(prev.underwritingAssessment || {}), surcharge: event.target.value } }))} placeholder="예: 고혈압 할증 확인" /></label>
-                <label className={labelClass}>간편심사 검토<input className={inputClass} value={form.underwritingAssessment?.simpleReview || ''} onChange={(event) => setForm((prev) => ({ ...prev, underwritingAssessment: { ...(prev.underwritingAssessment || {}), simpleReview: event.target.value } }))} placeholder="예: 335/355 고지 비교" /></label>
-                <label className={labelClass}>인수 메모<input className={inputClass} value={form.underwritingAssessment?.note || ''} onChange={(event) => setForm((prev) => ({ ...prev, underwritingAssessment: { ...(prev.underwritingAssessment || {}), note: event.target.value } }))} placeholder="심사 전 확인할 서류/질문" /></label>
-              </div>
-            </div>
-            <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="text-sm font-bold text-zinc-300">분석 결과</div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                {[
-                  ['gaps', '부족 보장', '예: 암 3천 부족, 뇌혈관 없음'],
-                  ['duplicates', '중복/과다 보장', '예: 입원일당 중복'],
-                  ['premiumIssue', '보험료 이슈', '예: 현재 45만원으로 과다'],
-                  ['keepList', '유지 추천', '유지할 계약/담보'],
-                  ['remodelList', '추천 방향', '보완/감액/전환 방향'],
-                  ['caution', '해지 주의', '면책/감액/실손 해지 주의']
-                ].map(([key, label, placeholder]) => (
-                  <label key={key} className={labelClass}>
-                    {label}
-                    <textarea
-                      className={`${key === 'gaps' ? fieldClass('부족 보장') : key === 'remodelList' ? fieldClass('추천 방향') : inputClass} min-h-[70px]`}
-                      value={form.analysisResult?.[key] || ''}
-                      onChange={(event) => setForm((prev) => ({
-                        ...prev,
-                        analysisResult: { ...(prev.analysisResult || {}), [key]: event.target.value }
-                      }))}
-                      placeholder={placeholder}
-                    />
-                  </label>
-                ))}
-              </div>
-            </div>
-          </div>
-        </PanelCard>
-      )}
-
-      {step === 5 && (
-        <div className="grid min-w-0 gap-3">
-          <PanelCard title="5. 상품 추천" className="min-w-0 p-4">
+            <PolibotCodeSummary
+              title="적용 코드"
+              description="추천 결과에 실제로 걸린 대표 기준 코드입니다."
+              groups={recommendationCodeGroups}
+              empty="추천 실행 후 적용 코드가 표시됩니다."
+              compact
+            />
+            {workspace.qualityReport && <PolibotKnowledgeSummary report={workspace.qualityReport} />}
             {hasRecommendations ? (
-              <PolibotRecommendationList
-                recommendations={recommendations}
-                saveMemo={saveMemo}
-                onMemoChange={setSaveMemo}
-                onSelect={setSelectedRecommendation}
-                saving={saving}
-                canGenerate={canGenerate}
-                usage={usage}
-                onGenerate={save}
-                showGenerate
-                testMode
-              />
+              <PolibotRecommendationList recommendations={recommendations} saveMemo={saveMemo} onMemoChange={setSaveMemo} onSelect={setSelectedRecommendation} saving={saving} canGenerate={canGenerate} usage={usage} onGenerate={save} showGenerate testMode />
             ) : saving ? (
-              <PolibotLoadingState title="추천 생성 중" description="고객 조건과 확정 상품 DB를 대조해 2~3개 후보를 고르고 있어요." />
+              <PolibotLoadingState title="추천 생성 중" description="고객 병력, polidoc 기준, 상품 DB를 대조해 후보를 고르고 있어요." />
             ) : (
               <div className="grid gap-3">
-                <PolibotRecommendationEmptyState
-                  workspace={workspace}
-                  hasAnalysis={hasAnalysis}
-                  catalogCompanies={catalogCompanies}
-                  onOpenDetails={() => onStepChange(2)}
-                  onOpenKnowledge={onOpenKnowledge}
-                  showDetailAction={false}
-                />
+                <PolibotRecommendationEmptyState workspace={workspace} hasAnalysis={hasAnalysis} catalogCompanies={catalogCompanies} onOpenDetails={() => onStepChange(2)} onOpenKnowledge={onOpenKnowledge} showDetailAction={false} />
                 <PolibotGenerateButton saving={saving} canGenerate={canGenerate} usage={usage} onGenerate={save} />
               </div>
             )}
-          </PanelCard>
-        </div>
+          </div>
+        </PanelCard>
       )}
     </div>
   );
@@ -6267,6 +5934,143 @@ function PolibotCompanyHint({ companies = [], selectedCompany = '전체 보험�
   );
 }
 
+function collectPolibotCodes(...sources) {
+  const codePattern = /\b\d(?:\.\d+){1,3}\b|\b[1-9]\d{2}\b/g;
+  const found = [];
+  const pushCode = (code, label = '', source = '', tone = '') => {
+    const value = displayValue(code).trim();
+    if (!value || !codePattern.test(value)) {
+      codePattern.lastIndex = 0;
+      return;
+    }
+    codePattern.lastIndex = 0;
+    const key = value;
+    if (found.some((item) => item.code === key)) return;
+    found.push({ code: value, label: displayValue(label), source: displayValue(source), tone });
+  };
+  const inferTone = (value = '') => {
+    const text = displayValue(value);
+    if (/제외|불가|거절|보류|어려움|탈락|block|exclude/i.test(text)) return 'excluded';
+    if (/확인|검토|주의|보류|필요|review|caution/i.test(text)) return 'review';
+    return 'applied';
+  };
+  const visit = (value, source = '', inheritedTone = '') => {
+    if (!value) return;
+    if (typeof value === 'string' || typeof value === 'number') {
+      String(value).match(codePattern)?.forEach((code) => pushCode(code, '', source, inheritedTone || inferTone(value)));
+      codePattern.lastIndex = 0;
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item, source, inheritedTone));
+      return;
+    }
+    if (typeof value === 'object') {
+      const tone = value.status || value.tone || value.result || inheritedTone || inferTone(value.reason || value.label || value.title || value.name || value.memo || '');
+      pushCode(value.code || value.disclosureCode || value.underwritingCode || value.productCode, value.label || value.title || value.name || value.reason, value.source || value.fileName || source, tone);
+      ['codes', 'codeCandidates', 'disclosureCodes', 'underwritingCodes', 'matchedCodes', 'recommendationCodes', 'evidence', 'evidenceAnchors', 'catalogItems', 'linkedBenefitGroups', 'routineChecks', 'reviewReasons', 'cautions', 'disclosureMemo', 'underwritingMemo'].forEach((key) => visit(value[key], value.fileName || value.source || source, tone));
+    }
+  };
+  sources.forEach((source) => visit(source));
+  return found.slice(0, 18);
+}
+
+function groupPolibotCodes(codes = [], context = {}) {
+  const groups = { applied: [], review: [], excluded: [] };
+  const contextText = displayValue(context?.recommendationNotice || context?.status || context?.summary || '');
+  (Array.isArray(codes) ? codes : []).forEach((item) => {
+    const text = `${displayValue(item.tone)} ${displayValue(item.label)} ${displayValue(item.source)} ${contextText}`;
+    const key = /제외|불가|거절|탈락|exclude|block/i.test(text)
+      ? 'excluded'
+      : /확인|검토|주의|보류|필요|review|caution/i.test(text)
+        ? 'review'
+        : 'applied';
+    if (!groups[key].some((row) => row.code === item.code)) groups[key].push(item);
+  });
+  return groups;
+}
+
+function PolibotCodeBadges({ codes = [], empty = '분석된 코드 없음', limit = 8, tone = 'applied' }) {
+  const safeCodes = Array.isArray(codes) ? codes.filter((item) => item?.code).slice(0, limit) : [];
+  if (!safeCodes.length) return <div className="text-xs font-bold text-zinc-600">{empty}</div>;
+  const toneClass = tone === 'excluded'
+    ? 'border-red-300/20 bg-red-400/10 text-red-100'
+    : tone === 'review'
+      ? 'border-amber-300/20 bg-amber-400/10 text-amber-100'
+      : 'border-cyan-300/20 bg-cyan-400/10 text-cyan-100';
+  const labelClassName = tone === 'excluded' ? 'text-red-100/60' : tone === 'review' ? 'text-amber-100/60' : 'text-cyan-100/60';
+  return (
+    <div className="flex min-w-0 flex-wrap gap-1.5">
+      {safeCodes.map((item) => (
+        <span key={`${item.code}-${item.label || item.source}`} className={`inline-flex max-w-full min-w-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[10px] font-black ${toneClass}`}>
+          <span className="shrink-0">{item.code}</span>
+          {item.label && <span className={`truncate ${labelClassName}`}>{item.label}</span>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function PolibotCodeSummary({ title, description, groups = {}, empty, compact = false }) {
+  const [open, setOpen] = useState(false);
+  const applied = groups.applied || [];
+  const review = groups.review || [];
+  const excluded = groups.excluded || [];
+  const total = applied.length + review.length + excluded.length;
+  return (
+    <div className="grid gap-2 rounded-2xl border border-cyan-300/15 bg-cyan-400/5 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-black text-zinc-200">{title}</div>
+          {description && <div className="mt-0.5 text-xs font-bold text-zinc-600">{description}</div>}
+        </div>
+        <button type="button" onClick={() => setOpen((prev) => !prev)} className="shrink-0 rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-black text-zinc-400 hover:border-white/25 hover:text-zinc-100">
+          {open ? '접기' : '상세'}
+        </button>
+      </div>
+      {total ? (
+        <div className="grid gap-2 md:grid-cols-3">
+          <PolibotCodeCount tone="applied" label="적용" count={applied.length} preview={applied[0]?.code} />
+          <PolibotCodeCount tone="review" label="확인 필요" count={review.length} preview={review[0]?.code} />
+          <PolibotCodeCount tone="excluded" label="제외" count={excluded.length} preview={excluded[0]?.code} />
+        </div>
+      ) : <div className="text-xs font-bold text-zinc-600">{empty}</div>}
+      {total > 0 && !compact && <PolibotCodeBadges codes={applied.length ? applied : [...review, ...excluded]} limit={3} tone={applied.length ? 'applied' : review.length ? 'review' : 'excluded'} />}
+      {open && (
+        <div className="grid gap-2 rounded-2xl bg-black/20 p-2.5">
+          <PolibotCodeDetail label="적용 코드" codes={applied} tone="applied" />
+          <PolibotCodeDetail label="확인 필요 코드" codes={review} tone="review" />
+          <PolibotCodeDetail label="제외 코드" codes={excluded} tone="excluded" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PolibotCodeCount({ label, count, preview, tone }) {
+  const toneClass = tone === 'excluded'
+    ? 'border-red-300/20 bg-red-400/10 text-red-100'
+    : tone === 'review'
+      ? 'border-amber-300/20 bg-amber-400/10 text-amber-100'
+      : 'border-cyan-300/20 bg-cyan-400/10 text-cyan-100';
+  return (
+    <div className={`rounded-xl border px-3 py-2 ${toneClass}`}>
+      <div className="text-[10px] font-black opacity-70">{label}</div>
+      <div className="mt-0.5 text-sm font-black">{count}개{preview ? <span className="ml-1 text-[11px] opacity-70">{preview}</span> : null}</div>
+    </div>
+  );
+}
+
+function PolibotCodeDetail({ label, codes, tone }) {
+  return (
+    <div className="grid gap-1.5">
+      <div className="text-[11px] font-black text-zinc-500">{label}</div>
+      <PolibotCodeBadges codes={codes} tone={tone} empty="없음" limit={12} />
+    </div>
+  );
+}
+
+
 function PolibotGenerateButton({ saving, canGenerate, usage, onGenerate }) {
   return (
     <div className="grid min-w-0 gap-2 rounded-2xl border border-white/10 bg-black/20 p-2.5">
@@ -6290,13 +6094,16 @@ function PolibotRecommendationList({ recommendations, saveMemo, onMemoChange, on
         <p className="mt-1 text-xs leading-relaxed text-zinc-500">카드를 눌러 근거와 주의 조건을 확인한 뒤 고객목록에 저장하세요.</p>
       </div>
       <div className="grid gap-2">
-        {recommendations.map((item) => (
+        {recommendations.map((item) => {
+          const itemCodes = collectPolibotCodes(item);
+          return (
           <button key={item.id} type="button" onClick={() => onSelect(item)} className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/5">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">{item.type === 'bundle' ? '조합 추천' : '단품 추천'}</div>
                 <div className="mt-1 break-keep text-sm font-black text-zinc-100">{item.name}</div>
                 {!testMode && <div className="mt-1 text-[11px] font-bold text-zinc-600">확신도 {item.confidence?.level || '보통'} · 점수 {item.score || '-'}</div>}
+                <div className="mt-2"><PolibotCodeBadges codes={itemCodes} empty="코드 대조 전" limit={2} /></div>
               </div>
               <ChevronRight size={18} className="mt-1 shrink-0 text-zinc-600" />
             </div>
@@ -6316,7 +6123,8 @@ function PolibotRecommendationList({ recommendations, saveMemo, onMemoChange, on
               {testMode && item.confidence?.level === '낮음' && <div className="text-zinc-600">자료 신뢰도 확인 필요</div>}
             </div>
           </button>
-        ))}
+          );
+        })}
       </div>
       <label className={`${labelClass} mt-1`}>저장 메모<textarea className={inputClass} rows="2" value={saveMemo} onChange={(event) => onMemoChange(event.target.value)} placeholder="고객에게 확인할 내용이나 메모를 적어두세요." /></label>
       {showGenerate && <PolibotGenerateButton saving={saving} canGenerate={canGenerate} usage={usage} onGenerate={onGenerate} />}
@@ -6405,7 +6213,7 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-4 backdrop-blur-sm">
       <div className="max-h-[86vh] w-full max-w-2xl overflow-y-auto rounded-3xl border border-white/10 bg-[#191919] p-5 shadow-2xl shadow-black/60">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-lg font-black text-zinc-100">{recommendation.name}</div>
             <div className="mt-1 text-xs font-bold text-zinc-600">
@@ -8116,7 +7924,7 @@ function AuvibotOnboardingChecklist({ account }) {
   ];
 
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
+    <div className="grid gap-2 md:grid-cols-2">
       {steps.map((step, index) => (
         <div key={step.key} className={`rounded-2xl border px-4 py-3 ${step.done ? 'border-emerald-400/15 bg-emerald-400/10' : 'border-white/10 bg-white/[0.03]'}`}>
           <div className="flex items-center gap-2">

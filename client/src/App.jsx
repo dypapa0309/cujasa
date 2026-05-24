@@ -17,7 +17,6 @@ import AdminPolibotKnowledgePage from './pages/AdminPolibotKnowledgePage.jsx';
 import AdminTrendReferencePage from './pages/AdminTrendReferencePage.jsx';
 import AutomationStudioPage from './pages/AutomationStudioPage.jsx';
 import CustomerApp from './pages/customer/CustomerApp.jsx';
-import PolibotCodeFinderPage from './pages/PolibotCodeFinderPage.jsx';
 import { api, getAuthToken, setAuthToken } from './lib/api.js';
 import { CURRENT_PRODUCT, JASAIN_BRAND } from './config/products.js';
 
@@ -112,7 +111,6 @@ export default function App() {
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId) || accounts[0];
   const isAdmin = currentUser?.type === 'admin';
   const tabs = isAdmin ? adminTabs : userTabs;
-  const isPolibotCodeRoute = typeof window !== 'undefined' && window.location.pathname === '/polibot-code';
 
   const loadAccounts = async () => {
     const rows = await api.get('/api/accounts');
@@ -236,16 +234,11 @@ export default function App() {
 
   // 고객(user)이면 솔루션 허브가 포함된 별도 고객 앱 렌더링
   if (currentUser?.type === 'user') {
-    if (isPolibotCodeRoute) {
-      return (
-        <ToastProvider>
-          <GlobalApiLoadingBar />
-          <PolibotCodeFinderPage
-            currentUser={{ ...currentUser, products: normalizeProducts(currentUser.products) }}
-            onBack={() => { window.location.href = '/'; }}
-            onLogout={() => { setAuthToken(''); setCurrentUser(null); }}
-          />
-        </ToastProvider>
+    if (typeof window !== 'undefined' && ['/polibot-code', '/polibot-recommend'].includes(window.location.pathname)) {
+      window.history.replaceState(
+        { jasainProduct: 'polibot', tab: 'beta', action: 'polibot-recommend' },
+        '',
+        '/polibot#tab=beta&action=polibot-recommend'
       );
     }
     return (

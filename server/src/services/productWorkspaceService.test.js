@@ -750,6 +750,124 @@ test('generates POLIBOT recommendation outputs for 10 persona scenarios', async 
   assert.match(ageBlockedOutput.recommendation.reviewReasons.join(' '), /가입연령/);
 });
 
+test('POLIBOT filters gender, child-only, and descriptive non-product catalog items', async () => {
+  await ingestPolibotKnowledge({
+    scope: 'global',
+    sourceChannel: 'local_ingest',
+    month: '2026-05',
+    files: [
+      {
+        name: 'quality-filter-gender-products.txt',
+        fileName: 'quality-filter-gender-products.txt',
+        type: 'txt',
+        size: 520,
+        fileHash: 'quality-filter-gender-products-hash',
+        text: [
+          '테스트화재 상품비교 가입설계 자료입니다.',
+          '상품명 테스트여성건강보험. 여성 유방암 자궁 난소 암 진단비 보장. 보험료: 월 80,000원 가입연령 20세~60세 비갱신',
+          '상품명 테스트건강보험. 암 진단비 뇌혈관 진단비 허혈성심장질환 진단비 보장. 보험료: 월 90,000원 가입연령 20세~60세 비갱신',
+          '상품명 시설&재가 지원비, 입원일당 등 다양한 간병 위한 특약 구성 가능. 간병 입원 수술 특약 설명'
+        ].join('\n')
+      },
+      {
+        name: 'quality-filter-child-products.txt',
+        fileName: 'quality-filter-child-products.txt',
+        type: 'txt',
+        size: 420,
+        fileHash: 'quality-filter-child-products-hash',
+        text: [
+          '테스트손보 상품비교 가입설계 자료입니다.',
+          '상품명 테스트아이러브어린이보험. 어린이 자녀 암 입원 수술 상해 보장. 보험료: 월 70,000원 가입연령 0세~30세 비갱신',
+          '상품명 테스트시니어건강보험. 암 입원 수술 간병 보장. 보험료: 월 120,000원 가입연령 40세~75세 비갱신'
+        ].join('\n')
+      }
+    ],
+    dryRun: false
+  });
+
+  const maleUserId = '16161616-1616-4161-8161-161616161601';
+  await dbInsert('users', {
+    id: maleUserId,
+    email: 'polibot-quality-filter-male@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT 품질 남성',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: maleUserId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: { unlimitedUsage: true, workspace: {} }
+  });
+
+  const maleWorkspace = await savePolibotRecommendation(maleUserId, {
+    name: '남성 암보장 고객',
+    age: '42',
+    gender: '남성',
+    needs: ['암', '뇌', '심장'],
+    budget: '12',
+    company: '전체 보험사',
+    existingPolicies: '기존 종합보험 있음',
+    existingPolicyDetails: [{ company: '기존', productName: '기존보험', premium: '8만원' }],
+    currentCoverage: { cancer: '부족', brain: '부족', heart: '부족', medical: '4세대 실손', surgery: '부족', hospitalization: '부족' },
+    existingMedicalPlan: '4세대 실손',
+    existingPremium: '8',
+    medicalHistory: '없음',
+    disclosureDetails: { recent3Months: '없음', recent1Year: '없음', recent5Years: '없음' },
+    underwritingAssessment: { route: '표준심사' },
+    analysisResult: { gaps: '암, 뇌, 심장', remodelList: '부족 담보 보완' },
+    purpose: '보장 강화'
+  });
+  const maleText = JSON.stringify((maleWorkspace.recommendations || []).map((recommendation) => ({
+    name: recommendation.name,
+    catalogItems: (recommendation.catalogItems || []).map((item) => item.productName)
+  })));
+  assert.ok((maleWorkspace.recommendations || []).length >= 1);
+  assert.doesNotMatch(maleText, /여성|유방|자궁|난소|시설&재가|특약 구성 가능/);
+
+  const adultUserId = '16161616-1616-4161-8161-161616161602';
+  await dbInsert('users', {
+    id: adultUserId,
+    email: 'polibot-quality-filter-adult@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT 품질 성인',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: adultUserId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: { unlimitedUsage: true, workspace: {} }
+  });
+
+  const adultWorkspace = await savePolibotRecommendation(adultUserId, {
+    name: '성인 건강보장 고객',
+    age: '59',
+    gender: '여성',
+    needs: ['암', '입원', '수술'],
+    budget: '15',
+    company: '전체 보험사',
+    existingPolicies: '기존 보험 있음',
+    existingPolicyDetails: [{ company: '기존', productName: '기존보험', premium: '10만원' }],
+    currentCoverage: { cancer: '부족', brain: '1천만원', heart: '1천만원', medical: '4세대 실손', surgery: '부족', hospitalization: '부족' },
+    existingMedicalPlan: '4세대 실손',
+    existingPremium: '10',
+    medicalHistory: '없음',
+    disclosureDetails: { recent3Months: '없음', recent1Year: '없음', recent5Years: '없음' },
+    underwritingAssessment: { route: '표준심사' },
+    analysisResult: { gaps: '암, 입원, 수술', remodelList: '성인 건강보험 보완' },
+    purpose: '보장 강화'
+  });
+  const adultText = JSON.stringify((adultWorkspace.recommendations || []).map((recommendation) => ({
+    name: recommendation.name,
+    catalogItems: (recommendation.catalogItems || []).map((item) => item.productName)
+  })));
+  assert.ok((adultWorkspace.recommendations || []).length >= 1);
+  assert.doesNotMatch(adultText, /어린이|자녀|아이러브/);
+});
+
 test('stores POLIBOT recommendation feedback and flags bad feedback for review', async () => {
   const userId = '22222222-2222-4222-8222-222222222222';
   await dbInsert('users', {

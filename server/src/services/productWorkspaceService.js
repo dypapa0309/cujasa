@@ -4132,7 +4132,7 @@ function sourceCatalogItems(source = {}, reviews = {}) {
   const cache = reviews && typeof reviews === 'object' ? reviews.__sourceCatalogItemCache : null;
   const cacheKey = cache && (source.dbSourceId || source.id || `${source.month || ''}-${source.fileName || ''}`);
   if (cache && cacheKey && cache.has(cacheKey)) return cache.get(cacheKey);
-  const dbCatalogItems = Array.isArray(source.catalogItems) && source.dbSourceId
+  const dbCatalogItems = Array.isArray(source.catalogItems) && (source.dbSourceId || source.sourceSystem === 'polibot_core')
     ? source.catalogItems
     : [];
   const items = dbCatalogItems.length
@@ -4191,6 +4191,30 @@ function polibotIsDriverItem(item = {}) {
   ].filter(Boolean).join(' '));
 }
 
+function polibotCatalogItemProfileBlockers(item = {}, profile = {}) {
+  const name = cleanPolibotRecommendationName(item.productName, item.company);
+  const text = [
+    name,
+    item.productGroup,
+    ...(Array.isArray(item.coverageKeywords) ? item.coverageKeywords : []),
+    ...(Array.isArray(item.targetAudience) ? item.targetAudience : []),
+    ...(Array.isArray(item.excludedAudience) ? item.excludedAudience : [])
+  ].filter(Boolean).join(' ');
+  const gender = String(profile.gender || '').trim();
+  const age = polibotAgeValue(profile);
+  const blockers = [];
+  if (/여성|여자|유방|자궁|난소/i.test(text) && /^남/.test(gender)) blockers.push('남성 고객에게 여성 전용/여성 질환 상품은 제외합니다.');
+  if (/남성|남자|전립선/i.test(text) && /^여/.test(gender)) blockers.push('여성 고객에게 남성 전용/남성 질환 상품은 제외합니다.');
+  if (age && age > 30 && /어린이|자녀|아이|키즈|태아/i.test(name)) blockers.push('성인 고객에게 어린이/자녀 전용 상품은 제외합니다.');
+  if (age && age < 15 && /종신|연금|노후|치매|간병/i.test(name) && !/(어린이|자녀|아이|키즈|태아)/i.test(name)) blockers.push('미성년 고객에게 성인 목적 상품은 제외합니다.');
+  if (!isPolibotCatalogItemUsable({ ...item, productName: name })) blockers.push('상품명이 아닌 설명/담보 항목은 제외합니다.');
+  return blockers;
+}
+
+function isPolibotCatalogItemProfileEligible(item = {}, profile = {}) {
+  return polibotCatalogItemProfileBlockers(item, profile).length === 0;
+}
+
 function polibotPurposeMismatch(item = {}, profile = {}) {
   const needs = Array.isArray(profile.needs) ? profile.needs : [];
   if (polibotIsDriverItem(item) && !needs.some((need) => /운전자|교통|자동차/.test(String(need || '')))) {
@@ -4238,6 +4262,7 @@ function isPolibotCatalogItemUsable(item = {}) {
   if (/비교|현황|전략상품|소식지?|간추린|가이드|자료|안내|기준|목록|요약|실태|재정\s*위기|플랜\s*비교|일부상품\s*제외|대응\s*방안|제안하세요|제안가능|저렴|운영담보|동일|확대|축소/i.test(name)) return false;
   if (/우대\s*플랜은|플랜은|보험료는|보장은|담보는|특징은|보상\s*예시|우대플랜.*예시|각\s*[\d,]+(?:천|만)?만원|치료생활비\s*[\d,]+|월\s*\d+\s*원/i.test(name)) return false;
   if (/보장\s*내용|가입\s*예시|보험료\s*예시|납입\s*예시|해약\s*환급|해지\s*환급|만기\s*환급|가입\s*한도|보장\s*금액|산출\s*기준|가입\s*기준/i.test(name)) return false;
+  if (/시설.*재가|재가.*시설|다양한.*특약|특약\s*구성\s*가능|구성\s*가능|지원비.*입원일당/i.test(name)) return false;
   if (/(?:보험료\s*)?납입\s*면제|납입면제대상|후유장해|장해지급률|장해분류표/i.test(name) && !/(?:보험|플랜).{0,8}$/.test(name.replace(/보험료/g, ''))) return false;
   if (name.length > 46 && !/(?:무배당|무\)|보험|플랜|종신보험|연금보험).{0,16}$/.test(name)) return false;
   return true;
@@ -4274,6 +4299,7 @@ function polibotCatalogItemKind(item = {}) {
   if (/^(?:손해보험|생명보험|화재보험|보험|상품|플랜)$/.test(compact)) return 'document';
   if (/보험금|서류|유의사항|안내|자료|목록|요약|기준|현황|비교|실태|재정\s*위기|대응\s*방안|제안하세요|제안가능|저렴|운영담보|동일|확대|축소|한도|가입\s*예시|보험료\s*예시|환급|공시|약관/i.test(name)) return 'document';
   if (/우대\s*플랜은|플랜은|보험료는|보장은|담보는|특징은|보상\s*예시|우대플랜.*예시|각\s*[\d,]+(?:천|만)?만원|치료생활비\s*[\d,]+|월\s*\d+\s*원/i.test(name)) return 'document';
+  if (/시설.*재가|재가.*시설|다양한.*특약|특약\s*구성\s*가능|구성\s*가능|지원비.*입원일당/i.test(name)) return 'document';
   if (/(?:보험료\s*)?납입\s*면제|납입면제대상|후유장해|장해지급률|장해분류표/i.test(name) && !/(?:보험|플랜).{0,8}$/.test(name.replace(/보험료/g, ''))) return 'rider';
   if (/특약|담보/.test(name)) return 'rider';
   if (/(진단비|수술비|입원일당|치료비|생활비|간병비|보장비)$/.test(name) && !/보험/.test(name)) return 'rider';
@@ -4443,6 +4469,7 @@ function polibotItemDecisionBreakdown(item = {}, profile = {}) {
   const hasNoMedical = Boolean(profile.medicalHistory) && /없음|무|해당\s*없/i.test(profile.medicalHistory);
   const hasMedicalRisk = /고혈압|혈압|당뇨|고지혈|수술|입원|치료|투약|약|진단|검사|추적|관찰|암|심장|뇌|디스크/i.test(medicalText);
   const productText = `${item.productName || ''} ${item.productGroup || ''} ${(item.coverageKeywords || []).join(' ')}`;
+  const profileBlockers = polibotCatalogItemProfileBlockers(item, profile);
   const simpleProduct = /간편|유병|고지|325|335|355|333|3\.2\.5|3\.5\.5|3\.10/.test(productText);
   const noUnderwritingProduct = /무심사|무고지|묻지\s*않/.test(productText);
   const linkedStrength = polibotLinkedGroupStrength(item);
@@ -4497,6 +4524,7 @@ function polibotItemDecisionBreakdown(item = {}, profile = {}) {
     premiumLevel === 'severe_over_budget' && bestPremium && Number.isFinite(target) && `예산 크게 초과: ${polibotBudgetOverrunText(bestPremium.amount, target)}`,
     premiumMatchQuality.level === 'low' && '고객 나이/성별과 보험료 행 연결이 약합니다.',
     purposeMismatch?.reason,
+    ...profileBlockers,
     ['blocked', 'review'].includes(underwritingClassification.level) && underwritingClassification.reason,
     hasMedicalRisk && !simpleProduct && !noUnderwritingProduct && '병력 입력이 있어 표준심사 인수/할증/부담보 가능성 확인이 필요합니다.',
     linkedStrength === 'weak' && '보험료-담보-조건 연결 강도가 약합니다.',
@@ -4515,7 +4543,8 @@ function polibotItemDecisionBreakdown(item = {}, profile = {}) {
     linkedStrength === 'usable' && '보험료-담보 묶음을 추천 근거로 사용할 수 있습니다.'
   ].filter(Boolean);
   const level = age.status === 'blocked' ? '연령 초과 후보'
-    : purposeMismatch ? '대체 후보'
+    : profileBlockers.length ? '제외 후보'
+      : purposeMismatch ? '대체 후보'
       : premiumLevel === 'severe_over_budget' ? '예산 초과 후보'
         : blockers.length && total < 68 ? '보류 검토' : total >= 82 ? '우선 추천' : total >= 64 ? '비교 후보' : '주의 후보';
   return {
@@ -4585,6 +4614,7 @@ function polibotCatalogItemScore(item = {}, profile = {}) {
   const terms = (profile.needs || []).flatMap(polibotNeedTerms);
   let score = 0;
   const kind = polibotCatalogItemKind(item);
+  const profileBlockers = polibotCatalogItemProfileBlockers(item, profile);
   const ageStatus = polibotAgeRangeStatus(item, profile);
   const bestPremium = polibotBestPremiumForProfile(item, profile);
   const linkedStrength = polibotLinkedGroupStrength(item);
@@ -4592,6 +4622,7 @@ function polibotCatalogItemScore(item = {}, profile = {}) {
   if (kind === 'plan') score += 8;
   if (kind === 'rider') score -= 10;
   if (kind === 'document') score -= 40;
+  if (profileBlockers.length) score -= 80;
   const medicalText = `${profile.medicalHistory || ''} ${profile.familyHistory || ''}`;
   const hasNoMedical = profile.medicalHistory && /없음|무|해당\s*없/i.test(profile.medicalHistory);
   const hasMedicalRisk = /고혈압|혈압|당뇨|고지혈|수술|입원|치료|투약|약|진단|검사|추적|관찰|암|심장|뇌|디스크/i.test(medicalText);
@@ -5070,6 +5101,7 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
   const selectedCompany = String(profile.company || '').trim();
   const rawCatalogItems = sources.flatMap((source) => sourceCatalogItems(source, profile.catalogReviews))
     .filter((item) => !selectedCompany || selectedCompany === '전체 보험사' || item.company === selectedCompany || (item.companies || []).includes(selectedCompany))
+    .filter((item) => isPolibotCatalogItemProfileEligible(item, profile))
     .sort((a, b) => polibotCatalogItemScore(b, profile) - polibotCatalogItemScore(a, profile));
   const needMatchedItems = rawCatalogItems.filter((item) => catalogItemMatchesNeeds(item, profile.needs));
   const candidateItems = needMatchedItems.length ? needMatchedItems : rawCatalogItems;

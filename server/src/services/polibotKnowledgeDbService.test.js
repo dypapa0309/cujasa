@@ -84,6 +84,67 @@ test('detects KakaoTalk txt uploads as consultation insights', async () => {
   assert.equal(summary.sourceChannelCounts.kakao_txt >= 1, true);
 });
 
+test('detects KakaoTalk csv local ingests as consultation insights', async () => {
+  const file = {
+    name: 'KakaoTalk_Chat_polibot_csv_test.csv',
+    fileName: 'KakaoTalk_Chat_polibot_csv_test.csv',
+    type: 'csv',
+    size: 220,
+    fileHash: 'kakao-polibot-csv-test-file-hash',
+    text: [
+      '2026-05-06 22:13:05,"상담사","고객님 기존 실손보험이 있나요?"',
+      '2026-05-06 22:14:12,"고객","실손은 있고 암, 뇌, 심장 진단비를 보고 싶어요."',
+      '2026-05-06 22:15:31,"상담사","목표 월 보험료는 어느 정도인가요?"'
+    ].join('\n')
+  };
+
+  const result = await ingestPolibotKnowledge({
+    scope: 'global',
+    sourceChannel: 'local_ingest',
+    files: [file],
+    dryRun: false
+  });
+
+  assert.equal(result.summary.insertedSources, 1);
+  assert.equal(result.summary.insertedConversationInsights, 1);
+  assert.equal(result.sources[0].sourceChannel, 'kakao_txt');
+});
+
+test('tracks different files even when extracted text is identical', async () => {
+  const sharedText = '롯데손보 DB손보 GA소식지 상품비교 자료입니다. 암 진단비, 뇌혈관 진단비, 심장 진단비, 입원, 수술 보장을 확인합니다.';
+  const first = await ingestPolibotKnowledge({
+    scope: 'global',
+    sourceChannel: 'local_ingest',
+    files: [{
+      name: 'same-text-a.pdf',
+      fileName: 'same-text-a.pdf',
+      type: 'pdf',
+      size: 200,
+      fileHash: 'same-text-a-file-hash',
+      text: sharedText
+    }],
+    dryRun: false
+  });
+  const second = await ingestPolibotKnowledge({
+    scope: 'global',
+    sourceChannel: 'local_ingest',
+    files: [{
+      name: 'same-text-b.pdf',
+      fileName: 'same-text-b.pdf',
+      type: 'pdf',
+      size: 210,
+      fileHash: 'same-text-b-file-hash',
+      text: sharedText
+    }],
+    dryRun: false
+  });
+
+  assert.equal(first.summary.insertedSources, 1);
+  assert.equal(second.summary.insertedSources, 1);
+  assert.equal(second.summary.duplicateSources, 0);
+  assert.equal(second.summary.duplicateChunks >= 1, true);
+});
+
 test('skips duplicate chunks across different POLIBOT sources in the same scope', async () => {
   const sharedText = '현대해상 굿앤굿 어린이 종합보험 상품비교 자료입니다. 암 진단비, 뇌혈관 진단비, 심장 진단비, 입원 보장을 확인합니다.';
   const first = await ingestPolibotKnowledge({

@@ -36,13 +36,14 @@ const MAX_STORAGE_UPLOAD_BYTES = 24 * 1024 * 1024;
 const POLIBOT_STORAGE_BUCKET = process.env.POLIBOT_STORAGE_BUCKET || 'polibot-knowledge';
 const CODE_SEARCH_CACHE_TTL_MS = 60 * 1000;
 const IMPORTED_SOURCE_CACHE_TTL_MS = 5 * 60 * 1000;
-const DB_SOURCE_CACHE_TTL_MS = Math.max(0, Number(process.env.POLIBOT_DB_SOURCE_CACHE_TTL_MS || 60 * 1000));
+const DB_SOURCE_CACHE_TTL_MS = Math.max(0, Number(process.env.POLIBOT_DB_SOURCE_CACHE_TTL_MS || 5 * 60 * 1000));
 const IMPORTED_CATALOG_SOURCE_LIMIT = Math.max(500, Number(process.env.POLIBOT_IMPORTED_CATALOG_SOURCE_LIMIT || 5000));
 const IMPORTED_PREMIUM_SOURCE_LIMIT = Math.max(500, Number(process.env.POLIBOT_IMPORTED_PREMIUM_SOURCE_LIMIT || 10000));
 const IMPORTED_DOCUMENT_SOURCE_LIMIT = Math.max(100, Number(process.env.POLIBOT_IMPORTED_DOCUMENT_SOURCE_LIMIT || 1000));
 const codeSearchCache = new Map();
 let importedSourceCache = null;
 let importedCatalogReadinessCache = null;
+let globalDbSourceCache = null;
 const dbSourceCache = new Map();
 
 function now() {
@@ -50,6 +51,7 @@ function now() {
 }
 
 function clearPolibotDbSourceCache(userId = '') {
+  globalDbSourceCache = null;
   if (!userId) {
     dbSourceCache.clear();
     return;
@@ -263,7 +265,11 @@ function splitKakaoChunks(text = '') {
 
 function detectSourceChannel(file = {}, text = '', fallback = 'web_upload') {
   const fileName = String(file.fileName || file.name || '').toLowerCase();
-  if (fallback === 'web_upload' && /\.txt$/.test(fileName) && KAKAO_TIME_PREFIX.test(String(text || '').split(/\r?\n/).find(Boolean) || '')) {
+  const firstMeaningfulLine = String(text || '').split(/\r?\n/).find((line) => line.trim()) || '';
+  const looksLikeKakaoExport = /kakaotalk[_\s-]*chat|카카오톡|카톡/.test(fileName);
+  const looksLikeKakaoText = KAKAO_TIME_PREFIX.test(firstMeaningfulLine)
+    || /^\d{4}-\d{2}-\d{2}\s+\d{1,2}:\d{2}:\d{2},/.test(firstMeaningfulLine);
+  if ((fallback === 'web_upload' || fallback === 'local_ingest') && /\.(txt|csv)$/.test(fileName) && (looksLikeKakaoExport || looksLikeKakaoText)) {
     return 'kakao_txt';
   }
   return fallback;
@@ -1415,6 +1421,7 @@ async function findDuplicateSource({ scope, userId, fileHash, textHash }) {
     });
     if (existing) return existing;
   }
+  if (fileHash) return null;
   if (textHash) {
     const existing = await dbGet('polibot_knowledge_sources', {
       scope,
@@ -1480,7 +1487,7 @@ async function insertSourceRecord({ userId, scope, sourceChannel, job, file, nor
     file_type: fileType,
     file_size: Number(file.size || normalizedSource.size || 0),
     file_hash: fileHash,
-    text_hash: textHash || null,
+    text_hash: fileHash ? null : textHash || null,
     storage_path: file.storagePath || '',
     month: normalizedSource.month || '',
     company: normalizedSource.company || '미분류',
@@ -1782,17 +1789,26 @@ export async function listPolibotDbKnowledgeSources(userId = '') {
     console.warn('[polibot_db_source_cache_load_failed]', table, error?.message || error);
     return [];
   });
-  const [globalSources, userSources, importedSources, globalCatalogRows, userCatalogRows] = await Promise.all([
-    safeList('polibot_knowledge_sources', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 500 }),
+  const globalCached = supabase && globalDbSourceCache && Date.now() - globalDbSourceCache.createdAt < DB_SOURCE_CACHE_TTL_MS
+    ? globalDbSourceCache.value
+    : null;
+  const [globalBundle, userSources, userCatalogRows] = await Promise.all([
+    globalCached || Promise.all([
+      safeList('polibot_knowledge_sources', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 500 }),
+      listImportedPolibotSources().catch((error) => {
+        loadFailed = true;
+        console.warn('[polibot_imported_source_cache_load_failed]', error?.message || error);
+        return [];
+      }),
+      safeList('polibot_catalog_items', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 1000 })
+    ]).then(([globalSources, importedSources, globalCatalogRows]) => ({ globalSources, importedSources, globalCatalogRows })),
     userId ? safeList('polibot_knowledge_sources', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 500 }) : [],
-    listImportedPolibotSources().catch((error) => {
-      loadFailed = true;
-      console.warn('[polibot_imported_source_cache_load_failed]', error?.message || error);
-      return [];
-    }),
-    safeList('polibot_catalog_items', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 1000 }),
     userId ? safeList('polibot_catalog_items', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 1000 }) : []
   ]);
+  if (supabase && !globalCached && !loadFailed && DB_SOURCE_CACHE_TTL_MS > 0) {
+    globalDbSourceCache = { createdAt: Date.now(), value: globalBundle };
+  }
+  const { globalSources = [], importedSources = [], globalCatalogRows = [] } = globalBundle || {};
   const sourceRows = [...globalSources, ...userSources];
   const catalogRows = [...globalCatalogRows, ...userCatalogRows];
   const catalogBySource = catalogRows.reduce((acc, row) => {
