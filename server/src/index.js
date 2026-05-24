@@ -232,11 +232,10 @@ app.get('/sitemap.xml', async (req, res) => {
     });
     const accountBlogUrls = [];
     const visibleAccountBlogs = accountBlogs
-      .filter((row) => row.blog_slug)
-      .filter((row) => !isCanonicalBlogHost(req) || row.blog_slug === 'jasain-cujasa-lab');
+      .filter((row) => row.blog_slug);
     for (const account of visibleAccountBlogs) {
-      const blogUrl = isCanonicalBlogHost(req) && account.blog_slug === 'jasain-cujasa-lab'
-        ? baseUrl
+      const blogUrl = isCanonicalBlogHost(req)
+        ? (account.blog_slug === 'jasain-cujasa-lab' ? baseUrl : `${baseUrl}/a/${encodeURIComponent(account.blog_slug)}`)
         : `${baseUrl}/blog/a/${encodeURIComponent(account.blog_slug)}`;
       if (blogUrl !== baseUrl || !isCanonicalBlogHost(req)) {
         accountBlogUrls.push(`

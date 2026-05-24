@@ -10,7 +10,7 @@ export function securityHeaders(req, res, next) {
       "default-src 'self'",
       "script-src 'none'",
       "style-src 'unsafe-inline'",
-      "img-src 'self' https://image6.coupangcdn.com https://thumbnail6.coupangcdn.com data:",
+      "img-src 'self' https://ads-partners.coupang.com https://*.coupangcdn.com data:",
       "font-src 'self' https://fonts.gstatic.com",
       "connect-src 'self'",
       "frame-ancestors 'none'",

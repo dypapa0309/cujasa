@@ -65,7 +65,10 @@ function baseUrlForRequest(req) {
 
 function accountBlogHref(req, account) {
   const baseUrl = baseUrlForRequest(req);
-  if (isCanonicalBlogHost(req) && account?.blog_slug === DEFAULT_ACCOUNT_BLOG_SLUG) return baseUrl;
+  if (isCanonicalBlogHost(req)) {
+    if (account?.blog_slug === DEFAULT_ACCOUNT_BLOG_SLUG) return baseUrl;
+    return `${baseUrl}/a/${encodeURIComponent(account.blog_slug)}`;
+  }
   return `${baseUrl}/blog/a/${encodeURIComponent(account.blog_slug)}`;
 }
 
