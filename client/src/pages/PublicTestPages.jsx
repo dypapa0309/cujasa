@@ -112,8 +112,7 @@ const purchaseCatalog = {
     intro: '고객 정보, 보장분석 자료, 추천 근거를 정리해 상담자가 빠르게 판단하게 합니다.',
     points: ['고객 상담 요약', '보장분석 자료 정리', '추천 근거 생성'],
     plans: [
-      { id: 'polibot_starter_monthly_39000', name: '스타터', price: '29,000원 / 월', badge: '시작', features: ['상담/추천 100회', '지식 업로드 기본', '월 단위 이용'] },
-      { id: 'polibot_basic_monthly_99000', name: '베이직', price: '79,000원 / 월', badge: '추천', features: ['상담/추천 500회', '고객별 히스토리', '추천 근거 정리'] },
+      { id: 'polibot_basic_monthly_99000', name: '베이직', price: '79,000원 / 월', badge: '추천', features: ['월 보장분석 100회', '고객별 히스토리', '추천 근거 정리'] },
       { id: 'polibot_lifetime_590000', name: '프로 영구구매', price: '590,000원', badge: '장기', features: ['장기 이용', '팀 운영', '우선 지원'] }
     ]
   },

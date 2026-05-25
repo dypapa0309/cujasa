@@ -24,8 +24,7 @@ export const MONTHLY_USAGE_PRODUCTS = {
   spread_starter_monthly_49000: { productId: 'spread', limit: 3 },
   spread_basic_monthly_149000: { productId: 'spread', limit: 10 },
   spread_pro_monthly_390000: { productId: 'spread', limit: 30 },
-  polibot_starter_monthly_39000: { productId: 'polibot', limit: 100 },
-  polibot_basic_monthly_99000: { productId: 'polibot', limit: 500 }
+  polibot_basic_monthly_99000: { productId: 'polibot', limit: 100 }
 };
 
 async function addUsageCredits({ userId, productId, product, payment, credits, paidAt, source }) {

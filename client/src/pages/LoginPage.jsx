@@ -112,8 +112,7 @@ const productDetailContent = {
       { icon: CheckCircle2, title: '상품 추천', body: '추천 방향과 근거를 상담자가 확인할 수 있게 정리합니다.' }
     ],
     plans: [
-      { title: '스타터', price: '29,000원 / 월', badge: '상담 시작', features: ['상담/추천 100회', '지식 업로드 기본', '가상계좌 월 단위'] },
-      { title: '베이직', price: '79,000원 / 월', badge: '추천', featured: true, features: ['상담/추천 500회', '고객별 히스토리', '추천 근거 정리'] },
+      { title: '베이직', price: '79,000원 / 월', badge: '추천', featured: true, features: ['월 보장분석 100회', '고객별 히스토리', '추천 근거 정리'] },
       { title: '프로 영구구매', price: '590,000원', badge: '장기 운영', features: ['상담/추천 장기 이용', '팀 단위 운영', '우선 지원'] }
     ]
   },

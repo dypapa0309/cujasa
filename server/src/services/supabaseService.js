@@ -360,13 +360,13 @@ const tables = {
       amount: 29000,
       billing_cycle: 'monthly',
       max_accounts: 0,
-      active: true,
+      active: false,
       created_at: now()
     },
     {
       id: 'polibot_basic_monthly_99000',
       app_product_id: 'polibot',
-      name: 'POLIBOT 베이직 월정액',
+      name: 'POLIBOT 베이직 월정액 100회',
       plan: 'monthly',
       amount: 79000,
       billing_cycle: 'monthly',
