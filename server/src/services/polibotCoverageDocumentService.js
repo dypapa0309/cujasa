@@ -236,25 +236,101 @@ function formatPolicyPremiumLabel(premium = '') {
 
 function extractDisclosure(text = '') {
   const lines = normalizeLines(text);
+  const hiraSummary = buildHiraVisitDisclosureSummary(lines);
   const medicalLines = lines
     .filter((line) => /고지|병력|입원|수술|투약|복용|치료|진단|검사|재검|추적|관찰|혈압|당뇨|고지혈|골절|백내장|암|심장|뇌/.test(line))
-    .filter((line) => !/상품별 가입현황|전체 보장현황|기준담보|소식지|영업이슈/.test(line))
+    .filter((line) => !/순번\s*병|본\s*자료는|요양급여|상품별 가입현황|전체 보장현황|기준담보|소식지|영업이슈/.test(line))
     .slice(0, 12);
   const joined = medicalLines.join(' / ');
   return {
     recent3Months: '',
     recent1Year: '',
-    recent5Years: joined,
-    recentExam: medicalLines.filter((line) => /검사|재검|추적|관찰|소견/.test(line)).join(' / '),
-    admissionSurgery: medicalLines.filter((line) => /입원|수술|시술/.test(line)).join(' / '),
-    longTreatment: medicalLines.filter((line) => /치료/.test(line)).join(' / '),
-    longMedication: medicalLines.filter((line) => /투약|복용|약/.test(line)).join(' / '),
-    currentMedication: medicalLines.filter((line) => /투약|복용|약|혈압|당뇨|고지혈/.test(line)).join(' / '),
-    majorDisease: medicalLines.filter((line) => /암|심장|뇌|당뇨|혈압|고지혈/.test(line)).join(' / '),
+    recent5Years: hiraSummary.recent5Years || joined,
+    recentExam: [hiraSummary.recentExam, medicalLines.filter((line) => /검사|재검|추적|관찰|소견/.test(line)).join(' / ')].filter(Boolean).join(' / '),
+    admissionSurgery: [hiraSummary.admissionSurgery, medicalLines.filter((line) => /입원|수술|시술/.test(line)).join(' / ')].filter(Boolean).join(' / '),
+    longTreatment: [hiraSummary.longTreatment, medicalLines.filter((line) => /치료/.test(line)).join(' / ')].filter(Boolean).join(' / '),
+    longMedication: [hiraSummary.longMedication, medicalLines.filter((line) => /투약|복용|약/.test(line)).join(' / ')].filter(Boolean).join(' / '),
+    currentMedication: [hiraSummary.currentMedication, medicalLines.filter((line) => /투약|복용|약|혈압|당뇨|고지혈/.test(line)).join(' / ')].filter(Boolean).join(' / '),
+    majorDisease: [hiraSummary.majorDisease, medicalLines.filter((line) => /암|심장|뇌|당뇨|혈압|고지혈/.test(line)).join(' / ')].filter(Boolean).join(' / '),
     completeCure: '',
-    followUp: medicalLines.filter((line) => /추적|관찰|재검/.test(line)).join(' / '),
-    details: joined
+    followUp: [hiraSummary.followUp, medicalLines.filter((line) => /추적|관찰|재검/.test(line)).join(' / ')].filter(Boolean).join(' / '),
+    details: [hiraSummary.details, joined].filter(Boolean).join('\n')
   };
+}
+
+function parseHiraVisitRows(lines = []) {
+  return lines
+    .map((line) => {
+      const match = compact(line).match(/^(\d{1,3})\s+(.+?)\s+(\d+)\((\d+)\)\s+[\d,]+\s+[\d,]+\s+[\d,]+$/);
+      if (!match) return null;
+      const provider = compact(match[2]);
+      if (!provider || /순번|본\s*자료|합계/.test(provider)) return null;
+      return {
+        index: Number(match[1]),
+        provider,
+        inpatientDays: Number(match[3] || 0),
+        outpatientDays: Number(match[4] || 0)
+      };
+    })
+    .filter(Boolean);
+}
+
+function buildHiraVisitDisclosureSummary(lines = []) {
+  const rows = parseHiraVisitRows(lines);
+  if (!rows.length) return {};
+  const providers = [...new Set(rows.map((row) => row.provider))];
+  const pharmacyRows = rows.filter((row) => /약국/.test(row.provider));
+  const medicalRows = rows.filter((row) => !/약국/.test(row.provider));
+  const inpatientRows = rows.filter((row) => row.inpatientDays > 0);
+  const outpatientTotal = rows.reduce((sum, row) => sum + row.outpatientDays, 0);
+  const inpatientTotal = rows.reduce((sum, row) => sum + row.inpatientDays, 0);
+  const departmentTerms = [
+    '정형외과', '내과', '가정의학과', '소아청소년과', '치과', '안과', '한방병원',
+    '이비인후과', '피부과', '신경외과', '통증의학과', '산부인과', '비뇨의학과'
+  ].filter((term) => providers.some((provider) => provider.includes(term)));
+  const notableProviders = providers
+    .filter((provider) => !/약국/.test(provider))
+    .slice(0, 8);
+  const pharmacyProviders = pharmacyRows.map((row) => row.provider).slice(0, 6);
+  return {
+    recent5Years: [
+      `심평원 5년 자료 기준 의료기관/약국 이용 ${rows.length}건`,
+      medicalRows.length ? `의료기관 ${medicalRows.length}건` : '',
+      pharmacyRows.length ? `약국 ${pharmacyRows.length}건` : '',
+      outpatientTotal ? `외래 ${outpatientTotal}일` : '',
+      inpatientTotal ? `입원 ${inpatientTotal}일` : ''
+    ].filter(Boolean).join(' · '),
+    recentExam: departmentTerms.length ? `진료과/기관명 기준 확인: ${departmentTerms.join(', ')}` : '',
+    admissionSurgery: inpatientRows.length
+      ? `입원일수 확인: ${inpatientRows.map((row) => `${row.provider} ${row.inpatientDays}일`).join(' / ')}`
+      : '',
+    longTreatment: outpatientTotal >= 10 || medicalRows.length >= 10
+      ? `외래 이용 다수: ${notableProviders.join(' / ')}`
+      : '',
+    longMedication: pharmacyRows.length >= 3 ? `약국 이용 ${pharmacyRows.length}건: ${pharmacyProviders.join(' / ')}` : '',
+    currentMedication: pharmacyRows.length ? `약국 청구 이력 확인: ${pharmacyProviders.join(' / ')}` : '',
+    majorDisease: departmentTerms.length ? `진료과 패턴: ${departmentTerms.join(', ')}` : '',
+    followUp: rows.some((row) => /정형외과|내과|안과|한방병원/.test(row.provider))
+      ? '진료과별 반복 방문 여부 상담 확인 필요'
+      : '',
+    details: rows
+      .slice(0, 20)
+      .map((row) => `${row.provider} · 입원 ${row.inpatientDays}일 · 외래 ${row.outpatientDays}일`)
+      .join('\n')
+  };
+}
+
+function buildMedicalHistorySummary(disclosureDetails = {}) {
+  const values = [
+    disclosureDetails.recent5Years,
+    disclosureDetails.currentMedication,
+    disclosureDetails.admissionSurgery,
+    disclosureDetails.recentExam,
+    disclosureDetails.followUp,
+    disclosureDetails.majorDisease,
+    disclosureDetails.details
+  ].map((value) => compact(value)).filter(Boolean);
+  return [...new Set(values)].join('\n').slice(0, 4000);
 }
 
 function inferNeeds(currentCoverage = {}) {
@@ -303,7 +379,7 @@ export function parsePolibotCoverageDocumentText(text = '', fileName = '') {
     currentCoverage,
     existingMedicalPlan: currentCoverage.medical?.amount ? '있음' : '',
     existingPremium: totalPremium ? String(Math.round(totalPremium * 10) / 10) : '',
-    medicalHistory: Object.values(disclosureDetails).some(Boolean) ? '확인 필요' : '',
+    medicalHistory: buildMedicalHistorySummary(disclosureDetails),
     disclosureDetails,
     underwritingAssessment: {
       route: Object.values(disclosureDetails).some(Boolean) ? '표준/간편 동시비교' : '표준심사 우선',

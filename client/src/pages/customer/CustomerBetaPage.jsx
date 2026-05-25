@@ -5264,7 +5264,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           form.birthdate ? `생년월일: ${form.birthdate}` : '',
           hiraFileName ? `심평원 파일: ${hiraFileName}` : ''
         ].filter(Boolean).join('\n')
-      });
+      }, { timeoutMs: 120000 });
       setWorkspace(next);
       await reloadCurrentUser?.();
       setSelectedRecommendation(null);
@@ -5299,12 +5299,25 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           password: passwordOverride || hiraPassword,
           passwordCandidates
         }, { timeoutMs: 30000 });
-        const text = result?.values?.medicalHistory || result?.previewText || '';
+        const values = result?.values || {};
+        const disclosureText = values.disclosureDetails && typeof values.disclosureDetails === 'object'
+          ? Object.values(values.disclosureDetails).filter(Boolean).join('\n')
+          : '';
+        const text = values.medicalHistory || disclosureText || result?.previewText || '';
         setForm((prev) => ({
           ...prev,
-          medicalHistory: [prev.medicalHistory, text.slice(0, 12000)].filter(Boolean).join('\n')
+          medicalHistory: [prev.medicalHistory, text.slice(0, 12000)].filter(Boolean).join('\n'),
+          disclosureDetails: values.disclosureDetails && typeof values.disclosureDetails === 'object'
+            ? { ...prev.disclosureDetails, ...values.disclosureDetails }
+            : prev.disclosureDetails,
+          underwritingAssessment: values.underwritingAssessment && typeof values.underwritingAssessment === 'object'
+            ? { ...prev.underwritingAssessment, ...values.underwritingAssessment }
+            : prev.underwritingAssessment,
+          analysisResult: values.analysisResult && typeof values.analysisResult === 'object'
+            ? { ...prev.analysisResult, ...values.analysisResult }
+            : prev.analysisResult
         }));
-        toast('심평원 PDF 내용을 병력/고지 메모에 넣었어요.', 'success');
+        toast('심평원 PDF 내용을 병력/고지 항목에 넣었어요.', 'success');
       } catch (err) {
         toast(err.message || '심평원 PDF를 읽지 못했어요. 비밀번호를 확인해주세요.', 'error');
       } finally {
@@ -5599,6 +5612,9 @@ function PolibotRecommendStepper({
   setSaveMemo,
   setSelectedRecommendation,
   onOpenKnowledge,
+  onAnalyzeCoverageDocument,
+  coverageDocumentParsing = false,
+  coverageDocumentFileName = '',
   onLoadHiraMedicalFile,
   hiraFileName = '',
   hiraPassword = '',
@@ -5606,7 +5622,7 @@ function PolibotRecommendStepper({
   hiraParsing = false
 }) {
   const steps = [
-    { id: 1, title: '고객정보', caption: '개인정보와 심평원 자료' },
+    { id: 1, title: '고객정보', caption: '보장분석과 심평원 자료' },
     { id: 2, title: '기준 필터', caption: 'polidoc 조건 대조' },
     { id: 3, title: '상품추천', caption: '후보 확인과 저장' }
   ];
@@ -5685,6 +5701,34 @@ function PolibotRecommendStepper({
             <div className="grid gap-2.5 rounded-2xl border border-white/10 bg-black/20 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
+                  <div className="text-sm font-black text-zinc-200">보장분석 자료</div>
+                  <div className="mt-0.5 text-xs font-bold text-zinc-600">고객 기본정보, 기존 계약, 담보금액, 현재 보험료를 채웁니다.</div>
+                </div>
+                {coverageDocumentFileName && <span className="max-w-full truncate rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black text-zinc-400">{coverageDocumentFileName}</span>}
+              </div>
+              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 px-3 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">
+                <Upload size={14} />
+                {coverageDocumentParsing ? '보장분석 읽는 중' : '보장분석 PDF 불러오기'}
+                <input
+                  type="file"
+                  accept=".pdf,application/pdf"
+                  className="hidden"
+                  disabled={coverageDocumentParsing}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = '';
+                    onAnalyzeCoverageDocument?.(file);
+                  }}
+                />
+              </label>
+              <div className="text-[11px] font-bold leading-5 text-zinc-600">
+                보장분석 자료를 먼저 넣으면 이름, 나이, 성별, 필요 보장, 가입 계약, 현재 보험료가 자동으로 들어갑니다.
+              </div>
+            </div>
+
+            <div className="grid gap-2.5 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
                   <div className="text-sm font-black text-zinc-200">개인정보</div>
                   <div className="mt-0.5 text-xs font-bold text-zinc-600">고객 식별과 나이 계산에 필요한 최소 정보입니다.</div>
                 </div>
@@ -5702,7 +5746,7 @@ function PolibotRecommendStepper({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-black text-zinc-200">심평원 5년 자료</div>
-                  <div className="mt-0.5 text-xs font-bold text-zinc-600">고객 인증 후 받은 진료/투약/검사 내역을 넣습니다.</div>
+                  <div className="mt-0.5 text-xs font-bold text-zinc-600">고객 인증 후 받은 진료/투약/검사 내역과 고지 판단값을 채웁니다.</div>
                 </div>
                 <a href={HIRA_CERT_URL} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">
                   <ExternalLink size={14} />

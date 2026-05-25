@@ -51,7 +51,7 @@ const DEXOR_KEYWORD_STOPWORDS = new Set([
 const DEXOR_DAILY_VISITOR_MINIMUMS = { s: 500, a: 200, b: 80 };
 DEXOR_INDUSTRY_KEYWORDS.auto = [...new Set(Object.values(DEXOR_INDUSTRY_KEYWORDS).flat())];
 DEXOR_INDUSTRY_LABELS.auto = '자동';
-const POLIBOT_RECOMMEND_TIMING_WARN_MS = 1000;
+const POLIBOT_RECOMMEND_TIMING_WARN_MS = Math.max(1000, Number(process.env.POLIBOT_RECOMMEND_TIMING_WARN_MS || 15000));
 
 const EMPTY_POLIBOT_KNOWLEDGE_DB_SUMMARY = {
   totalSources: 0,
@@ -1627,7 +1627,7 @@ export async function getProductWorkspaceStatus(userId, productId) {
     }));
   const qualityReport = knowledgeSources.length && knowledgeSources.every((source) => source.dbSourceId)
     ? buildPolibotDbQualityReport(knowledgeSources)
-    : buildPolibotQualityReport(knowledgeSources, catalogReviews);
+    : buildPolibotRecommendationQualityReport(knowledgeSources, catalogReviews);
   const knowledgeDbSummary = {
     ...EMPTY_POLIBOT_KNOWLEDGE_DB_SUMMARY,
     ...buildPolibotLightKnowledgeSummary(knowledgeSources),
@@ -3142,7 +3142,7 @@ async function getPolibotRecommendationContext(userId, timing = null) {
   timing?.mark('catalog_items');
   const qualityReport = knowledgeSources.length && knowledgeSources.every((source) => source.dbSourceId)
     ? buildPolibotDbQualityReport(knowledgeSources)
-    : buildPolibotQualityReport(knowledgeSources, catalogReviews);
+    : buildPolibotRecommendationQualityReport(knowledgeSources, catalogReviews);
   timing?.mark('quality_report');
   return {
     workspace: withUsage({
@@ -4119,12 +4119,21 @@ function normalizeCatalogReviews(reviews = {}) {
 }
 
 function attachPolibotCatalogItemCache(reviews = {}) {
-  if (!reviews || typeof reviews !== 'object' || Object.prototype.hasOwnProperty.call(reviews, '__sourceCatalogItemCache')) return reviews;
-  Object.defineProperty(reviews, '__sourceCatalogItemCache', {
-    value: new Map(),
-    enumerable: false,
-    configurable: false
-  });
+  if (!reviews || typeof reviews !== 'object') return reviews;
+  if (!Object.prototype.hasOwnProperty.call(reviews, '__sourceCatalogItemCache')) {
+    Object.defineProperty(reviews, '__sourceCatalogItemCache', {
+      value: new Map(),
+      enumerable: false,
+      configurable: false
+    });
+  }
+  if (!Object.prototype.hasOwnProperty.call(reviews, '__sourceAllCatalogItemCache')) {
+    Object.defineProperty(reviews, '__sourceAllCatalogItemCache', {
+      value: new Map(),
+      enumerable: false,
+      configurable: false
+    });
+  }
   return reviews;
 }
 
@@ -4132,12 +4141,7 @@ function sourceCatalogItems(source = {}, reviews = {}) {
   const cache = reviews && typeof reviews === 'object' ? reviews.__sourceCatalogItemCache : null;
   const cacheKey = cache && (source.dbSourceId || source.id || `${source.month || ''}-${source.fileName || ''}`);
   if (cache && cacheKey && cache.has(cacheKey)) return cache.get(cacheKey);
-  const dbCatalogItems = Array.isArray(source.catalogItems) && (source.dbSourceId || source.sourceSystem === 'polibot_core')
-    ? source.catalogItems
-    : [];
-  const items = dbCatalogItems.length
-    ? dbCatalogItems
-    : buildPolibotCatalogItems([source], { reviews });
+  const items = sourceAllCatalogItems(source, reviews);
   const usableItems = items
     .filter((item) => item.status === 'confirmed'
       && Number(item.confidence || 0) >= 80
@@ -4149,7 +4153,12 @@ function sourceCatalogItems(source = {}, reviews = {}) {
 
 function sourceAllCatalogItems(source = {}, reviews = {}) {
   if (Array.isArray(source.catalogItems) && source.catalogItems.length && source.dbSourceId) return source.catalogItems;
-  return buildPolibotCatalogItems([source], { includeReview: true, reviews });
+  const cache = reviews && typeof reviews === 'object' ? reviews.__sourceAllCatalogItemCache : null;
+  const cacheKey = cache && (source.dbSourceId || source.id || `${source.month || ''}-${source.fileName || ''}`);
+  if (cache && cacheKey && cache.has(cacheKey)) return cache.get(cacheKey);
+  const items = buildPolibotCatalogItems([source], { includeReview: true, reviews });
+  if (cache && cacheKey) cache.set(cacheKey, items);
+  return items;
 }
 
 function catalogItemMatchesNeeds(item = {}, needs = []) {
@@ -4781,6 +4790,39 @@ function buildPolibotQualityReport(knowledgeSources = [], reviews = {}) {
     catalogItems: allCatalogItems.slice(0, 160),
     recommendableCatalogItems: catalogItems.slice(0, 120),
     catalog: catalog.slice(0, 80)
+  };
+}
+
+function buildPolibotRecommendationQualityReport(knowledgeSources = [], reviews = {}) {
+  const allCatalogItems = knowledgeSources.flatMap((source) => sourceAllCatalogItems(source, reviews));
+  const catalogItems = allCatalogItems.filter((item) => item.status === 'confirmed' && item.productName);
+  const reviewItems = allCatalogItems.filter((item) => ['auto', 'review'].includes(item.status));
+  const excludedItems = allCatalogItems.filter((item) => item.status === 'excluded');
+  const recommended = catalogItems.filter((item) => ['충분', '보통'].includes(item.completeness || '부족'));
+  const companies = [...new Set([
+    ...knowledgeSources.flatMap((item) => item.companies?.length ? item.companies : [item.company]),
+    ...catalogItems.map((item) => item.company)
+  ].filter((company) => company && company !== '미분류'))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const productGroups = [...new Set([
+    ...knowledgeSources.map((item) => item.productGroup),
+    ...catalogItems.map((item) => item.productGroup)
+  ].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const keywords = [...new Set([
+    ...knowledgeSources.flatMap((item) => item.keywords || []),
+    ...catalogItems.flatMap((item) => item.coverageKeywords || [])
+  ].filter(Boolean))].slice(0, 20);
+  return {
+    totalSources: knowledgeSources.length,
+    recommendableProducts: new Set(recommended.map((item) => `${item.company}-${item.productName}`)).size,
+    insufficientProducts: catalogItems.filter((item) => item.completeness === '부족').length,
+    reviewNeededProducts: reviewItems.length,
+    excludedPhrases: excludedItems.length,
+    ocrNeeded: knowledgeSources.filter((item) => item.fileType === 'image').length,
+    companies,
+    productGroups,
+    keywords,
+    catalogItems: allCatalogItems.slice(0, 80),
+    recommendableCatalogItems: catalogItems.slice(0, 80)
   };
 }
 
