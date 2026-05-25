@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   getPolibotDbKnowledgeSummary,
   ingestPolibotKnowledge,
+  isNoisyPolibotCodeCandidate,
   listPolibotDbKnowledgeSources,
   listPolibotKnowledgeReviewQueue,
   runPolibotSourceOcr,
@@ -319,4 +320,42 @@ test('searches POLIBOT coverage code candidates by code and coverage context', a
 
   const byCoverage = await searchPolibotCodeCandidates('', { query: '뇌혈관 진단비' });
   assert.ok(byCoverage.some((item) => item.code === '33'));
+});
+
+test('filters POLIBOT code search noise from amounts, ages, and KCD fragments', () => {
+  assert.equal(isNoisyPolibotCodeCandidate({
+    code: '305',
+    status: 'recommendable',
+    context: '삼성화재 보장코드 305 암 진단비 특약'
+  }), false);
+  assert.equal(isNoisyPolibotCodeCandidate({
+    code: '335',
+    status: 'confirmed',
+    context: '3대질병 진단비 상품명 (335 간편고지형)'
+  }), false);
+  assert.equal(isNoisyPolibotCodeCandidate({
+    code: '100',
+    status: 'review_needed',
+    context: '암 진단비 초기이상100만, 중기이상600만'
+  }), true);
+  assert.equal(isNoisyPolibotCodeCandidate({
+    code: '47',
+    status: 'review_needed',
+    context: '질병코드 질병명 I47~I49 부정맥'
+  }), true);
+  assert.equal(isNoisyPolibotCodeCandidate({
+    code: '281',
+    status: 'confirmed',
+    context: '실손(질병입원) 551,281 질병수술비'
+  }), true);
+  assert.equal(isNoisyPolibotCodeCandidate({
+    code: '460',
+    status: 'confirmed',
+    context: '{5940675A-B579-460E-94D1-C3A000000000}'
+  }), true);
+  assert.equal(isNoisyPolibotCodeCandidate({
+    code: '305',
+    status: 'excluded',
+    context: '보장코드 305 암 진단비'
+  }), true);
 });

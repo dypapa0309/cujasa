@@ -296,6 +296,24 @@ function codeLooksLikeDateOrAmount(code = '', context = '') {
   return /(?:년|월|일|세|원|만원|억원|회차|개월|년납|월납|%|％)/.test(nearby);
 }
 
+function isRouteDisclosureCode(code = '', context = '') {
+  return /^(310|325|333|335|355)$/.test(code) && /간편|유병|고지|표준|심사/.test(context);
+}
+
+function isNoisyCoverageCodeExtraction(code = '', context = '', explicit = false) {
+  if (!code) return true;
+  if (/^\d$/.test(code)) return true;
+  if (isRouteDisclosureCode(code, context)) return false;
+  if (codeLooksLikeDateOrAmount(code, context)) return true;
+  if (/[{(]?[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}/i.test(context)) return true;
+  if (new RegExp(`[A-Z]${code}\\b|[A-Z]${code}~|~[A-Z]?${code}\\b`, 'i').test(context)) return true;
+  if (new RegExp(`\\d{1,3},${code}\\b|\\b${code},\\d{3}\\b`).test(context)) return true;
+  if (new RegExp(`\\b${code}\\s*(?:만|천|억|원|세|회|일|년|개월|%|대)`).test(context)) return true;
+  if (new RegExp(`\\b${code}\\s*개\\s*코드`).test(context)) return true;
+  if (new RegExp(`(?:가입나이|납입기간|만기|상해급수|보험료|순번|가입\\s*\\(?건\\)?)[^\\n]{0,24}\\b${code}\\b`).test(context)) return true;
+  return !explicit;
+}
+
 function codeContext(text = '', index = 0, length = 0) {
   const source = cleanText(text);
   return source.slice(Math.max(0, index - 80), Math.min(source.length, index + length + 100));
@@ -315,7 +333,8 @@ export function extractPolibotCoverageCodes({ text = '', fileName = '', companie
     /(?:코드|담보\s*번호|보장\s*번호|특약\s*번호)\s*[:：#]?\s*([0-9]{1,4})/g,
     /([0-9]{1,4})\s*번\s*(?:담보|보장|특약|회사|코드)?/g,
     /(?:담보|보장|특약)\s*([0-9]{1,4})\s*(?:번|코드)?/g,
-    /(^|[^0-9])([0-9]{1,4})(?=[^0-9]|$)/g
+    /\(?\b(310|325|333|335|355)\s*(?:간편|고지|유병|표준)/g,
+    /(?:간편|고지|유병|표준)[가-힣A-Za-z\s()·ㆍ]{0,16}\b(310|325|333|335|355)\b/g
   ];
   patterns.forEach((pattern) => {
     for (const match of source.matchAll(pattern)) {
@@ -323,8 +342,8 @@ export function extractPolibotCoverageCodes({ text = '', fileName = '', companie
       const code = normalizeCodeValue(rawCode);
       const rawIndex = match.index + String(match[0] || '').indexOf(rawCode);
       const context = codeContext(source, rawIndex, rawCode.length);
-      const explicit = EXPLICIT_CODE_SIGNAL.test(context);
-      if (codeLooksLikeDateOrAmount(code, context)) continue;
+      const explicit = EXPLICIT_CODE_SIGNAL.test(context) || isRouteDisclosureCode(code, context);
+      if (isNoisyCoverageCodeExtraction(code, context, explicit)) continue;
       if (!explicit && !COVERAGE_CODE_CONTEXT_SIGNAL.test(context)) continue;
       const contextCompanies = inferPolibotCompanies(context);
       const contextKeywords = coverageKeywordsFromContext(context);

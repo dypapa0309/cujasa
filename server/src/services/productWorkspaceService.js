@@ -13,6 +13,7 @@ import {
 import {
   getImportedPolibotCatalogReadiness,
   ingestPolibotKnowledge,
+  isNoisyPolibotCodeCandidate,
   listPolibotDbKnowledgeSources,
   searchPolibotCodeCandidates
 } from './polibotKnowledgeDbService.js';
@@ -2413,6 +2414,7 @@ function polibotCoverageCodeContext(candidate = {}) {
 function isNoisyPolibotCoverageCode(candidate = {}) {
   const code = String(candidate.code || '').trim();
   const context = polibotCoverageCodeContext(candidate);
+  if (isNoisyPolibotCodeCandidate(candidate)) return true;
   if (!code) return true;
   if (/^\d$/.test(code)) return true;
   if (/[{(]?[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}[)}]?/i.test(context)) return true;
@@ -3334,6 +3336,62 @@ function buildPolibotDesignManagerSummary({
     riskFlags,
     sellerQuestions
   };
+}
+
+function normalizePolibotMatchText(value = '') {
+  return String(value || '').normalize('NFC').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function polibotCodeCoverageTokens(item = {}) {
+  return [
+    item.connectedValue,
+    item.label,
+    item.query,
+    item.context,
+    ...(Array.isArray(item.coverageKeywords) ? item.coverageKeywords : [])
+  ]
+    .map(normalizePolibotMatchText)
+    .filter(Boolean);
+}
+
+function scopePolibotMatchedCoverageCodes(codes = [], { catalogItems = [], keywordHits = [], productGroup = '', sourceCompanies = [] } = {}) {
+  const catalogCompanies = new Set([
+    ...sourceCompanies,
+    ...catalogItems.flatMap((item) => item.companies?.length ? item.companies : [item.company])
+  ].filter(Boolean));
+  const catalogText = normalizePolibotMatchText([
+    productGroup,
+    ...keywordHits,
+    ...catalogItems.flatMap((item) => [
+      item.productName,
+      item.productGroup,
+      item.disclosureMemo,
+      item.reductionMemo,
+      ...(item.coverageKeywords || []),
+      ...(item.coverageDetails || []).map((detail) => `${detail.label || ''} ${detail.category || ''} ${detail.fineCategory || ''}`)
+    ])
+  ].filter(Boolean).join(' '));
+  const hasSimpleRoute = /간편|유병|고지|표준|심사/.test(catalogText);
+  const scoped = [];
+  for (const item of Array.isArray(codes) ? codes : []) {
+    const code = String(item?.code || '').trim();
+    if (!code) continue;
+    const itemCompanies = [item.company, ...(Array.isArray(item.companies) ? item.companies : [])].filter(Boolean);
+    const companyMatches = !catalogCompanies.size
+      || !itemCompanies.length
+      || itemCompanies.some((company) => catalogCompanies.has(company));
+    if (!companyMatches) continue;
+    if (/^(310|325|333|335|355)$/.test(code) && hasSimpleRoute) {
+      scoped.push(item);
+      continue;
+    }
+    const tokens = polibotCodeCoverageTokens(item).filter((token) => token.length >= 2);
+    const coverageMatches = tokens.some((token) => catalogText.includes(token) || token.split(/[,\s/]+/).some((part) => part.length >= 2 && catalogText.includes(part)));
+    if (coverageMatches) scoped.push(item);
+  }
+  return scoped
+    .filter((item, index, list) => list.findIndex((row) => row.code === item.code) === index)
+    .slice(0, 12);
 }
 
 function buildPolibotDecisionAnalysis({ profile = {}, catalogItems = [], premiumCatalogItems = catalogItems, premiumReferences = [], keywordText = '', name = '' } = {}) {
@@ -5761,6 +5819,18 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
   const managerCodes = Array.isArray(profile.managerCodes) ? profile.managerCodes : buildPolibotManagerCodeRecommendations(profile);
   const actualCodes = Array.isArray(profile.actualCodes) ? profile.actualCodes : buildPolibotActualCodes(profile);
   const matchedCoverageCodes = Array.isArray(profile.matchedCoverageCodes) ? profile.matchedCoverageCodes : [];
+  const recommendationMatchedCoverageCodes = scopePolibotMatchedCoverageCodes(matchedCoverageCodes, {
+    catalogItems,
+    keywordHits,
+    productGroup,
+    sourceCompanies
+  });
+  const analysisProfile = {
+    ...profile,
+    managerCodes,
+    actualCodes,
+    matchedCoverageCodes: recommendationMatchedCoverageCodes
+  };
   const riskCautions = Array.isArray(profile.riskHoldReasons)
     ? profile.riskHoldReasons.map((reason) => `${reason} 확인 필요`)
     : [];
@@ -5787,7 +5857,7 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
   const premiumMemo = selectedPremium.memo;
   const premiumPlan = buildPolibotPremiumPlan(profile);
   const decisionAnalysis = buildPolibotDecisionAnalysis({
-    profile,
+    profile: analysisProfile,
     catalogItems,
     premiumCatalogItems,
     premiumReferences: sourcePremiumReferences,
@@ -5802,18 +5872,18 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     selectedPremium
   });
   const advisorExplanation = buildPolibotAdvisorExplanation({
-    profile,
+    profile: analysisProfile,
     name,
     decisionAnalysis,
     selectedPremium,
     catalogItems
   });
   const designManagerSummary = decisionAnalysis.designManagerSummary || buildPolibotDesignManagerSummary({
-    profile,
+    profile: analysisProfile,
     decisionAnalysis,
     managerCodes,
     actualCodes,
-    matchedCoverageCodes,
+    matchedCoverageCodes: recommendationMatchedCoverageCodes,
     catalogItems
   });
   const decisionScoreValue = Number(decisionAnalysis.decisionScore?.score || 0);
@@ -5863,7 +5933,7 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     routineChecks: reviewSummary.routineChecks,
     managerCodes,
     actualCodes,
-    matchedCoverageCodes,
+    matchedCoverageCodes: recommendationMatchedCoverageCodes,
     keywords: keywordHits.length ? keywordHits : itemKeywords,
     catalogItems: catalogItems.map((item) => compactPolibotClientCatalogItem({
       ...item,

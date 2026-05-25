@@ -24,7 +24,7 @@ const KAKAO_TIME_PREFIX = /^\[?[^,\]\n]{1,30}\]?\s*(?:오전|오후)?\s*\d{1,2}:
 const OFFICIAL_SOURCE_SIGNAL = /상품비교|가입설계|보험료|현황|약관|요약서|제안서|보장분석|담보|플랜/i;
 const LOW_TRUST_SOURCE_CHANNELS = new Set(['kakao_txt']);
 const VALID_KNOWLEDGE_STATUSES = new Set(['recommendable', 'review_needed', 'excluded', 'ocr_needed', 'privacy_risk', 'conflict']);
-const SEARCHABLE_CODE_STATUSES = new Set(['recommendable', 'review_needed', 'conflict']);
+const SEARCHABLE_CODE_STATUSES = new Set(['recommendable', 'confirmed', 'review_needed', 'review', 'conflict']);
 const OCR_IMAGE_MIME_TYPES = {
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -1839,6 +1839,53 @@ function codeSearchTerms(query = '') {
     .slice(0, 8);
 }
 
+function codeCandidateContext(candidate = {}) {
+  return normalizeSearchText([
+    candidate.context,
+    candidate.fileName,
+    candidate.company,
+    ...(Array.isArray(candidate.companies) ? candidate.companies : []),
+    ...(Array.isArray(candidate.coverageKeywords) ? candidate.coverageKeywords : [])
+  ].filter(Boolean).join(' '));
+}
+
+function isSearchableCodeStatus(status = '') {
+  return SEARCHABLE_CODE_STATUSES.has(String(status || '').trim());
+}
+
+function isPolibotDisclosureRouteCode(code = '', context = '') {
+  return /^(310|325|333|335|355)$/.test(code) && /간편|유병|고지|표준|심사/.test(context);
+}
+
+function hasExplicitCodeContext(code = '', context = '') {
+  if (!context) return false;
+  if (new RegExp(`(?:보장|담보|특약|상병|질병|kcd|icd|분류|c)\\s*(?:코드|번호)?\\s*[:：#(]?\\s*${code}\\b`, 'i').test(context)) return true;
+  if (new RegExp(`\\b${code}\\s*(?:번\\s*)?(?:보장|담보|특약|상병|질병|kcd|icd|분류|코드)`, 'i').test(context)) return true;
+  if (new RegExp(`\\b${code}\\s*개\\s*코드`, 'i').test(context)) return false;
+  return /보장코드|담보코드|특약코드|상병코드|질병코드|분류코드|kcd|icd|c코드/i.test(context);
+}
+
+export function isNoisyPolibotCodeCandidate(candidate = {}) {
+  const code = String(candidate.code || '').trim();
+  const context = codeCandidateContext(candidate);
+  if (!code) return true;
+  if (!isSearchableCodeStatus(candidate.status || 'review_needed')) return true;
+  if (/^[a-z]\d{2}(?:\.[0-9a-z]{1,2})?$/i.test(code)) return false;
+  if (/^\d(?:\.\d+){1,3}$/.test(code)) return false;
+  if (isPolibotDisclosureRouteCode(code, context)) return false;
+  if (!/^\d{2,5}$/.test(code)) return /^\d$/.test(code);
+  if (!hasExplicitCodeContext(code, context)) return true;
+  if (/[{(]?[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}/i.test(context)) return true;
+  if (new RegExp(`[a-z]${code}\\b|[a-z]${code}~|~[a-z]?${code}\\b`, 'i').test(context)) return true;
+  if (new RegExp(`\\d{1,3},${code}\\b|\\b${code},\\d{3}\\b`).test(context)) return true;
+  if (new RegExp(`\\b${code}\\s*(?:만|천|억|원|세|회|일|년|개월|%|대)`).test(context)) return true;
+  if (new RegExp(`\\b${code}\\s*/`).test(context)) return true;
+  if (new RegExp(`\\b${code}\\s*개\\s*코드`).test(context)) return true;
+  if (new RegExp(`(?:가입나이|납입기간|만기|상해급수|보험료|순번|가입\\s*\\(?건\\)?)[^\\n]{0,24}\\b${code}\\b`).test(context)) return true;
+  if (/^(19|20)\d{2}$/.test(code)) return true;
+  return false;
+}
+
 function codeSearchScore(candidate = {}, { query = '', company = '', coverage = '' } = {}) {
   const normalizedQuery = normalizeSearchText(query);
   const terms = codeSearchTerms(query);
@@ -1865,6 +1912,7 @@ function candidateMatchesSearch(candidate = {}, params = {}) {
   const normalizedQuery = normalizeSearchText(query);
   const terms = codeSearchTerms(query);
   const haystack = candidate.searchText || '';
+  if (isNoisyPolibotCodeCandidate(candidate)) return false;
   if (company && !(candidate.companies || []).includes(company)) return false;
   if (coverage && !(candidate.coverageKeywords || []).some((keyword) => keyword.includes(coverage) || coverage.includes(keyword))) return false;
   if (!normalizedQuery) return true;
@@ -2461,6 +2509,133 @@ export async function updatePolibotKnowledgeSourceReview(id, { status, reviewNot
   });
   clearPolibotDbSourceCache(row.scope === 'global' ? '' : row.user_id || '');
   return sourceRowForReview(updated || row);
+}
+
+function normalizeCodeCandidateFingerprint(item = {}) {
+  return [
+    String(item.code || '').trim(),
+    String(item.context || '').replace(/\s+/g, ' ').trim().slice(0, 260),
+    (Array.isArray(item.coverageKeywords) ? item.coverageKeywords : []).join('|'),
+    (Array.isArray(item.companies) ? item.companies : []).join('|')
+  ].join('::');
+}
+
+function codeCandidatesEqual(left = [], right = []) {
+  if (left.length !== right.length) return false;
+  const leftKeys = left.map(normalizeCodeCandidateFingerprint).sort();
+  const rightKeys = right.map(normalizeCodeCandidateFingerprint).sort();
+  return leftKeys.every((key, index) => key === rightKeys[index]);
+}
+
+function sourceBackfillText(row = {}, normalized = {}) {
+  return [
+    normalized.textSnippet,
+    row.text_snippet,
+    row.redacted_snippet,
+    normalized.summary
+  ].filter(Boolean).join('\n');
+}
+
+export async function backfillPolibotKnowledgeSourceCodeCandidates({ dryRun = true, limit = 1000, scope = 'all' } = {}) {
+  const selectedScope = ['global', 'user'].includes(scope) ? scope : 'all';
+  const rows = await dbList('polibot_knowledge_sources', selectedScope === 'all' ? {} : { scope: selectedScope }, {
+    select: 'id,user_id,scope,status,file_name,month,company,companies,keywords,normalized_source,text_snippet,redacted_snippet,metadata',
+    order: 'created_at',
+    ascending: false,
+    limit: Math.min(Math.max(Number(limit || 1000), 1), 5000)
+  });
+  const updates = [];
+  const skipped = [];
+  for (const row of rows) {
+    const normalized = row.normalized_source && typeof row.normalized_source === 'object' ? row.normalized_source : {};
+    const previous = Array.isArray(normalized.codeCandidates) ? normalized.codeCandidates : [];
+    const text = sourceBackfillText(row, normalized);
+    if (!text && !previous.length) {
+      skipped.push({ id: row.id, fileName: row.file_name || normalized.fileName || '', reason: 'no_text_or_candidates' });
+      continue;
+    }
+    const companies = Array.isArray(row.companies) && row.companies.length
+      ? row.companies
+      : Array.isArray(normalized.companies) ? normalized.companies : [row.company || normalized.company].filter(Boolean);
+    const keywords = Array.isArray(row.keywords) && row.keywords.length
+      ? row.keywords
+      : Array.isArray(normalized.keywords) ? normalized.keywords : [];
+    const extracted = text
+      ? extractPolibotCoverageCodes({
+        text,
+        fileName: row.file_name || normalized.fileName || '',
+        companies,
+        keywords
+      })
+      : previous.filter((item) => !isNoisyPolibotCodeCandidate({
+        ...item,
+        status: row.status || 'review_needed',
+        fileName: row.file_name || normalized.fileName || '',
+        company: row.company || normalized.company || '',
+        companies,
+        coverageKeywords: item.coverageKeywords || keywords
+      }));
+    const next = extracted.filter((item) => !isNoisyPolibotCodeCandidate({
+      ...item,
+      status: row.status || 'review_needed',
+      fileName: row.file_name || normalized.fileName || '',
+      company: row.company || normalized.company || '',
+      companies: item.companies || companies,
+      coverageKeywords: item.coverageKeywords || keywords
+    }));
+    if (codeCandidatesEqual(previous, next)) {
+      skipped.push({ id: row.id, fileName: row.file_name || normalized.fileName || '', reason: 'unchanged', candidates: previous.length });
+      continue;
+    }
+    const removed = Math.max(0, previous.length - next.length);
+    const added = Math.max(0, next.length - previous.length);
+    const patch = {
+      normalized_source: {
+        ...normalized,
+        codeCandidates: next,
+        codeCandidateBackfilledAt: now()
+      },
+      metadata: {
+        ...(row.metadata && typeof row.metadata === 'object' ? row.metadata : {}),
+        codeCandidateBackfilledAt: now(),
+        codeCandidateBackfillVersion: EXTRACTOR_VERSION,
+        codeCandidateBackfillPreviousCount: previous.length,
+        codeCandidateBackfillNextCount: next.length
+      }
+    };
+    updates.push({
+      id: row.id,
+      fileName: row.file_name || normalized.fileName || '',
+      scope: row.scope || '',
+      status: row.status || '',
+      previousCount: previous.length,
+      nextCount: next.length,
+      removed,
+      added,
+      previousCodes: previous.map((item) => item.code).filter(Boolean).slice(0, 20),
+      nextCodes: next.map((item) => item.code).filter(Boolean).slice(0, 20)
+    });
+    if (!dryRun) await dbUpdate('polibot_knowledge_sources', { id: row.id }, patch);
+  }
+  if (!dryRun && updates.length) {
+    clearPolibotCodeSearchCache();
+    clearPolibotDbSourceCache();
+    importedCatalogReadinessCache = null;
+  }
+  return {
+    dryRun: Boolean(dryRun),
+    scope: selectedScope,
+    scanned: rows.length,
+    changed: updates.length,
+    unchanged: skipped.filter((item) => item.reason === 'unchanged').length,
+    skipped: skipped.length,
+    previousCandidateCount: updates.reduce((sum, item) => sum + item.previousCount, 0),
+    nextCandidateCount: updates.reduce((sum, item) => sum + item.nextCount, 0),
+    removedCandidateCount: updates.reduce((sum, item) => sum + item.removed, 0),
+    addedCandidateCount: updates.reduce((sum, item) => sum + item.added, 0),
+    updates: updates.slice(0, 120),
+    skippedSamples: skipped.slice(0, 40)
+  };
 }
 
 function premiumCatalogLinkCandidates(premium = {}, catalogRows = []) {

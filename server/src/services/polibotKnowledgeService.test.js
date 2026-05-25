@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import AdmZip from 'adm-zip';
 import {
   buildPolibotProductCandidates,
+  extractPolibotCoverageCodes,
   extractPolibotTextFromBuffer,
   inferPolibotFileType,
   normalizePolibotKnowledgeSource
@@ -32,6 +33,27 @@ test('normalizes no-paren mutual product fragments before candidate review', () 
   });
   assert.ok(candidates.some((item) => item.name === '(무)The간편한건강보험'));
   assert.equal(candidates.some((item) => item.name === '무)The간편한건강보험'), false);
+});
+
+test('extracts only explicit POLIBOT coverage codes and route codes', () => {
+  const candidates = extractPolibotCoverageCodes({
+    fileName: 'sample.pdf',
+    text: [
+      '질병코드 질병명 I47~I49 부정맥 I50 심부전 I60~I62 뇌출혈',
+      '암 진단비 초기이상100만, 중기이상600만',
+      '삼성화재 보장코드 305 암 진단비 특약',
+      '상품명 (335 간편고지형) 남성 45세 보험료 30,000원',
+      '실손(질병입원) 551,281 질병수술비'
+    ].join('\n')
+  });
+  const codes = candidates.map((item) => item.code);
+  assert.ok(codes.includes('305'));
+  assert.ok(codes.includes('335'));
+  assert.equal(codes.includes('100'), false);
+  assert.equal(codes.includes('600'), false);
+  assert.equal(codes.includes('47'), false);
+  assert.equal(codes.includes('49'), false);
+  assert.equal(codes.includes('281'), false);
 });
 
 test('does not treat QA or dated file prefixes as product names', () => {
