@@ -317,14 +317,54 @@ export function parsePolibotCoverageDocumentText(text = '', fileName = '') {
   };
 }
 
-export async function analyzePolibotCoverageDocument({ fileName = '', base64 = '', mimeType = '' } = {}) {
+function uniquePasswordCandidates(values = []) {
+  return [...new Set(values
+    .map((value) => String(value || '').trim())
+    .filter(Boolean))];
+}
+
+function isPasswordError(error) {
+  return error?.name === 'PasswordException' || /password/i.test(String(error?.message || ''));
+}
+
+async function extractCoverageTextWithPasswords(buffer, fileName, passwords = []) {
+  const candidates = uniquePasswordCandidates(passwords);
+  if (candidates.length === 0) return extractPolibotTextFromBuffer(buffer, fileName);
+  let lastPasswordError = null;
+  for (const password of candidates) {
+    try {
+      return await extractPolibotTextFromBuffer(buffer, fileName, { password });
+    } catch (error) {
+      if (!isPasswordError(error)) throw error;
+      lastPasswordError = error;
+    }
+  }
+  if (lastPasswordError) {
+    const error = new Error('PDF 비밀번호가 올바르지 않습니다. 생년월일 6자리 또는 8자리인지 확인해주세요.');
+    error.status = 401;
+    error.code = 'PDF_PASSWORD_INVALID';
+    throw error;
+  }
+  return '';
+}
+
+export async function analyzePolibotCoverageDocument({ fileName = '', base64 = '', mimeType = '', password = '', passwordCandidates = [] } = {}) {
   const buffer = Buffer.from(String(base64 || ''), 'base64');
   if (!buffer.length) {
     const error = new Error('분석할 PDF 파일을 선택해 주세요.');
     error.status = 400;
     throw error;
   }
-  const text = await extractPolibotTextFromBuffer(buffer, fileName);
+  let text = '';
+  try {
+    text = await extractCoverageTextWithPasswords(buffer, fileName, [password, ...passwordCandidates]);
+  } catch (error) {
+    if (!isPasswordError(error)) throw error;
+    const next = new Error('PDF 비밀번호가 필요합니다. 생년월일 6자리 또는 8자리 비밀번호를 입력해주세요.');
+    next.status = 401;
+    next.code = 'PDF_PASSWORD_REQUIRED';
+    throw next;
+  }
   if (compact(text).length < 40) {
     const error = new Error('PDF 텍스트를 읽지 못했습니다. 스캔본이면 OCR 처리가 필요합니다.');
     error.status = 422;

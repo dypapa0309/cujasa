@@ -30,6 +30,14 @@ function calculateAgeFromBirthdate(birthdate) {
   return String(age);
 }
 
+function birthdatePasswordCandidates(birthdate = '') {
+  const digits = String(birthdate || '').replace(/[^0-9]/g, '');
+  return [...new Set([
+    digits.length === 8 ? digits.slice(2) : '',
+    digits
+  ].filter(Boolean))];
+}
+
 const cujasaActions = [
   { key: 'run', label: '자동화 실행', icon: PlayCircle, hint: '오늘 예약을 만들고 실행 상태를 확인해요.' },
   { key: 'settings', label: '설정 확인', icon: Settings, hint: 'Threads, 쿠팡 API, 콘텐츠 기준을 점검해요.' },
@@ -5147,6 +5155,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const [coverageDocumentParsing, setCoverageDocumentParsing] = useState(false);
   const [coverageDocumentFileName, setCoverageDocumentFileName] = useState('');
   const [hiraFileName, setHiraFileName] = useState('');
+  const [hiraPassword, setHiraPassword] = useState('');
+  const [hiraParsing, setHiraParsing] = useState(false);
   const workspaceLoading = !workspaceLoaded;
   const usage = workspaceUsage(workspace);
   const summaryCompanies = Array.isArray(workspace.knowledgeDbSummary?.companies)
@@ -5271,11 +5281,39 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
     }
   };
 
-  const loadHiraMedicalFile = async (file) => {
+  const loadHiraMedicalFile = async (file, passwordOverride = '') => {
     if (!file) return;
     setHiraFileName(file.name);
+    if (/\.pdf$/i.test(file.name)) {
+      setHiraParsing(true);
+      try {
+        const base64 = await fileToBase64Payload(file);
+        const passwordCandidates = [
+          passwordOverride || hiraPassword,
+          ...birthdatePasswordCandidates(form.birthdate)
+        ];
+        const result = await api.post('/api/product-workspace/polibot/coverage-document/analyze', {
+          fileName: file.name,
+          mimeType: file.type || 'application/pdf',
+          base64,
+          password: passwordOverride || hiraPassword,
+          passwordCandidates
+        }, { timeoutMs: 30000 });
+        const text = result?.values?.medicalHistory || result?.previewText || '';
+        setForm((prev) => ({
+          ...prev,
+          medicalHistory: [prev.medicalHistory, text.slice(0, 12000)].filter(Boolean).join('\n')
+        }));
+        toast('심평원 PDF 내용을 병력/고지 메모에 넣었어요.', 'success');
+      } catch (err) {
+        toast(err.message || '심평원 PDF를 읽지 못했어요. 비밀번호를 확인해주세요.', 'error');
+      } finally {
+        setHiraParsing(false);
+      }
+      return;
+    }
     if (!/\.(txt|csv)$/i.test(file.name)) {
-      toast('현재 화면에서는 TXT/CSV 병력자료만 바로 읽습니다. PDF/기관 연동 파서는 API 연결 단계에서 붙입니다.', 'info');
+      toast('TXT/CSV/PDF 병력자료만 업로드할 수 있어요.', 'info');
       return;
     }
     try {
@@ -5390,6 +5428,9 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           coverageDocumentFileName={coverageDocumentFileName}
           onLoadHiraMedicalFile={loadHiraMedicalFile}
           hiraFileName={hiraFileName}
+          hiraPassword={hiraPassword}
+          setHiraPassword={setHiraPassword}
+          hiraParsing={hiraParsing}
         />
         {workspace.qualityReport && (
           <CollapsiblePanel title="자료 상태">
@@ -5559,7 +5600,10 @@ function PolibotRecommendStepper({
   setSelectedRecommendation,
   onOpenKnowledge,
   onLoadHiraMedicalFile,
-  hiraFileName = ''
+  hiraFileName = '',
+  hiraPassword = '',
+  setHiraPassword,
+  hiraParsing = false
 }) {
   const steps = [
     { id: 1, title: '고객정보', caption: '개인정보와 심평원 자료' },
@@ -5665,11 +5709,27 @@ function PolibotRecommendStepper({
                   심평원 인증
                 </a>
               </div>
-              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 px-3 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">
-                <Upload size={14} />
-                TXT/CSV 불러오기
-                <input type="file" accept=".txt,.csv,text/plain,text/csv" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; onLoadHiraMedicalFile?.(file); }} />
-              </label>
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_190px]">
+                <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 px-3 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">
+                  <Upload size={14} />
+                  {hiraParsing ? '자료 읽는 중' : 'TXT/CSV/PDF 불러오기'}
+                  <input type="file" accept=".txt,.csv,.pdf,text/plain,text/csv,application/pdf" className="hidden" disabled={hiraParsing} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; onLoadHiraMedicalFile?.(file, hiraPassword); }} />
+                </label>
+                <label className="grid gap-1 text-[11px] font-black text-zinc-500">
+                  PDF 비밀번호
+                  <input
+                    className={inputClass}
+                    type="password"
+                    inputMode="numeric"
+                    value={hiraPassword}
+                    onChange={(event) => setHiraPassword?.(event.target.value)}
+                    placeholder="생년월일 자동 시도"
+                  />
+                </label>
+              </div>
+              <div className="text-[11px] font-bold leading-5 text-zinc-600">
+                비밀번호가 비어 있으면 생년월일 기준 6자리/8자리를 자동으로 시도합니다.
+              </div>
               {hiraFileName && <div className="truncate text-xs font-black text-zinc-400">심평원 자료: {hiraFileName}</div>}
               <textarea className={`${fieldClass('심평원/병력 자료')} min-h-[150px]`} value={form.medicalHistory} onChange={(event) => setForm((prev) => ({ ...prev, medicalHistory: event.target.value }))} placeholder="예: 고혈압 투약, 당뇨 통원, 입원/수술/검사 내역" />
             </div>

@@ -217,12 +217,12 @@ function extractXlsxTextFromBuffer(buffer) {
   return cleanText(sheetTexts);
 }
 
-export async function extractPolibotTextFromBuffer(buffer, fileName = '') {
+export async function extractPolibotTextFromBuffer(buffer, fileName = '', options = {}) {
   const fileType = inferPolibotFileType(fileName);
   if (!buffer?.length) return '';
   if (fileType === 'csv' || fileType === 'txt') return cleanText(buffer.toString('utf8'));
   if (fileType === 'pdf') {
-    const parser = new PDFParse({ data: buffer });
+    const parser = new PDFParse({ data: buffer, ...(options.password ? { password: options.password } : {}) });
     try {
       const result = await parser.getText();
       return cleanText(result.text || '');
