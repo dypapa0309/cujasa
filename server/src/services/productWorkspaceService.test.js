@@ -643,8 +643,10 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.ok((workspace.actualCodes || []).some((item) => item.code === '3.10.10'));
   assert.equal((workspace.actualCodes || []).some((item) => item.code === '2023'), false);
   assert.equal((workspace.actualCodes || []).some((item) => item.code === '325'), false);
+  assert.ok((workspace.matchedCoverageCodes || []).length >= 1);
   assert.ok((recommendation.managerCodes || []).some((item) => item.code === 'ROUTE-SIMPLE-COMPARE'));
   assert.ok((recommendation.actualCodes || []).some((item) => item.code === 'E14'));
+  assert.ok((recommendation.matchedCoverageCodes || []).length >= 1);
   assert.ok((workspace.consultationDraft?.managerCodes || []).some((item) => item.code === 'UW-INTERNAL-MED'));
   assert.ok((workspace.consultationDraft?.actualCodes || []).some((item) => item.code === 'I10'));
   assert.equal(recommendation.decisionAnalysis.medicalRisk.level, 'review');

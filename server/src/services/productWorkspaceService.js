@@ -2373,6 +2373,74 @@ function buildPolibotActualCodes(profile = {}) {
   return items.sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0)).slice(0, 24);
 }
 
+function polibotCoverageCodeQueries(profile = {}) {
+  const needs = Array.isArray(profile.needs) ? profile.needs : normalizeList(profile.needs);
+  const text = [
+    needs.join(' '),
+    profile.medicalHistory,
+    profile.purpose,
+    profile.analysisResult?.gaps,
+    profile.analysisResult?.remodelList,
+    ...(Array.isArray(profile.managerCodes) ? profile.managerCodes.map((item) => `${item.label || ''} ${item.reason || ''}`) : [])
+  ].filter(Boolean).join(' ');
+  const queries = new Set();
+  needs.forEach((need) => {
+    if (/암/.test(need)) ['암 진단비', '유사암', '항암치료'].forEach((item) => queries.add(item));
+    if (/뇌/.test(need)) ['뇌혈관', '뇌졸중', '뇌출혈'].forEach((item) => queries.add(item));
+    if (/심장|허혈|심근/.test(need)) ['허혈성심장', '급성심근경색', '심장질환'].forEach((item) => queries.add(item));
+    if (/수술/.test(need)) ['수술비', '질병수술', '상해수술'].forEach((item) => queries.add(item));
+    if (/입원/.test(need)) ['입원일당', '입원비'].forEach((item) => queries.add(item));
+    if (/실손|실비/.test(need)) ['실손', '통원'].forEach((item) => queries.add(item));
+    if (/간병|치매/.test(need)) ['간병', '치매'].forEach((item) => queries.add(item));
+    if (/운전자/.test(need)) ['운전자', '교통사고처리지원금', '변호사선임비'].forEach((item) => queries.add(item));
+    queries.add(need);
+  });
+  if (/간편|유병|고지|당뇨|고혈압|고지혈|암|심장|뇌/.test(text)) {
+    queries.add('간편고지');
+    queries.add('유병자');
+  }
+  if (/근골격|정형외과|허리|무릎|발목|골절|염좌/.test(text)) {
+    queries.add('골절');
+    queries.add('상해수술');
+  }
+  return [...queries].map((item) => String(item || '').trim()).filter(Boolean).slice(0, 16);
+}
+
+function compactPolibotMatchedCoverageCode(candidate = {}, query = '') {
+  return {
+    code: String(candidate.code || '').trim(),
+    label: candidate.coverageKeywords?.length ? candidate.coverageKeywords.slice(0, 3).join('/') : query || '보장 코드',
+    kind: 'coverage',
+    query,
+    status: candidate.status || 'review_needed',
+    source: candidate.fileName || 'polidoc',
+    company: candidate.company || '',
+    companies: Array.isArray(candidate.companies) ? candidate.companies.slice(0, 5) : [],
+    coverageKeywords: Array.isArray(candidate.coverageKeywords) ? candidate.coverageKeywords.slice(0, 8) : [],
+    context: String(candidate.context || '').replace(/\s+/g, ' ').trim().slice(0, 220),
+    confidence: Number(candidate.score || candidate.confidence || 0),
+    month: candidate.month || ''
+  };
+}
+
+async function buildPolibotMatchedCoverageCodes(userId = '', profile = {}) {
+  const queries = polibotCoverageCodeQueries(profile);
+  if (!queries.length) return [];
+  const batches = await Promise.all(queries.map(async (query) => {
+    const rows = await searchPolibotCodeCandidates(userId, { query, limit: 16 }).catch(() => []);
+    return rows.map((row) => compactPolibotMatchedCoverageCode(row, query));
+  }));
+  const selected = [];
+  for (const item of batches.flat().sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))) {
+    if (!item.code) continue;
+    if (/^\d$/.test(item.code)) continue;
+    if (selected.some((row) => row.code === item.code)) continue;
+    selected.push(item);
+    if (selected.length >= 24) break;
+  }
+  return selected;
+}
+
 function polibotPriceStrategy(profile = {}) {
   const target = parsePolibotPremiumAmount(profile.budget);
   const current = parsePolibotPremiumAmount(profile.existingPremium);
@@ -3145,12 +3213,14 @@ function buildPolibotDecisionAnalysis({ profile = {}, catalogItems = [], premium
   ].filter(Boolean);
   const managerCodes = Array.isArray(profile.managerCodes) ? profile.managerCodes : buildPolibotManagerCodeRecommendations(profile);
   const actualCodes = Array.isArray(profile.actualCodes) ? profile.actualCodes : buildPolibotActualCodes(profile);
+  const matchedCoverageCodes = Array.isArray(profile.matchedCoverageCodes) ? profile.matchedCoverageCodes : [];
   return {
     eligibilityLevel,
     decisionScore,
     medicalRisk,
     managerCodes,
     actualCodes,
+    matchedCoverageCodes,
     disclosureTimeline,
     underwritingRoute,
     priceStrategy,
@@ -4143,6 +4213,7 @@ function compactPolibotSavedWorkspace(workspace = {}) {
     excludedCandidates: Array.isArray(workspace.excludedCandidates) ? workspace.excludedCandidates : [],
     managerCodes: Array.isArray(workspace.managerCodes) ? workspace.managerCodes : [],
     actualCodes: Array.isArray(workspace.actualCodes) ? workspace.actualCodes : [],
+    matchedCoverageCodes: Array.isArray(workspace.matchedCoverageCodes) ? workspace.matchedCoverageCodes : [],
     recommendationNotice: workspace.recommendationNotice || '',
     knowledgeSnapshot: workspace.knowledgeSnapshot || null,
     feedbackSummary: workspace.feedbackSummary || null,
@@ -5185,6 +5256,7 @@ function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
   const analysisResult = normalizePolibotAnalysisResult(profile.analysisResult);
   const managerCodes = Array.isArray(profile.managerCodes) ? profile.managerCodes : buildPolibotManagerCodeRecommendations(profile);
   const actualCodes = Array.isArray(profile.actualCodes) ? profile.actualCodes : buildPolibotActualCodes(profile);
+  const matchedCoverageCodes = Array.isArray(profile.matchedCoverageCodes) ? profile.matchedCoverageCodes : [];
   const missing = [];
   if (!profile.age) missing.push('나이');
   if (!profile.gender) missing.push('성별');
@@ -5247,6 +5319,7 @@ function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
     analysisResult,
     managerCodes,
     actualCodes,
+    matchedCoverageCodes,
     missing,
     completeness,
     nextQuestions,
@@ -5467,6 +5540,7 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
   const keywordText = keywordHits.length ? keywordHits.join(', ') : itemKeywords.length ? itemKeywords.join(', ') : productGroup;
   const managerCodes = Array.isArray(profile.managerCodes) ? profile.managerCodes : buildPolibotManagerCodeRecommendations(profile);
   const actualCodes = Array.isArray(profile.actualCodes) ? profile.actualCodes : buildPolibotActualCodes(profile);
+  const matchedCoverageCodes = Array.isArray(profile.matchedCoverageCodes) ? profile.matchedCoverageCodes : [];
   const riskCautions = Array.isArray(profile.riskHoldReasons)
     ? profile.riskHoldReasons.map((reason) => `${reason} 확인 필요`)
     : [];
@@ -5560,6 +5634,7 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     routineChecks: reviewSummary.routineChecks,
     managerCodes,
     actualCodes,
+    matchedCoverageCodes,
     keywords: keywordHits.length ? keywordHits : itemKeywords,
     catalogItems: catalogItems.map((item) => compactPolibotClientCatalogItem({
       ...item,
@@ -5625,6 +5700,7 @@ export async function savePolibotRecommendation(userId, {
   profile.additionalBudgetMemo = premiumPlan.additionalBudgetMemo;
   profile.managerCodes = buildPolibotManagerCodeRecommendations(profile);
   profile.actualCodes = buildPolibotActualCodes(profile);
+  profile.matchedCoverageCodes = await buildPolibotMatchedCoverageCodes(userId, profile);
   const hardMissing = [
     !profile.age && '나이',
     profile.needs.length === 0 && '필요 보장',
@@ -5772,6 +5848,7 @@ export async function savePolibotRecommendation(userId, {
     excludedCandidates: buildPolibotExcludedCandidates(evidence, profile),
     managerCodes: profile.managerCodes,
     actualCodes: profile.actualCodes,
+    matchedCoverageCodes: profile.matchedCoverageCodes,
     recommendationNotice,
     knowledgeSnapshot
   };

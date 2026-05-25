@@ -5658,9 +5658,9 @@ function PolibotRecommendStepper({
   ];
   const managerCodes = buildPolibotManagerCodeRecommendations(form);
   const actualCodes = buildPolibotActualCodes(form);
-  const filterCodes = [...actualCodes, ...managerCodes, ...collectPolibotCodes(workspace, workspace.consultationDraft, form.disclosureDetails, form.medicalHistory)];
+  const filterCodes = [...actualCodes, ...(workspace.matchedCoverageCodes || []), ...managerCodes, ...collectPolibotCodes(workspace, workspace.consultationDraft, form.disclosureDetails, form.medicalHistory)];
   const filterCodeGroups = groupPolibotCodes(filterCodes, workspace);
-  const recommendationCodes = collectPolibotCodes(workspace.actualCodes, workspace.managerCodes, workspace, recommendations);
+  const recommendationCodes = collectPolibotCodes(workspace.actualCodes, workspace.matchedCoverageCodes, workspace.managerCodes, workspace, recommendations);
   const recommendationCodeGroups = groupPolibotCodes(recommendationCodes, workspace);
   const stepBadge = (stepId) => {
     if (stepId === 1 && !profileReady) return '입력';
@@ -5798,6 +5798,7 @@ function PolibotRecommendStepper({
               coverageDocumentFileName={coverageDocumentFileName}
               hiraFileName={hiraFileName}
               actualCodes={actualCodes}
+              matchedCoverageCodes={workspace.matchedCoverageCodes || []}
               managerCodes={managerCodes}
               profileReady={profileReady}
               hardMissingLabels={hardMissingLabels}
@@ -6053,7 +6054,7 @@ function PolibotCompanyHint({ companies = [], selectedCompany = '전체 보험�
   );
 }
 
-function PolibotManagerDesk({ coverageDocumentFileName = '', hiraFileName = '', actualCodes = [], managerCodes = [], profileReady = false, hardMissingLabels = [] }) {
+function PolibotManagerDesk({ coverageDocumentFileName = '', hiraFileName = '', actualCodes = [], matchedCoverageCodes = [], managerCodes = [], profileReady = false, hardMissingLabels = [] }) {
   const reviewCodes = managerCodes.filter((item) => item.status !== 'applied');
   const appliedCodes = managerCodes.filter((item) => item.status === 'applied');
   const intakeRows = [
@@ -6070,7 +6071,7 @@ function PolibotManagerDesk({ coverageDocumentFileName = '', hiraFileName = '', 
       helper: '진료·투약·검사·고지 단서'
     }
   ];
-  const primaryCodes = actualCodes.length ? actualCodes : (reviewCodes.length ? reviewCodes : appliedCodes);
+  const primaryCodes = actualCodes.length ? actualCodes : matchedCoverageCodes.length ? matchedCoverageCodes : (reviewCodes.length ? reviewCodes : appliedCodes);
   return (
     <div className="grid gap-3 rounded-2xl border border-cyan-300/15 bg-cyan-400/5 p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -6079,7 +6080,7 @@ function PolibotManagerDesk({ coverageDocumentFileName = '', hiraFileName = '', 
           <div className="mt-0.5 text-xs font-bold leading-relaxed text-zinc-500">접수 자료를 코드화해서 상품 추천 전에 확인할 조건을 먼저 잡습니다.</div>
         </div>
         <div className="rounded-full border border-cyan-200/20 bg-cyan-300/10 px-2.5 py-1 text-[10px] font-black text-cyan-100">
-          {actualCodes.length ? `실제 코드 ${actualCodes.length}개` : managerCodes.length ? `검수 태그 ${managerCodes.length}개` : profileReady ? '분석 준비' : '자료 대기'}
+          {actualCodes.length ? `실제 코드 ${actualCodes.length}개` : matchedCoverageCodes.length ? `추천 보장코드 ${matchedCoverageCodes.length}개` : managerCodes.length ? `검수 태그 ${managerCodes.length}개` : profileReady ? '분석 준비' : '자료 대기'}
         </div>
       </div>
       <div className="grid gap-2 md:grid-cols-2">
@@ -6108,6 +6109,9 @@ function PolibotManagerDesk({ coverageDocumentFileName = '', hiraFileName = '', 
               <div className="mt-1 text-[11px] font-bold leading-relaxed text-zinc-500">{item.reason}</div>
             </div>
           ))}
+          {matchedCoverageCodes.length > 0 && (
+            <div className="text-[11px] font-bold text-zinc-600">polidoc 기준 추천 보장코드 {matchedCoverageCodes.length}개가 추천안에 연결됩니다.</div>
+          )}
           {actualCodes.length > 0 && managerCodes.length > 0 && (
             <div className="text-[11px] font-bold text-zinc-600">내부 검수 태그 {managerCodes.length}개는 추천 주의조건에 함께 반영됩니다.</div>
           )}
@@ -6133,8 +6137,8 @@ function collectPolibotCodes(...sources) {
     if (/^[A-Z][A-Z0-9]+(?:-[A-Z0-9]+)+$/.test(value)) return true;
     if (/^[A-Z][0-9]{2}(?:\.[0-9A-Z]{1,2})?$|^[A-Z][0-9]{3}$/i.test(value)) return true;
     if (/^\d(?:\.\d+){1,3}$/.test(value)) return true;
-    if (/^\d{3,5}$/.test(value)) {
-      return /코드|분류|상병|질병|담보|고지|KCD|ICD/i.test(context);
+    if (/^\d{1,5}$/.test(value)) {
+      return /코드|분류|상병|질병|담보|보장|특약|진단비|수술비|입원비|암|뇌|심장|상해|간병|운전자|고지|KCD|ICD|polidoc/i.test(context);
     }
     return false;
   };
@@ -6167,7 +6171,7 @@ function collectPolibotCodes(...sources) {
     if (typeof value === 'object') {
       const tone = value.status || value.tone || value.result || inheritedTone || inferTone(value.reason || value.label || value.title || value.name || value.memo || '');
       pushCode(value.code || value.disclosureCode || value.underwritingCode || value.productCode, value.label || value.title || value.name || value.reason || '코드', value.source || value.fileName || source, tone);
-      ['codes', 'codeCandidates', 'disclosureCodes', 'underwritingCodes', 'matchedCodes', 'recommendationCodes', 'evidence', 'evidenceAnchors', 'catalogItems', 'linkedBenefitGroups', 'routineChecks', 'reviewReasons', 'cautions', 'disclosureMemo', 'underwritingMemo'].forEach((key) => visit(value[key], value.fileName || value.source || source, tone));
+      ['codes', 'codeCandidates', 'disclosureCodes', 'underwritingCodes', 'matchedCodes', 'matchedCoverageCodes', 'recommendationCodes', 'evidence', 'evidenceAnchors', 'catalogItems', 'linkedBenefitGroups', 'routineChecks', 'reviewReasons', 'cautions', 'disclosureMemo', 'underwritingMemo'].forEach((key) => visit(value[key], value.fileName || value.source || source, tone));
     }
   };
   sources.forEach((source) => visit(source));
@@ -6640,6 +6644,7 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
             <AccountInfoRow label="목적 적합도" value={analysis.purposeAnalysis ? `${analysis.purposeAnalysis.level} · ${analysis.purposeAnalysis.score}점 · ${analysis.purposeAnalysis.label}` : '-'} />
             <AccountInfoRow label="가격 전략" value={analysis.priceStrategy?.label || recommendation.additionalBudgetMemo || '-'} />
             <AccountInfoRow label="보완 포인트" value={recommendation.coverageGap || '-'} />
+            <AccountInfoRow label="추천 보장코드" value={(recommendation.matchedCoverageCodes || []).slice(0, 12).map((item) => `${item.code}${item.label ? ` ${item.label}` : ''}`).join(', ') || '-'} />
             <AccountInfoRow label="보험료 메모" value={[recommendation.premium, recommendation.premiumConfidence === 'reference' ? '참고값' : ''].filter(Boolean).join(' · ') || '-'} />
             {testMode && <AccountInfoRow label="예산 기준" value={recommendation.additionalBudgetMemo || '-'} />}
             <AccountInfoRow label="확인 조건" value={cautionItems.join(', ') || '추가 확인 필요'} />
@@ -6659,6 +6664,12 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
                   <div className="rounded-2xl bg-black/25 px-4 py-3">
                     <div className="text-[11px] font-black text-zinc-600">보장 니즈 매칭</div>
                     <SimpleInfoList items={analysis.coverageMatches.map((item) => `${item.need} · ${item.label} · ${item.reason}`)} />
+                  </div>
+                )}
+                {(recommendation.matchedCoverageCodes || []).length > 0 && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">polidoc 추천 보장코드</div>
+                    <SimpleInfoList items={(recommendation.matchedCoverageCodes || []).slice(0, 12).map((item) => `${item.code} · ${item.label || '보장 코드'} · ${item.company || (item.companies || [])[0] || '보험사 확인'} · ${item.source || 'polidoc'}${item.confidence ? ` · ${item.confidence}점` : ''}`)} />
                   </div>
                 )}
                 {analysis.evidenceIntegrity && (

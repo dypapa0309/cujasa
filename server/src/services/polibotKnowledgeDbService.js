@@ -8,7 +8,8 @@ import {
   extractPolibotKeywords,
   extractPolibotTextFromBuffer,
   inferPolibotFileType,
-  normalizePolibotKnowledgeSource
+  normalizePolibotKnowledgeSource,
+  polibotSeedKnowledgeSources
 } from './polibotKnowledgeService.js';
 import { extractPolibotOcrText } from './polibotKnowledgeOcrService.js';
 
@@ -1911,6 +1912,35 @@ function normalizeCodeCandidate({ item, source, chunk, catalog } = {}) {
   };
 }
 
+function seedCodeSearchCandidates() {
+  return polibotSeedKnowledgeSources().flatMap((seedSource = {}) => {
+    const source = {
+      id: seedSource.id || `seed-${seedSource.fileName || seedSource.file_name || ''}`,
+      file_name: seedSource.fileName || seedSource.file_name || '',
+      normalized_source: seedSource,
+      companies: Array.isArray(seedSource.companies) ? seedSource.companies : [seedSource.company].filter(Boolean),
+      company: seedSource.company || '',
+      month: seedSource.month || '',
+      status: seedSource.status || 'review_needed',
+      scope: 'global',
+      metadata: { evidenceQualityScore: seedSource.evidenceQualityScore || 60 }
+    };
+    const catalogItems = Array.isArray(seedSource.catalogItems) ? seedSource.catalogItems : [];
+    const catalog = catalogItems[0] ? {
+      id: catalogItems[0].id || '',
+      company: catalogItems[0].company || seedSource.company || '',
+      coverage_keywords: catalogItems[0].coverageKeywords || seedSource.keywords || [],
+      confidence_score: catalogItems[0].confidence || 60,
+      effective_month: seedSource.month || '',
+      status: catalogItems[0].status || source.status,
+      scope: 'global'
+    } : null;
+    return (Array.isArray(seedSource.codeCandidates) ? seedSource.codeCandidates : [])
+      .map((item) => normalizeCodeCandidate({ item, source, catalog }))
+      .filter((candidate) => candidate.code);
+  });
+}
+
 function codeSearchCacheKey(userId = '') {
   return userId || 'global';
 }
@@ -1952,6 +1982,7 @@ async function loadPolibotCodeSearchCandidates(userId = '') {
       candidates.push(normalizeCodeCandidate({ item, source, catalog: catalogBySource[source.id]?.[0] }));
     });
   });
+  candidates.push(...seedCodeSearchCandidates());
   chunks.forEach((chunk) => {
     const source = sourceById[chunk.source_id] || {};
     const extracted = extractPolibotCoverageCodes({
