@@ -2406,10 +2406,54 @@ function polibotCoverageCodeQueries(profile = {}) {
   return [...queries].map((item) => String(item || '').trim()).filter(Boolean).slice(0, 16);
 }
 
+function polibotCoverageCodeContext(candidate = {}) {
+  return String(candidate.context || '').replace(/\s+/g, ' ').trim();
+}
+
+function isNoisyPolibotCoverageCode(candidate = {}) {
+  const code = String(candidate.code || '').trim();
+  const context = polibotCoverageCodeContext(candidate);
+  if (!code) return true;
+  if (/^\d$/.test(code)) return true;
+  if (/[{(]?[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}[)}]?/i.test(context)) return true;
+  if (/style\.visibility|visibility/i.test(context)) return true;
+  if (/^(19|20)\d{2}$/.test(code)) return true;
+  return false;
+}
+
+function inferPolibotCoverageCodeValue(candidate = {}, query = '') {
+  const code = String(candidate.code || '').trim();
+  const context = polibotCoverageCodeContext(candidate);
+  const coverageKeywords = Array.isArray(candidate.coverageKeywords) ? candidate.coverageKeywords : [];
+  const codeIndex = context.indexOf(code);
+  const nearby = codeIndex >= 0
+    ? context.slice(Math.max(0, codeIndex - 70), Math.min(context.length, codeIndex + code.length + 95))
+    : context.slice(0, 160);
+  const patterns = [
+    new RegExp(`([가-힣A-Za-z0-9·ㆍ()/\\s]{1,38}${code}\\s*만(?:원)?)`),
+    new RegExp(`([가-힣A-Za-z0-9·ㆍ()/\\s]{1,38}${code}\\s*천만(?:원)?)`),
+    new RegExp(`([가-힣A-Za-z0-9·ㆍ()/\\s]{1,38}${code}\\s*억(?:원)?)`),
+    new RegExp(`([가-힣A-Za-z0-9·ㆍ()/\\s]{0,28}${code}\\s*간편고지형)`),
+    new RegExp(`(${code}\\s*간편고지(?:형|\\s*고당)?)`),
+    /([가-힣A-Za-z0-9·ㆍ()/\s]{1,36}C코드\s*\d+\s*개)/,
+    /([가-힣A-Za-z0-9·ㆍ()/\s]{1,44}(?:진단비|수술비|입원일당|입원비|치료비|생활비|통원보장|납입면제|후유장해|보장|특약|담보))/,
+    /((?:암|유사암|뇌혈관|뇌졸중|뇌출혈|허혈성심장|급성심근경색|질병|상해|간병|치매|운전자)[가-힣A-Za-z0-9·ㆍ()/\s]{0,34})/
+  ];
+  for (const pattern of patterns) {
+    const match = nearby.match(pattern);
+    const value = String(match?.[1] || '').replace(/\s+/g, ' ').trim();
+    if (value && value.length >= 2 && !/^\d+$/.test(value) && !/^(신규담보|특약|담보|보장)$/.test(value)) return value.slice(0, 70);
+  }
+  if (query) return query;
+  return coverageKeywords.length ? coverageKeywords.slice(0, 3).join('/') : '보장 코드';
+}
+
 function compactPolibotMatchedCoverageCode(candidate = {}, query = '') {
+  const connectedValue = inferPolibotCoverageCodeValue(candidate, query);
   return {
     code: String(candidate.code || '').trim(),
-    label: candidate.coverageKeywords?.length ? candidate.coverageKeywords.slice(0, 3).join('/') : query || '보장 코드',
+    label: connectedValue,
+    connectedValue,
     kind: 'coverage',
     query,
     status: candidate.status || 'review_needed',
@@ -2432,8 +2476,7 @@ async function buildPolibotMatchedCoverageCodes(userId = '', profile = {}) {
   }));
   const selected = [];
   for (const item of batches.flat().sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))) {
-    if (!item.code) continue;
-    if (/^\d$/.test(item.code)) continue;
+    if (isNoisyPolibotCoverageCode(item)) continue;
     if (selected.some((row) => row.code === item.code)) continue;
     selected.push(item);
     if (selected.length >= 24) break;

@@ -6644,7 +6644,7 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
             <AccountInfoRow label="목적 적합도" value={analysis.purposeAnalysis ? `${analysis.purposeAnalysis.level} · ${analysis.purposeAnalysis.score}점 · ${analysis.purposeAnalysis.label}` : '-'} />
             <AccountInfoRow label="가격 전략" value={analysis.priceStrategy?.label || recommendation.additionalBudgetMemo || '-'} />
             <AccountInfoRow label="보완 포인트" value={recommendation.coverageGap || '-'} />
-            <AccountInfoRow label="추천 보장코드" value={(recommendation.matchedCoverageCodes || []).slice(0, 12).map((item) => `${item.code}${item.label ? ` ${item.label}` : ''}`).join(', ') || '-'} />
+            <AccountInfoRow label="추천 보장코드" value={(recommendation.matchedCoverageCodes || []).slice(0, 12).map((item) => `${item.code}${item.connectedValue || item.label ? ` ${item.connectedValue || item.label}` : ''}`).join(', ') || '-'} />
             <AccountInfoRow label="보험료 메모" value={[recommendation.premium, recommendation.premiumConfidence === 'reference' ? '참고값' : ''].filter(Boolean).join(' · ') || '-'} />
             {testMode && <AccountInfoRow label="예산 기준" value={recommendation.additionalBudgetMemo || '-'} />}
             <AccountInfoRow label="확인 조건" value={cautionItems.join(', ') || '추가 확인 필요'} />
@@ -6669,7 +6669,7 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
                 {(recommendation.matchedCoverageCodes || []).length > 0 && (
                   <div className="rounded-2xl bg-black/25 px-4 py-3">
                     <div className="text-[11px] font-black text-zinc-600">polidoc 추천 보장코드</div>
-                    <SimpleInfoList items={(recommendation.matchedCoverageCodes || []).slice(0, 12).map((item) => `${item.code} · ${item.label || '보장 코드'} · ${item.company || (item.companies || [])[0] || '보험사 확인'} · ${item.source || 'polidoc'}${item.confidence ? ` · ${item.confidence}점` : ''}`)} />
+                    <SimpleInfoList items={(recommendation.matchedCoverageCodes || []).slice(0, 12).map((item) => `${item.code} · ${item.connectedValue || item.label || '보장 코드'} · ${item.company || (item.companies || [])[0] || '보험사 확인'} · ${item.source || 'polidoc'}${item.confidence ? ` · ${item.confidence}점` : ''}`)} />
                   </div>
                 )}
                 {analysis.evidenceIntegrity && (
