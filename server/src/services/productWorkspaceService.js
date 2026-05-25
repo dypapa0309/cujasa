@@ -2417,6 +2417,8 @@ function isNoisyPolibotCoverageCode(candidate = {}) {
   if (isNoisyPolibotCodeCandidate(candidate)) return true;
   if (!code) return true;
   if (/^\d$/.test(code)) return true;
+  if (/^\d{1,2}$/.test(code)) return true;
+  if (/^(310|325|333|335|355)$/.test(code)) return true;
   if (/[{(]?[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}[)}]?/i.test(context)) return true;
   if (/style\.visibility|visibility/i.test(context)) return true;
   if (/^(19|20)\d{2}$/.test(code)) return true;

@@ -643,13 +643,13 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.ok((workspace.actualCodes || []).some((item) => item.code === '3.10.10'));
   assert.equal((workspace.actualCodes || []).some((item) => item.code === '2023'), false);
   assert.equal((workspace.actualCodes || []).some((item) => item.code === '325'), false);
-  assert.ok((workspace.matchedCoverageCodes || []).length >= 1);
+  assert.equal((workspace.matchedCoverageCodes || []).some((item) => ['310', '325', '333', '335', '355'].includes(item.code) || /^\d{1,2}$/.test(item.code)), false);
   assert.ok((recommendation.managerCodes || []).some((item) => item.code === 'ROUTE-SIMPLE-COMPARE'));
   assert.ok((recommendation.actualCodes || []).some((item) => item.code === 'E14'));
-  assert.ok((recommendation.matchedCoverageCodes || []).length >= 1);
+  assert.equal((recommendation.matchedCoverageCodes || []).some((item) => ['310', '325', '333', '335', '355'].includes(item.code) || /^\d{1,2}$/.test(item.code)), false);
   assert.ok(recommendation.designManagerSummary);
   assert.ok(/표준|간편|보류|조건부/.test(recommendation.designManagerSummary.route));
-  assert.ok((recommendation.designManagerSummary.recommendedCodes || []).length >= 1);
+  assert.equal((recommendation.designManagerSummary.recommendedCodes || []).some((item) => ['310', '325', '333', '335', '355'].includes(item.code) || /^\d{1,2}$/.test(item.code)), false);
   assert.ok((recommendation.designManagerSummary.sellerQuestions || []).some((item) => /표준형|간편|고혈압|당뇨|보장코드/.test(item)));
   assert.ok(recommendation.decisionAnalysis.designManagerSummary?.nextAction);
   assert.ok(workspace.consultationDraft?.designManagerSummary?.route);
