@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ArrowRight, Check, ChevronRight, Monitor, Sparkles } from 'lucide-react';
-import { JASAIN_BRAND, PRODUCTS, productById } from '../config/products.js';
+import { ArrowRight, Check } from 'lucide-react';
+import { PRODUCTS, productById } from '../config/products.js';
 import { api } from '../lib/api.js';
 
 const productTone = {
@@ -220,103 +220,13 @@ function PixelFloppy({ product, index = 0, compact = false }) {
   );
 }
 
-export function PublicTestPage1() {
-  return (
-    <div className="min-h-screen bg-[#101114] text-zinc-100">
-      <header className="border-b border-white/10 bg-[#18191d] px-5 py-4">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <img src="/jasain_logo.png" alt="JASAIN" className="h-9 w-9 border border-white/10 bg-white object-cover" />
-            <div>
-              <div className="text-sm font-black">{JASAIN_BRAND.name}</div>
-              <div className="text-xs font-bold text-zinc-500">자동화 솔루션 허브</div>
-            </div>
-          </div>
-          <a href="/test-page-2" className="inline-flex items-center gap-2 border border-white/15 px-3 py-2 text-sm font-black text-zinc-100 hover:bg-white/10">
-            도트 에디션
-            <ChevronRight size={16} />
-          </a>
-        </div>
-      </header>
-
-      <main>
-        <section className="border-b border-white/10 bg-[#101114] px-5 py-16">
-          <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-center">
-            <div>
-              <div className="inline-flex border border-red-300/30 bg-red-300/10 px-3 py-1 text-xs font-black text-red-100">JASAIN SOLUTION HUB</div>
-              <h1 className="mt-5 max-w-3xl text-5xl font-black leading-[1.02] text-white md:text-7xl">
-                반복 업무를 줄이는 자동화 제품을 한곳에서
-              </h1>
-              <p className="mt-5 max-w-2xl text-base font-bold leading-7 text-zinc-400">
-                쿠팡 파트너스, 블로그 분석, 캠페인 운영, 보험 상담까지. 지금 필요한 자동화를 고르고 셋팅 후 바로 운영을 시작하세요.
-              </p>
-              <div className="mt-7 flex flex-wrap gap-3">
-                <a href="#products" className="inline-flex items-center gap-2 bg-white px-5 py-3 text-sm font-black text-zinc-950 hover:bg-zinc-200">
-                  자동화 제품 보기
-                  <ArrowRight size={17} />
-                </a>
-                <a href="/test-page-2" className="inline-flex items-center gap-2 border border-white/15 px-5 py-3 text-sm font-black text-zinc-100 hover:bg-white/10">
-                  도트 에디션 보기
-                  <Sparkles size={17} />
-                </a>
-              </div>
-            </div>
-            <div className="border border-white/10 bg-[#191a20] p-4 shadow-2xl shadow-black/30">
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                <div className="text-xs font-black uppercase tracking-[0.12em] text-zinc-500">Workspace</div>
-                <div className="bg-emerald-400/10 px-2 py-1 text-xs font-black text-emerald-200">운영 가능</div>
-              </div>
-              <div className="mt-4 grid gap-2">
-                {PRODUCTS.slice(0, 5).map((product) => (
-                  <div key={product.id} className="flex items-center justify-between border border-white/10 bg-black/20 px-3 py-3">
-                    <div>
-                      <div className="text-sm font-black text-white">{product.name}</div>
-                      <div className="text-xs font-bold text-zinc-500">{copyFor(product).line}</div>
-                    </div>
-                    <Check size={17} className="text-emerald-200" />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section id="products" className="px-5 py-12">
-          <div className="mx-auto max-w-6xl">
-            <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-              <div>
-                <div className="text-xs font-black uppercase tracking-[0.16em] text-zinc-500">Products</div>
-                <h2 className="mt-2 text-3xl font-black text-white">필요한 자동화를 선택하세요</h2>
-              </div>
-              <p className="max-w-lg text-sm font-bold leading-6 text-zinc-500">각 제품은 따로 신청할 수 있고, 셋팅이 끝나면 고객 계정에서 바로 운영됩니다.</p>
-            </div>
-            <div className="mt-6 grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {PRODUCTS.map((product) => (
-                <a key={product.id} href={productHref(product)} className="group border border-white/10 bg-[#191a20] p-4 hover:border-white/25 hover:bg-[#202129]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xl font-black text-white">{product.name}</div>
-                      <p className="mt-2 text-sm font-bold leading-6 text-zinc-500">{copyFor(product).description}</p>
-                    </div>
-                    <ArrowRight size={18} className="mt-1 text-zinc-500 group-hover:text-white" />
-                  </div>
-                </a>
-              ))}
-            </div>
-          </div>
-        </section>
-      </main>
-    </div>
-  );
-}
-
 export function PublicTestPage2() {
   return (
     <div className="min-h-screen bg-[#f4e9c7] text-[#111111] [image-rendering:pixelated]">
       <div className="pointer-events-none fixed inset-0 opacity-[0.18]" style={{ backgroundImage: 'radial-gradient(#111 1px, transparent 1px)', backgroundSize: '10px 10px' }} />
       <header className="relative border-b-2 border-[#111111] bg-[#fffdf2] px-4 py-3">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
-          <a href="/test-page-1" className="flex items-center gap-3">
+          <a href="/test-page-2" className="flex items-center gap-3">
             <img src="/jasain_logo.png" alt="JASAIN" className="h-10 w-10 border-2 border-[#111111] bg-white object-cover" />
             <div>
               <div className="font-mono text-lg font-black leading-none">JASAIN.EXE</div>
@@ -355,10 +265,6 @@ export function PublicTestPage2() {
                 <a href="#programs" className="inline-flex items-center gap-2 border-2 border-[#111111] bg-[#111111] px-5 py-3 font-mono text-sm font-black text-[#fffdf2] shadow-[5px_5px_0_#facc15]">
                   제품 고르기
                   <ArrowRight size={17} />
-                </a>
-                <a href="/test-page-1" className="inline-flex items-center gap-2 border-2 border-[#111111] bg-[#fffdf2] px-5 py-3 font-mono text-sm font-black text-[#111111] shadow-[5px_5px_0_#111111]">
-                  기본형 보기
-                  <Monitor size={17} />
                 </a>
               </div>
             </div>

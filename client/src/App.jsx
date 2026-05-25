@@ -17,7 +17,7 @@ import AdminPolibotKnowledgePage from './pages/AdminPolibotKnowledgePage.jsx';
 import AdminTrendReferencePage from './pages/AdminTrendReferencePage.jsx';
 import AutomationStudioPage from './pages/AutomationStudioPage.jsx';
 import CustomerApp from './pages/customer/CustomerApp.jsx';
-import { ProductPurchasePage, PublicTestPage1, PublicTestPage2 } from './pages/PublicTestPages.jsx';
+import { ProductPurchasePage, PublicTestPage2 } from './pages/PublicTestPages.jsx';
 import { api, getAuthToken, setAuthToken } from './lib/api.js';
 import { CURRENT_PRODUCT, JASAIN_BRAND } from './config/products.js';
 
@@ -104,9 +104,7 @@ export class AppErrorBoundary extends Component {
 export default function App() {
   const publicPath = typeof window !== 'undefined' ? window.location.pathname : '';
   const storeProductId = publicPath.startsWith('/store/') ? publicPath.split('/').filter(Boolean)[1] : '';
-  const PublicPage = publicPath === '/test-page-1'
-    ? PublicTestPage1
-    : publicPath === '/test-page-2'
+  const PublicPage = publicPath === '/test-page-2'
       ? PublicTestPage2
       : storeProductId
         ? ProductPurchasePage
