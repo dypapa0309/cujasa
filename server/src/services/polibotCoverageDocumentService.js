@@ -471,7 +471,7 @@ async function extractCoverageTextWithPasswords(buffer, fileName, passwords = []
   }
   if (lastPasswordError) {
     const error = new Error('PDF 비밀번호가 올바르지 않습니다. 생년월일 6자리 또는 8자리인지 확인해주세요.');
-    error.status = 401;
+    error.status = 422;
     error.code = 'PDF_PASSWORD_INVALID';
     throw error;
   }
@@ -491,7 +491,7 @@ export async function analyzePolibotCoverageDocument({ fileName = '', base64 = '
   } catch (error) {
     if (!isPasswordError(error)) throw error;
     const next = new Error('PDF 비밀번호가 필요합니다. 생년월일 6자리 또는 8자리 비밀번호를 입력해주세요.');
-    next.status = 401;
+    next.status = 422;
     next.code = 'PDF_PASSWORD_REQUIRED';
     throw next;
   }

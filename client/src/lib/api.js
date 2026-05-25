@@ -107,10 +107,6 @@ async function request(path, options = {}) {
       error.cause = fetchError;
       throw error;
     }
-    if (res.status === 401 && token && getAuthToken() === token) {
-      setAuthToken('');
-      emitAuthExpired();
-    }
     if (!res.ok) {
       const text = await res.text();
       let message = text || `Request failed (${res.status})`;
@@ -129,7 +125,12 @@ async function request(path, options = {}) {
         }
       }
       const error = new Error(message);
-      if (res.status === 401) {
+      const businessAuthLikeCode = data?.code && /^PDF_PASSWORD_/i.test(data.code);
+      if (res.status === 401 && !businessAuthLikeCode && token && getAuthToken() === token) {
+        setAuthToken('');
+        emitAuthExpired();
+      }
+      if (res.status === 401 && !businessAuthLikeCode) {
         error.message = '로그인이 만료됐습니다. 다시 로그인한 뒤 이어서 진행해주세요.';
         error.code = 'AUTH_SESSION_EXPIRED';
       }
