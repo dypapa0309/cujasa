@@ -120,7 +120,7 @@ const tables = {
       name: 'CUJASA',
       description: '쿠팡 파트너스 자동화 콘솔',
       app_url: 'https://app.jasain.kr',
-      landing_url: 'https://jasain.kr/cujasa',
+      landing_url: 'https://store.jasain.kr/store/cujasa',
       status: 'active',
       created_at: now(),
       updated_at: now()
@@ -130,7 +130,7 @@ const tables = {
       name: 'DEXOR',
       description: '블로그 분석 및 선정 자동화',
       app_url: 'https://app.jasain.kr',
-      landing_url: 'https://jasain.kr/dexor',
+      landing_url: 'https://store.jasain.kr/store/dexor',
       status: 'active',
       created_at: now(),
       updated_at: now()
@@ -140,7 +140,7 @@ const tables = {
       name: 'SPREAD',
       description: '추천 캠페인 운영 자동화',
       app_url: 'https://app.jasain.kr',
-      landing_url: 'https://jasain.kr',
+      landing_url: 'https://store.jasain.kr/store/spread',
       status: 'active',
       created_at: now(),
       updated_at: now()
@@ -150,7 +150,7 @@ const tables = {
       name: 'POLIBOT',
       description: '보험 보장분석 및 상품 추천 자동화',
       app_url: 'https://app.jasain.kr',
-      landing_url: 'https://app.jasain.kr/polibot?mode=register#tab=beta',
+      landing_url: 'https://store.jasain.kr/store/polibot',
       status: 'active',
       created_at: now(),
       updated_at: now()
@@ -160,7 +160,7 @@ const tables = {
       name: 'INFLUDEX',
       description: '인스타그램 인플루언서 등급 분석',
       app_url: 'https://app.jasain.kr',
-      landing_url: 'https://app.jasain.kr/infludex?mode=register#tab=beta',
+      landing_url: 'https://store.jasain.kr/store/infludex',
       status: 'active',
       created_at: now(),
       updated_at: now()
@@ -170,7 +170,17 @@ const tables = {
       name: 'SUBLOG',
       description: '구독 비용 관리',
       app_url: 'https://app.jasain.kr',
-      landing_url: 'https://app.jasain.kr/sublog?mode=register#tab=beta',
+      landing_url: 'https://store.jasain.kr/store/sublog',
+      status: 'active',
+      created_at: now(),
+      updated_at: now()
+    },
+    {
+      id: 'auvibot',
+      name: 'AUVIBOT',
+      description: '상품 쇼츠 생산 자동화',
+      app_url: 'https://app.jasain.kr',
+      landing_url: 'https://store.jasain.kr/store/auvibot',
       status: 'active',
       created_at: now(),
       updated_at: now()
@@ -382,6 +392,28 @@ const tables = {
       plan: 'onetime',
       amount: 590000,
       billing_cycle: 'once',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'sublog_starter_monthly_49000',
+      app_product_id: 'sublog',
+      name: 'SUBLOG 스타터 월정액',
+      plan: 'monthly',
+      amount: 49000,
+      billing_cycle: 'monthly',
+      max_accounts: 0,
+      active: true,
+      created_at: now()
+    },
+    {
+      id: 'auvibot_starter_monthly_49000',
+      app_product_id: 'auvibot',
+      name: 'AUVIBOT 스타터 월정액',
+      plan: 'monthly',
+      amount: 49000,
+      billing_cycle: 'monthly',
       max_accounts: 0,
       active: true,
       created_at: now()

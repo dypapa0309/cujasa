@@ -45,6 +45,8 @@ services:
         sync: false
       - key: LANDING_URL
         sync: false
+      - key: STORE_URL
+        sync: false
       - key: BLOG_IMAGE_URL
         sync: false
       - key: THREADS_APP_ID

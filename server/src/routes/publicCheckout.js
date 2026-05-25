@@ -20,11 +20,13 @@ const checkoutRateLimit = createRateLimit({
   maxRequests: Number(process.env.PUBLIC_CHECKOUT_RATE_LIMIT_MAX || 10)
 });
 
-const landingBaseUrl = () => String(process.env.LANDING_URL || 'https://jasain.kr')
+const storeBaseUrl = () => String(process.env.STORE_URL || process.env.LANDING_URL || 'https://store.jasain.kr')
   .replace(/^LANDING_URL\s*=\s*/i, '')
+  .replace(/^STORE_URL\s*=\s*/i, '')
   .trim()
   .replace(/\/$/, '');
 const normalizeEmail = (value = '') => String(value).trim().toLowerCase();
+const storePathFor = (product) => `/store/${String(product?.app_product_id || 'cujasa').trim() || 'cujasa'}`;
 
 async function upsertBuyer({ email, password, buyerName, phone }) {
   const normalizedEmail = normalizeEmail(email);
@@ -52,13 +54,11 @@ router.post('/virtual-account', checkoutRateLimit, async (req, res, next) => {
     }
 
     const product = await getProduct(productId);
-    if (product.billing_cycle !== 'once') {
-      return res.status(400).json({ error: '현재 공개 결제는 일시불 가상계좌만 지원합니다.' });
-    }
     assertTossConfigured();
 
     const user = await upsertBuyer({ email: cleanEmail, password: cleanPassword, buyerName: cleanName, phone: cleanPhone });
-    const orderId = makeOrderId('CUJASA-PUBLIC-ONETIME');
+    const orderPrefix = `${String(product.app_product_id || 'jasain').toUpperCase()}-PUBLIC-${product.billing_cycle === 'monthly' ? 'MONTHLY' : 'ONETIME'}`;
+    const orderId = makeOrderId(orderPrefix);
     const payment = await dbInsert('billing_payments', {
       user_id: user.id,
       app_product_id: product.app_product_id || 'cujasa',
@@ -80,8 +80,8 @@ router.post('/virtual-account', checkoutRateLimit, async (req, res, next) => {
         orderId,
         orderName: product.name,
         amount: product.amount,
-        successUrl: `${landingBaseUrl()}/?payment=success#cj-form`,
-        failUrl: `${landingBaseUrl()}/?payment=fail#cj-form`
+        successUrl: `${storeBaseUrl()}${storePathFor(product)}?payment=success`,
+        failUrl: `${storeBaseUrl()}${storePathFor(product)}?payment=fail`
       }
     });
   } catch (e) { next(e); }

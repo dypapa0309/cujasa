@@ -56,6 +56,7 @@ const allowedOrigins = new Set([
   ...(process.env.CLIENT_BASE_URL || '').split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean),
   'https://jasain.kr',
   'https://www.jasain.kr',
+  'https://store.jasain.kr',
   'https://app.jasain.kr',
   'https://cujasa.jasain.kr',
   'https://dexor.jasain.kr',
