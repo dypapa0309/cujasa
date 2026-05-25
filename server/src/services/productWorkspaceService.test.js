@@ -407,9 +407,13 @@ test('stores POLIBOT recommendation knowledge snapshot with source trace', async
     budget: '40',
     existingMedicalPlan: '없음',
     medicalHistory: '없음',
-    existingPremium: '30'
+    existingPremium: '30',
+    purpose: '보장 강화'
   });
 
+  assert.equal(workspace.customerProfile.purpose, '보장 강화');
+  assert.equal(workspace.designManagerReview?.status, 'review_requested');
+  assert.match(workspace.designManagerReview?.reviewPoints?.join(' ') || '', /고객 목적: 보장 강화/);
   assert.ok(workspace.knowledgeSnapshot);
   assert.ok(workspace.knowledgeSnapshot.dbSummary.totalSources >= 1);
   assert.ok(workspace.knowledgeSnapshot.usedSources.length >= 1);
@@ -630,12 +634,15 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     existingMedicalPlan: '있음',
     medicalHistory: '당뇨 진단 후 약 복용 중. E14 당뇨, I10 고혈압. 간편 3.10.10 검토. 2023.10.19 진료. 흥국생명다사랑325간편건강보험 가입.',
     existingPremium: '18',
-    purpose: '보험료 절감'
+    purpose: '보험료 감액'
   });
 
   const recommendation = workspace.recommendations[0];
   assert.ok(recommendation);
   assert.ok(recommendation.decisionAnalysis);
+  assert.equal(workspace.customerProfile.purpose, '보험료 감액');
+  assert.equal(workspace.designManagerReview?.purpose, '보험료 감액');
+  assert.equal(recommendation.decisionAnalysis.purposeAnalysis?.mode, 'save');
   assert.ok((workspace.managerCodes || []).some((item) => item.code === 'UW-INTERNAL-MED'));
   assert.ok((workspace.managerCodes || []).some((item) => item.code === 'MEDPLAN-DUP'));
   assert.ok((workspace.actualCodes || []).some((item) => item.code === 'E14'));

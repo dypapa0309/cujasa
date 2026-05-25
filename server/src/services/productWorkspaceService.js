@@ -1846,7 +1846,7 @@ function polibotBudgetOverrunText(amount, target) {
 function buildPolibotPremiumPlan(profile = {}) {
   const target = parsePolibotPremiumAmount(profile.budget);
   const current = parsePolibotPremiumAmount(profile.existingPremium);
-  const remodel = /리모델링|보험료 절감/.test(profile.purpose || '');
+  const remodel = /리모델링|보험료\s*(절감|감액)/.test(profile.purpose || '');
   const targetPremium = Number.isFinite(target) ? formatPolibotPremiumAmount(target) : formatPolibotMoneyAmount(profile.budget);
   const currentPremium = Number.isFinite(current) ? formatPolibotPremiumAmount(current) : formatPolibotMoneyAmount(profile.existingPremium);
   let additionalBudgetMemo = '';
@@ -2493,7 +2493,7 @@ function polibotPriceStrategy(profile = {}) {
   const current = parsePolibotPremiumAmount(profile.existingPremium);
   const purpose = String(profile.purpose || '').trim();
   const renewal = String(profile.renewalPreference || '').trim();
-  const wantsSaving = /보험료\s*절감/.test(purpose) || (Number.isFinite(target) && Number.isFinite(current) && target < current);
+  const wantsSaving = /보험료\s*(절감|감액)/.test(purpose) || (Number.isFinite(target) && Number.isFinite(current) && target < current);
   const wantsUpgrade = /보장\s*강화|신규\s*가입|상속|노후|가족/.test(purpose) || (Number.isFinite(target) && Number.isFinite(current) && target > current);
   const remodel = /리모델링/.test(purpose);
   let mode = 'balanced';
@@ -2501,7 +2501,7 @@ function polibotPriceStrategy(profile = {}) {
   else if (wantsUpgrade) mode = 'upgrade';
   else if (remodel) mode = 'remodel';
   const label = {
-    save: '보험료 절감 우선',
+    save: '보험료 감액 우선',
     upgrade: '보장 강화 우선',
     remodel: '기존 보험 재배치',
     balanced: '보장/보험료 균형'
@@ -2527,7 +2527,7 @@ function polibotPurposeAnalysis(profile = {}, { premiumFit = {}, medicalRisk = {
   const matchedNeeds = coverageMatches.filter((item) => item.status === 'matched').length;
   const totalNeeds = coverageMatches.length;
   let mode = 'balanced';
-  if (/보험료\s*절감/.test(purpose)) mode = 'save';
+  if (/보험료\s*(절감|감액)/.test(purpose)) mode = 'save';
   else if (/리모델링/.test(purpose)) mode = 'remodel';
   else if (/신규\s*가입/.test(purpose)) mode = 'new';
   else if (/보장\s*강화/.test(purpose)) mode = 'upgrade';
@@ -2605,7 +2605,7 @@ function polibotPurposeAnalysis(profile = {}, { premiumFit = {}, medicalRisk = {
   return {
     mode,
     label: {
-      save: '목적 적합도: 보험료 절감',
+      save: '목적 적합도: 보험료 감액',
       upgrade: '목적 적합도: 보장 강화',
       remodel: '목적 적합도: 리모델링',
       new: '목적 적합도: 신규 가입',
@@ -3447,7 +3447,7 @@ function buildPolibotDecisionAnalysis({ profile = {}, catalogItems = [], premium
     `${name}은(는) ${keywordText || '상품 자료'} 기준으로 고객 니즈 ${matchedCount}/${coverageMatches.length || 0}개와 연결됩니다.`,
     itemDecisionSummary.priorityItems.length && `우선 후보: ${itemDecisionSummary.priorityItems.join(', ')}`,
     itemDecisionSummary.holdItems.length && `보류/검수 후보 ${itemDecisionSummary.holdItems.length}개는 가입조건, 보험료, 심사 조건 확인이 필요합니다.`,
-    priceStrategy.mode === 'save' && '고객 목적이 보험료 절감 쪽이라 중복 담보 정리와 월 보험료 비교가 핵심입니다.',
+    priceStrategy.mode === 'save' && '고객 목적이 보험료 감액 쪽이라 중복 담보 정리와 월 보험료 비교가 핵심입니다.',
     priceStrategy.mode === 'upgrade' && '고객 목적이 보장 강화 쪽이라 보험료보다 핵심 담보 두께와 보장 범위를 우선 봅니다.',
     priceStrategy.mode === 'remodel' && '리모델링 목적이라 기존 실손/기존 보험과 중복되는 담보를 먼저 대조해야 합니다.',
     medicalRisk.level === 'review' && '병력 이력이 있어 일반심사 상품과 간편심사 상품을 함께 비교해야 합니다.',
@@ -4487,6 +4487,7 @@ function compactPolibotSavedWorkspace(workspace = {}) {
     managerCodes: Array.isArray(workspace.managerCodes) ? workspace.managerCodes : [],
     actualCodes: Array.isArray(workspace.actualCodes) ? workspace.actualCodes : [],
     matchedCoverageCodes: Array.isArray(workspace.matchedCoverageCodes) ? workspace.matchedCoverageCodes : [],
+    designManagerReview: workspace.designManagerReview || null,
     recommendationNotice: workspace.recommendationNotice || '',
     knowledgeSnapshot: workspace.knowledgeSnapshot || null,
     feedbackSummary: workspace.feedbackSummary || null,
@@ -4678,7 +4679,7 @@ const POLIBOT_GENERIC_PRODUCT_NAMES = new Set([
 ]);
 
 const POLIBOT_BAD_PRODUCT_PATTERN = /가이드북|자료이용|상품비교|자료모음|상품전략|금융환경|관심상품|영업이슈|보험의\s*A|상품의\s*기본|간추린|상품\s*안내|본\s*내용|예시된|따라서|고객\s*조건|보장분석|가입담보|님의\s*상품별|판매되고\s*있는|자료는\s*상품|보험이\s*어려운|알쓸신통|주요국가|기준금리|세계\s*경제뉴스|국내\s*경제뉴스|보험시장|비급여|데이터로\s*읽는|2030\s*보험|보험영업에서|반드시\s*챙겨야|사내\s*교육용|교육\s*목적|무단배포|경제뉴스|시장\s*선점|pdf|pptx|xlsx|csv|https?:/i;
-const POLIBOT_PURPOSES = ['보장 강화', '보험료 절감', '리모델링', '신규 가입'];
+const POLIBOT_PURPOSES = ['보장 강화', '보험료 감액', '보험료 절감', '리모델링', '신규 가입', '노후/간병 준비', '자녀/가족 보장'];
 
 function normalizePolibotProductName(value = '') {
   return String(value || '')
@@ -6142,6 +6143,19 @@ export async function savePolibotRecommendation(userId, {
         .slice(0, 10)
     }
   }));
+  const designManagerReview = {
+    status: 'review_requested',
+    label: '설계매니저 검수 필요',
+    purpose: profile.purpose || '',
+    purposeMode: recommendationsWithSnapshot[0]?.decisionAnalysis?.purposeAnalysis?.mode || polibotPriceStrategy(profile).mode,
+    nextAction: recommendationsWithSnapshot.length ? '추천 후보 검수' : '추천 보류 사유 검수',
+    reviewPoints: [
+      profile.purpose && `고객 목적: ${profile.purpose}`,
+      ...(riskHoldReasons || []).slice(0, 5),
+      ...(recommendationsWithSnapshot[0]?.reviewReasons || []).slice(0, 5)
+    ].filter(Boolean),
+    requestedAt: now()
+  };
   const patch = {
     customerProfile: profile,
     consultationDraft,
@@ -6151,6 +6165,7 @@ export async function savePolibotRecommendation(userId, {
     managerCodes: profile.managerCodes,
     actualCodes: profile.actualCodes,
     matchedCoverageCodes: profile.matchedCoverageCodes,
+    designManagerReview,
     recommendationNotice,
     knowledgeSnapshot
   };
@@ -6227,6 +6242,7 @@ export async function savePolibotCustomer(userId, { id = '', name = '', age = ''
     selectedRecommendation: recommendation || existing?.selectedRecommendation || null,
     recommendations: Array.isArray(workspace.recommendations) && workspace.recommendations.length ? workspace.recommendations : existing?.recommendations || [],
     consultationDraft: workspace.consultationDraft || existing?.consultationDraft || null,
+    designManagerReview: workspace.designManagerReview || existing?.designManagerReview || null,
     excludedCandidates: workspace.excludedCandidates || existing?.excludedCandidates || [],
     knowledgeSnapshot: workspace.knowledgeSnapshot || recommendation?.knowledgeSnapshot || existing?.knowledgeSnapshot || null,
     updatedAt: now(),

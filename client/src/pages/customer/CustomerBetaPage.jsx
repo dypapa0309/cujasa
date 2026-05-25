@@ -213,6 +213,15 @@ const polibotGenderOptions = [
   { value: '남성', label: '남성' },
   { value: '여성', label: '여성' }
 ];
+const polibotPurposeOptions = [
+  { value: '', label: '고객 목적 선택' },
+  { value: '보장 강화', label: '보장 강화' },
+  { value: '보험료 감액', label: '보험료 감액' },
+  { value: '리모델링', label: '기존보험 리모델링' },
+  { value: '신규 가입', label: '신규 가입' },
+  { value: '노후/간병 준비', label: '노후/간병 준비' },
+  { value: '자녀/가족 보장', label: '자녀/가족 보장' }
+];
 const polibotFamilyHistoryOptions = [
   { value: '', label: '미확인' },
   { value: '없음', label: '없음' },
@@ -253,7 +262,7 @@ function normalizePolibotPremiumInput(value = '') {
 function polibotBudgetHint({ budget = '', existingPremium = '', purpose = '' } = {}) {
   const target = parsePolibotPremiumValue(budget);
   const current = parsePolibotPremiumValue(existingPremium);
-  const remodel = /리모델링|보험료 절감/.test(purpose);
+  const remodel = /리모델링|보험료\s*(절감|감액)/.test(purpose);
   if (!Number.isFinite(target) || !Number.isFinite(current)) {
     return remodel
       ? '기존 보험 조정까지 포함해 목표 보험료 안에서 다시 봅니다.'
@@ -5555,7 +5564,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
                 <DarkSelect label="운전 여부" value={form.driving} onChange={(value) => setForm((prev) => ({ ...prev, driving: value }))} options={[{ value: '', label: '미확인' }, { value: '운전함', label: '운전함' }, { value: '운전 안함', label: '운전 안함' }]} />
                 <DarkSelect label="갱신형 허용" value={form.renewalPreference} onChange={(value) => setForm((prev) => ({ ...prev, renewalPreference: value }))} options={[{ value: '', label: '미확인' }, { value: '허용', label: '허용' }, { value: '비갱신 선호', label: '비갱신 선호' }, { value: '상관 없음', label: '상관 없음' }]} />
               </div>
-              <DarkSelect label="가입 목적" value={form.purpose} onChange={(value) => setForm((prev) => ({ ...prev, purpose: value }))} options={[{ value: '', label: '미확인' }, { value: '보장 강화', label: '보장 강화' }, { value: '보험료 절감', label: '보험료 절감' }, { value: '리모델링', label: '리모델링' }, { value: '신규 가입', label: '신규 가입' }]} />
+              <DarkSelect label="고객 목적" value={form.purpose} onChange={(value) => setForm((prev) => ({ ...prev, purpose: value }))} options={polibotPurposeOptions} />
             </div>
           )}
           <DarkButton onClick={save} disabled={saving || usage.remaining <= 0} loading={saving} loadingLabel="분석 중" className="w-full">
@@ -5641,7 +5650,7 @@ function PolibotRecommendStepper({
 }) {
   const steps = [
     { id: 1, title: '자료접수', caption: '보장분석·심평원' },
-    { id: 2, title: '코드분석', caption: '설계매니저 검수' },
+    { id: 2, title: '목적·검수', caption: '고객 목적·설계매니저' },
     { id: 3, title: '추천안', caption: '가격·인수조건' }
   ];
   const canGenerate = workspaceLoaded && !saving && usage.remaining > 0;
@@ -5655,7 +5664,7 @@ function PolibotRecommendStepper({
     !form.medicalHistory && '심평원/병력 자료',
     !form.existingMedicalPlan && '기존 실손 여부',
     !form.renewalPreference && '갱신 선호',
-    !form.purpose && '가입 목적'
+    !form.purpose && '고객 목적'
   ].filter(Boolean);
   const localMissing = submitAttempted ? [...hardMissingLabels, ...filterMissingLabels] : [];
   const missingSet = new Set([...localMissing, ...hardMissingLabels.filter((label) => notice.includes(label))]);
@@ -5827,6 +5836,7 @@ function PolibotRecommendStepper({
                 </div>
                 <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-black text-zinc-500">POLIBOT</span>
               </div>
+              <DarkSelect label="고객 목적" value={form.purpose} onChange={(value) => setForm((prev) => ({ ...prev, purpose: value }))} options={polibotPurposeOptions} invalid={isMissing('고객 목적')} />
               <div className={isMissing('필요 보장') ? 'rounded-2xl border border-red-400/35 bg-red-950/10 p-2.5' : 'grid gap-2'}>
                 <div className="flex flex-wrap gap-2">
                   {polibotNeedOptions.map((need) => (
@@ -5847,7 +5857,6 @@ function PolibotRecommendStepper({
               <div className="grid gap-2 md:grid-cols-2">
                 <DarkSelect label="기존 실손 여부" value={form.existingMedicalPlan} onChange={(value) => setForm((prev) => ({ ...prev, existingMedicalPlan: value }))} options={[{ value: '', label: '미확인' }, { value: '있음', label: '있음' }, { value: '없음', label: '없음' }, { value: '확인 필요', label: '확인 필요' }]} invalid={isMissing('기존 실손 여부')} />
                 <DarkSelect label="갱신 선호" value={form.renewalPreference} onChange={(value) => setForm((prev) => ({ ...prev, renewalPreference: value }))} options={[{ value: '', label: '미확인' }, { value: '비갱신 선호', label: '비갱신 선호' }, { value: '허용', label: '허용' }, { value: '상관 없음', label: '상관 없음' }]} />
-                <DarkSelect label="가입 목적" value={form.purpose} onChange={(value) => setForm((prev) => ({ ...prev, purpose: value }))} options={[{ value: '', label: '미확인' }, { value: '보장 강화', label: '보장 강화' }, { value: '보험료 절감', label: '보험료 절감' }, { value: '리모델링', label: '리모델링' }, { value: '신규 가입', label: '신규 가입' }]} />
                 <label className={labelClass}>현재 보험료<input className={inputClass} value={form.existingPremium} onChange={(event) => setForm((prev) => ({ ...prev, existingPremium: event.target.value }))} placeholder="예: 18" /></label>
               </div>
               <div className="grid gap-2">
@@ -5879,8 +5888,12 @@ function PolibotRecommendStepper({
           <div className="grid gap-3">
             <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 md:grid-cols-3">
               <PolibotStatusRow label="고객" value={[form.name, form.age ? `${form.age}세` : '', form.gender].filter(Boolean).join(' · ') || '미입력'} />
+              <PolibotStatusRow label="고객 목적" value={form.purpose || '미입력'} />
               <PolibotStatusRow label="필요 보장" value={selectedNeeds.join(', ') || '미입력'} />
-              <PolibotStatusRow label="추천 후보" value={`${recommendations.length}개`} />
+            </div>
+            <div className="grid gap-2 rounded-2xl border border-amber-400/20 bg-amber-950/10 p-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+              <PolibotStatusRow label="설계매니저 검수" value={workspace.designManagerReview?.label || (hasRecommendations ? '설계매니저 검수 필요' : '추천 생성 후 검수 요청')} />
+              <PolibotStatusRow label="검수 포인트" value={(workspace.designManagerReview?.reviewPoints || []).slice(0, 3).join(' · ') || (form.purpose ? `고객 목적: ${form.purpose}` : '고객 목적 선택 필요')} />
             </div>
             <PolibotCodeSummary
               title="적용 코드"
@@ -6662,6 +6675,7 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
           <div className="grid gap-2 rounded-2xl bg-black/25 p-4 text-sm text-zinc-400">
             <AccountInfoRow label="추천 조합" value={recommendation.name || '-'} />
             <AccountInfoRow label="고객 조건" value={[profile?.name, profile?.age ? `${profile.age}세` : '', profile?.gender].filter(Boolean).join(' · ') || '미입력'} />
+            <AccountInfoRow label="고객 목적" value={profile?.purpose || '미입력'} />
             <AccountInfoRow label="필요 보장" value={(profile?.needs || []).join(', ') || '미입력'} />
             <AccountInfoRow label="가입 가능성" value={analysis.eligibilityLevel || '확인 필요'} />
             <AccountInfoRow label="추천 상태" value={recommendation.recommendationStatusLabel || recommendation.recommendationStatus || '확인 필요'} />
