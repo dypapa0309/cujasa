@@ -6039,15 +6039,22 @@ function PolibotCompanyHint({ companies = [], selectedCompany = '전체 보험�
 }
 
 function collectPolibotCodes(...sources) {
-  const codePattern = /\b\d(?:\.\d+){1,3}\b|\b[1-9]\d{2}\b/g;
+  const dottedCodePattern = /\b\d(?:\.\d+){1,3}\b/g;
+  const labeledCodePattern = /(?:코드|분류|상병|질병|담보|고지|KCD|ICD)[^\d]{0,12}(\d{3,5})\b/gi;
   const found = [];
+  const looksLikeCode = (code = '', label = '', source = '') => {
+    const value = displayValue(code).trim();
+    const context = `${displayValue(label)} ${displayValue(source)}`;
+    if (!value) return false;
+    if (/^\d(?:\.\d+){1,3}$/.test(value)) return true;
+    if (/^\d{3,5}$/.test(value)) {
+      return /코드|분류|상병|질병|담보|고지|KCD|ICD/i.test(context);
+    }
+    return false;
+  };
   const pushCode = (code, label = '', source = '', tone = '') => {
     const value = displayValue(code).trim();
-    if (!value || !codePattern.test(value)) {
-      codePattern.lastIndex = 0;
-      return;
-    }
-    codePattern.lastIndex = 0;
+    if (!looksLikeCode(value, label, source)) return;
     const key = value;
     if (found.some((item) => item.code === key)) return;
     found.push({ code: value, label: displayValue(label), source: displayValue(source), tone });
@@ -6061,8 +6068,9 @@ function collectPolibotCodes(...sources) {
   const visit = (value, source = '', inheritedTone = '') => {
     if (!value) return;
     if (typeof value === 'string' || typeof value === 'number') {
-      String(value).match(codePattern)?.forEach((code) => pushCode(code, '', source, inheritedTone || inferTone(value)));
-      codePattern.lastIndex = 0;
+      const text = String(value);
+      text.match(dottedCodePattern)?.forEach((code) => pushCode(code, '', source, inheritedTone || inferTone(value)));
+      [...text.matchAll(labeledCodePattern)].forEach((match) => pushCode(match[1], text.slice(Math.max(0, match.index - 20), (match.index || 0) + 60), source, inheritedTone || inferTone(value)));
       return;
     }
     if (Array.isArray(value)) {
@@ -6071,7 +6079,7 @@ function collectPolibotCodes(...sources) {
     }
     if (typeof value === 'object') {
       const tone = value.status || value.tone || value.result || inheritedTone || inferTone(value.reason || value.label || value.title || value.name || value.memo || '');
-      pushCode(value.code || value.disclosureCode || value.underwritingCode || value.productCode, value.label || value.title || value.name || value.reason, value.source || value.fileName || source, tone);
+      pushCode(value.code || value.disclosureCode || value.underwritingCode || value.productCode, value.label || value.title || value.name || value.reason || '코드', value.source || value.fileName || source, tone);
       ['codes', 'codeCandidates', 'disclosureCodes', 'underwritingCodes', 'matchedCodes', 'recommendationCodes', 'evidence', 'evidenceAnchors', 'catalogItems', 'linkedBenefitGroups', 'routineChecks', 'reviewReasons', 'cautions', 'disclosureMemo', 'underwritingMemo'].forEach((key) => visit(value[key], value.fileName || value.source || source, tone));
     }
   };

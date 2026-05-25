@@ -209,6 +209,17 @@ export default function App() {
       .finally(() => setCheckingAuth(false));
   }, []);
 
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      setCurrentUser(null);
+      setAccounts([]);
+      setSelectedAccountId('');
+      setAuthMaintenance(null);
+    };
+    window.addEventListener('jasain-auth-expired', handleAuthExpired);
+    return () => window.removeEventListener('jasain-auth-expired', handleAuthExpired);
+  }, []);
+
   if (PublicPage) {
     return <PublicPage productId={storeProductId} />;
   }
