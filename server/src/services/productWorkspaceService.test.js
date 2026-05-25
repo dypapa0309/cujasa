@@ -636,6 +636,10 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   const recommendation = workspace.recommendations[0];
   assert.ok(recommendation);
   assert.ok(recommendation.decisionAnalysis);
+  assert.ok((workspace.managerCodes || []).some((item) => item.code === 'UW-INTERNAL-MED'));
+  assert.ok((workspace.managerCodes || []).some((item) => item.code === 'MEDPLAN-DUP'));
+  assert.ok((recommendation.managerCodes || []).some((item) => item.code === 'ROUTE-SIMPLE-COMPARE'));
+  assert.ok((workspace.consultationDraft?.managerCodes || []).some((item) => item.code === 'UW-INTERNAL-MED'));
   assert.equal(recommendation.decisionAnalysis.medicalRisk.level, 'review');
   assert.ok(recommendation.decisionAnalysis.underwritingRoute.some((item) => item.type === 'simple' || item.type === 'chronic_special'));
   assert.ok((recommendation.decisionAnalysis.itemDiagnostics || []).some((item) => item.decisionBreakdown?.underwriting?.status === 'simple_fit'));

@@ -2098,6 +2098,152 @@ function polibotMedicalRisk(profile = {}) {
   };
 }
 
+function buildPolibotManagerCodeRecommendations(profile = {}) {
+  const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
+  const medical = String(profile.medicalHistory || '').trim();
+  const needs = Array.isArray(profile.needs) ? profile.needs : normalizeList(profile.needs);
+  const text = [
+    medical,
+    Object.values(disclosure).filter(Boolean).join(' '),
+    String(profile.existingMedicalPlan || ''),
+    String(profile.underwritingAssessment?.route || '')
+  ].join(' ');
+  const add = (items, item) => {
+    if (!item?.code || items.some((row) => row.code === item.code)) return items;
+    items.push({
+      status: item.status || 'review',
+      severity: item.severity || (item.status === 'applied' ? 'info' : 'medium'),
+      source: item.source || '설계매니저 기준',
+      ...item
+    });
+    return items;
+  };
+  const items = [];
+  const numberAfter = (pattern) => {
+    const match = text.match(pattern);
+    return match ? Number(match[1]) : null;
+  };
+  const outpatientDays = numberAfter(/외래\s*(\d+)\s*일/);
+  const pharmacyCount = numberAfter(/약국\s*(\d+)\s*건/);
+  const medicalCount = numberAfter(/의료기관\s*(\d+)\s*건/);
+
+  if (/심평원\s*5년|의료기관\/약국\s*이용/.test(text)) {
+    add(items, {
+      code: 'HIRA-5Y-REVIEW',
+      label: '심평원 5년 이력 확인',
+      reason: '심평원 자료가 들어왔으므로 3개월/1년/5년 고지 질문과 실제 청구 이력을 분리해 확인해야 합니다.',
+      status: 'applied',
+      severity: 'info',
+      source: '심평원 자료'
+    });
+  }
+  if ((Number.isFinite(pharmacyCount) && pharmacyCount >= 3) || /약국\s*청구|약국\s*이력|약국\s*이용/.test(text)) {
+    add(items, {
+      code: 'HIRA-PHARMACY-MULTI',
+      label: '약국 청구 다수',
+      reason: pharmacyCount ? `약국 청구 ${pharmacyCount}건이 확인되어 처방일수와 현재 복용 여부를 확인해야 합니다.` : '약국 청구 이력이 있어 약명, 처방일수, 현재 복용 여부를 확인해야 합니다.',
+      status: 'review',
+      source: '심평원 자료'
+    });
+  }
+  if (Number.isFinite(outpatientDays) && outpatientDays >= 10) {
+    add(items, {
+      code: 'HIRA-OUTPATIENT-MANY',
+      label: '외래 이용 다수',
+      reason: `외래 ${outpatientDays}일 이력이 있어 같은 질환의 반복 치료인지 확인해야 합니다.`,
+      status: 'review',
+      source: '심평원 자료'
+    });
+  }
+  if (Number.isFinite(medicalCount) && medicalCount >= 10) {
+    add(items, {
+      code: 'HIRA-MEDICAL-MULTI',
+      label: '의료기관 이용 다수',
+      reason: `의료기관 이용 ${medicalCount}건이 확인되어 진료과별 반복 방문 여부를 확인해야 합니다.`,
+      status: 'review',
+      source: '심평원 자료'
+    });
+  }
+  if (/정형외과|한방병원|관절|허리|목|디스크|염좌/.test(text)) {
+    add(items, {
+      code: 'UW-MUSCULOSKELETAL',
+      label: '근골격계 부담보 확인',
+      reason: '정형외과/한방병원 또는 근골격계 단서가 있어 부위 부담보 가능성을 확인해야 합니다.',
+      status: 'review',
+      source: '심평원/고지 자료'
+    });
+  }
+  if (/내과|고혈압|혈압|당뇨|고지혈|콜레스테롤|지질/.test(text)) {
+    add(items, {
+      code: 'UW-INTERNAL-MED',
+      label: '내과성 질환 고지 확인',
+      reason: '내과성 질환 또는 관련 진료과 단서가 있어 만성질환 투약 여부를 확인해야 합니다.',
+      status: 'review',
+      source: '심평원/고지 자료'
+    });
+  }
+  if (/검사|재검|추적|관찰|소견/.test(text)) {
+    add(items, {
+      code: 'UW-FOLLOWUP-EXAM',
+      label: '추가검사/추적관찰 확인',
+      reason: '추가검사, 재검사, 추적관찰 단서가 있어 3개월/1년 고지 해당 여부를 확인해야 합니다.',
+      status: 'review',
+      severity: 'high',
+      source: '고지 자료'
+    });
+  }
+  if (/입원|수술|시술/.test(text)) {
+    add(items, {
+      code: 'UW-ADMISSION-SURGERY',
+      label: '입원/수술 이력 확인',
+      reason: '입원/수술/시술 이력이 있어 최근 5년 고지와 완치 여부 확인이 필요합니다.',
+      status: 'review',
+      severity: 'high',
+      source: '고지 자료'
+    });
+  }
+  if (String(profile.existingMedicalPlan || '').trim() && String(profile.existingMedicalPlan || '').trim() !== '없음') {
+    add(items, {
+      code: 'MEDPLAN-DUP',
+      label: '기존 실손 중복 확인',
+      reason: '기존 실손이 있어 새 실손/의료비 담보 추천 전 중복 여부를 확인해야 합니다.',
+      status: 'review',
+      source: '보장분석 자료'
+    });
+  }
+  if (needs.includes('수술')) {
+    add(items, {
+      code: 'NEED-SURGERY',
+      label: '수술비 보완 우선',
+      reason: '필요 보장에 수술이 있어 질병/상해 수술비와 기존 담보 중복을 우선 비교합니다.',
+      status: 'applied',
+      severity: 'info',
+      source: '보장분석 자료'
+    });
+  }
+  if (/간편|유병|고지\s*심사|표준\/간편|표준심사와 간편심사|조건부|당뇨|암|심장|뇌/.test(text) || items.some((item) => item.severity === 'high')) {
+    add(items, {
+      code: 'ROUTE-SIMPLE-COMPARE',
+      label: '표준/간편 동시 비교',
+      reason: '고지 이슈가 있어 표준심사 단독보다 간편심사 또는 조건부 인수 가능성을 함께 비교합니다.',
+      status: 'applied',
+      severity: 'high',
+      source: '설계매니저 기준'
+    });
+  }
+  if (!items.length && /없음|해당\s*없/.test(text)) {
+    add(items, {
+      code: 'ROUTE-STANDARD-FIRST',
+      label: '표준심사 우선',
+      reason: '입력상 고지 이슈가 낮아 간편심사보다 표준심사를 먼저 비교합니다.',
+      status: 'applied',
+      severity: 'info',
+      source: '설계매니저 기준'
+    });
+  }
+  return items.slice(0, 12);
+}
+
 function polibotPriceStrategy(profile = {}) {
   const target = parsePolibotPremiumAmount(profile.budget);
   const current = parsePolibotPremiumAmount(profile.existingPremium);
@@ -2868,10 +3014,12 @@ function buildPolibotDecisionAnalysis({ profile = {}, catalogItems = [], premium
     coverageMatches.some((item) => item.status !== 'matched') && '미매칭 니즈는 별도 특약이나 다른 상품으로 보완해야 하나요?',
     hasUnknownAge && '상품별 정확한 가입연령과 납입기간을 확인했나요?'
   ].filter(Boolean);
+  const managerCodes = Array.isArray(profile.managerCodes) ? profile.managerCodes : buildPolibotManagerCodeRecommendations(profile);
   return {
     eligibilityLevel,
     decisionScore,
     medicalRisk,
+    managerCodes,
     disclosureTimeline,
     underwritingRoute,
     priceStrategy,
@@ -3862,6 +4010,7 @@ function compactPolibotSavedWorkspace(workspace = {}) {
     recommendations: Array.isArray(workspace.recommendations) ? workspace.recommendations : [],
     customers: Array.isArray(workspace.customers) ? workspace.customers : [],
     excludedCandidates: Array.isArray(workspace.excludedCandidates) ? workspace.excludedCandidates : [],
+    managerCodes: Array.isArray(workspace.managerCodes) ? workspace.managerCodes : [],
     recommendationNotice: workspace.recommendationNotice || '',
     knowledgeSnapshot: workspace.knowledgeSnapshot || null,
     feedbackSummary: workspace.feedbackSummary || null,
@@ -4902,6 +5051,7 @@ function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
   const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
   const underwriting = normalizePolibotUnderwritingAssessment(profile.underwritingAssessment);
   const analysisResult = normalizePolibotAnalysisResult(profile.analysisResult);
+  const managerCodes = Array.isArray(profile.managerCodes) ? profile.managerCodes : buildPolibotManagerCodeRecommendations(profile);
   const missing = [];
   if (!profile.age) missing.push('나이');
   if (!profile.gender) missing.push('성별');
@@ -4944,7 +5094,8 @@ function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
     !profile.medicalHistory && '병력/부담보 가능성 확인 필요',
     Object.values(disclosure).some((value) => /있음|예|치료|투약|입원|수술|검사|진단/i.test(value)) && '상세 고지에 따라 표준/간편/부담보 심사 경로 확인 필요',
     profile.renewalPreference === '비갱신 선호' && '비갱신형 보험료 부담 확인 필요',
-    qualityReport.recommendableProducts === 0 && '자동 확정 상품 자료 부족'
+    qualityReport.recommendableProducts === 0 && '자동 확정 상품 자료 부족',
+    ...managerCodes.filter((item) => item.status !== 'applied').slice(0, 4).map((item) => `${item.code} · ${item.reason}`)
   ].filter(Boolean);
   const completeness = missing.length <= 1 ? '충분' : missing.length <= 4 ? '보통' : '부족';
   return {
@@ -4961,6 +5112,7 @@ function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
     disclosureDetails: disclosure,
     underwritingAssessment: underwriting,
     analysisResult,
+    managerCodes,
     missing,
     completeness,
     nextQuestions,
@@ -5179,11 +5331,15 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
   const gapText = coveredNeeds.length ? coveredNeeds.join(', ') : (profile.needs || []).slice(0, 3).join(', ') || productGroup;
   const itemKeywords = [...new Set(catalogItems.flatMap((item) => item.coverageKeywords || []).filter(Boolean))].slice(0, 8);
   const keywordText = keywordHits.length ? keywordHits.join(', ') : itemKeywords.length ? itemKeywords.join(', ') : productGroup;
+  const managerCodes = Array.isArray(profile.managerCodes) ? profile.managerCodes : buildPolibotManagerCodeRecommendations(profile);
   const riskCautions = Array.isArray(profile.riskHoldReasons)
     ? profile.riskHoldReasons.map((reason) => `${reason} 확인 필요`)
     : [];
   const catalogCautions = normalizePolibotCautions([
     ...riskCautions,
+    ...managerCodes
+      .filter((item) => item.status !== 'applied')
+      .map((item) => `${item.code} ${item.label}: ${item.reason}`),
     ...catalogItems.flatMap((item) => [
     ...(item.cautions || []),
     item.cautionMemo,
@@ -5261,8 +5417,13 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     recommendationStatus: reviewSummary.status,
     recommendationStatusLabel: reviewSummary.label,
     reviewSummary,
-    reviewReasons: [...reviewSummary.blockers, ...reviewSummary.reasons].slice(0, 8),
+    reviewReasons: [
+      ...reviewSummary.blockers,
+      ...reviewSummary.reasons,
+      ...managerCodes.filter((item) => item.status !== 'applied').map((item) => `${item.code} · ${item.reason}`)
+    ].slice(0, 8),
     routineChecks: reviewSummary.routineChecks,
+    managerCodes,
     keywords: keywordHits.length ? keywordHits : itemKeywords,
     catalogItems: catalogItems.map((item) => compactPolibotClientCatalogItem({
       ...item,
@@ -5326,6 +5487,7 @@ export async function savePolibotRecommendation(userId, {
   profile.targetPremium = premiumPlan.targetPremium;
   profile.currentPremium = premiumPlan.currentPremium;
   profile.additionalBudgetMemo = premiumPlan.additionalBudgetMemo;
+  profile.managerCodes = buildPolibotManagerCodeRecommendations(profile);
   const hardMissing = [
     !profile.age && '나이',
     profile.needs.length === 0 && '필요 보장',
@@ -5404,7 +5566,8 @@ export async function savePolibotRecommendation(userId, {
     /있음|예|확인|수술|입원|투약|치료|진단/i.test(profile.medicalHistory) && '고지 상세',
     Object.values(profile.disclosureDetails || {}).some((value) => /있음|예|확인|수술|입원|투약|치료|진단|검사/i.test(value)) && '고지 상세',
     Object.values(profile.underwritingAssessment || {}).some((value) => /부담보|할증|간편|조건부|어려움/i.test(value)) && '인수 조건',
-    profile.budget && Number(String(profile.budget).replace(/[^\d.]/g, '')) > 0 && Number(String(profile.budget).replace(/[^\d.]/g, '')) < 5 && '예산 조건'
+    profile.budget && Number(String(profile.budget).replace(/[^\d.]/g, '')) > 0 && Number(String(profile.budget).replace(/[^\d.]/g, '')) < 5 && '예산 조건',
+    ...profile.managerCodes.filter((item) => item.status !== 'applied').map((item) => item.label)
   ].filter(Boolean);
   const enrichedProfile = { ...profile, qualityReport, consultationDraft, catalogReviews, riskHoldReasons };
   const rankedEvidence = rankPolibotEvidence(recommendationKnowledgeSources, profile);
@@ -5470,6 +5633,7 @@ export async function savePolibotRecommendation(userId, {
     qualityReport: compactPolibotClientQualityReport(qualityReport),
     recommendations: recommendationsWithSnapshot,
     excludedCandidates: buildPolibotExcludedCandidates(evidence, profile),
+    managerCodes: profile.managerCodes,
     recommendationNotice,
     knowledgeSnapshot
   };

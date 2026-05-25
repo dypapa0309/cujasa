@@ -5651,9 +5651,10 @@ function PolibotRecommendStepper({
     ['recent1Year', '1년', '추가검사/재검사'],
     ['recent5Years', '5년', '입원/수술/7일치료/30일투약']
   ];
-  const filterCodes = collectPolibotCodes(workspace, workspace.consultationDraft, form.disclosureDetails, form.medicalHistory);
+  const managerCodes = buildPolibotManagerCodeRecommendations(form);
+  const filterCodes = [...managerCodes, ...collectPolibotCodes(workspace, workspace.consultationDraft, form.disclosureDetails, form.medicalHistory)];
   const filterCodeGroups = groupPolibotCodes(filterCodes, workspace);
-  const recommendationCodes = collectPolibotCodes(workspace, recommendations);
+  const recommendationCodes = collectPolibotCodes(workspace.managerCodes, workspace, recommendations);
   const recommendationCodeGroups = groupPolibotCodes(recommendationCodes, workspace);
   const stepBadge = (stepId) => {
     if (stepId === 1 && !profileReady) return '입력';
@@ -6046,6 +6047,7 @@ function collectPolibotCodes(...sources) {
     const value = displayValue(code).trim();
     const context = `${displayValue(label)} ${displayValue(source)}`;
     if (!value) return false;
+    if (/^[A-Z][A-Z0-9]+(?:-[A-Z0-9]+)+$/.test(value)) return true;
     if (/^\d(?:\.\d+){1,3}$/.test(value)) return true;
     if (/^\d{3,5}$/.test(value)) {
       return /코드|분류|상병|질병|담보|고지|KCD|ICD/i.test(context);
@@ -6085,6 +6087,71 @@ function collectPolibotCodes(...sources) {
   };
   sources.forEach((source) => visit(source));
   return found.slice(0, 18);
+}
+
+function buildPolibotManagerCodeRecommendations(form = {}) {
+  const needs = normalizeLines(form.needs);
+  const disclosure = form.disclosureDetails && typeof form.disclosureDetails === 'object' ? form.disclosureDetails : {};
+  const text = [
+    form.medicalHistory,
+    Object.values(disclosure).filter(Boolean).join(' '),
+    form.existingMedicalPlan,
+    form.underwritingAssessment?.route
+  ].filter(Boolean).join(' ');
+  const items = [];
+  const add = (item) => {
+    if (!item?.code || items.some((row) => row.code === item.code)) return;
+    items.push({
+      status: item.status || 'review',
+      severity: item.severity || (item.status === 'applied' ? 'info' : 'medium'),
+      source: item.source || '설계매니저 기준',
+      ...item
+    });
+  };
+  const numberAfter = (pattern) => {
+    const match = text.match(pattern);
+    return match ? Number(match[1]) : null;
+  };
+  const outpatientDays = numberAfter(/외래\s*(\d+)\s*일/);
+  const pharmacyCount = numberAfter(/약국\s*(\d+)\s*건/);
+  const medicalCount = numberAfter(/의료기관\s*(\d+)\s*건/);
+  if (/심평원\s*5년|의료기관\/약국\s*이용/.test(text)) {
+    add({ code: 'HIRA-5Y-REVIEW', label: '심평원 5년 이력 확인', reason: '3개월/1년/5년 고지 질문과 청구 이력을 분리해 확인합니다.', status: 'applied', source: '심평원 자료' });
+  }
+  if ((Number.isFinite(pharmacyCount) && pharmacyCount >= 3) || /약국\s*청구|약국\s*이력|약국\s*이용/.test(text)) {
+    add({ code: 'HIRA-PHARMACY-MULTI', label: '약국 청구 다수', reason: pharmacyCount ? `약국 청구 ${pharmacyCount}건 기준으로 처방일수와 현재 복용 여부를 확인합니다.` : '약국 청구 이력 기준으로 처방일수와 현재 복용 여부를 확인합니다.', status: 'review', source: '심평원 자료' });
+  }
+  if (Number.isFinite(outpatientDays) && outpatientDays >= 10) {
+    add({ code: 'HIRA-OUTPATIENT-MANY', label: '외래 이용 다수', reason: `외래 ${outpatientDays}일 이력이 있어 반복 치료 여부를 확인합니다.`, status: 'review', source: '심평원 자료' });
+  }
+  if (Number.isFinite(medicalCount) && medicalCount >= 10) {
+    add({ code: 'HIRA-MEDICAL-MULTI', label: '의료기관 이용 다수', reason: `의료기관 ${medicalCount}건 기준으로 진료과별 반복 방문을 확인합니다.`, status: 'review', source: '심평원 자료' });
+  }
+  if (/정형외과|한방병원|관절|허리|목|디스크|염좌/.test(text)) {
+    add({ code: 'UW-MUSCULOSKELETAL', label: '근골격계 부담보 확인', reason: '정형외과/한방병원 또는 근골격계 단서가 있어 부위 부담보 가능성을 확인합니다.', status: 'review', source: '심평원/고지 자료' });
+  }
+  if (/내과|고혈압|혈압|당뇨|고지혈|콜레스테롤|지질/.test(text)) {
+    add({ code: 'UW-INTERNAL-MED', label: '내과성 질환 고지 확인', reason: '내과성 질환 단서가 있어 만성질환 투약 여부를 확인합니다.', status: 'review', source: '심평원/고지 자료' });
+  }
+  if (/검사|재검|추적|관찰|소견/.test(text)) {
+    add({ code: 'UW-FOLLOWUP-EXAM', label: '추가검사/추적관찰 확인', reason: '추가검사/추적관찰 단서가 있어 3개월/1년 고지 해당 여부를 확인합니다.', status: 'review', severity: 'high', source: '고지 자료' });
+  }
+  if (/입원|수술|시술/.test(text)) {
+    add({ code: 'UW-ADMISSION-SURGERY', label: '입원/수술 이력 확인', reason: '입원/수술/시술 이력이 있어 5년 고지와 완치 여부를 확인합니다.', status: 'review', severity: 'high', source: '고지 자료' });
+  }
+  if (form.existingMedicalPlan && form.existingMedicalPlan !== '없음') {
+    add({ code: 'MEDPLAN-DUP', label: '기존 실손 중복 확인', reason: '기존 실손이 있어 새 실손/의료비 담보 추천 전 중복 여부를 확인합니다.', status: 'review', source: '보장분석 자료' });
+  }
+  if (needs.includes('수술')) {
+    add({ code: 'NEED-SURGERY', label: '수술비 보완 우선', reason: '필요 보장에 수술이 있어 질병/상해 수술비와 기존 담보 중복을 우선 비교합니다.', status: 'applied', source: '보장분석 자료' });
+  }
+  if (/간편|유병|고지\s*심사|표준\/간편|조건부|당뇨|암|심장|뇌/.test(text) || items.some((item) => item.severity === 'high')) {
+    add({ code: 'ROUTE-SIMPLE-COMPARE', label: '표준/간편 동시 비교', reason: '고지 이슈가 있어 표준심사 단독보다 간편심사 또는 조건부 인수를 함께 비교합니다.', status: 'applied', severity: 'high', source: '설계매니저 기준' });
+  }
+  if (!items.length && /없음|해당\s*없/.test(text)) {
+    add({ code: 'ROUTE-STANDARD-FIRST', label: '표준심사 우선', reason: '입력상 고지 이슈가 낮아 표준심사를 먼저 비교합니다.', status: 'applied', source: '설계매니저 기준' });
+  }
+  return items.slice(0, 12);
 }
 
 function groupPolibotCodes(codes = [], context = {}) {
