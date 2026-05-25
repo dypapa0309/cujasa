@@ -103,8 +103,10 @@ export class AppErrorBoundary extends Component {
 
 export default function App() {
   const publicPath = typeof window !== 'undefined' ? window.location.pathname : '';
+  const publicHost = typeof window !== 'undefined' ? window.location.hostname : '';
+  const isStoreHost = publicHost === 'store.jasain.kr';
   const storeProductId = publicPath.startsWith('/store/') ? publicPath.split('/').filter(Boolean)[1] : '';
-  const PublicPage = publicPath === '/test-page-2'
+  const PublicPage = (publicPath === '/test-page-2' || (isStoreHost && publicPath === '/'))
       ? PublicTestPage2
       : storeProductId
         ? ProductPurchasePage
