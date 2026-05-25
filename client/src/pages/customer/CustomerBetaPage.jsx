@@ -6179,6 +6179,45 @@ function codeContext(text = '', index = 0, length = 0) {
   return value.slice(Math.max(0, index - 48), Math.min(value.length, index + length + 72)).replace(/\s+/g, ' ').trim();
 }
 
+function polibotCodeBoundary(text = '', index = 0, length = 0) {
+  const value = String(text || '');
+  return {
+    before: value[index - 1] || '',
+    after: value[index + length] || ''
+  };
+}
+
+function hasPolibotMedicalContext(context = '') {
+  return /진단|진료|질환|질병|상병|염좌|골절|고혈압|당뇨|폴립|선종|수술|입원|통원|약처방|투약|치료|검사|백내장|망막|전립선|황반|늑골|관절|무릎|발목|요추|대장|용종|고지/.test(context);
+}
+
+function hasPolibotDocumentNoiseContext(context = '') {
+  return /보험|상품|GA|월호|페이지|고객제시불가|파일:|보험료|가입설계/.test(context);
+}
+
+function isPolibotLikelyDateOrAmount(value = '', context = '') {
+  const code = String(value || '').trim();
+  if (/^(19|20)\d{2}$/.test(code)) return true;
+  if (/^\d{6,8}$/.test(code)) return true;
+  if (/\d{4}[-./]\d{1,2}|\d{1,3}(?:,\d{3})원|만원|세|회|일/.test(context) && !/코드|번호|담보|특약|상병|질병/.test(context)) return true;
+  return false;
+}
+
+function normalizePolibotDisclosureCode(raw = '') {
+  const value = String(raw || '').trim();
+  const dotted = value.match(/^3\.(\d{1,2})\.(\d{1,2})$/);
+  if (dotted) return `3.${Number(dotted[1])}.${Number(dotted[2])}`;
+  const compact = value.match(/^3(\d{1,2})(\d{2})$/);
+  if (compact) return `3.${Number(compact[1])}.${Number(compact[2])}`;
+  if (/^(325|335|355|333|310)$/.test(value)) return value;
+  return '';
+}
+
+function isPolibotStandaloneCode(text = '', index = 0, length = 0) {
+  const { before, after } = polibotCodeBoundary(text, index, length);
+  return !/[A-Za-z0-9가-힣]/.test(before) && !/[A-Za-z0-9가-힣]/.test(after);
+}
+
 function addPolibotActualCode(items, item = {}) {
   const code = String(item.code || '').trim().toUpperCase();
   if (!code || items.some((row) => row.code === code && row.kind === item.kind)) return;
@@ -6189,7 +6228,8 @@ function addPolibotActualCode(items, item = {}) {
     status: item.status || 'review',
     source: item.source || '고객 자료',
     reason: item.reason || '자료에서 실제 코드 후보로 확인됐습니다.',
-    context: item.context || ''
+    context: item.context || '',
+    confidence: item.confidence || 70
   });
 }
 
@@ -6205,14 +6245,16 @@ function buildPolibotActualCodes(form = {}) {
   for (const match of text.matchAll(/\b([A-Z][0-9]{2}(?:\.[0-9A-Z]{1,2})?|[A-Z][0-9]{3})\b/gi)) {
     const raw = match[1] || '';
     const context = codeContext(text, match.index || 0, raw.length);
-    if (/보험|상품|GA|월호|페이지|고객제시불가/.test(context) && !/진단|질환|염좌|골절|고혈압|당뇨|폴립|선종|수술|입원|통원|약처방|치료/.test(context)) continue;
+    const medicalContext = hasPolibotMedicalContext(context);
+    if (hasPolibotDocumentNoiseContext(context) && !medicalContext) continue;
     addPolibotActualCode(items, {
       code: raw,
       kind: 'KCD',
       label: '상병/KCD 코드',
       source: /심평원|병원|약국|진료/.test(context) ? '심평원/병력 자료' : '고지 메모',
       reason: '상병 또는 KCD 형식 코드로 보여 고지 분류 확인이 필요합니다.',
-      context
+      context,
+      confidence: medicalContext ? 92 : 78
     });
   }
   const explicitPatterns = [
@@ -6223,14 +6265,15 @@ function buildPolibotActualCodes(form = {}) {
     for (const match of text.matchAll(pattern)) {
       const raw = match[1] || '';
       const context = codeContext(text, match.index || 0, raw.length);
-      if (/\d{4}[-./]\d{1,2}|\d{1,3}(?:,\d{3})원|만원|세|회|일/.test(context) && !/코드|번호|담보|특약|상병|질병|고지/.test(context)) continue;
+      if (isPolibotLikelyDateOrAmount(raw, context)) continue;
       addPolibotActualCode(items, {
         code: raw,
         kind: 'numeric',
         label: '숫자 코드',
         source: '자료 내 코드 문맥',
         reason: '코드/번호 문맥에서 나온 숫자입니다. 금액이나 나이가 아닌지 최종 확인하세요.',
-        context
+        context,
+        confidence: /상병|질병|고지/.test(context) ? 82 : 74
       });
     }
   }
@@ -6242,20 +6285,23 @@ function buildPolibotActualCodes(form = {}) {
   for (const pattern of disclosurePatterns) {
     for (const match of text.matchAll(pattern)) {
       const raw = match[0] || '';
-      const code = match.length >= 3 && raw.length >= 4 ? `3.${match[1]}.${match[2]}` : raw;
+      const code = normalizePolibotDisclosureCode(raw);
       const context = codeContext(text, match.index || 0, raw.length);
+      if (!code) continue;
       if (!/간편|유병|고지|표준|심사/.test(context)) continue;
+      if (/^(325|335|355|333|310)$/.test(code) && !isPolibotStandaloneCode(text, match.index || 0, raw.length)) continue;
       addPolibotActualCode(items, {
         code,
         kind: 'disclosure',
         label: '간편고지 유형',
         source: '고지 메모',
         reason: '간편고지 유형 숫자로 보여 표준/간편 비교 기준에 반영합니다.',
-        context
+        context,
+        confidence: code.includes('.') ? 90 : 80
       });
     }
   }
-  return items.slice(0, 24);
+  return items.sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0)).slice(0, 24);
 }
 
 function buildPolibotManagerCodeRecommendations(form = {}) {

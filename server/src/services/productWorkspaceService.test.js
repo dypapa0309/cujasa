@@ -628,7 +628,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     needs: ['암', '뇌', '심장', '유병자'],
     budget: '12',
     existingMedicalPlan: '있음',
-    medicalHistory: '당뇨 진단 후 약 복용 중. E14 당뇨, I10 고혈압. 간편 3.10.10 검토',
+    medicalHistory: '당뇨 진단 후 약 복용 중. E14 당뇨, I10 고혈압. 간편 3.10.10 검토. 2023.10.19 진료. 흥국생명다사랑325간편건강보험 가입.',
     existingPremium: '18',
     purpose: '보험료 절감'
   });
@@ -641,6 +641,8 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.ok((workspace.actualCodes || []).some((item) => item.code === 'E14'));
   assert.ok((workspace.actualCodes || []).some((item) => item.code === 'I10'));
   assert.ok((workspace.actualCodes || []).some((item) => item.code === '3.10.10'));
+  assert.equal((workspace.actualCodes || []).some((item) => item.code === '2023'), false);
+  assert.equal((workspace.actualCodes || []).some((item) => item.code === '325'), false);
   assert.ok((recommendation.managerCodes || []).some((item) => item.code === 'ROUTE-SIMPLE-COMPARE'));
   assert.ok((recommendation.actualCodes || []).some((item) => item.code === 'E14'));
   assert.ok((workspace.consultationDraft?.managerCodes || []).some((item) => item.code === 'UW-INTERNAL-MED'));
