@@ -358,6 +358,60 @@ function buildAnalysisResult(currentCoverage = {}, policyDetails = []) {
   };
 }
 
+function classifyPolibotDocument(text = '', fileName = '', values = {}) {
+  const normalized = compact(text);
+  const name = String(fileName || '').normalize('NFC');
+  const policyCount = Array.isArray(values.existingPolicyDetails) ? values.existingPolicyDetails.length : 0;
+  const coverageCount = Object.values(values.currentCoverage || {}).filter((item) => item?.amount).length;
+  const hasCustomerTitle = /[가-힣]{2,5}\s*(?:님|고객)의\s*(?:건강|전체|상품별|보장)/.test(normalized);
+  const hasCoverageStructure = /전체\s*보장현황|담보별\s*가입\s*현황|전체\s*계약리스트|상품별\s*가입현황/.test(normalized);
+  const hasHiraStructure = /순번\s*병[·ㆍ\w\s]*의원[&/·ㆍ\w\s]*약국|요양급여비용|진료정보요약|건강보험\s*등\s*혜택받은\s*금액/.test(normalized);
+  const hasSalesMaterialSignal = /GA\s*소식지|판매인\s*교육용|모집인\s*교육용|고객\s*제시\s*불가|고객제시불가|고객\s*교부.*금지|온라인\s*게시.*금지|영업\s*ISSUE|영업이슈|주간\s*이슈|주간포인트|상품\s*개요|준법감시/.test(normalized);
+  const fileSuggestsCustomerCoverage = /보장분석|현재\s*2604|kb\s*버전|kb버젼/i.test(name);
+  if (hasHiraStructure) {
+    return {
+      type: 'hira',
+      label: '심평원 자료',
+      customerCoverage: false,
+      confidence: 'high',
+      reasons: ['심평원 진료/약국 이용 표 구조 확인']
+    };
+  }
+  if ((hasCustomerTitle && hasCoverageStructure) || (fileSuggestsCustomerCoverage && (policyCount > 0 || coverageCount >= 3))) {
+    return {
+      type: 'customer_coverage',
+      label: '고객 보장분석',
+      customerCoverage: true,
+      confidence: policyCount > 0 && coverageCount >= 3 ? 'high' : 'medium',
+      reasons: [
+        hasCustomerTitle && '고객명 기반 보장분석 제목 확인',
+        hasCoverageStructure && '전체 보장현황/계약리스트 구조 확인',
+        policyCount > 0 && `기존계약 ${policyCount}개 추출`,
+        coverageCount > 0 && `담보 ${coverageCount}개 추출`
+      ].filter(Boolean)
+    };
+  }
+  if (hasSalesMaterialSignal) {
+    return {
+      type: 'sales_material',
+      label: '보험사 상품자료',
+      customerCoverage: false,
+      confidence: 'high',
+      reasons: ['GA소식지/교육용/고객제시불가 문구 확인']
+    };
+  }
+  return {
+    type: 'unknown',
+    label: '문서 유형 확인 필요',
+    customerCoverage: false,
+    confidence: policyCount > 0 || coverageCount >= 3 ? 'medium' : 'low',
+    reasons: [
+      policyCount > 0 && `기존계약 ${policyCount}개 추출`,
+      coverageCount > 0 && `담보 ${coverageCount}개 추출`
+    ].filter(Boolean)
+  };
+}
+
 export function parsePolibotCoverageDocumentText(text = '', fileName = '') {
   const basics = extractCustomerBasics(text, fileName);
   const existingPolicyDetails = extractPolicyDetails(text);
@@ -449,16 +503,21 @@ export async function analyzePolibotCoverageDocument({ fileName = '', base64 = '
   const values = parsePolibotCoverageDocumentText(text, fileName);
   const extractedPolicyDetails = Array.isArray(values.existingPolicyDetails) ? values.existingPolicyDetails : [];
   const extractedCoverage = values.currentCoverage && typeof values.currentCoverage === 'object' ? values.currentCoverage : {};
+  const document = classifyPolibotDocument(text, fileName, values);
   return {
     fileName,
     mimeType,
+    document,
     values,
     confidence: {
       text: compact(text).length > 500 ? 'high' : 'medium',
       policies: extractedPolicyDetails.length ? 'high' : 'low',
-      coverage: Object.values(extractedCoverage).filter((item) => item.amount).length >= 4 ? 'high' : 'medium'
+      coverage: Object.values(extractedCoverage).filter((item) => item.amount).length >= 4 ? 'high' : 'medium',
+      document: document.confidence
     },
     warnings: [
+      document.type === 'sales_material' && '보험사 상품자료로 보입니다. 고객 보장분석 파일을 넣어주세요.',
+      document.type === 'unknown' && '고객 보장분석 문서인지 확인이 필요합니다.',
       extractedPolicyDetails.length === 0 && '계약리스트를 자동 추출하지 못했습니다.',
       Object.values(extractedCoverage).filter((item) => item.amount).length < 3 && '담보별 담보금액 추출이 적습니다.',
       /--\s*\d+\s+of\s+\d+\s*--/.test(text) ? '' : '페이지 구분이 없는 PDF라 일부 항목 검증이 필요합니다.'

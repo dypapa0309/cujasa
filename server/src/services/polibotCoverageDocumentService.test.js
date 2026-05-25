@@ -70,6 +70,42 @@ test('analyzes uploaded text coverage document without stale local variable refe
     base64: Buffer.from(text, 'utf8').toString('base64')
   });
   assert.equal(result.values.name, '김정숙');
+  assert.equal(result.document.type, 'customer_coverage');
+  assert.equal(result.document.customerCoverage, true);
   assert.equal(result.confidence.policies, 'high');
   assert.equal(result.fileName, '김정숙 보장분석.txt');
+});
+
+test('classifies insurer sales materials separately from customer coverage analysis', async () => {
+  const text = `
+GA소식지 2026년 5월호
+본 자료는 판매인 교육용이며 고객 제시 불가 자료입니다.
+암 주요치료비 순환계 주요치료비 간편심사형 상품 안내
+상품 관련 자세한 사항은 반드시 약관 및 상품설명서를 확인하시기 바랍니다.
+`;
+  const result = await analyzePolibotCoverageDocument({
+    fileName: 'AIA생명_26.5월 GA소식지.txt',
+    mimeType: 'text/plain',
+    base64: Buffer.from(text, 'utf8').toString('base64')
+  });
+  assert.equal(result.document.type, 'sales_material');
+  assert.equal(result.document.customerCoverage, false);
+  assert.ok(result.warnings.some((warning) => warning.includes('보험사 상품자료')));
+});
+
+test('classifies HIRA visit summaries separately from customer coverage analysis', async () => {
+  const text = `
+2026-5-25 순번 병·의원&약국 입원(외래)일수 총 진료비 건강보험 등 혜택받은 금액 내가 낸 의료비
+1 서울정형외과의원 0(12) 100,000 70,000 30,000
+2 행복약국 0(5) 50,000 35,000 15,000
+진료정보요약 · 본 자료는 병·의원&약국에서 청구한 요양급여비용 기준입니다.
+`;
+  const result = await analyzePolibotCoverageDocument({
+    fileName: 'report1.txt',
+    mimeType: 'text/plain',
+    base64: Buffer.from(text, 'utf8').toString('base64')
+  });
+  assert.equal(result.document.type, 'hira');
+  assert.equal(result.document.customerCoverage, false);
+  assert.equal(result.document.label, '심평원 자료');
 });

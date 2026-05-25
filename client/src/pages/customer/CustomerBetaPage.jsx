@@ -5355,6 +5355,11 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
         mimeType: file.type || 'application/pdf',
         base64
       }, { timeoutMs: 30000 });
+      if (result?.document && result.document.customerCoverage === false) {
+        const reason = result.document.label || '문서 유형 확인 필요';
+        toast(`${reason}로 보여서 고객 보장분석에 반영하지 않았어요. 고객 보장분석 PDF를 넣어주세요.`, 'error');
+        return;
+      }
       setCoverageDocumentFileName(result?.fileName || file.name);
       const values = result?.values || {};
       setForm((prev) => ({
