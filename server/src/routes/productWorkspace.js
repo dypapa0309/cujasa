@@ -41,8 +41,12 @@ function workspaceServiceClosedInProduction(productId) {
 }
 
 function requireUser(req, res) {
-  if (!req.user || req.user.type !== 'user') {
+  if (!req.user) {
     res.status(401).json({ error: 'Unauthorized' });
+    return null;
+  }
+  if (req.user.type !== 'user') {
+    res.status(403).json({ error: 'Customer account required' });
     return null;
   }
   return req.user;
