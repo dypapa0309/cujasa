@@ -30,6 +30,19 @@ function calculateAgeFromBirthdate(birthdate) {
   return String(age);
 }
 
+function normalizeBirthdateInput(value) {
+  const raw = String(value || '').trim();
+  const digits = raw.replace(/[^0-9]/g, '');
+  if (digits.length === 8) {
+    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
+  }
+  if (digits.length === 6) {
+    const yearPrefix = Number(digits.slice(0, 2)) <= new Date().getFullYear() % 100 ? '20' : '19';
+    return `${yearPrefix}${digits.slice(0, 2)}-${digits.slice(2, 4)}-${digits.slice(4, 6)}`;
+  }
+  return raw;
+}
+
 function birthdatePasswordCandidates(birthdate = '') {
   const digits = String(birthdate || '').replace(/[^0-9]/g, '');
   return [...new Set([
@@ -5746,7 +5759,7 @@ function PolibotRecommendStepper({
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_150px_78px]">
                 <label className={labelClass}>이름<input className={inputClass} value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} placeholder="홍길동" /></label>
                 <label className={labelClass}>전화번호<input className={inputClass} value={form.phone || ''} onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))} placeholder="010-0000-0000" /></label>
-                <label className={labelClass}>생년월일<input type="date" className={inputClass} value={form.birthdate || ''} onChange={(event) => { const birthdate = event.target.value; setForm((prev) => ({ ...prev, birthdate, age: calculateAgeFromBirthdate(birthdate) || prev.age })); }} /></label>
+                <label className={labelClass}>생년월일<input type="text" inputMode="numeric" className={inputClass} value={form.birthdate || ''} onChange={(event) => { const birthdate = normalizeBirthdateInput(event.target.value); setForm((prev) => ({ ...prev, birthdate, age: calculateAgeFromBirthdate(birthdate) || prev.age })); }} placeholder="19800101 또는 800101" /></label>
                 <label className={labelClass}>나이<input type="number" min="0" className={fieldClass('나이')} value={form.age} onChange={(event) => setForm((prev) => ({ ...prev, age: event.target.value }))} placeholder="45" /></label>
                 <div className="md:col-span-2 xl:col-span-1"><DarkSelect label="성별" value={form.gender} onChange={(value) => setForm((prev) => ({ ...prev, gender: value }))} options={polibotGenderOptions} /></div>
               </div>
