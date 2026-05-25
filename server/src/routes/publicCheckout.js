@@ -12,6 +12,9 @@ import {
 } from './billing.js';
 import { applyPaidEntitlement } from '../services/billingEntitlementService.js';
 import { createRateLimit } from '../middleware/rateLimit.js';
+import { sendOpsAlert } from '../services/notificationService.js';
+import { sendSetupSms } from '../services/smsService.js';
+import { ensureSetupTaskForPayment } from '../services/setupTaskService.js';
 
 const router = Router();
 const checkoutRateLimit = createRateLimit({
@@ -27,6 +30,44 @@ const storeBaseUrl = () => String(process.env.STORE_URL || process.env.LANDING_U
   .replace(/\/$/, '');
 const normalizeEmail = (value = '') => String(value).trim().toLowerCase();
 const storePathFor = (product) => `/store/${String(product?.app_product_id || 'cujasa').trim() || 'cujasa'}`;
+const formatWon = (value) => `${Number(value || 0).toLocaleString('ko-KR')}원`;
+
+async function notifyPublicCheckout(stage, { product, payment, user, buyerName, phone, email, virtualAccount = null } = {}) {
+  const stageLabel = stage === 'paid' ? '결제 완료' : stage === 'waiting_for_deposit' ? '입금 대기' : '구매 시도';
+  const cleanName = buyerName || user?.buyer_name || user?.username || '고객';
+  const cleanPhone = phone || user?.phone || '-';
+  const cleanEmail = email || user?.email || '-';
+  const productName = product?.name || payment?.product_id || '-';
+  const amount = formatWon(payment?.amount || product?.amount);
+  const accountText = virtualAccount?.accountNumber
+    ? `가상계좌: ${virtualAccount.bankCode || virtualAccount.bank || ''} ${virtualAccount.accountNumber}`.trim()
+    : null;
+  const message = [
+    `[JASAIN Store ${stageLabel}]`,
+    `${productName} / ${amount}`,
+    `${cleanName} / ${cleanPhone}`,
+    cleanEmail,
+    payment?.order_id ? `주문 ${payment.order_id}` : null,
+    accountText
+  ].filter(Boolean).join('\n');
+  await Promise.allSettled([
+    sendSetupSms(message),
+    sendOpsAlert(`public_checkout_${stage}`, {
+      title: `Store ${stageLabel}`,
+      message: `${productName} ${amount} / ${cleanName} / ${cleanPhone}`,
+      payload: {
+        userId: user?.id,
+        paymentId: payment?.id,
+        productId: product?.id || payment?.product_id,
+        appProductId: product?.app_product_id || payment?.app_product_id,
+        orderId: payment?.order_id,
+        email: cleanEmail,
+        phone: cleanPhone,
+        stage
+      }
+    })
+  ]);
+}
 
 async function upsertBuyer({ email, password, buyerName, phone }) {
   const normalizedEmail = normalizeEmail(email);
@@ -70,6 +111,7 @@ router.post('/virtual-account', checkoutRateLimit, async (req, res, next) => {
       status: 'created',
       raw_data: { source: 'public_landing', buyerName: cleanName, phone: cleanPhone, email: cleanEmail }
     });
+    await notifyPublicCheckout('created', { product, payment, user, buyerName: cleanName, phone: cleanPhone, email: cleanEmail });
 
     res.status(201).json({
       payment: mapPayment(payment),
@@ -112,8 +154,13 @@ router.post('/toss/success', checkoutRateLimit, async (req, res, next) => {
 
     if (nextStatus === 'paid') {
       await applyPaidEntitlement({ userId: payment.user_id, product, payment: updated, paidAt: new Date(), source: 'public_toss' });
+      await ensureSetupTaskForPayment(updated, { source: 'public_toss' });
+      const user = await dbGet('users', { id: payment.user_id });
+      await notifyPublicCheckout('paid', { product, payment: updated, user, virtualAccount: approved.virtualAccount || null });
     } else {
       await dbUpdate('users', { id: payment.user_id }, { billing_status: 'pending' });
+      const user = await dbGet('users', { id: payment.user_id });
+      await notifyPublicCheckout('waiting_for_deposit', { product, payment: updated, user, virtualAccount: approved.virtualAccount || null });
     }
 
     res.json({ payment: mapPayment(updated) });

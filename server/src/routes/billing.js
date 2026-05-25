@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
 import { applyPaidEntitlement, refreshUserEntitlement } from '../services/billingEntitlementService.js';
 import { redactSensitivePayload } from '../services/redactionService.js';
+import { ensureSetupTaskForPayment } from '../services/setupTaskService.js';
 
 const router = Router();
 const BASIC_MAX_ACCOUNTS = 2;
@@ -340,6 +341,7 @@ router.post('/toss/success', async (req, res, next) => {
 
     if (nextStatus === 'paid') {
       await applyPaidEntitlement({ userId: user.userId, product, payment: updated, paidAt: new Date(), source: 'toss' });
+      await ensureSetupTaskForPayment(updated, { source: 'toss' });
     } else if ((product.app_product_id || 'cujasa') === 'cujasa') {
       await dbUpdate('users', { id: user.userId }, { billing_status: 'pending' });
     }
@@ -425,6 +427,7 @@ router.post('/billing-auth', async (req, res, next) => {
 
     if (charged.status === 'DONE') {
       await applyPaidEntitlement({ userId: user.userId, product, payment, paidAt: now, source: 'toss_billing' });
+      await ensureSetupTaskForPayment(payment, { source: 'toss_billing' });
     } else {
       await dbUpdate('users', { id: user.userId }, { billing_status: 'past_due' });
     }
@@ -476,6 +479,7 @@ router.post('/subscriptions/:id/charge', async (req, res, next) => {
     });
     if (charged.status === 'DONE') {
       await applyPaidEntitlement({ userId: user.userId, product, payment, paidAt: now, source: 'toss_billing' });
+      await ensureSetupTaskForPayment(payment, { source: 'toss_billing' });
     } else {
       await dbUpdate('users', { id: user.userId }, { billing_status: 'past_due' });
     }
@@ -500,6 +504,7 @@ export async function tossWebhook(req, res, next) {
       const product = await getProduct(payment.product_id);
       const updated = await markPaymentPaid(payment, data);
       await applyPaidEntitlement({ userId: payment.user_id, product, payment: updated, paidAt: new Date(), source: 'toss_webhook' });
+      await ensureSetupTaskForPayment(updated, { source: 'toss_webhook' });
       return res.json({ ok: true, payment: mapPayment(updated) });
     }
 

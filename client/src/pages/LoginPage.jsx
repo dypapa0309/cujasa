@@ -209,7 +209,8 @@ export default function LoginPage({ onLogin }) {
   const requestedProduct = isProductRegistrationOpen(requestedProductConfig)
     ? requestedProductConfig.id
     : fallbackProduct.id;
-  const [form, setForm] = useState({ email: '', password: '' });
+  const requestedEmail = String(params.get('email') || '').trim();
+  const [form, setForm] = useState({ email: requestedEmail, password: '' });
   const [registerForm, setRegisterForm] = useState({
     buyerName: '',
     phone: '',

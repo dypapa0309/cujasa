@@ -169,6 +169,9 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
           <div className="truncate text-xs text-gray-400 mt-0.5">{selectedProduct.name} · {displayLogin}</div>
         </div>
         <div className="flex items-center gap-2">
+          <a href="https://store.jasain.kr" className="hidden rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-bold text-gray-500 hover:border-coupang hover:text-coupang sm:inline-flex">
+            다른 자동화 보기
+          </a>
           {activeProducts.length > 1 && (
             <SearchableSelect
               value={selectedProductId}
@@ -724,9 +727,14 @@ function ProductEmptyState({ onLogout }) {
       <p className="mt-2 text-sm leading-relaxed text-gray-500">
         회원가입 또는 결제가 완료된 솔루션이 이 계정에 연결되면 이곳에서 선택해 사용할 수 있습니다.
       </p>
-      <button type="button" onClick={onLogout} className="mt-5 rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600">
-        로그아웃
-      </button>
+      <div className="mt-5 flex justify-center gap-2">
+        <a href="https://store.jasain.kr" className="rounded-xl bg-coupang px-4 py-2 text-sm font-bold text-white">
+          상품 구매하기
+        </a>
+        <button type="button" onClick={onLogout} className="rounded-xl border border-gray-200 px-4 py-2 text-sm font-bold text-gray-600">
+          로그아웃
+        </button>
+      </div>
     </div>
   );
 }

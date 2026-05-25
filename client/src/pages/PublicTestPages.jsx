@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Check } from 'lucide-react';
 import { PRODUCTS, productById } from '../config/products.js';
 import { api } from '../lib/api.js';
@@ -67,6 +67,14 @@ function copyFor(product) {
 
 function productHref(product) {
   return `/store/${product?.id || 'cujasa'}`;
+}
+
+function appLoginHref(productId = 'cujasa', email = '') {
+  const params = new URLSearchParams();
+  if (productId && productId !== 'cujasa') params.set('product', productId);
+  if (email) params.set('email', email);
+  const search = params.toString();
+  return `https://app.jasain.kr/${search ? `?${search}` : ''}#tab=beta`;
 }
 
 const purchaseCatalog = {
@@ -236,6 +244,7 @@ export function PublicTestPage2() {
           <nav className="hidden items-center gap-2 md:flex">
             <a href="#programs" className="border-2 border-[#111111] bg-[#facc15] px-3 py-2 font-mono text-xs font-black shadow-[3px_3px_0_#111111]">제품 보기</a>
             <a href="#buy" className="border-2 border-[#111111] bg-[#8dd8ff] px-3 py-2 font-mono text-xs font-black shadow-[3px_3px_0_#111111]">시작 절차</a>
+            <a href="https://app.jasain.kr" className="border-2 border-[#111111] bg-[#fffdf2] px-3 py-2 font-mono text-xs font-black shadow-[3px_3px_0_#111111]">이미 구매했어요</a>
           </nav>
         </div>
       </header>
@@ -332,6 +341,7 @@ export function ProductPurchasePage({ productId = 'cujasa' }) {
   const [selectedPlanId, setSelectedPlanId] = useState(catalog.plans[0]?.id || '');
   const [form, setForm] = useState({ buyerName: '', phone: '', email: '', password: '' });
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const selectedPlan = useMemo(
@@ -340,6 +350,45 @@ export function ProductPurchasePage({ productId = 'cujasa' }) {
   );
 
   const updateForm = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const paymentStatus = params.get('payment');
+    if (paymentStatus === 'fail') {
+      setError('결제가 완료되지 않았습니다. 다시 시도하거나 문의해주세요.');
+      return;
+    }
+    if (paymentStatus !== 'success') return;
+    const paymentKey = params.get('paymentKey');
+    const orderId = params.get('orderId');
+    const amount = params.get('amount');
+    if (!paymentKey || !orderId || !amount) {
+      setMessage('가상계좌 발급 화면에서 돌아왔습니다. 입금 후 확인되면 셋팅 절차가 진행됩니다.');
+      return;
+    }
+    let cancelled = false;
+    setConfirming(true);
+    setError('');
+    api.post('/api/public/checkout/toss/success', { paymentKey, orderId, amount })
+      .then((payload) => {
+        if (cancelled) return;
+        const status = payload?.payment?.status;
+        setMessage(status === 'paid'
+          ? '결제가 확인되었습니다. 입력한 이메일과 비밀번호로 app.jasain.kr에 로그인해 사용할 수 있습니다.'
+          : '가상계좌가 발급되었습니다. 입금 확인 후 상품 권한과 셋팅 안내가 진행됩니다.');
+      })
+      .catch((checkoutError) => {
+        if (cancelled) return;
+        setError(checkoutError.message || '결제 확인 중 문제가 발생했습니다. 문의해주세요.');
+      })
+      .finally(() => {
+        if (!cancelled) setConfirming(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const startCheckout = async (event) => {
     event.preventDefault();
@@ -376,6 +425,9 @@ export function ProductPurchasePage({ productId = 'cujasa' }) {
           </a>
           <a href="/test-page-2#programs" className="border-2 border-[#111111] bg-[#facc15] px-3 py-2 font-mono text-xs font-black shadow-[3px_3px_0_#111111]">
             다른 제품 보기
+          </a>
+          <a href={appLoginHref(product.id, form.email)} className="hidden border-2 border-[#111111] bg-[#fffdf2] px-3 py-2 font-mono text-xs font-black shadow-[3px_3px_0_#111111] sm:inline-flex">
+            이미 구매했어요
           </a>
         </div>
       </header>
@@ -437,7 +489,7 @@ export function ProductPurchasePage({ productId = 'cujasa' }) {
               <h2 className="mt-2 font-mono text-2xl font-black">{selectedPlan?.name}</h2>
               <div className="mt-1 font-mono text-xl font-black">{selectedPlan?.price}</div>
               <p className="mt-3 break-keep text-sm font-black leading-6 text-[#5f5133]">
-                구매하기를 누르면 토스페이먼츠 가상계좌 결제창으로 이동합니다. 입금 확인 후 계정 권한과 셋팅 절차가 진행됩니다.
+                구매하기를 누르면 토스페이먼츠 가상계좌 결제창으로 이동합니다. 입력한 이메일과 비밀번호가 app.jasain.kr 로그인 계정이 되고, 입금 확인 후 상품 권한과 셋팅 절차가 진행됩니다.
               </p>
 
               <form onSubmit={startCheckout} className="mt-5 grid gap-3">
@@ -458,8 +510,18 @@ export function ProductPurchasePage({ productId = 'cujasa' }) {
                   <input type="password" minLength={6} className="border-2 border-[#111111] bg-white px-3 py-2 text-sm outline-none" value={form.password} onChange={(event) => updateForm('password', event.target.value)} required />
                 </label>
                 {error && <div className="border-2 border-[#111111] bg-[#fee2e2] p-3 text-sm font-black text-[#7f1d1d]">{error}</div>}
-                {message && <div className="border-2 border-[#111111] bg-[#dcfce7] p-3 text-sm font-black text-[#14532d]">{message}</div>}
-                <button type="submit" disabled={busy} className="mt-2 inline-flex items-center justify-center gap-2 border-2 border-[#111111] bg-[#111111] px-5 py-3 font-mono text-sm font-black text-[#fffdf2] shadow-[5px_5px_0_#facc15] disabled:cursor-wait disabled:opacity-60">
+                {(message || confirming) && (
+                  <div className="grid gap-3 border-2 border-[#111111] bg-[#dcfce7] p-3 text-sm font-black text-[#14532d]">
+                    <div>{confirming ? '결제 결과를 확인하고 있습니다.' : message}</div>
+                    {!confirming && (
+                      <a href={appLoginHref(product.id, form.email)} className="inline-flex items-center justify-center gap-2 border-2 border-[#111111] bg-[#111111] px-4 py-2 font-mono text-xs font-black text-[#fffdf2] shadow-[3px_3px_0_#16a34a]">
+                        app.jasain.kr에서 로그인하기
+                        <ArrowRight size={15} />
+                      </a>
+                    )}
+                  </div>
+                )}
+                <button type="submit" disabled={busy || confirming} className="mt-2 inline-flex items-center justify-center gap-2 border-2 border-[#111111] bg-[#111111] px-5 py-3 font-mono text-sm font-black text-[#fffdf2] shadow-[5px_5px_0_#facc15] disabled:cursor-wait disabled:opacity-60">
                   {busy ? '결제창 준비 중' : '구매하기'}
                   <ArrowRight size={17} />
                 </button>
