@@ -42,6 +42,7 @@ const IMPORTED_CATALOG_SOURCE_LIMIT = Math.max(500, Number(process.env.POLIBOT_I
 const IMPORTED_PREMIUM_SOURCE_LIMIT = Math.max(500, Number(process.env.POLIBOT_IMPORTED_PREMIUM_SOURCE_LIMIT || 10000));
 const IMPORTED_DOCUMENT_SOURCE_LIMIT = Math.max(100, Number(process.env.POLIBOT_IMPORTED_DOCUMENT_SOURCE_LIMIT || 1000));
 const codeSearchCache = new Map();
+const codeSearchPendingCache = new Map();
 let importedSourceCache = null;
 let importedCatalogReadinessCache = null;
 let globalDbSourceCache = null;
@@ -1941,22 +1942,83 @@ function seedCodeSearchCandidates() {
   });
 }
 
-function codeSearchCacheKey(userId = '') {
-  return userId || 'global';
+function codeSearchCacheKey(userId = '', { includeChunks = true } = {}) {
+  return `${userId || 'global'}:${includeChunks ? 'chunks' : 'sources'}`;
 }
 
 function clearPolibotCodeSearchCache(userId = '') {
   if (!userId) {
     codeSearchCache.clear();
+    codeSearchPendingCache.clear();
     return;
   }
-  codeSearchCache.delete(codeSearchCacheKey(userId));
+  [true, false].forEach((includeChunks) => {
+    const key = codeSearchCacheKey(userId, { includeChunks });
+    codeSearchCache.delete(key);
+    codeSearchPendingCache.delete(key);
+  });
 }
 
-async function loadPolibotCodeSearchCandidates(userId = '') {
-  const key = codeSearchCacheKey(userId);
+async function loadPolibotCodeSearchCandidates(userId = '', { includeChunks = true } = {}) {
+  const key = codeSearchCacheKey(userId, { includeChunks });
   const cached = codeSearchCache.get(key);
   if (cached && Date.now() - cached.createdAt < CODE_SEARCH_CACHE_TTL_MS) return cached.value;
+  const pending = codeSearchPendingCache.get(key);
+  if (pending) return pending;
+  const promise = loadPolibotCodeSearchCandidatesFresh(userId, { key, includeChunks });
+  codeSearchPendingCache.set(key, promise);
+  try {
+    return await promise;
+  } finally {
+    codeSearchPendingCache.delete(key);
+  }
+}
+
+function sourceCodeSearchCandidates(source = {}) {
+  const normalizedSource = {
+    ...source,
+    fileName: source.fileName || source.file_name || '',
+    file_name: source.fileName || source.file_name || '',
+    textSnippet: source.textSnippet || source.text_snippet || '',
+    redactedSnippet: source.redactedSnippet || source.redacted_snippet || '',
+    evidenceQualityScore: source.evidenceQualityScore || source.metadata?.evidenceQualityScore || 0
+  };
+  const dbSource = {
+    ...source,
+    id: source.dbSourceId || source.id || '',
+    file_name: normalizedSource.fileName,
+    normalized_source: normalizedSource,
+    companies: source.companies || [],
+    company: source.company || '',
+    month: source.month || '',
+    status: source.knowledgeStatus || source.status || 'review_needed',
+    scope: source.scope || 'global',
+    metadata: { evidenceQualityScore: normalizedSource.evidenceQualityScore || 0 }
+  };
+  const catalog = Array.isArray(source.catalogItems) && source.catalogItems[0] ? {
+    id: source.catalogItems[0].id || '',
+    company: source.catalogItems[0].company || source.company || '',
+    coverage_keywords: source.catalogItems[0].coverageKeywords || source.catalogItems[0].coverage_keywords || source.keywords || [],
+    confidence_score: source.catalogItems[0].confidenceScore || source.catalogItems[0].confidence_score || 60,
+    effective_month: source.catalogItems[0].effectiveMonth || source.catalogItems[0].effective_month || source.month || '',
+    status: source.catalogItems[0].status || source.knowledgeStatus || source.status || 'review_needed',
+    scope: source.scope || 'global'
+  } : null;
+  return (Array.isArray(source.codeCandidates) ? source.codeCandidates : [])
+    .map((item) => normalizeCodeCandidate({ item, source: dbSource, catalog }))
+    .filter((candidate) => candidate.code);
+}
+
+async function loadPolibotCodeSearchCandidatesFresh(userId = '', { key = codeSearchCacheKey(userId), includeChunks = true } = {}) {
+  if (!includeChunks) {
+    const sources = await listPolibotDbKnowledgeSources(userId).catch(() => []);
+    const value = [
+      ...sources.flatMap(sourceCodeSearchCandidates),
+      ...seedCodeSearchCandidates()
+    ].filter((candidate) => candidate.code);
+    codeSearchCache.set(key, { createdAt: Date.now(), value });
+    return value;
+  }
   const [globalSources, userSources, globalChunks, userChunks, globalCatalog, userCatalog] = await Promise.all([
     dbList('polibot_knowledge_sources', { scope: 'global' }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []),
     userId ? dbList('polibot_knowledge_sources', { scope: 'user', user_id: userId }, { order: 'created_at', ascending: false, limit: 1000 }).catch(() => []) : [],
@@ -2000,9 +2062,9 @@ async function loadPolibotCodeSearchCandidates(userId = '') {
   return value;
 }
 
-export async function searchPolibotCodeCandidates(userId = '', { query = '', company = '', coverage = '', limit = 30 } = {}) {
+export async function searchPolibotCodeCandidates(userId = '', { query = '', company = '', coverage = '', limit = 30, includeChunks = true } = {}) {
   const selectedLimit = Math.max(1, Math.min(Number(limit || 30), 80));
-  const candidates = await loadPolibotCodeSearchCandidates(userId);
+  const candidates = await loadPolibotCodeSearchCandidates(userId, { includeChunks });
   return candidates
     .filter((candidate) => candidateMatchesSearch(candidate, { query, company, coverage }))
     .map((candidate) => ({
@@ -2346,6 +2408,7 @@ export async function updatePolibotCatalogItemReview(id, { status, reviewNote = 
       review_status: reviewStatus
     });
     importedSourceCache = null;
+    clearPolibotCodeSearchCache();
     importedCatalogReadinessCache = null;
     clearPolibotDbSourceCache();
     if (!updated) {

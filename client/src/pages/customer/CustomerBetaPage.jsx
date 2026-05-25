@@ -5266,7 +5266,6 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
         ].filter(Boolean).join('\n')
       }, { timeoutMs: 120000 });
       setWorkspace(next);
-      await reloadCurrentUser?.();
       setSelectedRecommendation(null);
       if (useStepperRecommendationFlow) setTestStep(3);
       const hasNextRecommendations = Array.isArray(next?.recommendations) && next.recommendations.length > 0;
@@ -5274,6 +5273,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
         hasNextRecommendations ? '추천 초안을 만들었어요.' : '추천 보류 조건을 확인해 주세요.',
         hasNextRecommendations ? 'success' : 'info'
       );
+      Promise.resolve(reloadCurrentUser?.()).catch(() => {});
     } catch (err) {
       toast(err.message || '추천 생성에 실패했어요.', 'error');
     } finally {
@@ -5661,7 +5661,10 @@ function PolibotRecommendStepper({
   const filterCodes = [...actualCodes, ...(workspace.matchedCoverageCodes || []), ...managerCodes, ...collectPolibotCodes(workspace, workspace.consultationDraft, form.disclosureDetails, form.medicalHistory)];
   const filterCodeGroups = groupPolibotCodes(filterCodes, workspace);
   const recommendationCodes = collectPolibotCodes(workspace.actualCodes, workspace.matchedCoverageCodes, workspace.managerCodes, workspace, recommendations);
-  const recommendationCodeGroups = groupPolibotCodes(recommendationCodes, workspace);
+  const recommendationCodeGroups = groupPolibotCodes(
+    recommendationCodes.map((item) => (/^\d/.test(displayValue(item.code)) ? { ...item, tone: 'applied' } : item)),
+    workspace
+  );
   const stepBadge = (stepId) => {
     if (stepId === 1 && !profileReady) return '입력';
     if (stepId === 2 && hardMissingLabels.length) return `필수 ${hardMissingLabels.length}`;
@@ -6159,9 +6162,10 @@ function collectPolibotCodes(...sources) {
     if (!value) return;
     if (typeof value === 'string' || typeof value === 'number') {
       const text = String(value);
-      text.match(dottedCodePattern)?.forEach((code) => pushCode(code, '', source, inheritedTone || inferTone(value)));
-      [...text.matchAll(kcdCodePattern)].forEach((match) => pushCode(match[1], '상병/KCD 코드', source, inheritedTone || inferTone(value)));
-      [...text.matchAll(labeledCodePattern)].forEach((match) => pushCode(match[1], text.slice(Math.max(0, match.index - 20), (match.index || 0) + 60), source, inheritedTone || inferTone(value)));
+      const tone = inheritedTone || 'applied';
+      text.match(dottedCodePattern)?.forEach((code) => pushCode(code, '', source, tone));
+      [...text.matchAll(kcdCodePattern)].forEach((match) => pushCode(match[1], '상병/KCD 코드', source, tone));
+      [...text.matchAll(labeledCodePattern)].forEach((match) => pushCode(match[1], text.slice(Math.max(0, match.index - 20), (match.index || 0) + 60), source, tone));
       return;
     }
     if (Array.isArray(value)) {
@@ -6376,13 +6380,21 @@ function buildPolibotManagerCodeRecommendations(form = {}) {
 function groupPolibotCodes(codes = [], context = {}) {
   const groups = { applied: [], review: [], excluded: [] };
   const contextText = displayValue(context?.recommendationNotice || context?.status || context?.summary || '');
+  const explicitTone = (item = {}) => {
+    const raw = displayValue(item.tone || item.result || item.status).toLowerCase();
+    if (/^(applied|apply|selected|matched|recommended|included)$/.test(raw) || /적용|추천|매칭|선택/.test(raw)) return 'applied';
+    if (/^(excluded|exclude|blocked|rejected)$/.test(raw) || /제외|불가|거절|탈락/.test(raw)) return 'excluded';
+    if (/^(review|caution|hold|manual_required)$/.test(raw) || /확인|검토|주의|보류/.test(raw)) return 'review';
+    return '';
+  };
   (Array.isArray(codes) ? codes : []).forEach((item) => {
-    const text = `${displayValue(item.tone)} ${displayValue(item.label)} ${displayValue(item.source)} ${contextText}`;
-    const key = /제외|불가|거절|탈락|exclude|block/i.test(text)
+    const explicit = explicitTone(item);
+    const text = `${explicit ? displayValue(item.tone || item.result || item.status) : ''} ${displayValue(item.label)} ${displayValue(item.source)} ${contextText}`;
+    const key = explicit || (/제외|불가|거절|탈락|exclude|block/i.test(text)
       ? 'excluded'
       : /확인|검토|주의|보류|필요|review|caution/i.test(text)
         ? 'review'
-        : 'applied';
+        : 'applied');
     if (!groups[key].some((row) => row.code === item.code)) groups[key].push(item);
   });
   return groups;

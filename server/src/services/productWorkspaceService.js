@@ -2471,7 +2471,7 @@ async function buildPolibotMatchedCoverageCodes(userId = '', profile = {}) {
   const queries = polibotCoverageCodeQueries(profile);
   if (!queries.length) return [];
   const batches = await Promise.all(queries.map(async (query) => {
-    const rows = await searchPolibotCodeCandidates(userId, { query, limit: 16 }).catch(() => []);
+    const rows = await searchPolibotCodeCandidates(userId, { query, limit: 16, includeChunks: false }).catch(() => []);
     return rows.map((row) => compactPolibotMatchedCoverageCode(row, query));
   }));
   const selected = [];
@@ -5924,12 +5924,13 @@ export async function savePolibotRecommendation(userId, {
     purpose: POLIBOT_PURPOSES.includes(String(purpose || '').trim()) ? String(purpose || '').trim() : String(purpose || '').trim()
   };
   const premiumPlan = buildPolibotPremiumPlan(profile);
+  const timing = createPolibotTimingLogger('polibot_recommend_timing');
   profile.targetPremium = premiumPlan.targetPremium;
   profile.currentPremium = premiumPlan.currentPremium;
   profile.additionalBudgetMemo = premiumPlan.additionalBudgetMemo;
   profile.managerCodes = buildPolibotManagerCodeRecommendations(profile);
   profile.actualCodes = buildPolibotActualCodes(profile);
-  profile.matchedCoverageCodes = await buildPolibotMatchedCoverageCodes(userId, profile);
+  timing.mark('actual_codes');
   const hardMissing = [
     !profile.age && '나이',
     profile.needs.length === 0 && '필요 보장',
@@ -5958,7 +5959,6 @@ export async function savePolibotRecommendation(userId, {
     !profile.analysisResult.remodelList && '추천 방향'
   ].filter(Boolean);
   if (hardMissing.length > 0) {
-    const timing = createPolibotTimingLogger('polibot_recommend_timing');
     const qualityReport = buildPolibotQualityReport([], {});
     const consultationDraft = buildPolibotConsultationDraft(profile, qualityReport);
     const recommendationNotice = `추천 전에 ${(hardMissing.length ? hardMissing : missingForRecommendation).slice(0, 4).join(', ')} 정보를 먼저 확인해 주세요. 고객 조건이 부족해서 사용 횟수는 차감하지 않았어요.`;
@@ -5988,7 +5988,6 @@ export async function savePolibotRecommendation(userId, {
       usage: normalizeUsage({}, 'polibot')
     };
   }
-  const timing = createPolibotTimingLogger('polibot_recommend_timing');
   const seed = hashText(JSON.stringify(profile));
   const {
     workspace,
@@ -5996,6 +5995,8 @@ export async function savePolibotRecommendation(userId, {
     catalogReviews,
     qualityReport
   } = await getPolibotRecommendationContext(userId, timing);
+  profile.matchedCoverageCodes = await buildPolibotMatchedCoverageCodes(userId, profile);
+  timing.mark('matched_coverage_codes');
   const recommendationKnowledgeSources = knowledgeSources.filter(isPolibotRecommendationEligibleSource);
   const consultationDraft = buildPolibotConsultationDraft(profile, qualityReport);
   timing.mark('consultation');
