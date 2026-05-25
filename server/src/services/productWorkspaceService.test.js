@@ -628,7 +628,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     needs: ['암', '뇌', '심장', '유병자'],
     budget: '12',
     existingMedicalPlan: '있음',
-    medicalHistory: '당뇨 진단 후 약 복용 중',
+    medicalHistory: '당뇨 진단 후 약 복용 중. E14 당뇨, I10 고혈압. 간편 3.10.10 검토',
     existingPremium: '18',
     purpose: '보험료 절감'
   });
@@ -638,8 +638,13 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.ok(recommendation.decisionAnalysis);
   assert.ok((workspace.managerCodes || []).some((item) => item.code === 'UW-INTERNAL-MED'));
   assert.ok((workspace.managerCodes || []).some((item) => item.code === 'MEDPLAN-DUP'));
+  assert.ok((workspace.actualCodes || []).some((item) => item.code === 'E14'));
+  assert.ok((workspace.actualCodes || []).some((item) => item.code === 'I10'));
+  assert.ok((workspace.actualCodes || []).some((item) => item.code === '3.10.10'));
   assert.ok((recommendation.managerCodes || []).some((item) => item.code === 'ROUTE-SIMPLE-COMPARE'));
+  assert.ok((recommendation.actualCodes || []).some((item) => item.code === 'E14'));
   assert.ok((workspace.consultationDraft?.managerCodes || []).some((item) => item.code === 'UW-INTERNAL-MED'));
+  assert.ok((workspace.consultationDraft?.actualCodes || []).some((item) => item.code === 'I10'));
   assert.equal(recommendation.decisionAnalysis.medicalRisk.level, 'review');
   assert.ok(recommendation.decisionAnalysis.underwritingRoute.some((item) => item.type === 'simple' || item.type === 'chronic_special'));
   assert.ok((recommendation.decisionAnalysis.itemDiagnostics || []).some((item) => item.decisionBreakdown?.underwriting?.status === 'simple_fit'));
