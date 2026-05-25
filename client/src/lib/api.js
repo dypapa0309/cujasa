@@ -107,7 +107,7 @@ async function request(path, options = {}) {
       error.cause = fetchError;
       throw error;
     }
-    if (res.status === 401) {
+    if (res.status === 401 && token && getAuthToken() === token) {
       setAuthToken('');
       emitAuthExpired();
     }
