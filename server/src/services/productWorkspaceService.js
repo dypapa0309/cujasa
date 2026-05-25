@@ -3180,6 +3180,162 @@ function polibotCompanyOutlook(catalogItems = [], profile = {}, underwritingRout
   }).sort((a, b) => b.fitScore - a.fitScore);
 }
 
+function polibotCoverageCodeCategory(item = {}) {
+  const valueText = [
+    item.connectedValue,
+    item.label
+  ].filter(Boolean).join(' ');
+  const primaryText = [
+    valueText,
+    ...(Array.isArray(item.coverageKeywords) ? item.coverageKeywords : [])
+  ].filter(Boolean).join(' ');
+  const text = [
+    item.code,
+    primaryText,
+    item.query
+  ].filter(Boolean).join(' ');
+  const primaryRules = [
+    [/납입면제|면제/, '납입면제'],
+    [/순환계|심장|허혈|급성심근|협심증/, '심장'],
+    [/뇌|뇌혈관|뇌졸중|뇌출혈/, '뇌혈관'],
+    [/수술|질병수술|종수술/, '수술비'],
+    [/입원|통원|일당/, '입원/통원'],
+    [/유사암|소액암|갑상선|제자리|경계성|기타피부암/, '유사암/소액암'],
+    [/암|항암|표적|방사선|카티|CAR|진단비/, '암'],
+    [/간병|치매|요양|장기요양/, '간병/치매'],
+    [/간편|유병|고지|3\.2\.5|3\.5\.5|3\.10\.10|325|335|355/, '간편고지'],
+    [/운전자|벌금|변호사|교통|사고처리/, '운전자'],
+    [/상해|골절|화상|후유장해|장해/, '상해']
+  ];
+  for (const [pattern, category] of primaryRules) {
+    if (pattern.test(valueText)) return category;
+  }
+  for (const [pattern, category] of primaryRules) {
+    if (pattern.test(primaryText)) return category;
+  }
+  for (const [pattern, category] of primaryRules) {
+    if (pattern.test(text)) return category;
+  }
+  return '기타 보장';
+}
+
+function polibotManagerRouteLabel(underwritingRoute = [], medicalRisk = {}, profile = {}) {
+  const primaryRoute = underwritingRoute[0] || {};
+  const routeType = primaryRoute.type || '';
+  const medical = `${profile.medicalHistory || ''} ${profile.familyHistory || ''}`;
+  if (routeType === 'standard') {
+    return {
+      route: '표준형 우선',
+      routeReason: primaryRoute.reason || '병력 이슈가 낮아 표준형 보험료를 먼저 산출합니다.'
+    };
+  }
+  if (routeType === 'chronic_special') {
+    return {
+      route: '표준형 우선 + 조건부/간편 비교',
+      routeReason: primaryRoute.reason || '만성질환 이력이 있어 표준형과 간편심사를 같이 비교합니다.'
+    };
+  }
+  if (routeType === 'simple') {
+    return {
+      route: '간편심사 우선',
+      routeReason: primaryRoute.reason || '최근 치료/투약 또는 주요 병력 가능성이 있어 간편심사 통과 가능성을 먼저 봅니다.'
+    };
+  }
+  if (routeType === 'conditional') {
+    return {
+      route: '조건부 인수 검토',
+      routeReason: primaryRoute.reason || '부담보, 할증, 감액 조건을 확인해야 합니다.'
+    };
+  }
+  if (medicalRisk.level === 'review' || /고혈압|당뇨|투약|입원|수술|암|뇌|심장|3\.10\.10|3\.5\.5|3\.2\.5/i.test(medical)) {
+    return {
+      route: '표준형/간편 동시 비교',
+      routeReason: '병력 또는 고지 코드가 있어 표준형 보험료와 간편심사 통과 가능성을 동시에 비교합니다.'
+    };
+  }
+  return {
+    route: '표준 가능',
+    routeReason: primaryRoute.reason || '입력 정보상 표준심사 가능성을 먼저 확인합니다.'
+  };
+}
+
+function buildPolibotDesignManagerSummary({
+  profile = {},
+  decisionAnalysis = {},
+  managerCodes = [],
+  actualCodes = [],
+  matchedCoverageCodes = [],
+  catalogItems = []
+} = {}) {
+  const medicalRisk = decisionAnalysis.medicalRisk || polibotMedicalRisk(profile);
+  const underwritingRoute = decisionAnalysis.underwritingRoute || polibotUnderwritingRoute(profile, catalogItems);
+  const coveragePriority = decisionAnalysis.coveragePriority || polibotCoveragePriority(profile);
+  const priceStrategy = decisionAnalysis.priceStrategy || polibotPriceStrategy(profile);
+  const route = polibotManagerRouteLabel(underwritingRoute, medicalRisk, profile);
+  const seenCode = new Set();
+  const recommendedCodes = matchedCoverageCodes
+    .map((item) => {
+      const category = polibotCoverageCodeCategory(item);
+      return {
+        code: String(item.code || '').trim(),
+        connectedValue: item.connectedValue || item.label || '보장 코드',
+        category,
+        company: item.company || (item.companies || [])[0] || '',
+        priority: ['암', '유사암/소액암', '뇌혈관', '심장', '수술비', '납입면제', '간편고지'].includes(category) ? '우선 검토' : '보완 검토',
+        source: item.source || 'polidoc',
+        confidence: item.confidence || ''
+      };
+    })
+    .filter((item) => item.code && !seenCode.has(item.code) && seenCode.add(item.code))
+    .slice(0, 12);
+  const codeCategories = [...new Set(recommendedCodes.map((item) => item.category).filter(Boolean))];
+  const priorityCoverage = [
+    ...coveragePriority
+      .filter((item) => item.priority === '높음' || item.priority === '심사 전략' || item.priority === '중복 확인')
+      .map((item) => ({
+        label: item.need,
+        priority: item.priority,
+        reason: item.reason
+      })),
+    ...codeCategories.slice(0, 6).map((category) => ({
+      label: category,
+      priority: ['암', '뇌혈관', '심장', '수술비', '납입면제'].includes(category) ? '높음' : '보완',
+      reason: 'polidoc 보장코드에서 연결된 담보군입니다.'
+    }))
+  ].filter((item, index, list) => item.label && list.findIndex((other) => other.label === item.label) === index).slice(0, 8);
+  const riskFlags = [
+    medicalRisk.label && medicalRisk.level !== 'low' && medicalRisk.label,
+    ...(medicalRisk.flags || []).map((item) => `${item.label}: ${item.question || item.risk || '확인 필요'}`),
+    ...managerCodes.filter((item) => item.status !== 'applied').map((item) => `${item.code} · ${item.reason || item.label}`),
+    ...actualCodes.slice(0, 6).map((item) => `${item.code}${item.label ? ` · ${item.label}` : ''}`)
+  ].filter(Boolean).slice(0, 10);
+  const sellerQuestions = [
+    medicalRisk.level !== 'low' && '표준형 심사 가능성과 간편심사 보험료를 둘 다 산출했나요?',
+    actualCodes.some((item) => /3\.10\.10|3\.5\.5|3\.2\.5/.test(item.code || '')) && '간편고지 질문의 기간 조건에 실제로 해당하는지 재확인했나요?',
+    actualCodes.some((item) => /I10|E1[0-4]/.test(item.code || '')) && '고혈압/당뇨 투약 기간, 최근 수치, 합병증 여부를 확인했나요?',
+    priorityCoverage.some((item) => /암|뇌|심장/.test(item.label)) && '암/뇌/심장 진단비 목표 금액과 기존 가입금액 차이를 확인했나요?',
+    recommendedCodes.length > 0 && `추천 보장코드 ${recommendedCodes.slice(0, 4).map((item) => item.code).join(', ')}가 실제 설계 특약에 반영됐나요?`,
+    priceStrategy.mode === 'save' && '절감 목표를 맞추기 위해 줄이면 안 되는 담보를 분리했나요?',
+    priceStrategy.mode === 'upgrade' && '월 보험료 상한 안에서 핵심 진단비를 먼저 두껍게 구성했나요?',
+    '최종 청약 전 고지사항 원문과 설계서 특약명을 대조했나요?'
+  ].filter(Boolean).slice(0, 8);
+  const nextAction = (() => {
+    if (/간편심사 우선/.test(route.route)) return '간편심사 1안 산출 후 표준형 가능 여부를 보조 확인';
+    if (/동시 비교|조건부\/간편/.test(route.route)) return '표준형 1안과 간편심사 1안을 동시에 산출해 보험료/보장 차이 비교';
+    if (/표준형 우선|표준 가능/.test(route.route)) return '표준형 1안을 먼저 산출하고 고지 결과에 따라 간편심사 대안 준비';
+    return '고지 조건과 기존 보장을 보강한 뒤 추천안 재산출';
+  })();
+  return {
+    route: route.route,
+    routeReason: route.routeReason,
+    nextAction,
+    priorityCoverage,
+    recommendedCodes,
+    riskFlags,
+    sellerQuestions
+  };
+}
+
 function buildPolibotDecisionAnalysis({ profile = {}, catalogItems = [], premiumCatalogItems = catalogItems, premiumReferences = [], keywordText = '', name = '' } = {}) {
   const medicalRisk = polibotMedicalRisk(profile);
   const priceStrategy = polibotPriceStrategy(profile);
@@ -3257,6 +3413,19 @@ function buildPolibotDecisionAnalysis({ profile = {}, catalogItems = [], premium
   const managerCodes = Array.isArray(profile.managerCodes) ? profile.managerCodes : buildPolibotManagerCodeRecommendations(profile);
   const actualCodes = Array.isArray(profile.actualCodes) ? profile.actualCodes : buildPolibotActualCodes(profile);
   const matchedCoverageCodes = Array.isArray(profile.matchedCoverageCodes) ? profile.matchedCoverageCodes : [];
+  const designManagerSummary = buildPolibotDesignManagerSummary({
+    profile,
+    decisionAnalysis: {
+      medicalRisk,
+      underwritingRoute,
+      coveragePriority,
+      priceStrategy
+    },
+    managerCodes,
+    actualCodes,
+    matchedCoverageCodes,
+    catalogItems
+  });
   return {
     eligibilityLevel,
     decisionScore,
@@ -3264,6 +3433,7 @@ function buildPolibotDecisionAnalysis({ profile = {}, catalogItems = [], premium
     managerCodes,
     actualCodes,
     matchedCoverageCodes,
+    designManagerSummary,
     disclosureTimeline,
     underwritingRoute,
     priceStrategy,
@@ -5300,6 +5470,12 @@ function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
   const managerCodes = Array.isArray(profile.managerCodes) ? profile.managerCodes : buildPolibotManagerCodeRecommendations(profile);
   const actualCodes = Array.isArray(profile.actualCodes) ? profile.actualCodes : buildPolibotActualCodes(profile);
   const matchedCoverageCodes = Array.isArray(profile.matchedCoverageCodes) ? profile.matchedCoverageCodes : [];
+  const designManagerSummary = buildPolibotDesignManagerSummary({
+    profile: { ...profile, managerCodes, actualCodes, matchedCoverageCodes },
+    managerCodes,
+    actualCodes,
+    matchedCoverageCodes
+  });
   const missing = [];
   if (!profile.age) missing.push('나이');
   if (!profile.gender) missing.push('성별');
@@ -5363,6 +5539,7 @@ function buildPolibotConsultationDraft(profile = {}, qualityReport = {}) {
     managerCodes,
     actualCodes,
     matchedCoverageCodes,
+    designManagerSummary,
     missing,
     completeness,
     nextQuestions,
@@ -5631,6 +5808,14 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     selectedPremium,
     catalogItems
   });
+  const designManagerSummary = decisionAnalysis.designManagerSummary || buildPolibotDesignManagerSummary({
+    profile,
+    decisionAnalysis,
+    managerCodes,
+    actualCodes,
+    matchedCoverageCodes,
+    catalogItems
+  });
   const decisionScoreValue = Number(decisionAnalysis.decisionScore?.score || 0);
   const integrityScoreValue = Number(evidenceIntegrity.score || 0);
   const purposeScoreValue = Number(decisionAnalysis.purposeAnalysis?.score || 0);
@@ -5659,6 +5844,7 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     advisorExplanation,
     coverageGap: gapText ? `${gapText} 공백 점검` : '보장 공백 확인',
     decisionAnalysis,
+    designManagerSummary,
     premium: premiumMemo,
     targetPremium: premiumPlan.targetPremium,
     currentPremium: premiumPlan.currentPremium,

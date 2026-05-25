@@ -6585,6 +6585,7 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
   const [feedbackMemo, setFeedbackMemo] = useState(recommendation.feedbackMemo || '');
   const [savingFeedback, setSavingFeedback] = useState(false);
   const analysis = recommendation.decisionAnalysis || {};
+  const designManagerSummary = recommendation.designManagerSummary || analysis.designManagerSummary || {};
   const reviewSummary = recommendation.reviewSummary || {};
   const reviewReasons = recommendation.reviewReasons || [...(reviewSummary.blockers || []), ...(reviewSummary.reasons || [])];
   const routineChecks = recommendation.routineChecks || reviewSummary.routineChecks || [];
@@ -6643,6 +6644,7 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
             <AccountInfoRow label="근거 정확도" value={analysis.evidenceIntegrity ? `${analysis.evidenceIntegrity.level} · ${analysis.evidenceIntegrity.score}점 · ${analysis.evidenceIntegrity.reason}` : '-'} />
             <AccountInfoRow label="목적 적합도" value={analysis.purposeAnalysis ? `${analysis.purposeAnalysis.level} · ${analysis.purposeAnalysis.score}점 · ${analysis.purposeAnalysis.label}` : '-'} />
             <AccountInfoRow label="가격 전략" value={analysis.priceStrategy?.label || recommendation.additionalBudgetMemo || '-'} />
+            <AccountInfoRow label="설계매니저 판단" value={[designManagerSummary.route, designManagerSummary.nextAction].filter(Boolean).join(' · ') || '-'} />
             <AccountInfoRow label="보완 포인트" value={recommendation.coverageGap || '-'} />
             <AccountInfoRow label="추천 보장코드" value={(recommendation.matchedCoverageCodes || []).slice(0, 12).map((item) => `${item.code}${item.connectedValue || item.label ? ` ${item.connectedValue || item.label}` : ''}`).join(', ') || '-'} />
             <AccountInfoRow label="보험료 메모" value={[recommendation.premium, recommendation.premiumConfidence === 'reference' ? '참고값' : ''].filter(Boolean).join(' · ') || '-'} />
@@ -6670,6 +6672,20 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
                   <div className="rounded-2xl bg-black/25 px-4 py-3">
                     <div className="text-[11px] font-black text-zinc-600">polidoc 추천 보장코드</div>
                     <SimpleInfoList items={(recommendation.matchedCoverageCodes || []).slice(0, 12).map((item) => `${item.code} · ${item.connectedValue || item.label || '보장 코드'} · ${item.company || (item.companies || [])[0] || '보험사 확인'} · ${item.source || 'polidoc'}${item.confidence ? ` · ${item.confidence}점` : ''}`)} />
+                  </div>
+                )}
+                {(designManagerSummary.route || (designManagerSummary.recommendedCodes || []).length > 0) && (
+                  <div className="rounded-2xl bg-black/25 px-4 py-3">
+                    <div className="text-[11px] font-black text-zinc-600">설계매니저 판단</div>
+                    <SimpleInfoList items={[
+                      designManagerSummary.route && `심사 경로 · ${designManagerSummary.route}`,
+                      designManagerSummary.routeReason && `경로 근거 · ${designManagerSummary.routeReason}`,
+                      designManagerSummary.nextAction && `다음 작업 · ${designManagerSummary.nextAction}`,
+                      ...(designManagerSummary.priorityCoverage || []).map((item) => `우선 보장 · ${item.label} · ${item.priority} · ${item.reason}`),
+                      ...(designManagerSummary.recommendedCodes || []).slice(0, 8).map((item) => `추천 코드 · ${item.code} · ${item.connectedValue || '보장 코드'} · ${item.category || '분류 확인'} · ${item.priority || '검토'}`),
+                      ...(designManagerSummary.riskFlags || []).slice(0, 6).map((item) => `리스크 확인 · ${item}`),
+                      ...(designManagerSummary.sellerQuestions || []).slice(0, 6).map((item) => `설계사 확인 · ${item}`)
+                    ].filter(Boolean)} />
                   </div>
                 )}
                 {analysis.evidenceIntegrity && (
