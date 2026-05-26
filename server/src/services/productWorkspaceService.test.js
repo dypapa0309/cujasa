@@ -683,9 +683,9 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     purpose: '보장 강화'
   });
   assert.ok((chronicWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'));
-  assert.ok((chronicWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation'));
+  assert.ok((chronicWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation' && item.status === 'needs_review'));
   assert.ok((chronicWorkspace.designManagerReview?.codeAssessments || []).some((item) => item.code === '3.6.5' && item.status === 'recommended'));
-  assert.ok((chronicWorkspace.designManagerReview?.codeAssessments || []).some((item) => item.code === '3.10.5' && /10년 자료/.test(item.nextCheck || '')));
+  assert.ok((chronicWorkspace.designManagerReview?.codeAssessments || []).some((item) => item.code === '3.10.5' && item.status === 'needs_review' && (item.reviewReasonCodes || []).includes('long_lookback_unconfirmed')));
   assert.ok((chronicWorkspace.matchedCoverageCodes || []).some((item) => item.kind === 'manager_code_candidate'));
   assert.ok((chronicWorkspace.designManagerReview?.recommendedCodes || []).some((item) => /^3\./.test(item.code || '')));
 
@@ -716,7 +716,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     purpose: '보장 강화'
   });
   assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === 'I47' && item.kind === 'KCD'));
-  assert.ok((arrhythmiaWorkspace.designManagerReview?.codeAssessments || []).some((item) => item.code === '3.10.10' && item.status === 'recommended'));
+  assert.ok((arrhythmiaWorkspace.designManagerReview?.codeAssessments || []).some((item) => item.code === '3.10.10' && item.status === 'needs_review' && (item.reviewReasonCodes || []).includes('long_lookback_unconfirmed')));
   assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'));
   assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation'));
 

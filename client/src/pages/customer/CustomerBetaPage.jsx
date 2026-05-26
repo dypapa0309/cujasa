@@ -6662,6 +6662,7 @@ function PolibotDisclosureAssessmentList({ assessments = [], compact = false }) 
                 <span className="text-[10px] font-black opacity-70">{item.confidence ? `${item.confidence}점` : ''}</span>
               </div>
               <div className="mt-1 text-[11px] font-bold leading-relaxed opacity-80">{item.label || item.reason}</div>
+              {!compact && Array.isArray(item.blockers) && item.blockers.length > 0 && <div className="mt-1 text-[11px] font-black leading-relaxed opacity-80">보류: {item.blockers.slice(0, 2).join(' · ')}</div>}
               {!compact && item.nextCheck && <div className="mt-1 text-[11px] font-bold leading-relaxed opacity-70">확인: {item.nextCheck}</div>}
               {evidence.length > 0 && (
                 <div className="mt-2 flex min-w-0 gap-1.5 overflow-x-auto">

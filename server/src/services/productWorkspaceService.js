@@ -2436,6 +2436,7 @@ const POLIBOT_DISCLOSURE_RULES = [
     label: '10년/5년형 경증 유병자',
     category: '간편고지',
     priority: 84,
+    strictLookback: true,
     when: ({ events, diseaseSignals, hasLightIssue, hasLongLookbackEvidence }) => (
       diseaseSignals.hypertension
       || diseaseSignals.diabetes
@@ -2450,6 +2451,7 @@ const POLIBOT_DISCLOSURE_RULES = [
     label: '당뇨 추가고지형',
     category: '간편고지',
     priority: 83,
+    strictLookback: true,
     when: ({ diseaseSignals }) => diseaseSignals.diabetes,
     reason: '당뇨 진단/투약 단서가 있어 당뇨 추가고지형을 별도 비교합니다.',
     nextCheck: '합병증, 인슐린, 최근 HbA1c/혈당 수치와 입원 이력을 확인하세요.'
@@ -2459,6 +2461,7 @@ const POLIBOT_DISCLOSURE_RULES = [
     label: '10년형 중증/수술 이력 간편고지',
     category: '간편고지',
     priority: 90,
+    strictLookback: true,
     when: ({ events, diseaseSignals }) => (
       events.hasMajorDisease
       || events.hasAdmissionSurgery
@@ -2473,6 +2476,20 @@ const POLIBOT_DISCLOSURE_RULES = [
   }
 ];
 
+function polibotDisclosureRuleReviews(context = {}, rule = {}, requiredMonths = 0) {
+  const reviews = [];
+  const windowReview = polibotDisclosureWindowReview(context.events, requiredMonths);
+  if (windowReview) reviews.push(windowReview);
+  if (rule.strictLookback && requiredMonths >= 120 && !context.hasLongLookbackEvidence) {
+    reviews.push({
+      status: 'needs_review',
+      reasonCode: 'long_lookback_unconfirmed',
+      reason: '10년형 고지 코드는 현재 입력 자료만으로 확정하지 않고, 10년 내 진단·입원·수술·계속치료·투약 문진을 별도 확인해야 합니다.'
+    });
+  }
+  return reviews.filter((review, index, list) => review?.reasonCode && list.findIndex((row) => row.reasonCode === review.reasonCode) === index);
+}
+
 function buildPolibotDisclosureCodeAssessments(profile = {}) {
   const context = polibotDisclosureRuleContext(profile);
   const profileRecent3Review = polibotDisclosureRecent3MonthReview(profile, context.events);
@@ -2480,8 +2497,7 @@ function buildPolibotDisclosureCodeAssessments(profile = {}) {
     .map((rule) => {
       if (!rule.when(context)) return null;
       const requiredMonths = polibotDisclosureCodeRequiredMonths(rule.code);
-      const windowReview = polibotDisclosureWindowReview(context.events, requiredMonths);
-      const reviews = [profileRecent3Review, windowReview].filter(Boolean);
+      const reviews = [profileRecent3Review, ...polibotDisclosureRuleReviews(context, rule, requiredMonths)].filter(Boolean);
       const blockers = reviews.map((review) => review.reason).filter(Boolean);
       const score = Math.max(35, Math.min(100, Number(rule.priority || 70) - blockers.length * 12));
       const status = blockers.length ? 'needs_review' : score >= 82 ? 'recommended' : 'compare';
@@ -2791,18 +2807,23 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
   const items = [];
   const add = (item = {}) => {
     if (!item.code || items.some((row) => row.code === item.code)) return;
-    const windowReview = polibotDisclosureWindowReview(events, item.requiredMonths || polibotDisclosureCodeRequiredMonths(item.code));
     const recentReview = polibotDisclosureRecent3MonthReview(profile, events);
-    const reviews = [recentReview, windowReview].filter(Boolean);
+    const requiredMonths = item.requiredMonths || polibotDisclosureCodeRequiredMonths(item.code);
+    const matchedRule = POLIBOT_DISCLOSURE_RULES.find((rule) => rule.code === item.code);
+    const ruleReviews = matchedRule
+      ? polibotDisclosureRuleReviews(polibotDisclosureRuleContext(profile), matchedRule, requiredMonths)
+      : [polibotDisclosureWindowReview(events, requiredMonths)].filter(Boolean);
+    const reviews = [recentReview, ...ruleReviews].filter(Boolean);
     const reasonCodes = reviews.map((review) => review.reasonCode).filter(Boolean);
+    const finalStatus = reviews.length ? 'needs_review' : item.status || 'recommended';
     items.push({
       kind: 'disclosure_recommendation',
       label: '추천 간편고지 유형',
-      status: reviews.length ? 'needs_review' : 'recommended',
       source: '설계매니저 산출',
       confidence: 78,
       context: medical.slice(0, 240),
       ...item,
+      status: finalStatus,
       reviewReasonCodes: reasonCodes,
       reviewReasonCode: reasonCodes[0] || '',
       reason: reviews.length ? `${item.reason || ''} ${reviews.map((review) => review.reason).join(' ')}`.trim() : item.reason
