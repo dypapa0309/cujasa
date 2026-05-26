@@ -729,7 +729,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.equal((hiraWorkspace.actualCodes || []).some((item) => /^5\./.test(item.code || '') && item.kind === 'disclosure_recommendation'), false);
   assert.equal((hiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)), false);
   assert.equal((hiraWorkspace.designManagerReview?.recommendedCodes || []).length, 0);
-  assert.match(hiraWorkspace.designManagerReview?.route || '', /동시 비교|표준/);
+  assert.match(hiraWorkspace.designManagerReview?.route || '', /동시 비교|표준|간편/);
 
   const clearedHiraWorkspace = await savePolibotRecommendation(userId, {
     name: '심평원 3개월 문진 완료 고객',

@@ -2139,7 +2139,11 @@ function extractPolibotMedicalEvents(profile = {}) {
   const coverageWindowMonths = inferPolibotMedicalWindowMonths(text);
   const positiveText = text
     .replace(/입원\s*0\s*일/g, '')
-    .replace(/외래\s*0\s*일/g, '');
+    .replace(/외래\s*0\s*일/g, '')
+    .replace(/입원\s*\/\s*수술\s*(?:없음|없|미확인)/g, '')
+    .replace(/입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|미확인)/g, '')
+    .replace(/수술\s*(?:명시\s*)?(?:없음|없|미확인)/g, '')
+    .replace(/입원\s*(?:명시\s*)?(?:없음|없|미확인)/g, '');
   const numbersFor = (pattern) => [...text.matchAll(pattern)]
     .map((match) => Number(match[1]))
     .filter((value) => Number.isFinite(value));
@@ -2148,8 +2152,8 @@ function extractPolibotMedicalEvents(profile = {}) {
   const outpatientDays = sum(numbersFor(/외래\s*(\d+)\s*일/g).filter((value) => value > 0));
   const pharmacyClaims = sum(numbersFor(/약국\s*(?:이용|청구\s*이력\s*확인)?\s*(\d+)\s*건/g).filter((value) => value > 0));
   const institutionClaims = sum(numbersFor(/의료기관\s*(\d+)\s*건/g).filter((value) => value > 0));
-  const hasNoSurgery = /수술\s*(?:명시\s*)?(?:없음|없|미확인)|수술.*(?:없음|없|미확인)/.test(text);
-  const hasNoAdmission = /입원\s*0\s*일|입원\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);
+  const hasNoSurgery = /입원\s*\/\s*수술\s*(?:없음|없|미확인)|입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|미확인)|수술\s*(?:명시\s*)?(?:없음|없|미확인)|수술.*(?:없음|없|미확인)/.test(text);
+  const hasNoAdmission = /입원\s*\/\s*수술\s*(?:없음|없|미확인)|입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|미확인)|입원\s*0\s*일|입원\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);
   const hasNoLongMedication = /(?:장기\s*)?투약\s*(?:명시\s*)?(?:없음|없|미확인)|복용\s*(?:명시\s*)?(?:없음|없|미확인)|처방\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);
   const hasAdmission = admissionDays > 0 || (/입원/.test(positiveText) && !hasNoAdmission);
   const hasSurgery = /수술|시술/.test(positiveText) && !hasNoSurgery;
@@ -3228,7 +3232,14 @@ function polibotUnderwritingRoute(profile = {}, catalogItems = []) {
   const text = `${medical} ${profile.familyHistory || ''}`;
   const events = extractPolibotMedicalEvents(profile);
   const age = polibotAgeValue(profile);
-  const hasNoMedical = Boolean(medical) && /없음|무|해당\s*없/i.test(medical);
+  const hasNoMedical = Boolean(medical)
+    && /^(없음|무|해당\s*없음?|이상\s*없음?|문제\s*없음?|특이\s*사항\s*없음?)$/i.test(medical.trim())
+    && !events.hasHira
+    && !events.hasAdmissionSurgery
+    && !events.hasChronicDisease
+    && !events.hasLongMedication
+    && !events.hasFollowup
+    && !events.hasMajorDisease;
   const hasChronic = events.hasChronicDisease || /협심증|심근경색|뇌졸중|심장|간경화/i.test(text);
   const hasRecentRedFlag = /최근|3개월|의심|소견|추가검사|재검|치료|투약|30일|7일/i.test(text) || events.hasAdmissionSurgery || events.highRiskDepartment;
   const hasMajorDisease = events.hasMajorDisease;
@@ -3717,11 +3728,18 @@ function polibotCoverageCodeCategory(item = {}) {
   return '기타 보장';
 }
 
-function polibotManagerRouteLabel(underwritingRoute = [], medicalRisk = {}, profile = {}) {
+function polibotManagerRouteLabel(underwritingRoute = [], medicalRisk = {}, profile = {}, actualCodes = []) {
   const primaryRoute = underwritingRoute[0] || {};
   const routeType = primaryRoute.type || '';
   const medical = `${polibotUnderwritingMedicalText(profile)} ${profile.familyHistory || ''}`;
+  const hasSimpleDisclosureCode = actualCodes.some((item) => /^3\./.test(normalizePolibotDisclosureCode(item.code || '') || String(item.code || '')));
   if (routeType === 'standard') {
+    if (hasSimpleDisclosureCode) {
+      return {
+        route: '표준형/간편 동시 비교',
+        routeReason: '간편고지 코드 후보가 있어 표준형 보험료와 간편심사 통과 가능성을 동시에 비교합니다.'
+      };
+    }
     return {
       route: '표준형 우선',
       routeReason: primaryRoute.reason || '병력 이슈가 낮아 표준형 보험료를 먼저 산출합니다.'
@@ -3745,7 +3763,7 @@ function polibotManagerRouteLabel(underwritingRoute = [], medicalRisk = {}, prof
       routeReason: primaryRoute.reason || '부담보, 할증, 감액 조건을 확인해야 합니다.'
     };
   }
-  if (medicalRisk.level === 'review' || /고혈압|당뇨|투약|입원|수술|암|뇌|심장|3\.10\.10|3\.5\.5|3\.2\.5/i.test(medical)) {
+  if (medicalRisk.level === 'review' || hasSimpleDisclosureCode || /고혈압|당뇨|투약|입원|수술|암|뇌|심장|3\.10\.10|3\.5\.5|3\.2\.5/i.test(medical)) {
     return {
       route: '표준형/간편 동시 비교',
       routeReason: '병력 또는 고지 코드가 있어 표준형 보험료와 간편심사 통과 가능성을 동시에 비교합니다.'
@@ -3769,7 +3787,7 @@ function buildPolibotDesignManagerSummary({
   const underwritingRoute = decisionAnalysis.underwritingRoute || polibotUnderwritingRoute(profile, catalogItems);
   const coveragePriority = decisionAnalysis.coveragePriority || polibotCoveragePriority(profile);
   const priceStrategy = decisionAnalysis.priceStrategy || polibotPriceStrategy(profile);
-  const route = polibotManagerRouteLabel(underwritingRoute, medicalRisk, profile);
+  const route = polibotManagerRouteLabel(underwritingRoute, medicalRisk, profile, actualCodes);
   const seenCode = new Set();
   const needsReviewDisclosureCodes = new Set(actualCodes
     .filter((item) => item.status === 'needs_review')
