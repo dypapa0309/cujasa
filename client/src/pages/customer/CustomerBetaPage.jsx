@@ -5177,6 +5177,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const [coverageDocumentParsing, setCoverageDocumentParsing] = useState(false);
   const [coverageDocumentFileName, setCoverageDocumentFileName] = useState('');
   const [hiraFileName, setHiraFileName] = useState('');
+  const [hiraFiles, setHiraFiles] = useState([]);
   const [hiraPassword, setHiraPassword] = useState('');
   const [hiraParsing, setHiraParsing] = useState(false);
   const workspaceLoading = !workspaceLoaded;
@@ -5284,7 +5285,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           form.medicalHistory,
           form.phone ? `전화번호: ${form.phone}` : '',
           form.birthdate ? `생년월일: ${form.birthdate}` : '',
-          hiraFileName ? `심평원 파일: ${hiraFileName}` : ''
+          hiraFiles.length ? `심평원 파일: ${hiraFiles.map((item) => item.name).join(', ')}` : hiraFileName ? `심평원 파일: ${hiraFileName}` : ''
         ].filter(Boolean).join('\n')
       }, { timeoutMs: 120000 });
       setWorkspace(next);
@@ -5306,6 +5307,12 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const loadHiraMedicalFile = async (file, passwordOverride = '') => {
     if (!file) return;
     setHiraFileName(file.name);
+    const appendHiraFile = (meta = {}) => {
+      setHiraFiles((prev) => [
+        ...prev.filter((item) => item.name !== file.name),
+        { name: file.name, type: meta.type || '심평원 자료' }
+      ]);
+    };
     if (/\.pdf$/i.test(file.name)) {
       setHiraParsing(true);
       try {
@@ -5322,6 +5329,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           passwordCandidates
         }, { timeoutMs: 30000 });
         const values = result?.values || {};
+        const documentTypes = Array.isArray(values.disclosureDetails?.hiraDocumentTypes) ? values.disclosureDetails.hiraDocumentTypes : [];
         const disclosureText = values.disclosureDetails && typeof values.disclosureDetails === 'object'
           ? Object.values(values.disclosureDetails).filter(Boolean).join('\n')
           : '';
@@ -5339,6 +5347,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
             ? { ...prev.analysisResult, ...values.analysisResult }
             : prev.analysisResult
         }));
+        appendHiraFile({ type: documentTypes.length ? documentTypes.join(', ') : result?.document?.label });
         toast('심평원 PDF 내용을 병력/고지 항목에 넣었어요.', 'success');
       } catch (err) {
         toast(err.message || '심평원 PDF를 읽지 못했어요. 비밀번호를 확인해주세요.', 'error');
@@ -5357,6 +5366,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
         ...prev,
         medicalHistory: [prev.medicalHistory, text.slice(0, 12000)].filter(Boolean).join('\n')
       }));
+      appendHiraFile({ type: /\.csv$/i.test(file.name) ? 'CSV 자료' : '텍스트 자료' });
       toast('심평원 자료 내용을 병력/고지 메모에 넣었어요.', 'success');
     } catch (err) {
       toast(err.message || '파일을 읽지 못했어요.', 'error');
@@ -5468,6 +5478,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           coverageDocumentFileName={coverageDocumentFileName}
           onLoadHiraMedicalFile={loadHiraMedicalFile}
           hiraFileName={hiraFileName}
+          hiraFiles={hiraFiles}
           hiraPassword={hiraPassword}
           setHiraPassword={setHiraPassword}
           hiraParsing={hiraParsing}
@@ -5644,6 +5655,7 @@ function PolibotRecommendStepper({
   coverageDocumentFileName = '',
   onLoadHiraMedicalFile,
   hiraFileName = '',
+  hiraFiles = [],
   hiraPassword = '',
   setHiraPassword,
   hiraParsing = false
@@ -5777,8 +5789,8 @@ function PolibotRecommendStepper({
             <div className="grid gap-2.5 rounded-2xl border border-white/10 bg-black/20 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div className="text-sm font-black text-zinc-200">심평원 5년 자료</div>
-                  <div className="mt-0.5 text-xs font-bold text-zinc-600">고객 인증 후 받은 진료/투약/검사 내역과 고지 판단값을 채웁니다.</div>
+                  <div className="text-sm font-black text-zinc-200">심평원 자료</div>
+                  <div className="mt-0.5 text-xs font-bold text-zinc-600">기본진료정보와 약제정보를 함께 넣으면 치료횟수/투약일수 기준까지 채웁니다.</div>
                 </div>
                 <a href={HIRA_CERT_URL} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">
                   <ExternalLink size={14} />
@@ -5788,8 +5800,19 @@ function PolibotRecommendStepper({
               <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_190px]">
                 <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 px-3 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">
                   <Upload size={14} />
-                  {hiraParsing ? '자료 읽는 중' : 'TXT/CSV/PDF 불러오기'}
-                  <input type="file" accept=".txt,.csv,.pdf,text/plain,text/csv,application/pdf" className="hidden" disabled={hiraParsing} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; onLoadHiraMedicalFile?.(file, hiraPassword); }} />
+                  {hiraParsing ? '자료 읽는 중' : 'TXT/CSV/PDF 여러 개 불러오기'}
+                  <input
+                    type="file"
+                    multiple
+                    accept=".txt,.csv,.pdf,text/plain,text/csv,application/pdf"
+                    className="hidden"
+                    disabled={hiraParsing}
+                    onChange={(event) => {
+                      const files = Array.from(event.target.files || []);
+                      event.target.value = '';
+                      files.forEach((file) => onLoadHiraMedicalFile?.(file, hiraPassword));
+                    }}
+                  />
                 </label>
                 <label className="grid gap-1 text-[11px] font-black text-zinc-500">
                   PDF 비밀번호
@@ -5806,7 +5829,13 @@ function PolibotRecommendStepper({
               <div className="text-[11px] font-bold leading-5 text-zinc-600">
                 비밀번호가 비어 있으면 생년월일 기준 6자리/8자리를 자동으로 시도합니다.
               </div>
-              {hiraFileName && <div className="truncate text-xs font-black text-zinc-400">심평원 자료: {hiraFileName}</div>}
+              {hiraFiles.length > 0 ? (
+                <div className="grid gap-1">
+                  {hiraFiles.map((file) => (
+                    <div key={file.name} className="truncate text-xs font-black text-zinc-400">심평원 자료: {file.name}{file.type ? ` · ${file.type}` : ''}</div>
+                  ))}
+                </div>
+              ) : hiraFileName ? <div className="truncate text-xs font-black text-zinc-400">심평원 자료: {hiraFileName}</div> : null}
               <textarea className={`${fieldClass('심평원/병력 자료')} min-h-[150px]`} value={form.medicalHistory} onChange={(event) => setForm((prev) => ({ ...prev, medicalHistory: event.target.value }))} placeholder="예: 고혈압 투약, 당뇨 통원, 입원/수술/검사 내역" />
             </div>
 
@@ -5821,7 +5850,7 @@ function PolibotRecommendStepper({
             {saving && <PolibotLoadingBanner label="고객 병력과 polidoc 기준을 대조하는 중" />}
             <PolibotManagerDesk
               coverageDocumentFileName={coverageDocumentFileName}
-              hiraFileName={hiraFileName}
+              hiraFileName={hiraFiles.length ? hiraFiles.map((item) => item.name).join(', ') : hiraFileName}
               actualCodes={actualCodes}
               matchedCoverageCodes={workspace.matchedCoverageCodes || []}
               managerCodes={managerCodes}
@@ -6090,6 +6119,7 @@ function PolibotManagerDesk({ coverageDocumentFileName = '', hiraFileName = '', 
   const reviewCodes = managerCodes.filter((item) => item.status !== 'applied');
   const appliedCodes = managerCodes.filter((item) => item.status === 'applied');
   const codeAssessments = Array.isArray(designManagerReview?.codeAssessments) ? designManagerReview.codeAssessments : [];
+  const companyConcentration = designManagerReview?.companyConcentration;
   const intakeRows = [
     {
       label: '보장분석',
@@ -6128,6 +6158,12 @@ function PolibotManagerDesk({ coverageDocumentFileName = '', hiraFileName = '', 
       {hardMissingLabels.length > 0 && (
         <div className="rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs font-black text-amber-100">
           상품추천 필수값: {hardMissingLabels.join(', ')}
+        </div>
+      )}
+      {companyConcentration?.detected && (
+        <div className="rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2">
+          <div className="text-xs font-black text-amber-100">보험사 편중 확인: {companyConcentration.company} {companyConcentration.count}/{companyConcentration.total}개</div>
+          <div className="mt-1 text-[11px] font-bold leading-relaxed text-amber-100/70">{companyConcentration.reason}</div>
         </div>
       )}
       {primaryCodes.length ? (

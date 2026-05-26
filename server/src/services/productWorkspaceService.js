@@ -2205,6 +2205,23 @@ function extractPolibotMedicalEvents(profile = {}) {
   const outpatientDays = sum(numbersFor(/외래\s*(\d+)\s*일/g).filter((value) => value > 0));
   const pharmacyClaims = sum(numbersFor(/약국\s*(?:이용|청구\s*이력\s*확인)?\s*(\d+)\s*건/g).filter((value) => value > 0));
   const institutionClaims = sum(numbersFor(/의료기관\s*(\d+)\s*건/g).filter((value) => value > 0));
+  const maxFor = (patterns = []) => Math.max(0, ...patterns.flatMap((pattern) => numbersFor(pattern)).filter((value) => value > 0));
+  const treatmentCount = maxFor([
+    /치료횟수\s*(\d+)\s*회/g,
+    /(?:치료|진료|외래|통원)\s*(?:횟수|건수)?\s*[:：]?\s*(\d{1,3})\s*(?:회|건|일)/g,
+    /(\d{1,3})\s*(?:회|건|일)\s*(?:치료|진료|외래|통원)/g
+  ]) || outpatientDays;
+  const medicationDays = maxFor([
+    /투약일수\s*(\d+)\s*일/g,
+    /처방일수\s*(\d+)\s*일/g,
+    /(?:총\s*)?(?:투약|처방|복약|조제)\s*(?:일수|기간)?\s*[:：]?\s*(\d{1,3})\s*일/g,
+    /(\d{1,3})\s*일분/g,
+    /(\d{1,3})\s*일\s*(?:처방|투약|복용|복약|조제)/g
+  ]);
+  const hiraDocumentTypes = [...new Set([...text.matchAll(/심평원\s*자료종류\s*:\s*([^.\n]+)/g)]
+    .flatMap((match) => String(match[1] || '').split(/[,·/]/))
+    .map((value) => value.trim())
+    .filter(Boolean))];
   const hasNoSurgery = /입원\s*\/\s*수술\s*(?:없음|없|미확인)|입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|미확인)|수술\s*(?:명시\s*)?(?:없음|없|미확인)|수술.*(?:없음|없|미확인)/.test(text);
   const hasNoAdmission = /입원\s*\/\s*수술\s*(?:없음|없|미확인)|입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|미확인)|입원\s*0\s*일|입원\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);
   const hasNoLongMedication = /(?:장기\s*)?투약\s*(?:명시\s*)?(?:없음|없|미확인)|복용\s*(?:명시\s*)?(?:없음|없|미확인)|처방\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);
@@ -2212,7 +2229,9 @@ function extractPolibotMedicalEvents(profile = {}) {
   const hasSurgery = /수술|시술/.test(positiveText) && !hasNoSurgery;
   const hasMajorDisease = diseaseSignals.major || /암|백혈병|협심증|심근경색|심장판막|간경화|뇌졸중|뇌출혈|뇌경색|에이즈|hiv|후유증|전이|재발|c\d{2}|i2[0-5]|i6[0-9]/i.test(text);
   const hasChronicDisease = diseaseSignals.chronic || /고혈압|혈압|당뇨|고지혈|고지혈증|콜레스테롤|지질|i10|e1[0-4]/i.test(text);
-  const hasLongMedication = !hasNoLongMedication && (hasChronicDisease || /투약|복용|처방\s*유지|현재\s*처방|30일\s*이상\s*투약|장기\s*처방|약\s*복용/i.test(text));
+  const hasHealthyTreatmentThreshold = treatmentCount >= 7 || /7회\s*이상\s*치료|7일\s*이상\s*치료/.test(text);
+  const hasHealthyMedicationThreshold = medicationDays >= 30 || /30일\s*이상\s*투약|30일\s*이상\s*처방|30일\s*이상\s*복용/.test(text);
+  const hasLongMedication = !hasNoLongMedication && (hasHealthyMedicationThreshold || hasChronicDisease || /투약|복용|처방\s*유지|현재\s*처방|30일\s*이상\s*투약|장기\s*처방|약\s*복용/i.test(text));
   const hasFollowup = /검사|재검|추적|관찰|소견|결절|용종|검진/.test(text);
   const highRiskDepartment = /순환기|심장|신경과|신경외과|종양|혈액|내분비|신장|호흡기/.test(text);
   const moderateRiskDepartment = /정형외과|내과|가정의학과|한방병원|치과|안과|소아청소년과/.test(text);
@@ -2222,6 +2241,8 @@ function extractPolibotMedicalEvents(profile = {}) {
     outpatientDays > 0 && `외래 ${outpatientDays}일`,
     pharmacyClaims > 0 && `약국 ${pharmacyClaims}건`,
     institutionClaims > 0 && `의료기관 ${institutionClaims}건`,
+    treatmentCount > 0 && `치료횟수 ${treatmentCount}회`,
+    medicationDays > 0 && `투약일수 ${medicationDays}일`,
     hasSurgery && '수술/시술 단서',
     hasLongMedication && '장기투약/만성질환 단서',
     hasFollowup && '검사/추적관찰 단서',
@@ -2239,12 +2260,17 @@ function extractPolibotMedicalEvents(profile = {}) {
     outpatientDays,
     pharmacyClaims,
     institutionClaims,
+    treatmentCount,
+    medicationDays,
+    hiraDocumentTypes,
     hasAdmission,
     hasSurgery,
     hasAdmissionSurgery: hasAdmission || hasSurgery,
     hasMajorDisease,
     hasChronicDisease,
     hasLongMedication,
+    hasHealthyTreatmentThreshold,
+    hasHealthyMedicationThreshold,
     hasFollowup,
     highRiskDepartment,
     moderateRiskDepartment,
@@ -2501,12 +2527,20 @@ function buildPolibotDisclosureCodeAssessments(profile = {}) {
       const blockers = reviews.map((review) => review.reason).filter(Boolean);
       const score = Math.max(35, Math.min(100, Number(rule.priority || 70) - blockers.length * 12));
       const status = blockers.length ? 'needs_review' : score >= 82 ? 'recommended' : 'compare';
+      const reviewReasonCodes = reviews.map((review) => review.reasonCode).filter(Boolean);
+      const statusLabel = status === 'recommended'
+        ? '우선 추천'
+        : status === 'compare'
+          ? '비교 후보'
+          : reviewReasonCodes.includes('long_lookback_unconfirmed')
+            ? '가입 가능성 있음 · 심사 확인'
+            : '검수 필요';
       return {
         code: rule.code,
         label: rule.label,
         category: rule.category,
         status,
-        statusLabel: status === 'recommended' ? '우선 추천' : status === 'compare' ? '비교 후보' : '검수 필요',
+        statusLabel,
         confidence: score,
         requiredMonths,
         reason: blockers.length ? `${rule.reason} ${blockers.join(' ')}` : rule.reason,
@@ -2514,7 +2548,7 @@ function buildPolibotDisclosureCodeAssessments(profile = {}) {
         blockers,
         nextCheck: rule.nextCheck,
         diseaseTags: context.diseaseSignals.labels || [],
-        reviewReasonCodes: reviews.map((review) => review.reasonCode).filter(Boolean)
+        reviewReasonCodes
       };
     })
     .filter(Boolean)
@@ -2548,6 +2582,8 @@ function polibotMedicalRisk(profile = {}) {
   if (events.hasAdmissionSurgery) flags.push({ key: 'recent_admission_surgery', label: '입원/수술/시술', risk: 'high', question: '최근 5년 이력인지, 완치/추적관찰 여부를 확인해야 합니다.' });
   if (events.hasFollowup) flags.push({ key: 'followup_exam', label: '추적검사/결절/소견', risk: 'high', question: '최근 3개월 추가검사 소견과 최종 진단명을 확인해야 합니다.' });
   if (events.hasMajorDisease) flags.push({ key: 'major_disease', label: '암/심뇌혈관 이력', risk: 'high', question: '진단 시점, 치료 종료일, 재발/전이/후유증 여부를 확인해야 합니다.' });
+  if (events.hasHealthyTreatmentThreshold) flags.push({ key: 'healthy_treatment_7', label: '7회 이상 치료', risk: 'high', question: '건강체 고지 기준의 7회 이상 치료 해당 여부와 같은 질환 반복 치료인지 확인해야 합니다.' });
+  if (events.hasHealthyMedicationThreshold) flags.push({ key: 'healthy_medication_30', label: '30일 이상 투약', risk: 'high', question: '약제정보 기준 처방일수와 현재 복용 여부를 확인해야 합니다.' });
   if (/디스크|관절|허리|목/i.test(text)) flags.push({ key: 'musculoskeletal', label: '근골격계', risk: 'moderate', question: '부담보 가능성이 있어 부위, 치료 기간, 현재 증상을 확인해야 합니다.' });
   if (events.hasLongMedication || /치료|진단/i.test(text)) flags.push({ key: 'medication_treatment', label: '투약/치료/진단', risk: 'moderate', question: '투약 기간과 현재 치료 지속 여부를 확인해야 합니다.' });
   if (/암|심장|뇌|당뇨/i.test(family)) flags.push({ key: 'family_history', label: '가족력', risk: 'reference', question: '가족력은 본인 병력과 분리해 관련 담보 니즈와 고지 질문 해당 여부만 확인합니다.' });
@@ -2571,6 +2607,7 @@ function polibotMedicalRisk(profile = {}) {
 
 function buildPolibotManagerCodeRecommendations(profile = {}) {
   const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
+  const events = extractPolibotMedicalEvents(profile);
   const medical = polibotUnderwritingMedicalText(profile);
   const needs = Array.isArray(profile.needs) ? profile.needs : normalizeList(profile.needs);
   const text = [
@@ -2597,6 +2634,9 @@ function buildPolibotManagerCodeRecommendations(profile = {}) {
   const outpatientDays = numberAfter(/외래\s*(\d+)\s*일/);
   const pharmacyCount = numberAfter(/약국\s*(\d+)\s*건/);
   const medicalCount = numberAfter(/의료기관\s*(\d+)\s*건/);
+  const treatmentCount = events.treatmentCount || numberAfter(/치료횟수\s*(\d+)\s*회/);
+  const medicationDays = events.medicationDays || numberAfter(/투약일수\s*(\d+)\s*일/);
+  const hiraDocumentTypes = events.hiraDocumentTypes || [];
 
   if (/심평원\s*5년|의료기관\/약국\s*이용/.test(text)) {
     add(items, {
@@ -2605,6 +2645,55 @@ function buildPolibotManagerCodeRecommendations(profile = {}) {
       reason: '심평원 자료가 들어왔으므로 3개월/1년/5년 고지 질문과 실제 청구 이력을 분리해 확인해야 합니다.',
       status: 'applied',
       severity: 'info',
+      source: '심평원 자료'
+    });
+  }
+  if (hiraDocumentTypes.length >= 2) {
+    add(items, {
+      code: 'HIRA-MULTI-SOURCE',
+      label: '심평원 다중자료 반영',
+      reason: `심평원 ${hiraDocumentTypes.join(', ')}가 함께 들어와 치료횟수와 투약일수를 같이 봅니다.`,
+      status: 'applied',
+      severity: 'info',
+      source: '심평원 자료'
+    });
+  } else if (events.hasHira) {
+    if (!hiraDocumentTypes.includes('기본진료정보')) {
+      add(items, {
+        code: 'HIRA-BASIC-MISSING',
+        label: '기본진료정보 추가 필요',
+        reason: '치료횟수와 외래/입원 기준 확인을 위해 기본진료정보 자료를 추가하면 정확도가 올라갑니다.',
+        status: 'review',
+        source: '심평원 자료'
+      });
+    }
+    if (!hiraDocumentTypes.includes('약제정보')) {
+      add(items, {
+        code: 'HIRA-PHARMACY-MISSING',
+        label: '약제정보 추가 필요',
+        reason: '30일 이상 투약 여부를 잡으려면 약제정보 자료가 필요합니다.',
+        status: 'review',
+        source: '심평원 자료'
+      });
+    }
+  }
+  if (events.hasHealthyTreatmentThreshold) {
+    add(items, {
+      code: 'HEALTHY-TREATMENT-7',
+      label: '건강체 7회 치료 확인',
+      reason: `치료횟수 ${treatmentCount || 7}회 기준으로 건강체 7회 이상 치료 고지 해당 여부를 확인해야 합니다.`,
+      status: 'review',
+      severity: 'high',
+      source: '심평원 자료'
+    });
+  }
+  if (events.hasHealthyMedicationThreshold) {
+    add(items, {
+      code: 'HEALTHY-MEDICATION-30',
+      label: '건강체 30일 투약 확인',
+      reason: `투약일수 ${medicationDays || 30}일 기준으로 건강체 30일 이상 투약 고지 해당 여부를 확인해야 합니다.`,
+      status: 'review',
+      severity: 'high',
       source: '심평원 자료'
     });
   }
@@ -4002,6 +4091,39 @@ function polibotCompanyOutlook(catalogItems = [], profile = {}, underwritingRout
   }).sort((a, b) => b.fitScore - a.fitScore);
 }
 
+function summarizePolibotCompanyConcentration(items = []) {
+  const rows = (Array.isArray(items) ? items : [])
+    .map((item) => ({
+      company: String(item.company || '').trim(),
+      productName: String(item.productName || item.connectedValue || item.label || '').trim(),
+      code: String(item.code || '').trim()
+    }))
+    .filter((item) => item.company);
+  const total = rows.length;
+  if (total < 3) return null;
+  const groups = [...rows.reduce((map, item) => {
+    const current = map.get(item.company) || { company: item.company, count: 0, products: new Set(), codes: new Set() };
+    current.count += 1;
+    if (item.productName) current.products.add(item.productName);
+    if (item.code) current.codes.add(item.code);
+    map.set(item.company, current);
+    return map;
+  }, new Map()).values()].sort((a, b) => b.count - a.count);
+  const top = groups[0];
+  if (!top || top.count < 3 || top.count / total < 0.65) return null;
+  return {
+    detected: true,
+    company: top.company,
+    count: top.count,
+    total,
+    share: Math.round((top.count / total) * 100),
+    reason: `${top.company} 후보가 ${top.count}/${total}개로 집중되어 실제 설계 가능 보험사인지, 자료 편중인지 확인해야 합니다.`,
+    products: [...top.products].slice(0, 4),
+    codes: [...top.codes].slice(0, 6),
+    otherCandidates: groups.slice(1, 5).map((item) => ({ company: item.company, count: item.count }))
+  };
+}
+
 function polibotCoverageCodeCategory(item = {}) {
   const valueText = [
     item.connectedValue,
@@ -4147,6 +4269,11 @@ function buildPolibotDesignManagerSummary({
   const recommendedCodes = groupPolibotDesignRecommendedCodes([...ruleRecommendedCodes, ...evidenceRecommendedCodes])
     .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))
     .slice(0, 18);
+  const companyConcentration = summarizePolibotCompanyConcentration([
+    ...recommendedCodes,
+    ...matchedCoverageCodes,
+    ...catalogItems
+  ]);
   const codeCategories = [...new Set(recommendedCodes.map((item) => item.category).filter(Boolean))];
   const priorityCoverage = [
     ...coveragePriority
@@ -4174,6 +4301,7 @@ function buildPolibotDesignManagerSummary({
     actualCodes.some((item) => /I10|E1[0-4]/.test(item.code || '')) && '고혈압/당뇨 투약 기간, 최근 수치, 합병증 여부를 확인했나요?',
     priorityCoverage.some((item) => /암|뇌|심장/.test(item.label)) && '암/뇌/심장 진단비 목표 금액과 기존 가입금액 차이를 확인했나요?',
     recommendedCodes.length > 0 && `설매 코드표/보장코드 후보 ${recommendedCodes.slice(0, 5).map((item) => [item.code, item.company].filter(Boolean).join('@')).join(', ')}를 실제 설계 특약에 반영했나요?`,
+    companyConcentration && `${companyConcentration.company}만 많이 나온 이유가 고객조건 적합 때문인지, 업로드 자료/상품DB 편중 때문인지 비교 보험사를 확인했나요?`,
     priceStrategy.mode === 'save' && '절감 목표를 맞추기 위해 줄이면 안 되는 담보를 분리했나요?',
     priceStrategy.mode === 'upgrade' && '월 보험료 상한 안에서 핵심 진단비를 먼저 두껍게 구성했나요?',
     '최종 청약 전 고지사항 원문과 설계서 특약명을 대조했나요?'
@@ -4191,6 +4319,7 @@ function buildPolibotDesignManagerSummary({
     priorityCoverage,
     recommendedCodes,
     codeAssessments: disclosureCodeAssessments,
+    companyConcentration,
     riskFlags,
     sellerQuestions
   };

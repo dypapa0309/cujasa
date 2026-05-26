@@ -275,6 +275,8 @@ function extractDisclosure(text = '') {
     majorDisease: [hiraSummary.majorDisease, medicalLines.filter((line) => /암|심장|뇌|당뇨|혈압|고지혈/.test(line)).join(' / ')].filter(Boolean).join(' / '),
     completeCure: '',
     followUp: [hiraSummary.followUp, medicalLines.filter((line) => /추적|관찰|재검/.test(line)).join(' / ')].filter(Boolean).join(' / '),
+    healthyDisclosureCheck: hiraSummary.healthyDisclosureCheck || '',
+    hiraDocumentTypes: hiraSummary.documentTypes || [],
     details: [hiraSummary.details, joined].filter(Boolean).join('\n')
   };
 }
@@ -296,15 +298,76 @@ function parseHiraVisitRows(lines = []) {
     .filter(Boolean);
 }
 
+function classifyHiraDocumentTypes(lines = []) {
+  const text = lines.join(' ');
+  const types = [];
+  const add = (type) => {
+    if (type && !types.includes(type)) types.push(type);
+  };
+  if (/기본\s*진료\s*정보|진료정보요약|병[·ㆍ\w\s]*의원|요양기관|진료\s*내역|입원\(외래\)일수/.test(text)) add('기본진료정보');
+  if (/약제\s*정보|처방\s*약|조제|투약|약국|처방전|일분|복약/.test(text)) add('약제정보');
+  if (/진료비|요양급여비용|본인부담|공단부담|혜택받은\s*금액/.test(text)) add('진료비정보');
+  if (/상병|질병\s*코드|KCD|주상병|부상병/.test(text)) add('상병정보');
+  return types.length ? types : ['심평원자료'];
+}
+
+function maxNumberForPatterns(text = '', patterns = []) {
+  let max = 0;
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const value = Number(match[1] || 0);
+      if (Number.isFinite(value) && value > max) max = value;
+    }
+  }
+  return max;
+}
+
+function inferHiraMedicationDays(lines = [], pharmacyRows = []) {
+  const text = lines.join(' ');
+  const explicitDays = maxNumberForPatterns(text, [
+    /(?:총\s*)?(?:투약|처방|복약|조제)\s*(?:일수|기간)?\s*[:：]?\s*(\d{1,3})\s*일/g,
+    /(\d{1,3})\s*일분/g,
+    /(\d{1,3})\s*일\s*(?:처방|투약|복용|복약|조제)/g
+  ]);
+  if (explicitDays) return explicitDays;
+  return pharmacyRows.reduce((sum, row) => sum + Number(row.outpatientDays || 0), 0);
+}
+
 function buildHiraVisitDisclosureSummary(lines = []) {
   const rows = parseHiraVisitRows(lines);
-  if (!rows.length) return {};
+  const documentTypes = classifyHiraDocumentTypes(lines);
+  if (!rows.length) {
+    const text = lines.join(' ');
+    const medicationDays = inferHiraMedicationDays(lines, []);
+    const treatmentCount = maxNumberForPatterns(text, [
+      /(?:치료|진료|외래|통원)\s*(?:횟수|건수)?\s*[:：]?\s*(\d{1,3})\s*(?:회|건|일)/g,
+      /(\d{1,3})\s*(?:회|건|일)\s*(?:치료|진료|외래|통원)/g
+    ]);
+    return {
+      documentTypes,
+      healthyDisclosureCheck: [
+        `심평원 자료종류: ${documentTypes.join(', ')}`,
+        treatmentCount ? `건강체 고지 체크: 치료횟수 ${treatmentCount}회${treatmentCount >= 7 ? ' · 7회 이상 치료 확인' : ''}` : '',
+        medicationDays ? `건강체 고지 체크: 투약일수 ${medicationDays}일${medicationDays >= 30 ? ' · 30일 이상 투약 확인' : ''}` : ''
+      ].filter(Boolean).join('\n'),
+      longTreatment: treatmentCount >= 7 ? `건강체 기준 7회 이상 치료 확인: ${treatmentCount}회` : '',
+      longMedication: medicationDays >= 30 ? `건강체 기준 30일 이상 투약 확인: ${medicationDays}일` : '',
+      currentMedication: medicationDays ? `투약일수 ${medicationDays}일 확인` : '',
+      details: [
+        `심평원 자료종류: ${documentTypes.join(', ')}`,
+        treatmentCount ? `치료횟수 ${treatmentCount}회` : '',
+        medicationDays ? `투약일수 ${medicationDays}일` : ''
+      ].filter(Boolean).join('\n')
+    };
+  }
   const providers = [...new Set(rows.map((row) => row.provider))];
   const pharmacyRows = rows.filter((row) => /약국/.test(row.provider));
   const medicalRows = rows.filter((row) => !/약국/.test(row.provider));
   const inpatientRows = rows.filter((row) => row.inpatientDays > 0);
   const outpatientTotal = rows.reduce((sum, row) => sum + row.outpatientDays, 0);
   const inpatientTotal = rows.reduce((sum, row) => sum + row.inpatientDays, 0);
+  const treatmentCount = medicalRows.reduce((sum, row) => sum + Number(row.outpatientDays || 0), 0);
+  const medicationDays = inferHiraMedicationDays(lines, pharmacyRows);
   const departmentTerms = [
     '정형외과', '내과', '가정의학과', '소아청소년과', '치과', '안과', '한방병원',
     '이비인후과', '피부과', '신경외과', '통증의학과', '산부인과', '비뇨의학과'
@@ -314,26 +377,35 @@ function buildHiraVisitDisclosureSummary(lines = []) {
     .slice(0, 8);
   const pharmacyProviders = pharmacyRows.map((row) => row.provider).slice(0, 6);
   return {
+    documentTypes,
     recent5Years: [
+      `심평원 자료종류: ${documentTypes.join(', ')}`,
       `심평원 5년 자료 기준 의료기관/약국 이용 ${rows.length}건`,
       medicalRows.length ? `의료기관 ${medicalRows.length}건` : '',
       pharmacyRows.length ? `약국 ${pharmacyRows.length}건` : '',
       outpatientTotal ? `외래 ${outpatientTotal}일` : '',
-      inpatientTotal ? `입원 ${inpatientTotal}일` : ''
+      inpatientTotal ? `입원 ${inpatientTotal}일` : '',
+      treatmentCount ? `치료횟수 ${treatmentCount}회` : '',
+      medicationDays ? `투약일수 ${medicationDays}일` : ''
     ].filter(Boolean).join(' · '),
     recentExam: departmentTerms.length ? `진료과/기관명 기준 확인: ${departmentTerms.join(', ')}` : '',
     admissionSurgery: inpatientRows.length
       ? `입원일수 확인: ${inpatientRows.map((row) => `${row.provider} ${row.inpatientDays}일`).join(' / ')}`
       : '',
-    longTreatment: outpatientTotal >= 10 || medicalRows.length >= 10
-      ? `외래 이용 다수: ${notableProviders.join(' / ')}`
+    longTreatment: treatmentCount >= 7 || outpatientTotal >= 10 || medicalRows.length >= 10
+      ? `${treatmentCount >= 7 ? `건강체 기준 7회 이상 치료 확인: ${treatmentCount}회` : '외래 이용 다수'}${notableProviders.length ? `: ${notableProviders.join(' / ')}` : ''}`
       : '',
-    longMedication: pharmacyRows.length >= 3 ? `약국 이용 ${pharmacyRows.length}건: ${pharmacyProviders.join(' / ')}` : '',
-    currentMedication: pharmacyRows.length ? `약국 청구 이력 확인: ${pharmacyProviders.join(' / ')}` : '',
+    longMedication: medicationDays >= 30 || pharmacyRows.length >= 3 ? `${medicationDays >= 30 ? `건강체 기준 30일 이상 투약 확인: ${medicationDays}일` : `약국 이용 ${pharmacyRows.length}건`}${pharmacyProviders.length ? `: ${pharmacyProviders.join(' / ')}` : ''}` : '',
+    currentMedication: pharmacyRows.length || medicationDays ? [`약국 청구 이력 확인: ${pharmacyProviders.join(' / ')}`, medicationDays ? `투약일수 ${medicationDays}일` : ''].filter(Boolean).join(' · ') : '',
     majorDisease: departmentTerms.length ? `진료과 패턴: ${departmentTerms.join(', ')}` : '',
     followUp: rows.some((row) => /정형외과|내과|안과|한방병원/.test(row.provider))
       ? '진료과별 반복 방문 여부 상담 확인 필요'
       : '',
+    healthyDisclosureCheck: [
+      `심평원 자료종류: ${documentTypes.join(', ')}`,
+      treatmentCount ? `건강체 고지 체크: 치료횟수 ${treatmentCount}회${treatmentCount >= 7 ? ' · 7회 이상 치료 확인' : ''}` : '',
+      medicationDays ? `건강체 고지 체크: 투약일수 ${medicationDays}일${medicationDays >= 30 ? ' · 30일 이상 투약 확인' : ''}` : ''
+    ].filter(Boolean).join('\n'),
     details: rows
       .slice(0, 20)
       .map((row) => `${row.provider} · 입원 ${row.inpatientDays}일 · 외래 ${row.outpatientDays}일`)
@@ -344,6 +416,7 @@ function buildHiraVisitDisclosureSummary(lines = []) {
 function buildMedicalHistorySummary(disclosureDetails = {}) {
   const values = [
     disclosureDetails.recent5Years,
+    disclosureDetails.healthyDisclosureCheck,
     disclosureDetails.currentMedication,
     disclosureDetails.admissionSurgery,
     disclosureDetails.recentExam,

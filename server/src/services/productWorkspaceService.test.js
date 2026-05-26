@@ -717,6 +717,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   });
   assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === 'I47' && item.kind === 'KCD'));
   assert.ok((arrhythmiaWorkspace.designManagerReview?.codeAssessments || []).some((item) => item.code === '3.10.10' && item.status === 'needs_review' && (item.reviewReasonCodes || []).includes('long_lookback_unconfirmed')));
+  assert.ok((arrhythmiaWorkspace.designManagerReview?.codeAssessments || []).some((item) => item.code === '3.10.10' && /가입 가능성/.test(item.statusLabel || '')));
   assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'));
   assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation'));
 
@@ -800,6 +801,44 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.equal((clearedHiraWorkspace.actualCodes || []).some((item) => /^5\./.test(item.code || '') && item.kind === 'disclosure_recommendation'), false);
   assert.ok((clearedHiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)));
   assert.equal((clearedHiraWorkspace.actualCodes || []).some((item) => (item.reviewReasonCodes || []).includes('recent3_missing')), false);
+
+  const multiHiraWorkspace = await savePolibotRecommendation(userId, {
+    name: '심평원 기본 약제 고객',
+    age: '49',
+    gender: '여성',
+    needs: ['암', '뇌', '심장'],
+    budget: '16',
+    existingMedicalPlan: '있음',
+    medicalHistory: [
+      '심평원 자료종류: 기본진료정보',
+      '심평원 자료종류: 약제정보',
+      '건강체 고지 체크: 치료횟수 8회 · 7회 이상 치료 확인',
+      '건강체 고지 체크: 투약일수 35일 · 30일 이상 투약 확인',
+      '심평원 5년 자료 기준 의료기관/약국 이용 12건 · 의료기관 8건 · 약국 4건 · 외래 8일 · 치료횟수 8회 · 투약일수 35일'
+    ].join('\n'),
+    disclosureDetails: {
+      recent3Months: {
+        diagnosis: 'none',
+        suspicion: 'none',
+        treatment: 'none',
+        admission: 'none',
+        surgery: 'none',
+        medication: 'none',
+        extraExam: 'none',
+        confirmedBy: 'customer'
+      },
+      recent5Years: '심평원 자료종류: 기본진료정보, 약제정보 · 치료횟수 8회 · 투약일수 35일',
+      healthyDisclosureCheck: '건강체 고지 체크: 치료횟수 8회 · 7회 이상 치료 확인\n건강체 고지 체크: 투약일수 35일 · 30일 이상 투약 확인',
+      currentMedication: '투약일수 35일'
+    },
+    existingPremium: '13',
+    purpose: '보장 강화'
+  });
+  assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => item.code === 'HIRA-MULTI-SOURCE'));
+  assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => item.code === 'HEALTHY-TREATMENT-7'));
+  assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => item.code === 'HEALTHY-MEDICATION-30'));
+  assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => /치료횟수 8회/.test(item.reason || '')));
+  assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => /투약일수 35일/.test(item.reason || '')));
 
   const incompleteRecent3Workspace = await savePolibotRecommendation(userId, {
     name: '심평원 최근3개월 일부 문진 고객',

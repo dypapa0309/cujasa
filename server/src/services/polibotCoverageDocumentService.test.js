@@ -109,6 +109,31 @@ test('classifies HIRA visit summaries separately from customer coverage analysis
   assert.equal(result.document.customerCoverage, false);
   assert.equal(result.document.label, '심평원 자료');
   assert.match(result.values.disclosureDetails.recent3Months, /최근 3개월 문진 필요/);
+  assert.match(result.values.medicalHistory, /심평원 자료종류/);
+  assert.match(result.values.medicalHistory, /치료횟수 12회/);
+  assert.match(result.values.medicalHistory, /투약일수 5일/);
   assert.match(result.values.underwritingAssessment.note, /최근 3개월/);
   assert.ok(result.warnings.some((warning) => warning.includes('최근 3개월')));
+});
+
+test('extracts HIRA basic and medication thresholds for healthy disclosure review', async () => {
+  const text = `
+기본진료정보
+2026-5-25 순번 병·의원&약국 입원(외래)일수 총 진료비 건강보험 등 혜택받은 금액 내가 낸 의료비
+1 서울내과의원 0(8) 100,000 70,000 30,000
+약제정보
+2 행복약국 0(0) 50,000 35,000 15,000
+총 투약일수 35일
+`;
+  const result = await analyzePolibotCoverageDocument({
+    fileName: '기본진료정보_약제정보.txt',
+    mimeType: 'text/plain',
+    base64: Buffer.from(text, 'utf8').toString('base64')
+  });
+  assert.equal(result.document.type, 'hira');
+  assert.deepEqual(result.values.disclosureDetails.hiraDocumentTypes, ['기본진료정보', '약제정보', '진료비정보']);
+  assert.match(result.values.disclosureDetails.healthyDisclosureCheck, /7회 이상 치료/);
+  assert.match(result.values.disclosureDetails.healthyDisclosureCheck, /30일 이상 투약/);
+  assert.match(result.values.medicalHistory, /치료횟수 8회/);
+  assert.match(result.values.medicalHistory, /투약일수 35일/);
 });
