@@ -2219,10 +2219,12 @@ function extractPolibotMedicalEvents(profile = {}) {
     /(\d{1,3})\s*일분/g,
     /(\d{1,3})\s*일\s*(?:처방|투약|복용|복약|조제)/g
   ]);
-  const hiraDocumentTypes = [...new Set([...text.matchAll(/심평원\s*자료종류\s*:\s*([^.\n]+)/g)]
-    .flatMap((match) => String(match[1] || '').split(/[,·/]/))
-    .map((value) => value.trim())
-    .filter(Boolean))];
+  const hiraDocumentTypes = [
+    /기본\s*진료\s*정보|진료정보요약|의료기관\s*\d+\s*건|치료횟수\s*\d+\s*회/.test(text) && '기본진료정보',
+    /약제\s*정보|약국\s*\d+\s*건|투약일수\s*\d+\s*일|처방일수\s*\d+\s*일/.test(text) && '약제정보',
+    /진료비정보|요양급여비용|혜택받은\s*금액|진료비/.test(text) && '진료비정보',
+    /상병정보|질병\s*코드|kcd|주상병|부상병/.test(text) && '상병정보'
+  ].filter(Boolean);
   const hasNoSurgery = /입원\s*\/\s*수술\s*(?:없음|없|미확인)|입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|미확인)|수술\s*(?:명시\s*)?(?:없음|없|미확인)|수술.*(?:없음|없|미확인)/.test(text);
   const hasNoAdmission = /입원\s*\/\s*수술\s*(?:없음|없|미확인)|입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|미확인)|입원\s*0\s*일|입원\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);
   const hasNoLongMedication = /(?:장기\s*)?투약\s*(?:명시\s*)?(?:없음|없|미확인)|복용\s*(?:명시\s*)?(?:없음|없|미확인)|처방\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);

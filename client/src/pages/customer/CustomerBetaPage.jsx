@@ -227,7 +227,7 @@ const polibotPolicyKey = (policy = {}) => [
   policy.premium,
   policy.paymentPeriod,
   policy.maturity
-].map((value) => displayValue(value).replace(/\s+/g, '')).join('|');
+].map((value) => displayValue(value).replace(/\s+/g, '')).join('|').replace(/^\|+$/, '');
 const mergePolibotPolicyDetails = (...lists) => {
   const rows = [];
   const seen = new Set();
@@ -257,6 +257,22 @@ const sumPolibotPremiumValues = (...values) => {
     .filter((value) => Number.isFinite(value) && value > 0)
     .reduce((sum, value) => sum + value, 0);
   return total ? String(Math.round(total * 10) / 10) : '';
+};
+const hasPolibotRecent3MonthAnswers = (value) => (
+  value && typeof value === 'object' && !Array.isArray(value)
+  && polibotRecent3MonthFields.some((field) => displayValue(value[field.key]))
+);
+const mergePolibotDisclosureDetails = (current = {}, next = {}) => {
+  if (!next || typeof next !== 'object') return current || {};
+  const merged = { ...(current || {}), ...next };
+  if (current?.recent3Months && next?.recent3Months) {
+    if (hasPolibotRecent3MonthAnswers(current.recent3Months) && typeof next.recent3Months === 'string') {
+      merged.recent3Months = current.recent3Months;
+    } else if (hasPolibotRecent3MonthAnswers(current.recent3Months) && next.recent3Months && typeof next.recent3Months === 'object') {
+      merged.recent3Months = { ...current.recent3Months, ...next.recent3Months };
+    }
+  }
+  return merged;
 };
 const coverageAmountValue = (value) => (value && typeof value === 'object' ? value.amount || '' : value || '');
 const polibotTargetPremiumQuickOptions = ['10', '20', '30', '40', '50'];
@@ -5314,7 +5330,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       existingMedicalPlan: values.existingMedicalPlan ?? prev.existingMedicalPlan,
       existingPremium: values.existingPremium ?? prev.existingPremium,
       medicalHistory: values.medicalHistory ?? prev.medicalHistory,
-      disclosureDetails: values.disclosureDetails && typeof values.disclosureDetails === 'object' ? { ...prev.disclosureDetails, ...values.disclosureDetails } : prev.disclosureDetails,
+      disclosureDetails: values.disclosureDetails && typeof values.disclosureDetails === 'object' ? mergePolibotDisclosureDetails(prev.disclosureDetails, values.disclosureDetails) : prev.disclosureDetails,
       underwritingAssessment: values.underwritingAssessment && typeof values.underwritingAssessment === 'object' ? { ...prev.underwritingAssessment, ...values.underwritingAssessment } : prev.underwritingAssessment,
       analysisResult: values.analysisResult && typeof values.analysisResult === 'object' ? { ...prev.analysisResult, ...values.analysisResult } : prev.analysisResult,
       familyHistory: values.familyHistory ?? prev.familyHistory,
@@ -5391,7 +5407,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           ...prev,
           medicalHistory: [prev.medicalHistory, text.slice(0, 12000)].filter(Boolean).join('\n'),
           disclosureDetails: values.disclosureDetails && typeof values.disclosureDetails === 'object'
-            ? { ...prev.disclosureDetails, ...values.disclosureDetails }
+            ? mergePolibotDisclosureDetails(prev.disclosureDetails, values.disclosureDetails)
             : prev.disclosureDetails,
           underwritingAssessment: values.underwritingAssessment && typeof values.underwritingAssessment === 'object'
             ? { ...prev.underwritingAssessment, ...values.underwritingAssessment }
@@ -5464,7 +5480,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
         existingMedicalPlan: values.existingMedicalPlan || prev.existingMedicalPlan,
         existingPremium: sumPolibotPremiumValues(prev.existingPremium, values.existingPremium) || values.existingPremium || prev.existingPremium,
         medicalHistory: mergePolibotTextLines(prev.medicalHistory, values.medicalHistory),
-        disclosureDetails: values.disclosureDetails && typeof values.disclosureDetails === 'object' ? { ...prev.disclosureDetails, ...values.disclosureDetails } : prev.disclosureDetails,
+        disclosureDetails: values.disclosureDetails && typeof values.disclosureDetails === 'object' ? mergePolibotDisclosureDetails(prev.disclosureDetails, values.disclosureDetails) : prev.disclosureDetails,
         underwritingAssessment: values.underwritingAssessment && typeof values.underwritingAssessment === 'object' ? { ...prev.underwritingAssessment, ...values.underwritingAssessment } : prev.underwritingAssessment,
         analysisResult: values.analysisResult && typeof values.analysisResult === 'object' ? { ...prev.analysisResult, ...values.analysisResult } : prev.analysisResult
       }));

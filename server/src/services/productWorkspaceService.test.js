@@ -835,6 +835,8 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     purpose: '보장 강화'
   });
   assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => item.code === 'HIRA-MULTI-SOURCE'));
+  assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => item.code === 'HIRA-MULTI-SOURCE' && /기본진료정보, 약제정보/.test(item.reason || '')));
+  assert.equal((multiHiraWorkspace.managerCodes || []).some((item) => item.code === 'HIRA-MULTI-SOURCE' && /의료기관 8건/.test(item.reason || '')), false);
   assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => item.code === 'HEALTHY-TREATMENT-7'));
   assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => item.code === 'HEALTHY-MEDICATION-30'));
   assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => /치료횟수 8회/.test(item.reason || '')));
