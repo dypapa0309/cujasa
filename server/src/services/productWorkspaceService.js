@@ -3218,6 +3218,43 @@ function groupPolibotDesignRecommendedCodes(items = []) {
   return [...groups.values()];
 }
 
+function polibotCodeEvidenceMatches(code = '', matchedCoverageCodes = []) {
+  const normalized = normalizePolibotDisclosureCode(code) || String(code || '').trim();
+  if (!normalized) return [];
+  return (Array.isArray(matchedCoverageCodes) ? matchedCoverageCodes : [])
+    .filter((item) => (normalizePolibotDisclosureCode(item?.code || '') || String(item?.code || '').trim()) === normalized)
+    .map((item) => ({
+      code: normalized,
+      company: item.company || (item.companies || [])[0] || '',
+      productName: item.productName || '',
+      productGroup: item.productGroup || '',
+      connectedValue: item.connectedValue || item.label || '',
+      source: item.source || '',
+      confidence: Number(item.confidence || 0),
+      context: item.context || ''
+    }))
+    .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))
+    .filter((item, index, list) => list.findIndex((row) => row.company === item.company && row.productName === item.productName && row.source === item.source && row.connectedValue === item.connectedValue) === index)
+    .slice(0, 5);
+}
+
+function enrichPolibotDisclosureAssessmentsWithEvidence(assessments = [], matchedCoverageCodes = []) {
+  return (Array.isArray(assessments) ? assessments : []).map((item) => {
+    const evidenceMatches = polibotCodeEvidenceMatches(item.code, matchedCoverageCodes);
+    const bestEvidence = evidenceMatches[0] || {};
+    return {
+      ...item,
+      evidenceMatches,
+      evidenceSummary: evidenceMatches.length
+        ? `${[...new Set(evidenceMatches.map((row) => row.company).filter(Boolean))].slice(0, 3).join(', ') || '서버 자료'} ${evidenceMatches.length}건 근거`
+        : '',
+      company: bestEvidence.company || '',
+      productName: bestEvidence.productName || '',
+      source: bestEvidence.source || ''
+    };
+  });
+}
+
 function formatPolibotReviewNeed(reason = '') {
   const text = String(reason || '').trim();
   if (!text) return '';
@@ -4043,7 +4080,10 @@ function buildPolibotDesignManagerSummary({
   const coveragePriority = decisionAnalysis.coveragePriority || polibotCoveragePriority(profile);
   const priceStrategy = decisionAnalysis.priceStrategy || polibotPriceStrategy(profile);
   const route = polibotManagerRouteLabel(underwritingRoute, medicalRisk, profile, actualCodes);
-  const disclosureCodeAssessments = buildPolibotDisclosureCodeAssessments(profile);
+  const disclosureCodeAssessments = enrichPolibotDisclosureAssessmentsWithEvidence(
+    buildPolibotDisclosureCodeAssessments(profile),
+    matchedCoverageCodes
+  );
   const seenCode = new Set();
   const needsReviewDisclosureCodes = new Set(actualCodes
     .filter((item) => item.status === 'needs_review')
@@ -4070,17 +4110,18 @@ function buildPolibotDesignManagerSummary({
       code: item.code,
       connectedValue: item.label,
       category: item.category,
-      company: '',
-      productName: '',
+      company: item.company || '',
+      productName: item.productName || '',
       productGroup: item.category,
       priority: item.status === 'recommended' ? '우선 검토' : item.status === 'compare' ? '비교 검토' : '검수 필요',
-      source: '고객조건 룰',
+      source: item.evidenceSummary ? `고객조건 룰 + ${item.evidenceSummary}` : '고객조건 룰',
       confidence: item.confidence,
       context: item.reason,
       status: item.status,
       statusLabel: item.statusLabel,
       blockers: item.blockers,
-      nextCheck: item.nextCheck
+      nextCheck: item.nextCheck,
+      evidenceMatches: item.evidenceMatches || []
     }));
   const recommendedCodes = groupPolibotDesignRecommendedCodes([...ruleRecommendedCodes, ...evidenceRecommendedCodes])
     .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))

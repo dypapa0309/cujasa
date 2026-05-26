@@ -684,6 +684,8 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   });
   assert.ok((chronicWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'));
   assert.ok((chronicWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation'));
+  assert.ok((chronicWorkspace.designManagerReview?.codeAssessments || []).some((item) => item.code === '3.6.5' && item.status === 'recommended'));
+  assert.ok((chronicWorkspace.designManagerReview?.codeAssessments || []).some((item) => item.code === '3.10.5' && /10년 자료/.test(item.nextCheck || '')));
   assert.ok((chronicWorkspace.matchedCoverageCodes || []).some((item) => item.kind === 'manager_code_candidate'));
   assert.ok((chronicWorkspace.designManagerReview?.recommendedCodes || []).some((item) => /^3\./.test(item.code || '')));
 
@@ -714,6 +716,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     purpose: '보장 강화'
   });
   assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === 'I47' && item.kind === 'KCD'));
+  assert.ok((arrhythmiaWorkspace.designManagerReview?.codeAssessments || []).some((item) => item.code === '3.10.10' && item.status === 'recommended'));
   assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'));
   assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation'));
 
@@ -793,6 +796,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   });
   assert.ok((clearedHiraWorkspace.actualCodes || []).some((item) => item.code === '3.3.5' && item.status === 'recommended'));
   assert.ok((clearedHiraWorkspace.actualCodes || []).some((item) => item.code === '3.2.5' && item.status === 'recommended'));
+  assert.ok((clearedHiraWorkspace.designManagerReview?.codeAssessments || []).some((item) => item.code === '3.0.5' && item.status === 'compare'));
   assert.equal((clearedHiraWorkspace.actualCodes || []).some((item) => /^5\./.test(item.code || '') && item.kind === 'disclosure_recommendation'), false);
   assert.ok((clearedHiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)));
   assert.equal((clearedHiraWorkspace.actualCodes || []).some((item) => (item.reviewReasonCodes || []).includes('recent3_missing')), false);
