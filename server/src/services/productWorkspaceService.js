@@ -2510,9 +2510,13 @@ function buildPolibotActualCodes(profile = {}) {
 
 function polibotCoverageCodeQueries(profile = {}) {
   const needs = Array.isArray(profile.needs) ? profile.needs : normalizeList(profile.needs);
+  const medicalText = polibotUnderwritingMedicalText(profile);
+  const actualDisclosureCodes = (Array.isArray(profile.actualCodes) ? profile.actualCodes : [])
+    .map((item) => normalizePolibotDisclosureCode(item?.code || ''))
+    .filter(Boolean);
   const text = [
     needs.join(' '),
-    profile.medicalHistory,
+    medicalText,
     profile.purpose,
     profile.analysisResult?.gaps,
     profile.analysisResult?.remodelList,
@@ -2530,16 +2534,13 @@ function polibotCoverageCodeQueries(profile = {}) {
     if (/운전자/.test(need)) ['운전자', '교통사고처리지원금', '변호사선임비'].forEach((item) => queries.add(item));
     queries.add(need);
   });
-  if (/간편|유병|고지|당뇨|고혈압|고지혈|암|심장|뇌/.test(text)) {
+  if (actualDisclosureCodes.length || /간편|유병|고지|당뇨|고혈압|고지혈|투약|치료|검사|입원|수술|처방|외래/.test(medicalText)) {
     queries.add('간편고지');
     queries.add('유병자');
   }
-  (Array.isArray(profile.actualCodes) ? profile.actualCodes : []).forEach((item) => {
-    const code = normalizePolibotDisclosureCode(item?.code || '');
-    if (code) {
-      queries.add(code);
-      queries.add(`${code} 간편고지`);
-    }
+  actualDisclosureCodes.forEach((code) => {
+    queries.add(code);
+    queries.add(`${code} 간편고지`);
   });
   (Array.isArray(profile.managerCodes) ? profile.managerCodes : []).forEach((item) => {
     const memo = `${item.code || ''} ${item.label || ''} ${item.reason || ''}`;
@@ -2623,6 +2624,10 @@ function compactPolibotMatchedCoverageCode(candidate = {}, query = '') {
 async function buildPolibotMatchedCoverageCodes(userId = '', profile = {}) {
   const queries = polibotCoverageCodeQueries(profile);
   if (!queries.length) return [];
+  const allowedDisclosureCodes = new Set((Array.isArray(profile.actualCodes) ? profile.actualCodes : [])
+    .map((item) => normalizePolibotDisclosureCode(item?.code || ''))
+    .filter(Boolean));
+  const hasUnderwritingEvidence = Boolean(polibotUnderwritingMedicalText(profile));
   const batches = await Promise.all(queries.map(async (query) => {
     const rows = await searchPolibotCodeCandidates(userId, { query, limit: 16, includeChunks: false }).catch(() => []);
     return rows.map((row) => compactPolibotMatchedCoverageCode(row, query));
@@ -2630,6 +2635,10 @@ async function buildPolibotMatchedCoverageCodes(userId = '', profile = {}) {
   const selected = [];
   for (const item of batches.flat().sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))) {
     if (isNoisyPolibotCoverageCode(item)) continue;
+    if (item.kind === 'manager_code_candidate') {
+      if (allowedDisclosureCodes.size === 0 && !hasUnderwritingEvidence) continue;
+      if (allowedDisclosureCodes.size > 0 && !allowedDisclosureCodes.has(item.code)) continue;
+    }
     const identity = [
       item.code,
       item.kind,
