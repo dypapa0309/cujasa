@@ -2326,6 +2326,185 @@ function polibotDisclosureCodeRequiredMonths(code = '') {
   return 0;
 }
 
+function polibotDisclosureRecent3Cleared(profile = {}, events = {}) {
+  return !polibotDisclosureRecent3MonthReview(profile, events);
+}
+
+function polibotDisclosureRuleContext(profile = {}) {
+  const events = extractPolibotMedicalEvents(profile);
+  const diseaseSignals = events.diseaseSignals || polibotDiseaseSignals(profile);
+  const medical = polibotUnderwritingMedicalText(profile);
+  const text = normalizePolibotMatchText([
+    medical,
+    profile.familyHistory,
+    profile.underwritingAssessment?.route,
+    profile.underwritingAssessment?.note,
+    profile.underwritingAssessment?.simpleReview
+  ].filter(Boolean).join(' '));
+  const rawMedical = String(profile.medicalHistory || '').trim();
+  const explicitNoMedical = /^(없음|무|해당\s*없음?|이상\s*없음?|문제\s*없음?|특이\s*사항\s*없음?)$/i.test(String(rawMedical || medical || '').trim());
+  const noMedical = explicitNoMedical
+    && !events.hasHira
+    && !events.hasAdmissionSurgery
+    && !events.hasLongMedication
+    && !events.hasFollowup
+    && !events.hasMajorDisease
+    && !events.hasChronicDisease;
+  return {
+    events,
+    diseaseSignals,
+    medical,
+    text,
+    noMedical,
+    hasRecent3Clear: polibotDisclosureRecent3Cleared(profile, events),
+    hasLongLookbackEvidence: (events.coverageWindowMonths || 0) >= 120 || /10년|십년/.test(text),
+    hasFiveYearEvidence: (events.coverageWindowMonths || 0) >= 60 || /5년|오년/.test(text),
+    hasLightIssue: events.hasLightHiraUse
+      || (/경증|초경증|용종|결절|검진|외래|통원|약국|처방|추적|관찰/.test(text)
+        && !events.hasMajorDisease
+        && !events.hasAdmissionSurgery
+        && !events.hasLongMedication)
+  };
+}
+
+const POLIBOT_DISCLOSURE_RULES = [
+  {
+    code: '5.10.5',
+    label: '건강고지/우량체 비교',
+    category: '건강고지',
+    priority: 78,
+    when: ({ noMedical }) => noMedical,
+    reason: '병력 이슈가 낮아 건강고지 또는 우량체 계열을 먼저 비교할 수 있습니다.',
+    nextCheck: '일반심사 보험료와 건강고지 보험료 차이를 먼저 비교하세요.'
+  },
+  {
+    code: '5.5.5',
+    label: '표준/건강고지 비교',
+    category: '건강고지',
+    priority: 70,
+    when: ({ noMedical }) => noMedical,
+    reason: '표준형 가능성이 높은 고객이라 5.5.5 계열도 보험료 비교 후보입니다.',
+    nextCheck: '표준심사 가능 여부와 고지 질문 원문을 확인하세요.'
+  },
+  {
+    code: '3.0.5',
+    label: '초경증/무사고 전환 참고',
+    category: '간편고지',
+    priority: 66,
+    when: ({ hasLightIssue, events }) => hasLightIssue && !events.hasAdmissionSurgery && !events.hasMajorDisease && !events.hasLongMedication,
+    reason: '입원/수술/장기투약 단서가 약한 경증 외래·검사 중심 자료라 3.0.5 계열은 참고 후보로 볼 수 있습니다.',
+    nextCheck: '해당 회사가 3.0.5를 실제 판매/전환 코드로 쓰는지 설계 화면에서 확인하세요.'
+  },
+  {
+    code: '3.2.5',
+    label: '초경증 간편고지',
+    category: '간편고지',
+    priority: 72,
+    when: ({ hasLightIssue, events }) => hasLightIssue && !events.hasAdmissionSurgery && !events.hasMajorDisease && !events.hasLongMedication,
+    reason: '최근 입원/수술/중대질환보다 외래·검사 단서가 중심이라 3.2.5 초경증 후보를 비교합니다.',
+    nextCheck: '최근 3개월 문진과 5년 내 입원/수술 여부를 확인하세요.'
+  },
+  {
+    code: '3.3.5',
+    label: '추적관찰/검사 이력 간편고지',
+    category: '간편고지',
+    priority: 76,
+    when: ({ events }) => (events.hasFollowup || events.hasHira) && !events.hasAdmissionSurgery && !events.hasMajorDisease,
+    reason: '검사/재검/추적관찰 또는 심평원 이력이 있어 3.3.5 질문형을 비교 후보로 둡니다.',
+    nextCheck: '검사 결과가 단순 추적관찰인지 추가 치료 지시인지 구분하세요.'
+  },
+  {
+    code: '3.5.5',
+    label: '5년형 간편고지',
+    category: '간편고지',
+    priority: 86,
+    when: ({ events }) => events.hasAdmissionSurgery || events.hasLongMedication || events.hasChronicDisease,
+    reason: '입원/수술/장기투약 또는 만성질환 단서가 있어 5년형 간편고지를 우선 비교합니다.',
+    nextCheck: '5년 내 입원, 수술, 7일 이상 치료, 30일 이상 투약 여부를 확인하세요.'
+  },
+  {
+    code: '3.6.5',
+    label: '고혈압/당뇨 추가고지 비교',
+    category: '간편고지',
+    priority: 82,
+    when: ({ diseaseSignals, events }) => (diseaseSignals.hypertension || diseaseSignals.diabetes) && !events.hasMajorDisease,
+    reason: '고혈압/당뇨 단서가 있어 서버 코드표의 추가고지형 후보를 비교합니다.',
+    nextCheck: '최근 수치, 합병증, 인슐린 사용, 입원/수술 여부를 확인하세요.'
+  },
+  {
+    code: '3.10.5',
+    label: '10년/5년형 경증 유병자',
+    category: '간편고지',
+    priority: 84,
+    when: ({ events, diseaseSignals, hasLightIssue, hasLongLookbackEvidence }) => (
+      diseaseSignals.hypertension
+      || diseaseSignals.diabetes
+      || (hasLightIssue && hasLongLookbackEvidence)
+      || (events.hasLongMedication && !events.hasAdmissionSurgery && !events.hasMajorDisease)
+    ),
+    reason: '만성질환 투약 또는 경증 유병자 단서가 있어 3.10.5 상품군을 비교합니다.',
+    nextCheck: '10년 자료가 없으면 3.10.5 확정 추천은 보류하고 고객 문진으로 보완하세요.'
+  },
+  {
+    code: '3.10.5.5',
+    label: '당뇨 추가고지형',
+    category: '간편고지',
+    priority: 83,
+    when: ({ diseaseSignals }) => diseaseSignals.diabetes,
+    reason: '당뇨 진단/투약 단서가 있어 당뇨 추가고지형을 별도 비교합니다.',
+    nextCheck: '합병증, 인슐린, 최근 HbA1c/혈당 수치와 입원 이력을 확인하세요.'
+  },
+  {
+    code: '3.10.10',
+    label: '10년형 중증/수술 이력 간편고지',
+    category: '간편고지',
+    priority: 90,
+    when: ({ events, diseaseSignals }) => (
+      events.hasMajorDisease
+      || events.hasAdmissionSurgery
+      || diseaseSignals.cancer
+      || diseaseSignals.ischemicHeart
+      || diseaseSignals.cerebrovascular
+      || diseaseSignals.arrhythmia
+      || diseaseSignals.heartFailure
+    ),
+    reason: '중대질환, 심뇌혈관/부정맥, 입원/수술 이력 가능성이 있어 10년형 간편고지를 검토합니다.',
+    nextCheck: '10년 내 진단, 입원, 수술, 계속 치료, 후유증 여부를 분리해서 확인하세요.'
+  }
+];
+
+function buildPolibotDisclosureCodeAssessments(profile = {}) {
+  const context = polibotDisclosureRuleContext(profile);
+  const profileRecent3Review = polibotDisclosureRecent3MonthReview(profile, context.events);
+  return POLIBOT_DISCLOSURE_RULES
+    .map((rule) => {
+      if (!rule.when(context)) return null;
+      const requiredMonths = polibotDisclosureCodeRequiredMonths(rule.code);
+      const windowReview = polibotDisclosureWindowReview(context.events, requiredMonths);
+      const reviews = [profileRecent3Review, windowReview].filter(Boolean);
+      const blockers = reviews.map((review) => review.reason).filter(Boolean);
+      const score = Math.max(35, Math.min(100, Number(rule.priority || 70) - blockers.length * 12));
+      const status = blockers.length ? 'needs_review' : score >= 82 ? 'recommended' : 'compare';
+      return {
+        code: rule.code,
+        label: rule.label,
+        category: rule.category,
+        status,
+        statusLabel: status === 'recommended' ? '우선 추천' : status === 'compare' ? '비교 후보' : '검수 필요',
+        confidence: score,
+        requiredMonths,
+        reason: blockers.length ? `${rule.reason} ${blockers.join(' ')}` : rule.reason,
+        baseReason: rule.reason,
+        blockers,
+        nextCheck: rule.nextCheck,
+        diseaseTags: context.diseaseSignals.labels || [],
+        reviewReasonCodes: reviews.map((review) => review.reasonCode).filter(Boolean)
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0));
+}
+
 function polibotMedicalRisk(profile = {}) {
   const medical = polibotUnderwritingMedicalText(profile);
   const disclosureText = '';
@@ -2709,6 +2888,17 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
       confidence: 82
     });
   }
+  buildPolibotDisclosureCodeAssessments(profile)
+    .filter((item) => ['recommended', 'compare', 'needs_review'].includes(item.status))
+    .forEach((item) => {
+      add({
+        code: item.code,
+        status: item.status,
+        reason: `${item.statusLabel}: ${item.baseReason}`,
+        requiredMonths: item.requiredMonths,
+        confidence: item.confidence
+      });
+    });
   return items;
 }
 
@@ -2933,7 +3123,7 @@ async function buildPolibotMatchedCoverageCodes(userId = '', profile = {}) {
     .some((item) => normalizePolibotDisclosureCode(item?.code || ''));
   const hasUnderwritingEvidence = Boolean(polibotUnderwritingMedicalText(profile));
   const batches = await Promise.all(queries.map(async (query) => {
-    const rows = await searchPolibotCodeCandidates(userId, { query, limit: 16, includeChunks: false }).catch(() => []);
+    const rows = await searchPolibotCodeCandidates(userId, { query, limit: 16, includeChunks: true }).catch(() => []);
     return rows.map((row) => compactPolibotMatchedCoverageCode(row, query));
   }));
   const selected = [];
@@ -3853,6 +4043,7 @@ function buildPolibotDesignManagerSummary({
   const coveragePriority = decisionAnalysis.coveragePriority || polibotCoveragePriority(profile);
   const priceStrategy = decisionAnalysis.priceStrategy || polibotPriceStrategy(profile);
   const route = polibotManagerRouteLabel(underwritingRoute, medicalRisk, profile, actualCodes);
+  const disclosureCodeAssessments = buildPolibotDisclosureCodeAssessments(profile);
   const seenCode = new Set();
   const needsReviewDisclosureCodes = new Set(actualCodes
     .filter((item) => item.status === 'needs_review')
@@ -3863,7 +4054,7 @@ function buildPolibotDesignManagerSummary({
     const reasonCodes = Array.isArray(item.reviewReasonCodes) ? item.reviewReasonCodes : [item.reviewReasonCode].filter(Boolean);
     return reasonCodes.some((code) => ['recent3_missing', 'recent3_incomplete', 'recent3_medical_event'].includes(code));
   }) || ['recent3_missing', 'recent3_incomplete', 'recent3_medical_event'].includes(profileRecent3Review?.reasonCode);
-  const recommendedCodes = groupPolibotDesignRecommendedCodes(matchedCoverageCodes
+  const evidenceRecommendedCodes = groupPolibotDesignRecommendedCodes(matchedCoverageCodes
     .map(normalizePolibotDesignRecommendedCode)
     .filter(() => !hasBlockingDisclosureReview)
     .filter((item) => !needsReviewDisclosureCodes.has(item.code))
@@ -3872,6 +4063,27 @@ function buildPolibotDesignManagerSummary({
       const key = [item.code, item.company, item.productName].join('|');
       return item.code && !seenCode.has(key) && seenCode.add(key);
     }))
+    .slice(0, 18);
+  const ruleRecommendedCodes = disclosureCodeAssessments
+    .filter((item) => item.status !== 'needs_review' || !hasBlockingDisclosureReview)
+    .map((item) => ({
+      code: item.code,
+      connectedValue: item.label,
+      category: item.category,
+      company: '',
+      productName: '',
+      productGroup: item.category,
+      priority: item.status === 'recommended' ? '우선 검토' : item.status === 'compare' ? '비교 검토' : '검수 필요',
+      source: '고객조건 룰',
+      confidence: item.confidence,
+      context: item.reason,
+      status: item.status,
+      statusLabel: item.statusLabel,
+      blockers: item.blockers,
+      nextCheck: item.nextCheck
+    }));
+  const recommendedCodes = groupPolibotDesignRecommendedCodes([...ruleRecommendedCodes, ...evidenceRecommendedCodes])
+    .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))
     .slice(0, 18);
   const codeCategories = [...new Set(recommendedCodes.map((item) => item.category).filter(Boolean))];
   const priorityCoverage = [
@@ -3916,6 +4128,7 @@ function buildPolibotDesignManagerSummary({
     nextAction,
     priorityCoverage,
     recommendedCodes,
+    codeAssessments: disclosureCodeAssessments,
     riskFlags,
     sellerQuestions
   };
@@ -6760,6 +6973,7 @@ export async function savePolibotRecommendation(userId, {
     route: workspaceDesignManagerSummary.route || '',
     routeReason: workspaceDesignManagerSummary.routeReason || '',
     recommendedCodes: workspaceDesignManagerSummary.recommendedCodes || [],
+    codeAssessments: workspaceDesignManagerSummary.codeAssessments || [],
     priorityCoverage: workspaceDesignManagerSummary.priorityCoverage || [],
     nextAction: recommendationsWithSnapshot.length ? '추천 후보 검수' : '추천 보류 사유 검수',
     reviewPoints: [
