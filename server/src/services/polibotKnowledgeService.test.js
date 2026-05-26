@@ -41,14 +41,19 @@ test('extracts only explicit POLIBOT coverage codes and route codes', () => {
     text: [
       '질병코드 질병명 I47~I49 부정맥 I50 심부전 I60~I62 뇌출혈',
       '암 진단비 초기이상100만, 중기이상600만',
+      '신한 80Plus 3.10.5 간편고지 3대질병 진단비 비교',
       '삼성화재 보장코드 305 암 진단비 특약',
       '상품명 (335 간편고지형) 남성 45세 보험료 30,000원',
+      '치매&간병 신규특약 17종 탑재, 암종 비율 전립선 15.0%',
       '실손(질병입원) 551,281 질병수술비'
     ].join('\n')
   });
   const codes = candidates.map((item) => item.code);
+  assert.ok(codes.includes('3.10.5'));
   assert.ok(codes.includes('305'));
   assert.ok(codes.includes('335'));
+  assert.equal(codes.includes('17'), false);
+  assert.equal(codes.includes('15'), false);
   assert.equal(codes.includes('100'), false);
   assert.equal(codes.includes('600'), false);
   assert.equal(codes.includes('47'), false);

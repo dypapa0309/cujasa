@@ -282,7 +282,17 @@ export function inferPolibotProductGroup(text = '') {
 }
 
 function normalizeCodeValue(value = '') {
-  return String(value || '').replace(/^0+(?=\d)/, '');
+  const raw = String(value || '').trim();
+  const dottedRoute = raw.match(/^([35])\.(\d{1,2})\.(\d{1,2})(?:\.(\d{1,2}))?$/);
+  if (dottedRoute) {
+    return [
+      dottedRoute[1],
+      Number(dottedRoute[2]),
+      Number(dottedRoute[3]),
+      dottedRoute[4] ? Number(dottedRoute[4]) : ''
+    ].filter((part) => part !== '').join('.');
+  }
+  return raw.replace(/^0+(?=\d)/, '');
 }
 
 function codeLooksLikeDateOrAmount(code = '', context = '') {
@@ -297,7 +307,8 @@ function codeLooksLikeDateOrAmount(code = '', context = '') {
 }
 
 function isRouteDisclosureCode(code = '', context = '') {
-  return /^(310|325|333|335|355)$/.test(code) && /간편|유병|고지|표준|심사/.test(context);
+  return /^([35]\.\d{1,2}\.\d{1,2}(?:\.\d{1,2})?|305|315|310|325|333|335|345|355|3105|31010|5105|51010)$/.test(code)
+    && /간편|유병|고지|표준|심사|건강고지/.test(context);
 }
 
 function isNoisyCoverageCodeExtraction(code = '', context = '', explicit = false) {
@@ -308,7 +319,7 @@ function isNoisyCoverageCodeExtraction(code = '', context = '', explicit = false
   if (/[{(]?[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}/i.test(context)) return true;
   if (new RegExp(`[A-Z]${code}\\b|[A-Z]${code}~|~[A-Z]?${code}\\b`, 'i').test(context)) return true;
   if (new RegExp(`\\d{1,3},${code}\\b|\\b${code},\\d{3}\\b`).test(context)) return true;
-  if (new RegExp(`\\b${code}\\s*(?:만|천|억|원|세|회|일|년|개월|%|대)`).test(context)) return true;
+  if (new RegExp(`\\b${code}(?:\\.\\d+)?\\s*(?:만|천|억|원|세|회|일|년|개월|%|대|종|개)`).test(context)) return true;
   if (new RegExp(`\\b${code}\\s*개\\s*코드`).test(context)) return true;
   if (new RegExp(`(?:가입나이|납입기간|만기|상해급수|보험료|순번|가입\\s*\\(?건\\)?)[^\\n]{0,24}\\b${code}\\b`).test(context)) return true;
   return !explicit;
@@ -330,11 +341,12 @@ export function extractPolibotCoverageCodes({ text = '', fileName = '', companie
   if (!source) return [];
   const found = [];
   const patterns = [
+    /\b([35]\.\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\b/g,
     /(?:코드|담보\s*번호|보장\s*번호|특약\s*번호)\s*[:：#]?\s*([0-9]{1,4})/g,
     /([0-9]{1,4})\s*번\s*(?:담보|보장|특약|회사|코드)?/g,
     /(?:담보|보장|특약)\s*([0-9]{1,4})\s*(?:번|코드)?/g,
-    /\(?\b(310|325|333|335|355)\s*(?:간편|고지|유병|표준)/g,
-    /(?:간편|고지|유병|표준)[가-힣A-Za-z\s()·ㆍ]{0,16}\b(310|325|333|335|355)\b/g
+    /\(?\b(305|315|310|325|333|335|345|355|3105|31010|5105|51010)\s*(?:간편|고지|유병|표준|건강고지)/g,
+    /(?:간편|고지|유병|표준|건강고지)[가-힣A-Za-z\s()·ㆍ]{0,16}\b(305|315|310|325|333|335|345|355|3105|31010|5105|51010)\b/g
   ];
   patterns.forEach((pattern) => {
     for (const match of source.matchAll(pattern)) {

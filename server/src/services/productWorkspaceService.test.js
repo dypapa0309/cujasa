@@ -687,6 +687,36 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.ok((chronicWorkspace.matchedCoverageCodes || []).some((item) => item.kind === 'manager_code_candidate'));
   assert.ok((chronicWorkspace.designManagerReview?.recommendedCodes || []).some((item) => /^3\./.test(item.code || '')));
 
+  const arrhythmiaWorkspace = await savePolibotRecommendation(userId, {
+    name: '부정맥 KCD 고객',
+    age: '61',
+    gender: '남성',
+    needs: ['심장', '수술'],
+    budget: '15',
+    existingMedicalPlan: '있음',
+    medicalHistory: 'I47 부정맥 진단 후 약 복용 중. 입원/수술 없음.',
+    disclosureDetails: {
+      recent3Months: {
+        diagnosis: 'none',
+        suspicion: 'none',
+        treatment: 'none',
+        admission: 'none',
+        surgery: 'none',
+        medication: 'none',
+        extraExam: 'none',
+        confirmedBy: 'customer'
+      },
+      recent5Years: 'I47 부정맥 진단 및 약 복용',
+      currentMedication: '부정맥 약 복용 중',
+      admissionSurgery: '입원/수술 없음'
+    },
+    existingPremium: '17',
+    purpose: '보장 강화'
+  });
+  assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === 'I47' && item.kind === 'KCD'));
+  assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'));
+  assert.ok((arrhythmiaWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation'));
+
   const standardWorkspace = await savePolibotRecommendation(userId, {
     name: '건강고지 고객',
     age: '42',

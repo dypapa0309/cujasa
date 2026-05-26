@@ -1878,7 +1878,7 @@ export function isNoisyPolibotCodeCandidate(candidate = {}) {
   if (/[{(]?[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}/i.test(context)) return true;
   if (new RegExp(`[a-z]${code}\\b|[a-z]${code}~|~[a-z]?${code}\\b`, 'i').test(context)) return true;
   if (new RegExp(`\\d{1,3},${code}\\b|\\b${code},\\d{3}\\b`).test(context)) return true;
-  if (new RegExp(`\\b${code}\\s*(?:만|천|억|원|세|회|일|년|개월|%|대)`).test(context)) return true;
+  if (new RegExp(`\\b${code}(?:\\.\\d+)?\\s*(?:만|천|억|원|세|회|일|년|개월|%|대|종|개)`).test(context)) return true;
   if (new RegExp(`\\b${code}\\s*/`).test(context)) return true;
   if (new RegExp(`\\b${code}\\s*개\\s*코드`).test(context)) return true;
   if (new RegExp(`(?:가입나이|납입기간|만기|상해급수|보험료|순번|가입\\s*\\(?건\\)?)[^\\n]{0,24}\\b${code}\\b`).test(context)) return true;

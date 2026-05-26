@@ -2122,6 +2122,58 @@ function polibotUnderwritingMedicalText(profile = {}) {
   ].filter(Boolean).join(' ');
 }
 
+function polibotDiseaseSignals(profile = {}) {
+  const medical = polibotUnderwritingMedicalText(profile);
+  const text = normalizePolibotMatchText(`${medical} ${profile.familyHistory || ''}`);
+  const codes = [...text.matchAll(/\b([A-Z][0-9]{2}(?:\.[0-9A-Z]{1,2})?|[A-Z][0-9]{3})\b/gi)]
+    .map((match) => String(match[1] || '').toUpperCase())
+    .filter(Boolean);
+  const hasCodeRange = (letter, min, max) => codes.some((code) => {
+    const match = code.match(/^([A-Z])(\d{2})/);
+    if (!match || match[1] !== letter) return false;
+    const value = Number(match[2]);
+    return value >= min && value <= max;
+  });
+  const signals = {
+    codes: [...new Set(codes)].slice(0, 20),
+    hypertension: hasCodeRange('I', 10, 10) || /고혈압|본태성\s*혈압|혈압약/i.test(text),
+    diabetes: hasCodeRange('E', 10, 14) || /당뇨|당뇨병|인슐린/i.test(text),
+    ischemicHeart: hasCodeRange('I', 20, 25) || /허혈성\s*심장|협심증|심근경색/i.test(text),
+    arrhythmia: hasCodeRange('I', 47, 49) || /부정맥|심방세동|심실빈맥/i.test(text),
+    heartFailure: hasCodeRange('I', 50, 50) || /심부전/i.test(text),
+    cerebrovascular: hasCodeRange('I', 60, 69) || /뇌혈관|뇌졸중|뇌출혈|뇌경색/i.test(text),
+    cancer: hasCodeRange('C', 0, 97) || /암|악성신생물|백혈병|림프종|갑상선암|전이|재발/i.test(text),
+    dementia: hasCodeRange('F', 0, 3) || /치매|알츠하이머/i.test(text)
+  };
+  signals.chronic = signals.hypertension || signals.diabetes || signals.arrhythmia || signals.heartFailure;
+  signals.major = signals.cancer || signals.ischemicHeart || signals.cerebrovascular || signals.dementia;
+  signals.queries = [
+    signals.hypertension && '고혈압',
+    signals.diabetes && '당뇨',
+    signals.ischemicHeart && '허혈성심장',
+    signals.ischemicHeart && '협심증',
+    signals.arrhythmia && '부정맥',
+    signals.heartFailure && '심부전',
+    signals.cerebrovascular && '뇌혈관',
+    signals.cerebrovascular && '뇌졸중',
+    signals.cancer && '암 진단비',
+    signals.cancer && '암 주요치료비',
+    signals.dementia && '치매',
+    signals.dementia && '간병'
+  ].filter(Boolean);
+  signals.labels = [
+    signals.hypertension && '고혈압',
+    signals.diabetes && '당뇨',
+    signals.ischemicHeart && '허혈성심장질환',
+    signals.arrhythmia && '부정맥',
+    signals.heartFailure && '심부전',
+    signals.cerebrovascular && '뇌혈관질환',
+    signals.cancer && '암',
+    signals.dementia && '치매'
+  ].filter(Boolean);
+  return signals;
+}
+
 function inferPolibotMedicalWindowMonths(text = '') {
   const value = normalizePolibotMatchText(text);
   const yearMatch = value.match(/(?:심평원|hira|진료|의료기관|약국|청구)[^\n]{0,24}?(\d{1,2})\s*년\s*(?:자료|이력|조회|기준)?/);
@@ -2136,6 +2188,7 @@ function inferPolibotMedicalWindowMonths(text = '') {
 function extractPolibotMedicalEvents(profile = {}) {
   const medical = polibotUnderwritingMedicalText(profile);
   const text = normalizePolibotMatchText(`${medical} ${profile.familyHistory || ''}`);
+  const diseaseSignals = polibotDiseaseSignals(profile);
   const coverageWindowMonths = inferPolibotMedicalWindowMonths(text);
   const positiveText = text
     .replace(/입원\s*0\s*일/g, '')
@@ -2157,8 +2210,8 @@ function extractPolibotMedicalEvents(profile = {}) {
   const hasNoLongMedication = /(?:장기\s*)?투약\s*(?:명시\s*)?(?:없음|없|미확인)|복용\s*(?:명시\s*)?(?:없음|없|미확인)|처방\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);
   const hasAdmission = admissionDays > 0 || (/입원/.test(positiveText) && !hasNoAdmission);
   const hasSurgery = /수술|시술/.test(positiveText) && !hasNoSurgery;
-  const hasMajorDisease = /암|백혈병|협심증|심근경색|심장판막|간경화|뇌졸중|뇌출혈|뇌경색|에이즈|hiv|후유증|전이|재발|c\d{2}|i2[0-5]|i6[0-9]/i.test(text);
-  const hasChronicDisease = /고혈압|혈압|당뇨|고지혈|고지혈증|콜레스테롤|지질|i10|e1[0-4]/i.test(text);
+  const hasMajorDisease = diseaseSignals.major || /암|백혈병|협심증|심근경색|심장판막|간경화|뇌졸중|뇌출혈|뇌경색|에이즈|hiv|후유증|전이|재발|c\d{2}|i2[0-5]|i6[0-9]/i.test(text);
+  const hasChronicDisease = diseaseSignals.chronic || /고혈압|혈압|당뇨|고지혈|고지혈증|콜레스테롤|지질|i10|e1[0-4]/i.test(text);
   const hasLongMedication = !hasNoLongMedication && (hasChronicDisease || /투약|복용|처방\s*유지|현재\s*처방|30일\s*이상\s*투약|장기\s*처방|약\s*복용/i.test(text));
   const hasFollowup = /검사|재검|추적|관찰|소견|결절|용종|검진/.test(text);
   const highRiskDepartment = /순환기|심장|신경과|신경외과|종양|혈액|내분비|신장|호흡기/.test(text);
@@ -2196,6 +2249,7 @@ function extractPolibotMedicalEvents(profile = {}) {
     highRiskDepartment,
     moderateRiskDepartment,
     hasLightHiraUse: hasHira && !hasMajorDisease && !hasAdmission && !hasSurgery && !hasLongMedication,
+    diseaseSignals,
     reasons
   };
 }
@@ -2581,7 +2635,8 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
   const hasFollowup = events.hasFollowup;
   const hasAdmissionSurgery = events.hasAdmissionSurgery;
   const hasMajor = events.hasMajorDisease;
-  const hasHypertensionDiabetes = /고혈압|혈압|당뇨/.test(text);
+  const diseaseSignals = events.diseaseSignals || polibotDiseaseSignals(profile);
+  const hasHypertensionDiabetes = diseaseSignals.hypertension || diseaseSignals.diabetes || /고혈압|혈압|당뇨/.test(text);
   const hasLongWindow = /10년|십년|장기|30일|7일|입원일수|수술일|치료\s*종료|완치/.test(text);
   const hasLightIssue = (
     events.hasLightHiraUse
@@ -2647,10 +2702,10 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
       confidence: 72
     });
   }
-  if (hasHypertensionDiabetes && /당뇨고지|당뇨\s*고지|합병증|인슐린/.test(text)) {
+  if (diseaseSignals.diabetes || (hasHypertensionDiabetes && /당뇨고지|당뇨\s*고지|합병증|인슐린/.test(text))) {
     add({
       code: '3.10.5.5',
-      reason: '당뇨 고지 또는 합병증 확인 단서가 있어 3.10.5.5 당뇨고지형을 별도 후보로 둡니다.',
+      reason: '당뇨 진단/투약 또는 당뇨 고지 단서가 있어 3.10.5.5 당뇨고지형을 별도 후보로 둡니다.',
       confidence: 82
     });
   }
@@ -2735,6 +2790,7 @@ function buildPolibotActualCodes(profile = {}) {
 function polibotCoverageCodeQueries(profile = {}) {
   const needs = Array.isArray(profile.needs) ? profile.needs : normalizeList(profile.needs);
   const medicalText = polibotUnderwritingMedicalText(profile);
+  const diseaseSignals = polibotDiseaseSignals(profile);
   const actualDisclosureCodes = (Array.isArray(profile.actualCodes) ? profile.actualCodes : [])
     .map((item) => normalizePolibotDisclosureCode(item?.code || ''))
     .filter(Boolean);
@@ -2761,6 +2817,15 @@ function polibotCoverageCodeQueries(profile = {}) {
   if (actualDisclosureCodes.length || /간편|유병|고지|당뇨|고혈압|고지혈|투약|치료|검사|입원|수술|처방|외래/.test(medicalText)) {
     queries.add('간편고지');
     queries.add('유병자');
+  }
+  diseaseSignals.queries.forEach((query) => queries.add(query));
+  if (diseaseSignals.labels.length) {
+    queries.add(`${diseaseSignals.labels.join(' ')} 간편고지`);
+    queries.add(`${diseaseSignals.labels.join(' ')} 보장`);
+  }
+  if (diseaseSignals.cerebrovascular || diseaseSignals.ischemicHeart || diseaseSignals.arrhythmia || diseaseSignals.heartFailure) {
+    queries.add('순환계 주요치료비');
+    queries.add('심뇌혈관');
   }
   actualDisclosureCodes.forEach((code) => {
     queries.add(code);
