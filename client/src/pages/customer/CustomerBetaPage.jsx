@@ -6201,7 +6201,7 @@ function collectPolibotCodes(...sources) {
     if (typeof value === 'object') {
       const tone = value.status || value.tone || value.result || inheritedTone || inferTone(value.reason || value.label || value.title || value.name || value.memo || '');
       pushCode(value.code || value.disclosureCode || value.underwritingCode || value.productCode, value.label || value.title || value.name || value.reason || '코드', value.source || value.fileName || source, tone);
-      ['codes', 'codeCandidates', 'actualCodes', 'managerCodes', 'disclosureCodes', 'underwritingCodes', 'matchedCodes', 'matchedCoverageCodes', 'recommendationCodes', 'recommendedCodes', 'designManagerSummary', 'evidence', 'evidenceAnchors', 'catalogItems', 'linkedBenefitGroups', 'routineChecks', 'reviewReasons', 'cautions', 'disclosureMemo', 'underwritingMemo'].forEach((key) => visit(value[key], value.fileName || value.source || source, tone));
+      ['codes', 'codeCandidates', 'actualCodes', 'managerCodes', 'decisionAnalysis', 'disclosureCodes', 'underwritingCodes', 'matchedCodes', 'matchedCoverageCodes', 'recommendationCodes', 'recommendedCodes', 'designManagerSummary', 'evidence', 'evidenceAnchors', 'catalogItems', 'linkedBenefitGroups', 'routineChecks', 'reviewReasons', 'cautions', 'disclosureMemo', 'underwritingMemo'].forEach((key) => visit(value[key], value.fileName || value.source || source, tone));
     }
   };
   sources.forEach((source) => visit(source));
