@@ -2348,6 +2348,9 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
     profile.underwritingAssessment?.note,
     profile.underwritingAssessment?.simpleReview
   ].filter(Boolean).join(' '));
+  const positiveEventText = text
+    .replace(/입원\s*0\s*일/g, '')
+    .replace(/외래\s*0\s*일/g, '');
   const items = [];
   const add = (item = {}) => {
     if (!item.code || items.some((row) => row.code === item.code)) return;
@@ -2362,9 +2365,9 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
     });
   };
   const hasHira = /심평원|의료기관|병원|약국|진료|외래|처방/.test(text);
-  const hasChronicMedication = /고혈압|혈압|당뇨|고지혈|콜레스테롤|지질|투약|복용|처방|약국/.test(text);
+  const hasChronicMedication = /고혈압|혈압|당뇨|고지혈|콜레스테롤|지질|투약|복용|처방\s*유지|현재\s*처방|30일\s*이상\s*투약|장기\s*처방/.test(text);
   const hasFollowup = /검사|재검|추적|관찰|소견|결절|용종/.test(text);
-  const hasAdmissionSurgery = /입원|수술|시술/.test(text);
+  const hasAdmissionSurgery = /입원|수술|시술/.test(positiveEventText);
   const hasMajor = /암|심근경색|협심증|뇌졸중|뇌출혈|뇌경색|심장판막|간경화|백혈병|후유증|전이|재발/.test(text);
   const hasHypertensionDiabetes = /고혈압|혈압|당뇨/.test(text);
   const hasLongWindow = /10년|십년|장기|30일|7일|입원일수|수술일|치료\s*종료|완치/.test(text);
@@ -2952,10 +2955,13 @@ function polibotDisclosureTimeline(profile = {}) {
 function polibotUnderwritingRoute(profile = {}, catalogItems = []) {
   const medical = polibotUnderwritingMedicalText(profile);
   const text = `${medical} ${profile.familyHistory || ''}`;
+  const positiveEventText = text
+    .replace(/입원\s*0\s*일/g, '')
+    .replace(/외래\s*0\s*일/g, '');
   const age = polibotAgeValue(profile);
   const hasNoMedical = Boolean(medical) && /없음|무|해당\s*없/i.test(medical);
   const hasChronic = /고혈압|혈압|당뇨|고지혈|고지혈증|협심증|심근경색|뇌졸중|심장|간경화/i.test(text);
-  const hasRecentRedFlag = /최근|3개월|의심|소견|추가검사|재검|입원|수술|치료|투약|30일|7일/i.test(text);
+  const hasRecentRedFlag = /최근|3개월|의심|소견|추가검사|재검|입원|수술|치료|투약|30일|7일/i.test(positiveEventText);
   const hasMajorDisease = /암|백혈병|협심증|심근경색|심장판막|간경화|뇌졸중|당뇨|에이즈|HIV/i.test(text);
   const productText = catalogItems.map((item) => `${item.productName || ''} ${item.productGroup || ''} ${(item.coverageKeywords || []).join(' ')}`).join(' ');
   const hasSimpleProduct = /간편|유병|고지|325|335|355|310|3\.2\.5|3\.5\.5|3\.10/.test(productText);
