@@ -6201,7 +6201,7 @@ function collectPolibotCodes(...sources) {
     if (typeof value === 'object') {
       const tone = value.status || value.tone || value.result || inheritedTone || inferTone(value.reason || value.label || value.title || value.name || value.memo || '');
       pushCode(value.code || value.disclosureCode || value.underwritingCode || value.productCode, value.label || value.title || value.name || value.reason || '코드', value.source || value.fileName || source, tone);
-      ['codes', 'codeCandidates', 'disclosureCodes', 'underwritingCodes', 'matchedCodes', 'matchedCoverageCodes', 'recommendationCodes', 'evidence', 'evidenceAnchors', 'catalogItems', 'linkedBenefitGroups', 'routineChecks', 'reviewReasons', 'cautions', 'disclosureMemo', 'underwritingMemo'].forEach((key) => visit(value[key], value.fileName || value.source || source, tone));
+      ['codes', 'codeCandidates', 'actualCodes', 'managerCodes', 'disclosureCodes', 'underwritingCodes', 'matchedCodes', 'matchedCoverageCodes', 'recommendationCodes', 'recommendedCodes', 'designManagerSummary', 'evidence', 'evidenceAnchors', 'catalogItems', 'linkedBenefitGroups', 'routineChecks', 'reviewReasons', 'cautions', 'disclosureMemo', 'underwritingMemo'].forEach((key) => visit(value[key], value.fileName || value.source || source, tone));
     }
   };
   sources.forEach((source) => visit(source));
@@ -6532,6 +6532,15 @@ function PolibotRecommendationList({ recommendations, saveMemo, onMemoChange, on
       <div className="grid gap-2">
         {recommendations.map((item) => {
           const itemCodes = collectPolibotCodes(item);
+          const itemCodeGroups = groupPolibotCodes(itemCodes, item);
+          const designSummary = item.designManagerSummary || item.decisionAnalysis?.designManagerSummary || {};
+          const checkItems = [
+            designSummary.route && `심사 경로: ${designSummary.route}`,
+            designSummary.nextAction && `다음 작업: ${designSummary.nextAction}`,
+            ...(designSummary.sellerQuestions || []).slice(0, 2),
+            ...(item.reviewReasons || []).slice(0, 2),
+            ...(item.routineChecks || []).slice(0, 1)
+          ].filter(Boolean);
           return (
           <button key={item.id} type="button" onClick={() => onSelect(item)} className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/5">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -6539,7 +6548,10 @@ function PolibotRecommendationList({ recommendations, saveMemo, onMemoChange, on
                 <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">{item.type === 'bundle' ? '조합 추천' : '단품 추천'}</div>
                 <div className="mt-1 break-keep text-sm font-black text-zinc-100">{item.name}</div>
                 {!testMode && <div className="mt-1 text-[11px] font-bold text-zinc-600">확신도 {item.confidence?.level || '보통'} · 점수 {item.score || '-'}</div>}
-                <div className="mt-2"><PolibotCodeBadges codes={itemCodes} empty="코드 대조 전" limit={2} /></div>
+                <div className="mt-2 grid gap-1.5">
+                  <PolibotCodeBadges codes={itemCodeGroups.applied} empty={itemCodeGroups.review?.length ? '' : '코드 대조 전'} limit={3} tone="applied" />
+                  {(itemCodeGroups.review || []).length > 0 && <PolibotCodeBadges codes={itemCodeGroups.review} limit={2} tone="review" />}
+                </div>
               </div>
               <ChevronRight size={18} className="mt-1 shrink-0 text-zinc-600" />
             </div>
@@ -6547,10 +6559,11 @@ function PolibotRecommendationList({ recommendations, saveMemo, onMemoChange, on
               {item.coverageGap && <div>핵심 보완: {item.coverageGap}</div>}
               {testMode && <div>보험료: {item.premium || '보험료 자료 없음'}</div>}
               {testMode && item.additionalBudgetMemo && <div>예산 기준: {item.additionalBudgetMemo}</div>}
+              {designSummary.route && <div>설계매니저: {designSummary.route}{designSummary.nextAction ? ` · ${designSummary.nextAction}` : ''}</div>}
               {item.feedback && <div className="text-zinc-400">피드백: {item.feedback}{item.feedbackReason ? ` · ${item.feedbackReason}` : ''}</div>}
               {(((item.reviewReasons || []).length > 0 || (item.routineChecks || []).length > 0 || (item.cautions || []).length > 0) || !testMode) && (
                 <div className="rounded-xl border border-amber-400/20 bg-amber-950/10 px-3 py-2 font-black text-amber-100/90">
-                  확인 조건: {(item.reviewReasons || [])[0] || (item.routineChecks || [])[0] || (item.cautions || [])[0] || '고지사항과 기존 보험 중복 여부 확인'}
+                  확인 조건: {checkItems.slice(0, 3).join(' · ') || (item.cautions || [])[0] || '고지사항과 기존 보험 중복 여부 확인'}
                 </div>
               )}
               {!testMode && (item.confidence?.reasons || []).slice(0, 2).map((reason) => (
