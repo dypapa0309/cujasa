@@ -237,9 +237,29 @@ function formatPolicyPremiumLabel(premium = '') {
 function extractDisclosure(text = '') {
   const lines = normalizeLines(text);
   const hiraSummary = buildHiraVisitDisclosureSummary(lines);
+  const normalizedText = String(text || '').normalize('NFC');
+  const isCustomerCoverageDocument = /전체\s*계약|계약\s*리스트|보장\s*현황|가입\s*현황|기준\s*담보|권장\s*금액/.test(normalizedText);
+  if (isCustomerCoverageDocument) {
+    return {
+      recent3Months: '',
+      recent1Year: '',
+      recent5Years: '',
+      recentExam: '',
+      admissionSurgery: '',
+      longTreatment: '',
+      longMedication: '',
+      currentMedication: '',
+      majorDisease: '',
+      completeCure: '',
+      followUp: '',
+      details: ''
+    };
+  }
+  const looksLikeCoverageBenefitLine = (line = '') => /전체\s*보장현황|상품별\s*가입현황|기준담보|권장금액|가입금액|보험료|담보|진단비|수술비|입원일당|의료비|실손|일반암|유사암|고액암|항암|뇌\/심장|뇌혈관|뇌졸중|뇌출혈|허혈성|심근경색|경증치매진단|장기요양|후유장해|운전자|교통사고|벌금|변호사선임|상해|질병/i.test(line);
   const medicalLines = lines
     .filter((line) => /고지|병력|입원|수술|투약|복용|치료|진단|검사|재검|추적|관찰|혈압|당뇨|고지혈|골절|백내장|암|심장|뇌/.test(line))
     .filter((line) => !/순번\s*병|본\s*자료는|요양급여|상품별 가입현황|전체 보장현황|기준담보|소식지|영업이슈/.test(line))
+    .filter((line) => !looksLikeCoverageBenefitLine(line))
     .slice(0, 12);
   const joined = medicalLines.join(' / ');
   return {

@@ -2051,10 +2051,28 @@ function polibotAgeRangeStatus(item = {}, profile = {}) {
   return { status: 'unknown', label: '가입연령 확인 필요', reason: `${rangeText} 기준을 상담 시 확인해야 해요.` };
 }
 
-function polibotMedicalRisk(profile = {}) {
+function polibotUnderwritingMedicalText(profile = {}) {
   const medical = String(profile.medicalHistory || '').trim();
   const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
-  const disclosureText = Object.values(disclosure).filter(Boolean).join(' ');
+  const looksLikeCoverageTable = (value = '') => /암\s*진단|뇌\/심장|뇌혈관질환|허혈성심장질환|운전자|실손|일반암|유사암|고액암|수술비|입원비|담보|가입금액|보험료/i.test(value);
+  const disclosureText = Object.values(disclosure)
+    .filter(Boolean)
+    .filter((value) => !looksLikeCoverageTable(String(value || '')))
+    .join(' ');
+  const routeText = String(profile.underwritingAssessment?.route || '').trim();
+  const strongMedical = /심평원|병원|약국|진료|처방|투약|복용|외래|고혈압|당뇨|고지혈|디스크|염좌|골절|용종|결절|KCD|상병|질병코드|E1[0-4]|I10|3개월|1년|5년/i.test(medical);
+  const weakMedical = /입원|수술|시술|치료|검사|재검|추적|관찰|소견/i.test(medical);
+  const explicitRoute = /부담보|할증|조건부|거절|간편\s*(3|고지)|3\.\d{1,2}\.\d{1,2}|고혈압|당뇨|투약|입원|수술/i.test(routeText);
+  return [
+    disclosureText,
+    explicitRoute ? routeText : '',
+    strongMedical || (weakMedical && !looksLikeCoverageTable(medical)) ? medical : ''
+  ].filter(Boolean).join(' ');
+}
+
+function polibotMedicalRisk(profile = {}) {
+  const medical = polibotUnderwritingMedicalText(profile);
+  const disclosureText = '';
   const family = String(profile.familyHistory || '').trim();
   const text = `${medical} ${disclosureText} ${family}`;
   if (!medical && !disclosureText) return { level: 'unknown', label: '고지 확인 필요', reasons: ['최근 3개월/1년/5년 고지와 현재 투약 여부를 확인해야 해요.'] };
@@ -2101,7 +2119,7 @@ function polibotMedicalRisk(profile = {}) {
 
 function buildPolibotManagerCodeRecommendations(profile = {}) {
   const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
-  const medical = String(profile.medicalHistory || '').trim();
+  const medical = polibotUnderwritingMedicalText(profile);
   const needs = Array.isArray(profile.needs) ? profile.needs : normalizeList(profile.needs);
   const text = [
     medical,
@@ -2685,7 +2703,7 @@ function polibotCoveragePriority(profile = {}) {
 }
 
 function polibotUnderwritingChecklist(profile = {}) {
-  const medical = String(profile.medicalHistory || '').trim();
+  const medical = polibotUnderwritingMedicalText(profile);
   const text = `${medical} ${profile.familyHistory || ''}`;
   const checks = [
     {
@@ -2721,7 +2739,7 @@ function polibotUnderwritingChecklist(profile = {}) {
 }
 
 function polibotDisclosureTimeline(profile = {}) {
-  const medical = String(profile.medicalHistory || '').trim();
+  const medical = polibotUnderwritingMedicalText(profile);
   const text = `${medical} ${profile.familyHistory || ''}`;
   const entries = [
     {
@@ -2753,7 +2771,7 @@ function polibotDisclosureTimeline(profile = {}) {
 }
 
 function polibotUnderwritingRoute(profile = {}, catalogItems = []) {
-  const medical = String(profile.medicalHistory || '').trim();
+  const medical = polibotUnderwritingMedicalText(profile);
   const text = `${medical} ${profile.familyHistory || ''}`;
   const age = polibotAgeValue(profile);
   const hasNoMedical = Boolean(medical) && /없음|무|해당\s*없/i.test(medical);
@@ -3233,7 +3251,7 @@ function polibotCoverageCodeCategory(item = {}) {
 function polibotManagerRouteLabel(underwritingRoute = [], medicalRisk = {}, profile = {}) {
   const primaryRoute = underwritingRoute[0] || {};
   const routeType = primaryRoute.type || '';
-  const medical = `${profile.medicalHistory || ''} ${profile.familyHistory || ''}`;
+  const medical = `${polibotUnderwritingMedicalText(profile)} ${profile.familyHistory || ''}`;
   if (routeType === 'standard') {
     return {
       route: '표준형 우선',
@@ -5046,7 +5064,7 @@ function polibotPremiumMatchQuality(bestPremium = null, profile = {}) {
 }
 
 function polibotUnderwritingClassification(item = {}, profile = {}) {
-  const medical = String(profile.medicalHistory || '').trim();
+  const medical = polibotUnderwritingMedicalText(profile);
   const text = `${medical} ${profile.familyHistory || ''}`;
   const itemText = `${item.productName || ''} ${item.productGroup || ''} ${(item.coverageKeywords || []).join(' ')} ${item.disclosureMemo || ''} ${item.cautionMemo || ''}`;
   const hasMedical = /고혈압|혈압|당뇨|고지혈|수술|입원|치료|투약|약|진단|검사|추적|관찰|암|심장|뇌|디스크/i.test(text);
@@ -5107,8 +5125,8 @@ function polibotItemDecisionBreakdown(item = {}, profile = {}) {
   const needHits = (profile.needs || []).filter((need) => catalogItemMatchesNeeds(item, [need]));
   const bestPremium = polibotBestPremiumForProfile(item, profile);
   const target = parsePolibotPremiumAmount(profile.budget);
-  const medicalText = `${profile.medicalHistory || ''} ${profile.familyHistory || ''}`;
-  const hasNoMedical = Boolean(profile.medicalHistory) && /없음|무|해당\s*없/i.test(profile.medicalHistory);
+  const medicalText = `${polibotUnderwritingMedicalText(profile)} ${profile.familyHistory || ''}`;
+  const hasNoMedical = Boolean(medicalText) && /없음|무|해당\s*없/i.test(medicalText);
   const hasMedicalRisk = /고혈압|혈압|당뇨|고지혈|수술|입원|치료|투약|약|진단|검사|추적|관찰|암|심장|뇌|디스크/i.test(medicalText);
   const productText = `${item.productName || ''} ${item.productGroup || ''} ${(item.coverageKeywords || []).join(' ')}`;
   const profileBlockers = polibotCatalogItemProfileBlockers(item, profile);
@@ -5265,8 +5283,8 @@ function polibotCatalogItemScore(item = {}, profile = {}) {
   if (kind === 'rider') score -= 10;
   if (kind === 'document') score -= 40;
   if (profileBlockers.length) score -= 80;
-  const medicalText = `${profile.medicalHistory || ''} ${profile.familyHistory || ''}`;
-  const hasNoMedical = profile.medicalHistory && /없음|무|해당\s*없/i.test(profile.medicalHistory);
+  const medicalText = `${polibotUnderwritingMedicalText(profile)} ${profile.familyHistory || ''}`;
+  const hasNoMedical = medicalText && /없음|무|해당\s*없/i.test(medicalText);
   const hasMedicalRisk = /고혈압|혈압|당뇨|고지혈|수술|입원|치료|투약|약|진단|검사|추적|관찰|암|심장|뇌|디스크/i.test(medicalText);
   const simpleProduct = /간편|유병|고지|325|335|355|333|3\.2\.5|3\.5\.5|3\.10/.test(`${item.productName || ''} ${item.productGroup || ''}`);
   if (hasNoMedical && simpleProduct) score -= 12;
@@ -6083,10 +6101,10 @@ export async function savePolibotRecommendation(userId, {
   const riskHoldReasons = [
     !profile.existingMedicalPlan && '기존 실손 여부',
     profile.existingMedicalPlan && profile.existingMedicalPlan !== '없음' && '실손 중복 여부',
-    !profile.medicalHistory && '병력/고지 이슈',
+    !polibotUnderwritingMedicalText(profile) && '병력/고지 이슈',
     (!profile.disclosureDetails.recent3Months || !profile.disclosureDetails.recent1Year || !profile.disclosureDetails.recent5Years) && '고지 기간별 상세',
     !profile.underwritingAssessment.route && '인수심사 방향',
-    /있음|예|확인|수술|입원|투약|치료|진단/i.test(profile.medicalHistory) && '고지 상세',
+    /있음|예|확인|수술|입원|투약|치료|진단/i.test(polibotUnderwritingMedicalText(profile)) && '고지 상세',
     Object.values(profile.disclosureDetails || {}).some((value) => /있음|예|확인|수술|입원|투약|치료|진단|검사/i.test(value)) && '고지 상세',
     Object.values(profile.underwritingAssessment || {}).some((value) => /부담보|할증|간편|조건부|어려움/i.test(value)) && '인수 조건',
     profile.budget && Number(String(profile.budget).replace(/[^\d.]/g, '')) > 0 && Number(String(profile.budget).replace(/[^\d.]/g, '')) < 5 && '예산 조건',
