@@ -682,6 +682,20 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     purpose: '보장 강화'
   });
   assert.ok((chronicWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'));
+  assert.ok((chronicWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation'));
+
+  const standardWorkspace = await savePolibotRecommendation(userId, {
+    name: '건강고지 고객',
+    age: '42',
+    gender: '남성',
+    needs: ['암', '뇌', '심장'],
+    budget: '18',
+    existingMedicalPlan: '없음',
+    medicalHistory: '없음',
+    existingPremium: '12',
+    purpose: '보장 강화'
+  });
+  assert.ok((standardWorkspace.actualCodes || []).some((item) => item.code === '5.10.5' && item.kind === 'disclosure_recommendation'));
 });
 
 test('generates POLIBOT recommendation outputs for 10 persona scenarios', async () => {

@@ -2293,16 +2293,23 @@ function isPolibotLikelyDateOrAmount(value = '', context = '') {
 
 function normalizePolibotDisclosureCode(raw = '') {
   const value = String(raw || '').trim();
-  const dotted = value.match(/^3\.(\d{1,2})\.(\d{1,2})$/);
-  if (dotted) return `3.${Number(dotted[1])}.${Number(dotted[2])}`;
+  const dottedParts = value.match(/^([35])\.(\d{1,2})\.(\d{1,2})(?:\.(\d{1,2}))?$/);
+  if (dottedParts) return [dottedParts[1], Number(dottedParts[2]), Number(dottedParts[3]), dottedParts[4] ? Number(dottedParts[4]) : ''].filter((part) => part !== '').join('.');
   const compact = value.match(/^3(\d{1,2})(\d{2})$/);
   if (compact) return `3.${Number(compact[1])}.${Number(compact[2])}`;
   const shorthand = {
+    305: '3.0.5',
+    315: '3.1.5',
     310: '3.1.0',
     325: '3.2.5',
     333: '3.3.3',
     335: '3.3.5',
-    355: '3.5.5'
+    345: '3.4.5',
+    355: '3.5.5',
+    3105: '3.10.5',
+    31010: '3.10.10',
+    5105: '5.10.5',
+    51010: '5.10.10'
   };
   if (shorthand[value]) return shorthand[value];
   return '';
@@ -2330,10 +2337,14 @@ function addPolibotActualCode(items, item = {}) {
 
 function buildPolibotRecommendedDisclosureCodes(profile = {}) {
   const medical = polibotUnderwritingMedicalText(profile);
-  if (!medical) return [];
+  const routeText = String(profile.underwritingAssessment?.route || '').trim();
+  const rawMedical = String(profile.medicalHistory || '').trim();
+  const noMedical = /없음|무|해당\s*없|이상\s*없|문제\s*없/i.test(`${medical} ${rawMedical} ${routeText}`);
+  if (!medical && !noMedical) return [];
   const text = normalizePolibotMatchText([
     medical,
     profile.familyHistory,
+    routeText,
     profile.underwritingAssessment?.note,
     profile.underwritingAssessment?.simpleReview
   ].filter(Boolean).join(' '));
@@ -2355,13 +2366,24 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
   const hasFollowup = /검사|재검|추적|관찰|소견|결절|용종/.test(text);
   const hasAdmissionSurgery = /입원|수술|시술/.test(text);
   const hasMajor = /암|심근경색|협심증|뇌졸중|뇌출혈|뇌경색|심장판막|간경화|백혈병|후유증|전이|재발/.test(text);
+  const hasHypertensionDiabetes = /고혈압|혈압|당뇨/.test(text);
   const hasLongWindow = /10년|십년|장기|30일|7일|입원일수|수술일|치료\s*종료|완치/.test(text);
+  const hasLightIssue = /경증|초경증|용종|결절|검진|외래|통원|약국|처방/.test(text) && !hasMajor && !hasAdmissionSurgery;
 
   if (hasMajor || (hasAdmissionSurgery && hasLongWindow)) {
     add({
       code: '3.10.10',
       reason: '중대질환 또는 입원/수술 이력 가능성이 있어 10년형 간편고지까지 산출 후보로 둡니다.',
       confidence: hasMajor ? 88 : 82
+    });
+  }
+  if (hasLightIssue || (hasChronicMedication && !hasAdmissionSurgery && !hasMajor)) {
+    add({
+      code: '3.10.5',
+      reason: hasLightIssue
+        ? '경증/초경증 또는 외래·처방 중심 단서가 있어 서버 코드표의 3.10.5 간편고지 후보를 함께 봅니다.'
+        : '만성질환 투약 단서가 있으나 중대/입원 이력이 약해 3.10.5 경증 유병자 후보를 비교합니다.',
+      confidence: hasLightIssue ? 84 : 80
     });
   }
   if (hasAdmissionSurgery || hasChronicMedication) {
@@ -2380,6 +2402,32 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
         ? '검사/재검/추적관찰 단서가 있어 3개월·3년·5년 질문형을 비교 후보로 둡니다.'
         : '심평원/진료 이력은 있으나 중대 병력 단서가 약해 3.3.5 비교 후보로 둡니다.',
       confidence: hasFollowup ? 80 : 74
+    });
+  }
+  if (hasFollowup && !hasAdmissionSurgery && !hasMajor) {
+    add({
+      code: '3.2.5',
+      reason: '검사/추적관찰 중심의 비교적 가벼운 고지 단서라 3.2.5 초경증 후보도 비교합니다.',
+      confidence: 72
+    });
+  }
+  if (noMedical) {
+    add({
+      code: '5.10.5',
+      reason: '입력상 병력 이슈가 낮아 건강고지/우량체 계열 후보를 우선 비교합니다.',
+      confidence: 78
+    });
+    add({
+      code: '5.5.5',
+      reason: '표준·건강고지 가능 고객이면 5.5.5 계열도 보험료 비교 후보로 둡니다.',
+      confidence: 72
+    });
+  }
+  if (hasHypertensionDiabetes && /당뇨고지|당뇨\s*고지|합병증|인슐린/.test(text)) {
+    add({
+      code: '3.10.5.5',
+      reason: '당뇨 고지 또는 합병증 확인 단서가 있어 3.10.5.5 당뇨고지형을 별도 후보로 둡니다.',
+      confidence: 82
     });
   }
   return items;
@@ -2430,8 +2478,8 @@ function buildPolibotActualCodes(profile = {}) {
     }
   }
   const disclosurePatterns = [
-    /\b(3\.\d{1,2}\.\d{1,2})\b/g,
-    /\b(325|335|355|333|310)\b/g,
+    /\b([35]\.\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\b/g,
+    /\b(305|315|325|333|335|345|355|3105|31010|5105|51010|310)\b/g,
     /\b3(\d{1,2})(\d{2})\b/g
   ];
   for (const pattern of disclosurePatterns) {
