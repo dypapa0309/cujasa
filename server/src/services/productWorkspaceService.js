@@ -2147,6 +2147,7 @@ function extractPolibotMedicalEvents(profile = {}) {
 function polibotDisclosureWindowReview(events = {}, requiredMonths = 0) {
   if (!requiredMonths || !events.hasHira) return null;
   if (!events.coverageWindowMonths) {
+    if (!/심평원|hira|자료\s*기준|조회/.test(events.text || '')) return null;
     return {
       status: 'needs_review',
       reason: `${requiredMonths >= 12 ? `${requiredMonths / 12}년` : `${requiredMonths}개월`} 고지기간을 판단할 자료 조회기간이 확인되지 않았습니다.`
@@ -2739,6 +2740,8 @@ async function buildPolibotMatchedCoverageCodes(userId = '', profile = {}) {
     .filter((item) => item?.kind !== 'disclosure_recommendation' || item?.status !== 'needs_review')
     .map((item) => normalizePolibotDisclosureCode(item?.code || ''))
     .filter(Boolean));
+  const hasAnyDisclosureCode = (Array.isArray(profile.actualCodes) ? profile.actualCodes : [])
+    .some((item) => normalizePolibotDisclosureCode(item?.code || ''));
   const hasUnderwritingEvidence = Boolean(polibotUnderwritingMedicalText(profile));
   const batches = await Promise.all(queries.map(async (query) => {
     const rows = await searchPolibotCodeCandidates(userId, { query, limit: 16, includeChunks: false }).catch(() => []);
@@ -2748,6 +2751,7 @@ async function buildPolibotMatchedCoverageCodes(userId = '', profile = {}) {
   for (const item of batches.flat().sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))) {
     if (isNoisyPolibotCoverageCode(item)) continue;
     if (item.kind === 'manager_code_candidate') {
+      if (hasAnyDisclosureCode && allowedDisclosureCodes.size === 0) continue;
       if (allowedDisclosureCodes.size === 0 && !hasUnderwritingEvidence) continue;
       if (allowedDisclosureCodes.size > 0 && !allowedDisclosureCodes.has(item.code)) continue;
     }
