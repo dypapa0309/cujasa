@@ -2534,11 +2534,23 @@ function polibotCoverageCodeQueries(profile = {}) {
     queries.add('간편고지');
     queries.add('유병자');
   }
+  (Array.isArray(profile.actualCodes) ? profile.actualCodes : []).forEach((item) => {
+    const code = normalizePolibotDisclosureCode(item?.code || '');
+    if (code) {
+      queries.add(code);
+      queries.add(`${code} 간편고지`);
+    }
+  });
+  (Array.isArray(profile.managerCodes) ? profile.managerCodes : []).forEach((item) => {
+    const memo = `${item.code || ''} ${item.label || ''} ${item.reason || ''}`;
+    if (/간편|유병|고지/.test(memo)) queries.add('간편고지');
+    if (/건강고지|표준/.test(memo)) queries.add('건강고지');
+  });
   if (/근골격|정형외과|허리|무릎|발목|골절|염좌/.test(text)) {
     queries.add('골절');
     queries.add('상해수술');
   }
-  return [...queries].map((item) => String(item || '').trim()).filter(Boolean).slice(0, 16);
+  return [...queries].map((item) => String(item || '').trim()).filter(Boolean).slice(0, 28);
 }
 
 function polibotCoverageCodeContext(candidate = {}) {
@@ -2588,16 +2600,19 @@ function inferPolibotCoverageCodeValue(candidate = {}, query = '') {
 
 function compactPolibotMatchedCoverageCode(candidate = {}, query = '') {
   const connectedValue = inferPolibotCoverageCodeValue(candidate, query);
+  const disclosureCode = normalizePolibotDisclosureCode(candidate.code || '');
   return {
-    code: String(candidate.code || '').trim(),
+    code: disclosureCode || String(candidate.code || '').trim(),
     label: connectedValue,
     connectedValue,
-    kind: 'coverage',
+    kind: disclosureCode ? 'manager_code_candidate' : 'coverage',
     query,
     status: candidate.status || 'review_needed',
     source: candidate.fileName || 'polidoc',
     company: candidate.company || '',
     companies: Array.isArray(candidate.companies) ? candidate.companies.slice(0, 5) : [],
+    productName: candidate.productName || '',
+    productGroup: candidate.productGroup || '',
     coverageKeywords: Array.isArray(candidate.coverageKeywords) ? candidate.coverageKeywords.slice(0, 8) : [],
     context: String(candidate.context || '').replace(/\s+/g, ' ').trim().slice(0, 220),
     confidence: Number(candidate.score || candidate.confidence || 0),
@@ -2615,11 +2630,57 @@ async function buildPolibotMatchedCoverageCodes(userId = '', profile = {}) {
   const selected = [];
   for (const item of batches.flat().sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))) {
     if (isNoisyPolibotCoverageCode(item)) continue;
-    if (selected.some((row) => row.code === item.code)) continue;
-    selected.push(item);
-    if (selected.length >= 24) break;
+    const identity = [
+      item.code,
+      item.kind,
+      item.company || (item.companies || [])[0] || '',
+      item.productName || '',
+      item.connectedValue || item.label || ''
+    ].join('|');
+    if (selected.some((row) => row.identity === identity)) continue;
+    selected.push({ ...item, identity });
+    if (selected.length >= 48) break;
   }
-  return selected;
+  const byDiversity = [];
+  const bucketCounts = new Map();
+  for (const item of selected) {
+    const bucket = [item.code, item.kind].join('|');
+    const count = bucketCounts.get(bucket) || 0;
+    if (count >= 4 && item.kind === 'manager_code_candidate') continue;
+    if (count >= 3 && item.kind !== 'manager_code_candidate') continue;
+    bucketCounts.set(bucket, count + 1);
+    byDiversity.push(item);
+    if (byDiversity.length >= 32) break;
+  }
+  return byDiversity.map(({ identity, ...item }) => item);
+}
+
+function polibotDesignCodePriority(item = {}) {
+  const code = normalizePolibotDisclosureCode(item.code || '') || String(item.code || '').trim();
+  if (/^5\./.test(code)) return '건강고지 비교';
+  if (/^3\./.test(code)) return item.kind === 'manager_code_candidate' ? '간편고지 비교' : '간편고지 근거';
+  return ['암', '유사암/소액암', '뇌혈관', '심장', '수술비', '납입면제', '간편고지'].includes(polibotCoverageCodeCategory(item)) ? '우선 검토' : '보완 검토';
+}
+
+function polibotDesignCodeSourceLabel(item = {}) {
+  if (item.kind === 'manager_code_candidate') return '설매 코드표';
+  return item.source || 'polidoc';
+}
+
+function normalizePolibotDesignRecommendedCode(item = {}) {
+  const category = polibotCoverageCodeCategory(item);
+  return {
+    code: normalizePolibotDisclosureCode(item.code || '') || String(item.code || '').trim(),
+    connectedValue: item.connectedValue || item.label || item.productName || '보장 코드',
+    category,
+    company: item.company || (item.companies || [])[0] || '',
+    productName: item.productName || '',
+    productGroup: item.productGroup || '',
+    priority: polibotDesignCodePriority(item),
+    source: polibotDesignCodeSourceLabel(item),
+    confidence: item.confidence || '',
+    context: item.context || ''
+  };
 }
 
 function polibotPriceStrategy(profile = {}) {
@@ -3412,20 +3473,13 @@ function buildPolibotDesignManagerSummary({
   const route = polibotManagerRouteLabel(underwritingRoute, medicalRisk, profile);
   const seenCode = new Set();
   const recommendedCodes = matchedCoverageCodes
-    .map((item) => {
-      const category = polibotCoverageCodeCategory(item);
-      return {
-        code: String(item.code || '').trim(),
-        connectedValue: item.connectedValue || item.label || '보장 코드',
-        category,
-        company: item.company || (item.companies || [])[0] || '',
-        priority: ['암', '유사암/소액암', '뇌혈관', '심장', '수술비', '납입면제', '간편고지'].includes(category) ? '우선 검토' : '보완 검토',
-        source: item.source || 'polidoc',
-        confidence: item.confidence || ''
-      };
+    .map(normalizePolibotDesignRecommendedCode)
+    .filter((item) => item.source === '설매 코드표' || !/^\d+$/.test(item.code || ''))
+    .filter((item) => {
+      const key = [item.code, item.company, item.productName].join('|');
+      return item.code && !seenCode.has(key) && seenCode.add(key);
     })
-    .filter((item) => item.code && !seenCode.has(item.code) && seenCode.add(item.code))
-    .slice(0, 12);
+    .slice(0, 18);
   const codeCategories = [...new Set(recommendedCodes.map((item) => item.category).filter(Boolean))];
   const priorityCoverage = [
     ...coveragePriority
@@ -3452,7 +3506,7 @@ function buildPolibotDesignManagerSummary({
     actualCodes.some((item) => /3\.10\.10|3\.5\.5|3\.2\.5/.test(item.code || '')) && '간편고지 질문의 기간 조건에 실제로 해당하는지 재확인했나요?',
     actualCodes.some((item) => /I10|E1[0-4]/.test(item.code || '')) && '고혈압/당뇨 투약 기간, 최근 수치, 합병증 여부를 확인했나요?',
     priorityCoverage.some((item) => /암|뇌|심장/.test(item.label)) && '암/뇌/심장 진단비 목표 금액과 기존 가입금액 차이를 확인했나요?',
-    recommendedCodes.length > 0 && `추천 보장코드 ${recommendedCodes.slice(0, 4).map((item) => item.code).join(', ')}가 실제 설계 특약에 반영됐나요?`,
+    recommendedCodes.length > 0 && `설매 코드표/보장코드 후보 ${recommendedCodes.slice(0, 5).map((item) => [item.code, item.company].filter(Boolean).join('@')).join(', ')}를 실제 설계 특약에 반영했나요?`,
     priceStrategy.mode === 'save' && '절감 목표를 맞추기 위해 줄이면 안 되는 담보를 분리했나요?',
     priceStrategy.mode === 'upgrade' && '월 보험료 상한 안에서 핵심 진단비를 먼저 두껍게 구성했나요?',
     '최종 청약 전 고지사항 원문과 설계서 특약명을 대조했나요?'
@@ -6277,14 +6331,31 @@ export async function savePolibotRecommendation(userId, {
         .slice(0, 10)
     }
   }));
+  const recommendationDesignManagerSummary = recommendationsWithSnapshot[0]?.designManagerSummary || null;
+  const workspaceFallbackDesignManagerSummary = buildPolibotDesignManagerSummary({
+    profile,
+    managerCodes: profile.managerCodes,
+    actualCodes: profile.actualCodes,
+    matchedCoverageCodes: profile.matchedCoverageCodes,
+    catalogItems: []
+  });
+  const workspaceDesignManagerSummary = recommendationDesignManagerSummary && (recommendationDesignManagerSummary.recommendedCodes || []).length
+    ? recommendationDesignManagerSummary
+    : workspaceFallbackDesignManagerSummary;
   const designManagerReview = {
     status: 'review_requested',
     label: '설계매니저 검수 필요',
     purpose: profile.purpose || '',
     purposeMode: recommendationsWithSnapshot[0]?.decisionAnalysis?.purposeAnalysis?.mode || polibotPriceStrategy(profile).mode,
+    route: workspaceDesignManagerSummary.route || '',
+    routeReason: workspaceDesignManagerSummary.routeReason || '',
+    recommendedCodes: workspaceDesignManagerSummary.recommendedCodes || [],
+    priorityCoverage: workspaceDesignManagerSummary.priorityCoverage || [],
     nextAction: recommendationsWithSnapshot.length ? '추천 후보 검수' : '추천 보류 사유 검수',
     reviewPoints: [
       profile.purpose && `고객 목적: ${profile.purpose}`,
+      workspaceDesignManagerSummary.route && `심사 경로: ${workspaceDesignManagerSummary.route}`,
+      ...(workspaceDesignManagerSummary.recommendedCodes || []).slice(0, 5).map((item) => `코드 후보: ${item.code} ${item.company || ''} ${item.connectedValue || ''}`.trim()),
       ...(riskHoldReasons || []).slice(0, 5),
       ...(recommendationsWithSnapshot[0]?.reviewReasons || []).slice(0, 5)
     ].filter(Boolean),

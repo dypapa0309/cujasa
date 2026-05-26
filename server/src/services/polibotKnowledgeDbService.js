@@ -1920,6 +1920,48 @@ function candidateMatchesSearch(candidate = {}, params = {}) {
   return terms.every((term) => haystack.includes(term));
 }
 
+function catalogTextForCodeSearch(catalog = {}) {
+  return normalizeSearchText([
+    catalog.company,
+    catalog.product_name || catalog.productName,
+    catalog.product_group || catalog.productGroup,
+    catalog.disclosure_memo || catalog.disclosureMemo,
+    catalog.caution_memo || catalog.cautionMemo,
+    ...(Array.isArray(catalog.coverage_keywords) ? catalog.coverage_keywords : []),
+    ...(Array.isArray(catalog.coverageKeywords) ? catalog.coverageKeywords : [])
+  ].filter(Boolean).join(' '));
+}
+
+function selectCatalogForCodeCandidate(item = {}, catalogs = []) {
+  const list = Array.isArray(catalogs) ? catalogs.filter(Boolean) : [];
+  if (!list.length) return null;
+  if (list.length === 1) return list[0];
+  const context = normalizeSearchText([
+    item.context,
+    ...(Array.isArray(item.coverageKeywords) ? item.coverageKeywords : []),
+    ...(Array.isArray(item.companies) ? item.companies : [])
+  ].filter(Boolean).join(' '));
+  return list
+    .map((catalog) => {
+      const text = catalogTextForCodeSearch(catalog);
+      const company = normalizeSearchText(catalog.company || '');
+      const product = normalizeSearchText(catalog.product_name || catalog.productName || '');
+      const keywords = [
+        ...(Array.isArray(catalog.coverage_keywords) ? catalog.coverage_keywords : []),
+        ...(Array.isArray(catalog.coverageKeywords) ? catalog.coverageKeywords : [])
+      ].map(normalizeSearchText).filter(Boolean);
+      let score = 0;
+      if (company && context.includes(company)) score += 24;
+      if (product && context.includes(product)) score += 32;
+      keywords.forEach((keyword) => {
+        if (keyword && context.includes(keyword)) score += 8;
+      });
+      if (text && context.includes(text.slice(0, 20))) score += 4;
+      return { catalog, score };
+    })
+    .sort((a, b) => b.score - a.score)[0]?.catalog || list[0];
+}
+
 function normalizeCodeCandidate({ item, source, chunk, catalog } = {}) {
   const sourceMetadata = source?.metadata && typeof source.metadata === 'object' ? source.metadata : {};
   const sourceCompanies = Array.isArray(source?.companies) ? source.companies : [];
@@ -1936,6 +1978,8 @@ function normalizeCodeCandidate({ item, source, chunk, catalog } = {}) {
     company: companies[0] || source?.company || '미분류',
     companies,
     coverageKeywords,
+    productName: catalog?.product_name || catalog?.productName || '',
+    productGroup: catalog?.product_group || catalog?.productGroup || '',
     context: item?.context || chunk?.redacted_content || chunk?.content || source?.redacted_snippet || source?.text_snippet || '',
     fileName: source?.file_name || source?.normalized_source?.fileName || '',
     sourceId: source?.id || chunk?.source_id || '',
@@ -1955,6 +1999,8 @@ function normalizeCodeCandidate({ item, source, chunk, catalog } = {}) {
       candidate.context,
       candidate.fileName,
       candidate.company,
+      candidate.productName,
+      candidate.productGroup,
       ...candidate.companies,
       ...candidate.coverageKeywords
     ].join(' '))
@@ -1974,18 +2020,23 @@ function seedCodeSearchCandidates() {
       scope: 'global',
       metadata: { evidenceQualityScore: seedSource.evidenceQualityScore || 60 }
     };
-    const catalogItems = Array.isArray(seedSource.catalogItems) ? seedSource.catalogItems : [];
-    const catalog = catalogItems[0] ? {
-      id: catalogItems[0].id || '',
-      company: catalogItems[0].company || seedSource.company || '',
-      coverage_keywords: catalogItems[0].coverageKeywords || seedSource.keywords || [],
-      confidence_score: catalogItems[0].confidence || 60,
-      effective_month: seedSource.month || '',
-      status: catalogItems[0].status || source.status,
-      scope: 'global'
-    } : null;
     return (Array.isArray(seedSource.codeCandidates) ? seedSource.codeCandidates : [])
-      .map((item) => normalizeCodeCandidate({ item, source, catalog }))
+      .map((item) => {
+        const catalogItems = Array.isArray(seedSource.catalogItems) ? seedSource.catalogItems : [];
+        const selected = selectCatalogForCodeCandidate(item, catalogItems);
+        const catalog = selected ? {
+          id: selected.id || '',
+          company: selected.company || seedSource.company || '',
+          productName: selected.productName || '',
+          productGroup: selected.productGroup || '',
+          coverage_keywords: selected.coverageKeywords || seedSource.keywords || [],
+          confidence_score: selected.confidence || 60,
+          effective_month: seedSource.month || '',
+          status: selected.status || source.status,
+          scope: 'global'
+        } : null;
+        return normalizeCodeCandidate({ item, source, catalog });
+      })
       .filter((candidate) => candidate.code);
   });
 }
@@ -2043,17 +2094,22 @@ function sourceCodeSearchCandidates(source = {}) {
     scope: source.scope || 'global',
     metadata: { evidenceQualityScore: normalizedSource.evidenceQualityScore || 0 }
   };
-  const catalog = Array.isArray(source.catalogItems) && source.catalogItems[0] ? {
-    id: source.catalogItems[0].id || '',
-    company: source.catalogItems[0].company || source.company || '',
-    coverage_keywords: source.catalogItems[0].coverageKeywords || source.catalogItems[0].coverage_keywords || source.keywords || [],
-    confidence_score: source.catalogItems[0].confidenceScore || source.catalogItems[0].confidence_score || 60,
-    effective_month: source.catalogItems[0].effectiveMonth || source.catalogItems[0].effective_month || source.month || '',
-    status: source.catalogItems[0].status || source.knowledgeStatus || source.status || 'review_needed',
-    scope: source.scope || 'global'
-  } : null;
   return (Array.isArray(source.codeCandidates) ? source.codeCandidates : [])
-    .map((item) => normalizeCodeCandidate({ item, source: dbSource, catalog }))
+    .map((item) => {
+      const selected = selectCatalogForCodeCandidate(item, source.catalogItems || []);
+      const catalog = selected ? {
+        id: selected.id || '',
+        company: selected.company || source.company || '',
+        productName: selected.productName || selected.product_name || '',
+        productGroup: selected.productGroup || selected.product_group || '',
+        coverage_keywords: selected.coverageKeywords || selected.coverage_keywords || source.keywords || [],
+        confidence_score: selected.confidenceScore || selected.confidence_score || selected.confidence || 60,
+        effective_month: selected.effectiveMonth || selected.effective_month || source.month || '',
+        status: selected.status || source.knowledgeStatus || source.status || 'review_needed',
+        scope: source.scope || 'global'
+      } : null;
+      return normalizeCodeCandidate({ item, source: dbSource, catalog });
+    })
     .filter((candidate) => candidate.code);
 }
 
@@ -2089,7 +2145,7 @@ async function loadPolibotCodeSearchCandidatesFresh(userId = '', { key = codeSea
   sources.forEach((source) => {
     const normalized = source.normalized_source && typeof source.normalized_source === 'object' ? source.normalized_source : {};
     (normalized.codeCandidates || []).forEach((item) => {
-      candidates.push(normalizeCodeCandidate({ item, source, catalog: catalogBySource[source.id]?.[0] }));
+      candidates.push(normalizeCodeCandidate({ item, source, catalog: selectCatalogForCodeCandidate(item, catalogBySource[source.id] || []) }));
     });
   });
   candidates.push(...seedCodeSearchCandidates());

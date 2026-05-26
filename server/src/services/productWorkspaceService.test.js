@@ -683,6 +683,8 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   });
   assert.ok((chronicWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'));
   assert.ok((chronicWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation'));
+  assert.ok((chronicWorkspace.matchedCoverageCodes || []).some((item) => item.kind === 'manager_code_candidate'));
+  assert.ok((chronicWorkspace.designManagerReview?.recommendedCodes || []).some((item) => /^3\./.test(item.code || '')));
 
   const standardWorkspace = await savePolibotRecommendation(userId, {
     name: '건강고지 고객',
