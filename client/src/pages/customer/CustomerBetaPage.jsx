@@ -6401,7 +6401,7 @@ function buildPolibotManagerCodeRecommendations(form = {}) {
   if (needs.includes('수술')) {
     add({ code: 'NEED-SURGERY', label: '수술비 보완 우선', reason: '필요 보장에 수술이 있어 질병/상해 수술비와 기존 담보 중복을 우선 비교합니다.', status: 'applied', source: '보장분석 자료' });
   }
-  if (/간편|유병|고지\s*심사|표준\/간편|조건부|당뇨|암|심장|뇌/.test(text) || items.some((item) => item.severity === 'high')) {
+  if (/간편|유병|고지\s*심사|표준\/간편|조건부|당뇨|고혈압|투약|부담보|할증/.test(text) || items.some((item) => item.severity === 'high')) {
     add({ code: 'ROUTE-SIMPLE-COMPARE', label: '표준/간편 동시 비교', reason: '고지 이슈가 있어 표준심사 단독보다 간편심사 또는 조건부 인수를 함께 비교합니다.', status: 'applied', severity: 'high', source: '설계매니저 기준' });
   }
   if (!items.length && /없음|해당\s*없/.test(text)) {
@@ -6412,16 +6412,26 @@ function buildPolibotManagerCodeRecommendations(form = {}) {
 
 function normalizePolibotAdvisorDisplayCodes(codes = []) {
   const output = [];
+  const sourceCodes = Array.isArray(codes) ? codes : [];
+  const explicitDisclosureCodes = new Set(sourceCodes
+    .map((item) => normalizePolibotDisclosureCode(item?.code))
+    .filter(Boolean));
   const add = (item = {}) => {
     if (!item?.code || output.some((row) => row.code === item.code && row.label === item.label)) return;
     output.push(item);
   };
-  (Array.isArray(codes) ? codes : []).forEach((item) => {
+  sourceCodes.forEach((item) => {
     const code = displayValue(item?.code).trim();
     if (!code) return;
+    const disclosureCode = normalizePolibotDisclosureCode(code);
+    if (disclosureCode) {
+      add({ ...item, code: disclosureCode, label: item.label || '간편고지 유형', status: item.status || 'review' });
+      return;
+    }
     if (code === 'ROUTE-SIMPLE-COMPARE') {
-      add({ ...item, code: '3.5.5', label: '간편고지 후보', status: 'applied', source: '설계매니저 기준' });
-      add({ ...item, code: '3.10.10', label: '간편고지 후보', status: 'applied', source: '설계매니저 기준' });
+      if (explicitDisclosureCodes.size === 0) {
+        add({ ...item, code: '간편심사', label: '고지유형 산출 필요', status: 'review', source: '설계매니저 기준' });
+      }
       return;
     }
     if (code === 'ROUTE-STANDARD-FIRST') {
@@ -6460,7 +6470,7 @@ function normalizePolibotAdvisorDisplayCodes(codes = []) {
       add({ ...item, code: '반복진료', label: '동일 질환 반복 치료 확인', status: 'review' });
       return;
     }
-    if (/^NEED-/.test(code)) return;
+    if (/^NEED-/.test(code) || /^\d+$/.test(code)) return;
     add(item);
   });
   return output;

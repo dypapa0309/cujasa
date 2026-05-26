@@ -2222,7 +2222,7 @@ function buildPolibotManagerCodeRecommendations(profile = {}) {
       source: '보장분석 자료'
     });
   }
-  if (/간편|유병|고지\s*심사|표준\/간편|표준심사와 간편심사|조건부|당뇨|암|심장|뇌/.test(text) || items.some((item) => item.severity === 'high')) {
+  if (/간편|유병|고지\s*심사|표준\/간편|표준심사와 간편심사|조건부|당뇨|고혈압|투약|부담보|할증/.test(text) || items.some((item) => item.severity === 'high')) {
     add(items, {
       code: 'ROUTE-SIMPLE-COMPARE',
       label: '표준/간편 동시 비교',
