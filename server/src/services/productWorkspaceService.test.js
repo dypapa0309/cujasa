@@ -725,7 +725,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     purpose: '보장 강화'
   });
   assert.equal((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'), false);
-  assert.ok((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.status === 'needs_review'));
+  assert.equal((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation'), false);
   assert.equal((hiraWorkspace.actualCodes || []).some((item) => /^5\./.test(item.code || '') && item.kind === 'disclosure_recommendation'), false);
   assert.equal((hiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)), false);
   assert.equal((hiraWorkspace.designManagerReview?.recommendedCodes || []).length, 0);

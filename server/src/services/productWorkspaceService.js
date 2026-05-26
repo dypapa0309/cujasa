@@ -2583,6 +2583,7 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
     events.hasLightHiraUse
     || (/경증|초경증|용종|결절|검진|외래|통원|약국|처방/.test(text) && !hasMajor && !hasAdmissionSurgery && !hasChronicMedication)
   );
+  const hasLongLookbackEvidence = (events.coverageWindowMonths || 0) >= 120 || /10년|십년/.test(text);
 
   if (hasMajor || (hasAdmissionSurgery && hasLongWindow)) {
     add({
@@ -2592,7 +2593,7 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
       confidence: hasMajor ? 88 : 82
     });
   }
-  if (hasLightIssue || (hasChronicMedication && !hasAdmissionSurgery && !hasMajor)) {
+  if ((hasLightIssue && hasLongLookbackEvidence) || (hasChronicMedication && !hasAdmissionSurgery && !hasMajor)) {
     add({
       code: '3.10.5',
       reason: hasLightIssue
@@ -6524,7 +6525,7 @@ export async function savePolibotRecommendation(userId, {
     !profile.disclosureDetails.recent3Months && '3개월 고지',
     !profile.disclosureDetails.recent1Year && '1년 고지',
     !profile.disclosureDetails.recent5Years && '5년 고지',
-    !profile.underwritingAssessment.route && '인수심사 방향',
+    !profile.underwritingAssessment.route && !profile.actualCodes.length && '인수심사 방향',
     !profile.analysisResult.gaps && '부족 보장',
     !profile.analysisResult.remodelList && '추천 방향'
   ].filter(Boolean);
@@ -6592,7 +6593,7 @@ export async function savePolibotRecommendation(userId, {
       if (reasonCodes.includes('lookback_short') || reasonCodes.includes('lookback_unknown')) return `${item.code} 자료기간 확인 필요`;
       return `${item.code} 검수 필요`;
     }),
-    !profile.underwritingAssessment.route && '인수심사 방향',
+    !profile.underwritingAssessment.route && !profile.actualCodes.length && '인수심사 방향',
     /있음|예|확인|수술|입원|투약|치료|진단/i.test(polibotUnderwritingMedicalText(profile)) && '고지 상세',
     Object.values(profile.disclosureDetails || {}).some((value) => /있음|예|확인|수술|입원|투약|치료|진단|검사/i.test(value)) && '고지 상세',
     Object.values(profile.underwritingAssessment || {}).some((value) => /부담보|할증|간편|조건부|어려움/i.test(value)) && '인수 조건',
