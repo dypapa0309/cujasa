@@ -2162,6 +2162,26 @@ function polibotDisclosureWindowReview(events = {}, requiredMonths = 0) {
   return null;
 }
 
+function polibotDisclosureRecent3MonthReview(profile = {}, events = {}) {
+  if (!events.hasHira) return null;
+  const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
+  const recentText = normalizePolibotMatchText(disclosure.recent3Months || '');
+  if (/없음|무|해당\s*없|이상\s*없|문제\s*없|특이\s*없/.test(recentText)) return null;
+  if (/있음|예|진단|의심|치료|입원|수술|투약|검사|소견|외래|처방/.test(recentText)) {
+    return {
+      status: 'needs_review',
+      reason: '최근 3개월 고지 문진에 의료행위 단서가 있어 질병확정진단, 의심소견, 치료, 입원, 수술, 투약, 추가검사 여부를 확인해야 합니다.'
+    };
+  }
+  if ((events.coverageWindowMonths || 0) >= 12 || /심평원|hira/.test(events.text || '')) {
+    return {
+      status: 'needs_review',
+      reason: '심평원 자료에는 최근 3개월 이력이 포함되지 않아 최근 3개월 고지 문진 확인 후 확정할 수 있습니다.'
+    };
+  }
+  return null;
+}
+
 function polibotDisclosureCodeRequiredMonths(code = '') {
   const normalized = normalizePolibotDisclosureCode(code) || String(code || '').trim();
   const parts = normalized.split('.').map((part) => Number(part)).filter(Number.isFinite);
@@ -2454,15 +2474,17 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
   const add = (item = {}) => {
     if (!item.code || items.some((row) => row.code === item.code)) return;
     const windowReview = polibotDisclosureWindowReview(events, item.requiredMonths || polibotDisclosureCodeRequiredMonths(item.code));
+    const recentReview = polibotDisclosureRecent3MonthReview(profile, events);
+    const reviews = [recentReview, windowReview].filter(Boolean);
     items.push({
       kind: 'disclosure_recommendation',
       label: '추천 간편고지 유형',
-      status: windowReview?.status || 'recommended',
+      status: reviews.length ? 'needs_review' : 'recommended',
       source: '설계매니저 산출',
       confidence: 78,
       context: medical.slice(0, 240),
       ...item,
-      reason: windowReview ? `${item.reason || ''} ${windowReview.reason}`.trim() : item.reason
+      reason: reviews.length ? `${item.reason || ''} ${reviews.map((review) => review.reason).join(' ')}`.trim() : item.reason
     });
   };
   const hasHira = events.hasHira;

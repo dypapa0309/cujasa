@@ -724,35 +724,36 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     purpose: '보장 강화'
   });
   assert.equal((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'), false);
-  assert.ok((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation'));
-  assert.ok((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.3.5' && item.kind === 'disclosure_recommendation'));
+  assert.ok((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.status === 'needs_review'));
+  assert.ok((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.3.5' && item.status === 'needs_review'));
+  assert.equal((hiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)), false);
   assert.match(hiraWorkspace.designManagerReview?.route || '', /동시 비교|표준/);
 
-  const shortHiraWorkspace = await savePolibotRecommendation(userId, {
-    name: '심평원 3개월 고객',
+  const clearedHiraWorkspace = await savePolibotRecommendation(userId, {
+    name: '심평원 3개월 문진 완료 고객',
     age: '44',
     gender: '여성',
     needs: ['암', '뇌', '심장'],
     budget: '16',
     existingMedicalPlan: '있음',
     medicalHistory: [
-      '심평원 3개월 자료 기준 의료기관/약국 이용 8건 · 의료기관 4건 · 약국 4건 · 외래 7일',
-      '진료과/기관명 기준 확인: 정형외과, 내과',
+      '심평원 5년 자료 기준 의료기관/약국 이용 36건 · 의료기관 19건 · 약국 17건 · 외래 48일',
+      '진료과/기관명 기준 확인: 정형외과, 내과, 가정의학과, 치과, 안과',
       '입원 0일. 수술 명시 없음. 장기투약 명시 없음.'
     ].join('\n'),
     disclosureDetails: {
-      recent3Months: '심평원 3개월 자료 기준 외래 7일',
-      recent5Years: '',
+      recent3Months: '없음',
+      recent5Years: '심평원 5년 자료 기준 의료기관/약국 이용 36건 · 의료기관 19건 · 약국 17건 · 외래 48일',
       admissionSurgery: '입원 0일, 수술 명시 없음',
       currentMedication: '장기투약 명시 없음'
     },
     existingPremium: '13',
     purpose: '보장 강화'
   });
-  assert.ok((shortHiraWorkspace.actualCodes || []).some((item) => item.code === '3.3.5' && item.status === 'needs_review'));
-  assert.ok((shortHiraWorkspace.actualCodes || []).some((item) => item.code === '3.2.5' && item.status === 'needs_review'));
-  assert.equal((shortHiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)), false);
-  assert.ok((shortHiraWorkspace.designManagerReview?.reviewPoints || []).some((item) => /자료기간 확인 필요/.test(item)));
+  assert.ok((clearedHiraWorkspace.actualCodes || []).some((item) => item.code === '3.3.5' && item.status === 'recommended'));
+  assert.ok((clearedHiraWorkspace.actualCodes || []).some((item) => item.code === '3.2.5' && item.status === 'recommended'));
+  assert.ok((clearedHiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)));
+  assert.ok((clearedHiraWorkspace.designManagerReview?.reviewPoints || []).some((item) => /3.10.5 자료기간 확인 필요/.test(item)));
 });
 
 test('generates POLIBOT recommendation outputs for 10 persona scenarios', async () => {
