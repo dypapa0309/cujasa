@@ -814,7 +814,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
       '심평원 자료종류: 약제정보',
       '건강체 고지 체크: 치료횟수 8회 · 7회 이상 치료 확인',
       '건강체 고지 체크: 투약일수 35일 · 30일 이상 투약 확인',
-      '심평원 5년 자료 기준 의료기관/약국 이용 12건 · 의료기관 8건 · 약국 4건 · 외래 8일 · 치료횟수 8회 · 투약일수 35일'
+      '심평원 5년 자료 기준 의료기관/약국 이용 12건 · 의료기관 8건 · 약국 4건 · 외래 48일 · 치료횟수 8회 · 투약일수 35일'
     ].join('\n'),
     disclosureDetails: {
       recent3Months: {
@@ -838,6 +838,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => item.code === 'HEALTHY-TREATMENT-7'));
   assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => item.code === 'HEALTHY-MEDICATION-30'));
   assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => /치료횟수 8회/.test(item.reason || '')));
+  assert.equal((multiHiraWorkspace.managerCodes || []).some((item) => /치료횟수 48회/.test(item.reason || '')), false);
   assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => /투약일수 35일/.test(item.reason || '')));
 
   const incompleteRecent3Workspace = await savePolibotRecommendation(userId, {

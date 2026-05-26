@@ -2206,11 +2206,12 @@ function extractPolibotMedicalEvents(profile = {}) {
   const pharmacyClaims = sum(numbersFor(/약국\s*(?:이용|청구\s*이력\s*확인)?\s*(\d+)\s*건/g).filter((value) => value > 0));
   const institutionClaims = sum(numbersFor(/의료기관\s*(\d+)\s*건/g).filter((value) => value > 0));
   const maxFor = (patterns = []) => Math.max(0, ...patterns.flatMap((pattern) => numbersFor(pattern)).filter((value) => value > 0));
-  const treatmentCount = maxFor([
-    /치료횟수\s*(\d+)\s*회/g,
+  const explicitTreatmentCount = maxFor([/치료횟수\s*(\d+)\s*회/g]);
+  const inferredTreatmentCount = maxFor([
     /(?:치료|진료|외래|통원)\s*(?:횟수|건수)?\s*[:：]?\s*(\d{1,3})\s*(?:회|건|일)/g,
     /(\d{1,3})\s*(?:회|건|일)\s*(?:치료|진료|외래|통원)/g
-  ]) || outpatientDays;
+  ]);
+  const treatmentCount = explicitTreatmentCount || inferredTreatmentCount || outpatientDays;
   const medicationDays = maxFor([
     /투약일수\s*(\d+)\s*일/g,
     /처방일수\s*(\d+)\s*일/g,
