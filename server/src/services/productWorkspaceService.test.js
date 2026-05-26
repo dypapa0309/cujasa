@@ -669,6 +669,19 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.ok((recommendation.catalogItems || []).some((item) => item.decisionBreakdown?.premium?.status === 'within_budget'));
   assert.ok((recommendation.nextQuestions || []).some((item) => /투약|병력|입원|수술|표준형|간편심사/.test(item)));
   assert.ok((recommendation.reviewReasons || []).some((item) => /고지|가입 가능성|심사/.test(item)));
+
+  const chronicWorkspace = await savePolibotRecommendation(userId, {
+    name: '고혈압 고지 고객',
+    age: '58',
+    gender: '여성',
+    needs: ['암', '뇌', '심장'],
+    budget: '14',
+    existingMedicalPlan: '있음',
+    medicalHistory: '고혈압 약 복용 중. 최근 외래 진료 및 처방 유지.',
+    existingPremium: '16',
+    purpose: '보장 강화'
+  });
+  assert.ok((chronicWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'));
 });
 
 test('generates POLIBOT recommendation outputs for 10 persona scenarios', async () => {

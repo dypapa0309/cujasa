@@ -2328,6 +2328,63 @@ function addPolibotActualCode(items, item = {}) {
   });
 }
 
+function buildPolibotRecommendedDisclosureCodes(profile = {}) {
+  const medical = polibotUnderwritingMedicalText(profile);
+  if (!medical) return [];
+  const text = normalizePolibotMatchText([
+    medical,
+    profile.familyHistory,
+    profile.underwritingAssessment?.note,
+    profile.underwritingAssessment?.simpleReview
+  ].filter(Boolean).join(' '));
+  const items = [];
+  const add = (item = {}) => {
+    if (!item.code || items.some((row) => row.code === item.code)) return;
+    items.push({
+      kind: 'disclosure_recommendation',
+      label: '추천 간편고지 유형',
+      status: 'recommended',
+      source: '설계매니저 산출',
+      confidence: 78,
+      context: medical.slice(0, 240),
+      ...item
+    });
+  };
+  const hasHira = /심평원|의료기관|병원|약국|진료|외래|처방/.test(text);
+  const hasChronicMedication = /고혈압|혈압|당뇨|고지혈|콜레스테롤|지질|투약|복용|처방|약국/.test(text);
+  const hasFollowup = /검사|재검|추적|관찰|소견|결절|용종/.test(text);
+  const hasAdmissionSurgery = /입원|수술|시술/.test(text);
+  const hasMajor = /암|심근경색|협심증|뇌졸중|뇌출혈|뇌경색|심장판막|간경화|백혈병|후유증|전이|재발/.test(text);
+  const hasLongWindow = /10년|십년|장기|30일|7일|입원일수|수술일|치료\s*종료|완치/.test(text);
+
+  if (hasMajor || (hasAdmissionSurgery && hasLongWindow)) {
+    add({
+      code: '3.10.10',
+      reason: '중대질환 또는 입원/수술 이력 가능성이 있어 10년형 간편고지까지 산출 후보로 둡니다.',
+      confidence: hasMajor ? 88 : 82
+    });
+  }
+  if (hasAdmissionSurgery || hasChronicMedication) {
+    add({
+      code: '3.5.5',
+      reason: hasAdmissionSurgery
+        ? '입원/수술/시술 단서가 있어 최근 5년 고지형 산출을 우선 후보로 둡니다.'
+        : '만성질환 투약 또는 처방 단서가 있어 5년형 간편고지 산출을 우선 후보로 둡니다.',
+      confidence: hasChronicMedication ? 86 : 82
+    });
+  }
+  if (hasFollowup || (hasHira && !hasAdmissionSurgery && !hasMajor)) {
+    add({
+      code: '3.3.5',
+      reason: hasFollowup
+        ? '검사/재검/추적관찰 단서가 있어 3개월·3년·5년 질문형을 비교 후보로 둡니다.'
+        : '심평원/진료 이력은 있으나 중대 병력 단서가 약해 3.3.5 비교 후보로 둡니다.',
+      confidence: hasFollowup ? 80 : 74
+    });
+  }
+  return items;
+}
+
 function buildPolibotActualCodes(profile = {}) {
   const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
   const text = [
@@ -2396,6 +2453,10 @@ function buildPolibotActualCodes(profile = {}) {
       });
     }
   }
+  buildPolibotRecommendedDisclosureCodes(profile).forEach((item) => {
+    if (items.some((row) => row.code === item.code)) return;
+    addPolibotActualCode(items, item);
+  });
   return items.sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0)).slice(0, 24);
 }
 
