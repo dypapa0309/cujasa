@@ -2070,11 +2070,72 @@ function polibotUnderwritingMedicalText(profile = {}) {
   ].filter(Boolean).join(' ');
 }
 
+function extractPolibotMedicalEvents(profile = {}) {
+  const medical = polibotUnderwritingMedicalText(profile);
+  const text = normalizePolibotMatchText(`${medical} ${profile.familyHistory || ''}`);
+  const positiveText = text
+    .replace(/입원\s*0\s*일/g, '')
+    .replace(/외래\s*0\s*일/g, '');
+  const numbersFor = (pattern) => [...text.matchAll(pattern)]
+    .map((match) => Number(match[1]))
+    .filter((value) => Number.isFinite(value));
+  const sum = (values = []) => values.reduce((total, value) => total + value, 0);
+  const admissionDays = sum(numbersFor(/입원\s*(\d+)\s*일/g).filter((value) => value > 0));
+  const outpatientDays = sum(numbersFor(/외래\s*(\d+)\s*일/g).filter((value) => value > 0));
+  const pharmacyClaims = sum(numbersFor(/약국\s*(?:이용|청구\s*이력\s*확인)?\s*(\d+)\s*건/g).filter((value) => value > 0));
+  const institutionClaims = sum(numbersFor(/의료기관\s*(\d+)\s*건/g).filter((value) => value > 0));
+  const hasNoSurgery = /수술\s*(?:명시\s*)?(?:없음|없|미확인)|수술.*(?:없음|없|미확인)/.test(text);
+  const hasNoAdmission = /입원\s*0\s*일|입원\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);
+  const hasNoLongMedication = /(?:장기\s*)?투약\s*(?:명시\s*)?(?:없음|없|미확인)|복용\s*(?:명시\s*)?(?:없음|없|미확인)|처방\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);
+  const hasAdmission = admissionDays > 0 || (/입원/.test(positiveText) && !hasNoAdmission);
+  const hasSurgery = /수술|시술/.test(positiveText) && !hasNoSurgery;
+  const hasMajorDisease = /암|백혈병|협심증|심근경색|심장판막|간경화|뇌졸중|뇌출혈|뇌경색|에이즈|hiv|후유증|전이|재발|c\d{2}|i2[0-5]|i6[0-9]/i.test(text);
+  const hasChronicDisease = /고혈압|혈압|당뇨|고지혈|고지혈증|콜레스테롤|지질|i10|e1[0-4]/i.test(text);
+  const hasLongMedication = !hasNoLongMedication && (hasChronicDisease || /투약|복용|처방\s*유지|현재\s*처방|30일\s*이상\s*투약|장기\s*처방|약\s*복용/i.test(text));
+  const hasFollowup = /검사|재검|추적|관찰|소견|결절|용종|검진/.test(text);
+  const highRiskDepartment = /순환기|심장|신경과|신경외과|종양|혈액|내분비|신장|호흡기/.test(text);
+  const moderateRiskDepartment = /정형외과|내과|가정의학과|한방병원|치과|안과|소아청소년과/.test(text);
+  const hasHira = /심평원|의료기관|병원|약국|진료|외래|처방/.test(text);
+  const reasons = [
+    admissionDays > 0 && `입원 ${admissionDays}일`,
+    outpatientDays > 0 && `외래 ${outpatientDays}일`,
+    pharmacyClaims > 0 && `약국 ${pharmacyClaims}건`,
+    institutionClaims > 0 && `의료기관 ${institutionClaims}건`,
+    hasSurgery && '수술/시술 단서',
+    hasLongMedication && '장기투약/만성질환 단서',
+    hasFollowup && '검사/추적관찰 단서',
+    hasMajorDisease && '주요질환 단서',
+    highRiskDepartment && '고위험 진료과 단서',
+    !highRiskDepartment && moderateRiskDepartment && '일반 진료과 반복 단서'
+  ].filter(Boolean);
+  return {
+    text,
+    positiveText,
+    hasHira,
+    admissionDays,
+    outpatientDays,
+    pharmacyClaims,
+    institutionClaims,
+    hasAdmission,
+    hasSurgery,
+    hasAdmissionSurgery: hasAdmission || hasSurgery,
+    hasMajorDisease,
+    hasChronicDisease,
+    hasLongMedication,
+    hasFollowup,
+    highRiskDepartment,
+    moderateRiskDepartment,
+    hasLightHiraUse: hasHira && !hasMajorDisease && !hasAdmission && !hasSurgery && !hasLongMedication,
+    reasons
+  };
+}
+
 function polibotMedicalRisk(profile = {}) {
   const medical = polibotUnderwritingMedicalText(profile);
   const disclosureText = '';
   const family = String(profile.familyHistory || '').trim();
   const text = `${medical} ${disclosureText} ${family}`;
+  const events = extractPolibotMedicalEvents(profile);
   if (!medical && !disclosureText) return { level: 'unknown', label: '고지 확인 필요', reasons: ['최근 3개월/1년/5년 고지와 현재 투약 여부를 확인해야 해요.'] };
   if (/없음|무|해당\s*없/i.test(`${medical} ${disclosureText}`) && !/있음|예|수술|입원|투약|치료|진단|검사|추적|관찰/i.test(disclosureText)) {
     return {
@@ -2093,13 +2154,13 @@ function polibotMedicalRisk(profile = {}) {
   if (/고혈압|혈압/i.test(text)) flags.push({ key: 'hypertension', label: '고혈압/혈압', risk: 'moderate', question: '최근 혈압 수치, 복용 약, 합병증 여부를 확인해야 합니다.' });
   if (/당뇨/i.test(text)) flags.push({ key: 'diabetes', label: '당뇨', risk: 'high', question: '당화혈색소, 인슐린 사용 여부, 합병증 여부를 확인해야 합니다.' });
   if (/고지혈|콜레스테롤|지질/i.test(text)) flags.push({ key: 'dyslipidemia', label: '고지혈/지질', risk: 'moderate', question: '복용 약과 심혈관 합병증 동반 여부를 확인해야 합니다.' });
-  if (/입원|수술|시술/i.test(text)) flags.push({ key: 'recent_admission_surgery', label: '입원/수술/시술', risk: 'high', question: '최근 5년 이력인지, 완치/추적관찰 여부를 확인해야 합니다.' });
-  if (/검사|추적|관찰|재검|소견|결절/i.test(text)) flags.push({ key: 'followup_exam', label: '추적검사/결절/소견', risk: 'high', question: '최근 3개월 추가검사 소견과 최종 진단명을 확인해야 합니다.' });
-  if (/암|심근경색|협심증|뇌졸중|뇌출혈|뇌경색|심장|뇌/i.test(text)) flags.push({ key: 'major_disease', label: '암/심뇌혈관 이력', risk: 'high', question: '진단 시점, 치료 종료일, 재발/전이/후유증 여부를 확인해야 합니다.' });
+  if (events.hasAdmissionSurgery) flags.push({ key: 'recent_admission_surgery', label: '입원/수술/시술', risk: 'high', question: '최근 5년 이력인지, 완치/추적관찰 여부를 확인해야 합니다.' });
+  if (events.hasFollowup) flags.push({ key: 'followup_exam', label: '추적검사/결절/소견', risk: 'high', question: '최근 3개월 추가검사 소견과 최종 진단명을 확인해야 합니다.' });
+  if (events.hasMajorDisease) flags.push({ key: 'major_disease', label: '암/심뇌혈관 이력', risk: 'high', question: '진단 시점, 치료 종료일, 재발/전이/후유증 여부를 확인해야 합니다.' });
   if (/디스크|관절|허리|목/i.test(text)) flags.push({ key: 'musculoskeletal', label: '근골격계', risk: 'moderate', question: '부담보 가능성이 있어 부위, 치료 기간, 현재 증상을 확인해야 합니다.' });
-  if (/투약|복용|약|치료|진단/i.test(text)) flags.push({ key: 'medication_treatment', label: '투약/치료/진단', risk: 'moderate', question: '투약 기간과 현재 치료 지속 여부를 확인해야 합니다.' });
+  if (events.hasLongMedication || /치료|진단/i.test(text)) flags.push({ key: 'medication_treatment', label: '투약/치료/진단', risk: 'moderate', question: '투약 기간과 현재 치료 지속 여부를 확인해야 합니다.' });
   if (/암|심장|뇌|당뇨/i.test(family)) flags.push({ key: 'family_history', label: '가족력', risk: 'reference', question: '가족력은 본인 병력과 분리해 관련 담보 니즈와 고지 질문 해당 여부만 확인합니다.' });
-  if (/수술|입원|치료|투약|약|진단|검사|추적|관찰|고혈압|당뇨|고지혈|디스크|결절|암|심장|뇌/i.test(text)) {
+  if (events.reasons.length || /치료|진단|고혈압|당뇨|고지혈|디스크|암|심장|뇌/i.test(text)) {
     reasons.push('병력/투약/검사 이력이 있어 표준체, 할증, 부담보, 간편심사 여부를 비교해야 해요.');
   }
   if (/암|심장|뇌|당뇨/i.test(family)) reasons.push('가족력 때문에 관련 담보 인수 기준을 확인하는 편이 좋아요.');
@@ -2348,9 +2409,7 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
     profile.underwritingAssessment?.note,
     profile.underwritingAssessment?.simpleReview
   ].filter(Boolean).join(' '));
-  const positiveEventText = text
-    .replace(/입원\s*0\s*일/g, '')
-    .replace(/외래\s*0\s*일/g, '');
+  const events = extractPolibotMedicalEvents(profile);
   const items = [];
   const add = (item = {}) => {
     if (!item.code || items.some((row) => row.code === item.code)) return;
@@ -2364,14 +2423,17 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
       ...item
     });
   };
-  const hasHira = /심평원|의료기관|병원|약국|진료|외래|처방/.test(text);
-  const hasChronicMedication = /고혈압|혈압|당뇨|고지혈|콜레스테롤|지질|투약|복용|처방\s*유지|현재\s*처방|30일\s*이상\s*투약|장기\s*처방/.test(text);
-  const hasFollowup = /검사|재검|추적|관찰|소견|결절|용종/.test(text);
-  const hasAdmissionSurgery = /입원|수술|시술/.test(positiveEventText);
-  const hasMajor = /암|심근경색|협심증|뇌졸중|뇌출혈|뇌경색|심장판막|간경화|백혈병|후유증|전이|재발/.test(text);
+  const hasHira = events.hasHira;
+  const hasChronicMedication = events.hasLongMedication;
+  const hasFollowup = events.hasFollowup;
+  const hasAdmissionSurgery = events.hasAdmissionSurgery;
+  const hasMajor = events.hasMajorDisease;
   const hasHypertensionDiabetes = /고혈압|혈압|당뇨/.test(text);
   const hasLongWindow = /10년|십년|장기|30일|7일|입원일수|수술일|치료\s*종료|완치/.test(text);
-  const hasLightIssue = /경증|초경증|용종|결절|검진|외래|통원|약국|처방/.test(text) && !hasMajor && !hasAdmissionSurgery;
+  const hasLightIssue = (
+    events.hasLightHiraUse
+    || (/경증|초경증|용종|결절|검진|외래|통원|약국|처방/.test(text) && !hasMajor && !hasAdmissionSurgery && !hasChronicMedication)
+  );
 
   if (hasMajor || (hasAdmissionSurgery && hasLongWindow)) {
     add({
@@ -2407,10 +2469,10 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
       confidence: hasFollowup ? 80 : 74
     });
   }
-  if (hasFollowup && !hasAdmissionSurgery && !hasMajor) {
+  if ((hasFollowup || events.hasLightHiraUse) && !hasAdmissionSurgery && !hasMajor && !hasChronicMedication) {
     add({
       code: '3.2.5',
-      reason: '검사/추적관찰 중심의 비교적 가벼운 고지 단서라 3.2.5 초경증 후보도 비교합니다.',
+      reason: '입원/수술/장기투약 단서가 약한 경증 외래·검사 중심 자료라 3.2.5 초경증 후보도 비교합니다.',
       confidence: 72
     });
   }
@@ -2923,11 +2985,12 @@ function polibotUnderwritingChecklist(profile = {}) {
 function polibotDisclosureTimeline(profile = {}) {
   const medical = polibotUnderwritingMedicalText(profile);
   const text = `${medical} ${profile.familyHistory || ''}`;
+  const events = extractPolibotMedicalEvents(profile);
   const entries = [
     {
       key: '3m',
       label: '최근 3개월',
-      status: /3개월|최근|의심|소견|추가검사|재검|검사|진단|치료|투약|입원|수술/i.test(text) ? '확인 필요' : medical ? '미해당 가능' : '미확인',
+      status: (/3개월|최근|의심|소견|추가검사|재검|검사|진단|치료|투약/i.test(text) || events.hasAdmissionSurgery) ? '확인 필요' : medical ? '미해당 가능' : '미확인',
       reason: '질병확정진단, 질병의심소견, 치료, 입원, 수술, 투약, 추가검사 소견 여부를 확인합니다.'
     },
     {
@@ -2939,13 +3002,13 @@ function polibotDisclosureTimeline(profile = {}) {
     {
       key: '2y',
       label: '최근 2년',
-      status: /2년|입원|수술/i.test(text) ? '확인 필요' : medical ? '미해당 가능' : '미확인',
+      status: (/2년/i.test(text) || events.hasAdmissionSurgery) ? '확인 필요' : medical ? '미해당 가능' : '미확인',
       reason: '간편심사에서 자주 보는 입원/수술 이력 기간입니다.'
     },
     {
       key: '5y',
       label: '최근 5년',
-      status: /5년|입원|수술|30일|7일|장기|암|백혈병|고혈압|협심증|심근경색|심장판막|간경화|뇌졸중|당뇨|에이즈|HIV/i.test(text) ? '확인 필요' : medical ? '미해당 가능' : '미확인',
+      status: (/5년|30일|7일|장기|고혈압|협심증|심근경색|심장판막|간경화|뇌졸중|당뇨|에이즈|HIV/i.test(text) || events.hasAdmissionSurgery || events.hasMajorDisease) ? '확인 필요' : medical ? '미해당 가능' : '미확인',
       reason: '입원, 수술, 7일 이상 치료, 30일 이상 투약, 주요 질병 이력을 확인합니다.'
     }
   ];
@@ -2955,14 +3018,12 @@ function polibotDisclosureTimeline(profile = {}) {
 function polibotUnderwritingRoute(profile = {}, catalogItems = []) {
   const medical = polibotUnderwritingMedicalText(profile);
   const text = `${medical} ${profile.familyHistory || ''}`;
-  const positiveEventText = text
-    .replace(/입원\s*0\s*일/g, '')
-    .replace(/외래\s*0\s*일/g, '');
+  const events = extractPolibotMedicalEvents(profile);
   const age = polibotAgeValue(profile);
   const hasNoMedical = Boolean(medical) && /없음|무|해당\s*없/i.test(medical);
-  const hasChronic = /고혈압|혈압|당뇨|고지혈|고지혈증|협심증|심근경색|뇌졸중|심장|간경화/i.test(text);
-  const hasRecentRedFlag = /최근|3개월|의심|소견|추가검사|재검|입원|수술|치료|투약|30일|7일/i.test(positiveEventText);
-  const hasMajorDisease = /암|백혈병|협심증|심근경색|심장판막|간경화|뇌졸중|당뇨|에이즈|HIV/i.test(text);
+  const hasChronic = events.hasChronicDisease || /협심증|심근경색|뇌졸중|심장|간경화/i.test(text);
+  const hasRecentRedFlag = /최근|3개월|의심|소견|추가검사|재검|치료|투약|30일|7일/i.test(text) || events.hasAdmissionSurgery || events.highRiskDepartment;
+  const hasMajorDisease = events.hasMajorDisease;
   const productText = catalogItems.map((item) => `${item.productName || ''} ${item.productGroup || ''} ${(item.coverageKeywords || []).join(' ')}`).join(' ');
   const hasSimpleProduct = /간편|유병|고지|325|335|355|310|3\.2\.5|3\.5\.5|3\.10/.test(productText);
   const hasSpecialProduct = /고혈압|당뇨|유병|간편/.test(productText);
@@ -2977,7 +3038,7 @@ function polibotUnderwritingRoute(profile = {}, catalogItems = []) {
       status: '우선 검토',
       reason: '입력상 병력 이슈가 없으므로 간편심사보다 일반/건강고지 상품을 먼저 비교해야 보험료 과다를 피할 수 있어요.'
     });
-  } else if (hasChronic && !/입원|수술|암|심근경색|뇌졸중/i.test(text)) {
+  } else if ((hasChronic || events.hasLongMedication) && !events.hasAdmissionSurgery && !hasMajorDisease) {
     routes.push({
       type: 'chronic_special',
       label: '고혈압/당뇨 등 특화 또는 간편심사',
@@ -3006,6 +3067,21 @@ function polibotUnderwritingRoute(profile = {}, catalogItems = []) {
       priority: 2,
       status: '부담보/할증/감액 가능',
       reason: '심사 결과에 따라 특정 질병 부담보, 보험료 할증, 감액기간 조건이 붙을 수 있어요.'
+    });
+  } else if (events.hasLightHiraUse || events.hasFollowup) {
+    routes.push({
+      type: 'balanced',
+      label: '표준형과 간편심사 동시 비교',
+      priority: 1,
+      status: '비교 검토',
+      reason: '심평원 외래/약국 이력은 있으나 입원·수술·장기투약 단서가 약해 표준형과 경증 간편고지를 함께 비교합니다.'
+    });
+    routes.push({
+      type: 'standard',
+      label: '표준형 재도전',
+      priority: 2,
+      status: '비교 검토',
+      reason: '진료 목적과 최종 진단명이 단순 이력이면 표준심사가 더 유리할 수 있어요.'
     });
   } else {
     routes.push({

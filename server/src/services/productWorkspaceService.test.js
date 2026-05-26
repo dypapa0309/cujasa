@@ -698,6 +698,35 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     purpose: '보장 강화'
   });
   assert.ok((standardWorkspace.actualCodes || []).some((item) => item.code === '5.10.5' && item.kind === 'disclosure_recommendation'));
+
+  const hiraWorkspace = await savePolibotRecommendation(userId, {
+    name: '심평원 경증 고객',
+    age: '44',
+    gender: '여성',
+    needs: ['암', '뇌', '심장'],
+    budget: '16',
+    existingMedicalPlan: '있음',
+    medicalHistory: [
+      '심평원 5년 자료 기준 의료기관/약국 이용 36건 · 의료기관 19건 · 약국 17건 · 외래 48일',
+      '진료과/기관명 기준 확인: 정형외과, 내과, 가정의학과, 치과, 안과',
+      '연세정형외과의원 · 입원 0일 · 외래 3일',
+      '푸른가정의학과의원 · 입원 0일 · 외래 2일',
+      '수술 명시 없음. 장기투약 명시 없음.'
+    ].join('\n'),
+    disclosureDetails: {
+      recent5Years: '심평원 5년 자료 기준 의료기관/약국 이용 36건 · 의료기관 19건 · 약국 17건 · 외래 48일',
+      longTreatment: '외래 이용 다수',
+      currentMedication: '약국 청구 이력 확인',
+      admissionSurgery: '입원 0일, 수술 명시 없음',
+      details: '정형외과의원 · 입원 0일 · 외래 3일\n가정의학과의원 · 입원 0일 · 외래 2일'
+    },
+    existingPremium: '13',
+    purpose: '보장 강화'
+  });
+  assert.equal((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'), false);
+  assert.ok((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.kind === 'disclosure_recommendation'));
+  assert.ok((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.3.5' && item.kind === 'disclosure_recommendation'));
+  assert.match(hiraWorkspace.designManagerReview?.route || '', /동시 비교|표준/);
 });
 
 test('generates POLIBOT recommendation outputs for 10 persona scenarios', async () => {
