@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import AdmZip from 'adm-zip';
+import { randomUUID } from 'node:crypto';
 import { dbInsert } from './supabaseService.js';
 import {
   ingestPolibotKnowledge,
@@ -575,7 +576,7 @@ test('builds POLIBOT monthly change report from versioned product data', async (
 });
 
 test('scores POLIBOT persona recommendations with underwriting and item breakdowns', async () => {
-  const userId = '12121212-1212-4121-8121-121212121212';
+  const userId = randomUUID();
   await dbInsert('users', {
     id: userId,
     email: 'polibot-persona-score-test@example.com',
@@ -588,7 +589,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
     product_id: 'polibot',
     status: 'active',
     role: 'customer',
-    settings: {}
+    settings: { unlimitedUsage: true, usage: { polibot: { limit: 20, used: 0 } } }
   });
   await ingestPolibotKnowledge({
     scope: 'global',
@@ -725,8 +726,8 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   });
   assert.equal((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'), false);
   assert.ok((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.status === 'needs_review'));
-  assert.ok((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.3.5' && item.status === 'needs_review'));
   assert.equal((hiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)), false);
+  assert.equal((hiraWorkspace.designManagerReview?.recommendedCodes || []).length, 0);
   assert.match(hiraWorkspace.designManagerReview?.route || '', /동시 비교|표준/);
 
   const clearedHiraWorkspace = await savePolibotRecommendation(userId, {
@@ -742,7 +743,16 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
       '입원 0일. 수술 명시 없음. 장기투약 명시 없음.'
     ].join('\n'),
     disclosureDetails: {
-      recent3Months: '없음',
+      recent3Months: {
+        diagnosis: 'none',
+        suspicion: 'none',
+        treatment: 'none',
+        admission: 'none',
+        surgery: 'none',
+        medication: 'none',
+        extraExam: 'none',
+        confirmedBy: 'customer'
+      },
       recent5Years: '심평원 5년 자료 기준 의료기관/약국 이용 36건 · 의료기관 19건 · 약국 17건 · 외래 48일',
       admissionSurgery: '입원 0일, 수술 명시 없음',
       currentMedication: '장기투약 명시 없음'
@@ -753,7 +763,34 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.ok((clearedHiraWorkspace.actualCodes || []).some((item) => item.code === '3.3.5' && item.status === 'recommended'));
   assert.ok((clearedHiraWorkspace.actualCodes || []).some((item) => item.code === '3.2.5' && item.status === 'recommended'));
   assert.ok((clearedHiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)));
-  assert.ok((clearedHiraWorkspace.designManagerReview?.reviewPoints || []).some((item) => /3.10.5 자료기간 확인 필요/.test(item)));
+  assert.equal((clearedHiraWorkspace.actualCodes || []).some((item) => (item.reviewReasonCodes || []).includes('recent3_missing')), false);
+
+  const recentEventWorkspace = await savePolibotRecommendation(userId, {
+    name: '심평원 최근3개월 치료 고객',
+    age: '44',
+    gender: '여성',
+    needs: ['암', '뇌', '심장'],
+    budget: '16',
+    existingMedicalPlan: '있음',
+    medicalHistory: '심평원 5년 자료 기준 의료기관/약국 이용 12건 · 입원 0일. 수술 명시 없음. 장기투약 명시 없음.',
+    disclosureDetails: {
+      recent3Months: {
+        diagnosis: 'none',
+        suspicion: 'none',
+        treatment: 'yes',
+        admission: 'none',
+        surgery: 'none',
+        medication: 'none',
+        extraExam: 'none',
+        confirmedBy: 'customer'
+      },
+      recent5Years: '심평원 5년 자료 기준 의료기관/약국 이용 12건',
+      admissionSurgery: '입원 0일, 수술 명시 없음'
+    },
+    existingPremium: '13',
+    purpose: '보장 강화'
+  });
+  assert.equal((recentEventWorkspace.designManagerReview?.recommendedCodes || []).length, 0);
 });
 
 test('generates POLIBOT recommendation outputs for 10 persona scenarios', async () => {
