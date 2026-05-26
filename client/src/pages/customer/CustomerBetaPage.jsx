@@ -219,6 +219,45 @@ const createPolibotDisclosureState = () => ({
   ...Object.fromEntries(polibotDisclosureFields.map((field) => [field.key, ''])),
   recent3Months: createPolibotRecent3MonthState()
 });
+const mergePolibotTextLines = (...values) => [...new Set(values.flatMap((value) => String(value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)))].join('\n');
+const polibotPolicyKey = (policy = {}) => [
+  policy.company,
+  policy.productName,
+  policy.startDate,
+  policy.premium,
+  policy.paymentPeriod,
+  policy.maturity
+].map((value) => displayValue(value).replace(/\s+/g, '')).join('|');
+const mergePolibotPolicyDetails = (...lists) => {
+  const rows = [];
+  const seen = new Set();
+  lists.flat().filter(Boolean).forEach((policy) => {
+    const key = polibotPolicyKey(policy);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    rows.push(policy);
+  });
+  return rows.length ? rows : createPolibotPolicyRows();
+};
+const mergePolibotCoverageValues = (current = {}, next = {}) => {
+  const merged = { ...(current || {}) };
+  Object.entries(next || {}).forEach(([key, value]) => {
+    if (!value || typeof value !== 'object') return;
+    const prev = merged[key] && typeof merged[key] === 'object' ? merged[key] : {};
+    merged[key] = {
+      ...prev,
+      ...Object.fromEntries(Object.entries(value).filter(([, itemValue]) => displayValue(itemValue)))
+    };
+  });
+  return merged;
+};
+const sumPolibotPremiumValues = (...values) => {
+  const total = values.flatMap((value) => String(value || '').split(/\s*[,\n/]\s*/))
+    .map((value) => Number(String(value || '').replace(/[^\d.]/g, '')))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .reduce((sum, value) => sum + value, 0);
+  return total ? String(Math.round(total * 10) / 10) : '';
+};
 const coverageAmountValue = (value) => (value && typeof value === 'object' ? value.amount || '' : value || '');
 const polibotTargetPremiumQuickOptions = ['10', '20', '30', '40', '50'];
 const polibotGenderOptions = [
@@ -5189,6 +5228,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const [workspaceLoaded, setWorkspaceLoaded] = useState(Boolean(localStatus));
   const [coverageDocumentParsing, setCoverageDocumentParsing] = useState(false);
   const [coverageDocumentFileName, setCoverageDocumentFileName] = useState('');
+  const [coverageDocumentFiles, setCoverageDocumentFiles] = useState([]);
   const [hiraFileName, setHiraFileName] = useState('');
   const [hiraFiles, setHiraFiles] = useState([]);
   const [hiraPassword, setHiraPassword] = useState('');
@@ -5405,20 +5445,25 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
         toast(`${reason}로 보여서 고객 보장분석에 반영하지 않았어요. 고객 보장분석 PDF를 넣어주세요.`, 'error');
         return;
       }
-      setCoverageDocumentFileName(result?.fileName || file.name);
+      const nextFileName = result?.fileName || file.name;
+      setCoverageDocumentFileName((prev) => mergePolibotTextLines(prev, nextFileName).split('\n').join(', '));
+      setCoverageDocumentFiles((prev) => [
+        ...prev.filter((item) => item.name !== nextFileName),
+        { name: nextFileName, type: result?.document?.label || '고객 보장분석' }
+      ]);
       const values = result?.values || {};
       setForm((prev) => ({
         ...prev,
         name: values.name || prev.name,
         age: values.age || prev.age,
         gender: values.gender || prev.gender,
-        needs: values.needs || prev.needs,
-        existingPolicies: values.existingPolicies || prev.existingPolicies,
-        existingPolicyDetails: Array.isArray(values.existingPolicyDetails) && values.existingPolicyDetails.length ? values.existingPolicyDetails : prev.existingPolicyDetails,
-        currentCoverage: values.currentCoverage && typeof values.currentCoverage === 'object' ? { ...prev.currentCoverage, ...values.currentCoverage } : prev.currentCoverage,
+        needs: mergePolibotTextLines(prev.needs, values.needs).replace(/\n/g, ', '),
+        existingPolicies: mergePolibotTextLines(prev.existingPolicies, values.existingPolicies),
+        existingPolicyDetails: mergePolibotPolicyDetails(prev.existingPolicyDetails, values.existingPolicyDetails),
+        currentCoverage: values.currentCoverage && typeof values.currentCoverage === 'object' ? mergePolibotCoverageValues(prev.currentCoverage, values.currentCoverage) : prev.currentCoverage,
         existingMedicalPlan: values.existingMedicalPlan || prev.existingMedicalPlan,
-        existingPremium: values.existingPremium || prev.existingPremium,
-        medicalHistory: values.medicalHistory || prev.medicalHistory,
+        existingPremium: sumPolibotPremiumValues(prev.existingPremium, values.existingPremium) || values.existingPremium || prev.existingPremium,
+        medicalHistory: mergePolibotTextLines(prev.medicalHistory, values.medicalHistory),
         disclosureDetails: values.disclosureDetails && typeof values.disclosureDetails === 'object' ? { ...prev.disclosureDetails, ...values.disclosureDetails } : prev.disclosureDetails,
         underwritingAssessment: values.underwritingAssessment && typeof values.underwritingAssessment === 'object' ? { ...prev.underwritingAssessment, ...values.underwritingAssessment } : prev.underwritingAssessment,
         analysisResult: values.analysisResult && typeof values.analysisResult === 'object' ? { ...prev.analysisResult, ...values.analysisResult } : prev.analysisResult
@@ -5489,6 +5534,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           onAnalyzeCoverageDocument={analyzeCoverageDocument}
           coverageDocumentParsing={coverageDocumentParsing}
           coverageDocumentFileName={coverageDocumentFileName}
+          coverageDocumentFiles={coverageDocumentFiles}
           onLoadHiraMedicalFile={loadHiraMedicalFile}
           hiraFileName={hiraFileName}
           hiraFiles={hiraFiles}
@@ -5666,6 +5712,7 @@ function PolibotRecommendStepper({
   onAnalyzeCoverageDocument,
   coverageDocumentParsing = false,
   coverageDocumentFileName = '',
+  coverageDocumentFiles = [],
   onLoadHiraMedicalFile,
   hiraFileName = '',
   hiraFiles = [],
@@ -5758,25 +5805,33 @@ function PolibotRecommendStepper({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-black text-zinc-200">보장분석 자료</div>
-                  <div className="mt-0.5 text-xs font-bold text-zinc-600">고객 기본정보, 기존 계약, 담보금액, 현재 보험료를 채웁니다.</div>
+                  <div className="mt-0.5 text-xs font-bold text-zinc-600">여러 보장분석 PDF의 기존 계약, 담보금액, 현재 보험료를 합쳐 채웁니다.</div>
                 </div>
-                {coverageDocumentFileName && <span className="max-w-full truncate rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black text-zinc-400">{coverageDocumentFileName}</span>}
+                {coverageDocumentFileName && <span className="max-w-full truncate rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] font-black text-zinc-400">{coverageDocumentFiles.length ? `${coverageDocumentFiles.length}개 업로드` : coverageDocumentFileName}</span>}
               </div>
               <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-white/15 bg-black/20 px-3 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">
                 <Upload size={14} />
-                {coverageDocumentParsing ? '보장분석 읽는 중' : '보장분석 PDF 불러오기'}
+                {coverageDocumentParsing ? '보장분석 읽는 중' : '보장분석 PDF 여러 개 불러오기'}
                 <input
                   type="file"
+                  multiple
                   accept=".pdf,application/pdf"
                   className="hidden"
                   disabled={coverageDocumentParsing}
                   onChange={(event) => {
-                    const file = event.target.files?.[0];
+                    const files = Array.from(event.target.files || []);
                     event.target.value = '';
-                    onAnalyzeCoverageDocument?.(file);
+                    files.forEach((file) => onAnalyzeCoverageDocument?.(file));
                   }}
                 />
               </label>
+              {coverageDocumentFiles.length > 0 && (
+                <div className="grid gap-1">
+                  {coverageDocumentFiles.map((file) => (
+                    <div key={file.name} className="truncate text-xs font-black text-zinc-400">보장분석: {file.name}{file.type ? ` · ${file.type}` : ''}</div>
+                  ))}
+                </div>
+              )}
               <div className="text-[11px] font-bold leading-5 text-zinc-600">
                 보장분석 자료를 먼저 넣으면 이름, 나이, 성별, 필요 보장, 가입 계약, 현재 보험료가 자동으로 들어갑니다.
               </div>
