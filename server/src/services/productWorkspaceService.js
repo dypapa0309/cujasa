@@ -1929,30 +1929,52 @@ function normalizePolibotPolicyDetails(raw = []) {
   })).filter((item) => Object.values(item).some(Boolean)).slice(0, 12);
 }
 
-function normalizePolibotRecent3MonthDisclosure(raw = '') {
+const POLIBOT_RECENT3_MONTH_FIELDS = [
+  'diagnosis',
+  'suspicion',
+  'treatment',
+  'admission',
+  'surgery',
+  'medication',
+  'extraExam'
+];
+
+function normalizePolibotRecent3MonthDetails(raw = '') {
   if (raw && typeof raw === 'object') {
-    const values = [
-      raw.diagnosis,
-      raw.suspicion,
-      raw.treatment,
-      raw.admission,
-      raw.surgery,
-      raw.medication,
-      raw.extraExam
-    ].map((value) => String(value || '').trim().toLowerCase());
-    if (values.length && values.every((value) => ['none', 'no', '없음', '무', '해당없음'].includes(value))) {
-      return `없음${raw.confirmedBy ? ` · 확인자:${raw.confirmedBy}` : ''}`;
+    return {
+      diagnosis: String(raw.diagnosis || '').trim(),
+      suspicion: String(raw.suspicion || '').trim(),
+      treatment: String(raw.treatment || '').trim(),
+      admission: String(raw.admission || '').trim(),
+      surgery: String(raw.surgery || '').trim(),
+      medication: String(raw.medication || '').trim(),
+      extraExam: String(raw.extraExam || '').trim(),
+      confirmedBy: String(raw.confirmedBy || '').trim(),
+      note: String(raw.note || '').trim()
+    };
+  }
+  return null;
+}
+
+function normalizePolibotRecent3MonthDisclosure(raw = '') {
+  const details = normalizePolibotRecent3MonthDetails(raw);
+  if (details) {
+    const values = POLIBOT_RECENT3_MONTH_FIELDS.map((key) => String(details[key] || '').trim().toLowerCase());
+    const answeredValues = values.filter(Boolean);
+    const noneValues = new Set(['none', 'no', '없음', '무', '해당없음', '해당 없음']);
+    if (answeredValues.length === POLIBOT_RECENT3_MONTH_FIELDS.length && answeredValues.every((value) => noneValues.has(value))) {
+      return `없음${details.confirmedBy ? ` · 확인자:${details.confirmedBy}` : ''}`;
     }
     return [
-      raw.diagnosis && `진단:${raw.diagnosis}`,
-      raw.suspicion && `의심소견:${raw.suspicion}`,
-      raw.treatment && `치료:${raw.treatment}`,
-      raw.admission && `입원:${raw.admission}`,
-      raw.surgery && `수술:${raw.surgery}`,
-      raw.medication && `투약:${raw.medication}`,
-      raw.extraExam && `추가검사:${raw.extraExam}`,
-      raw.confirmedBy && `확인자:${raw.confirmedBy}`,
-      raw.note
+      details.diagnosis && `진단:${details.diagnosis}`,
+      details.suspicion && `의심소견:${details.suspicion}`,
+      details.treatment && `치료:${details.treatment}`,
+      details.admission && `입원:${details.admission}`,
+      details.surgery && `수술:${details.surgery}`,
+      details.medication && `투약:${details.medication}`,
+      details.extraExam && `추가검사:${details.extraExam}`,
+      details.confirmedBy && `확인자:${details.confirmedBy}`,
+      details.note
     ].filter(Boolean).join(' · ');
   }
   return String(raw || '').trim();
@@ -1962,6 +1984,7 @@ function normalizePolibotDisclosureDetails(raw = {}) {
   const source = raw && typeof raw === 'object' ? raw : {};
   return {
     recent3Months: normalizePolibotRecent3MonthDisclosure(source.recent3Months),
+    recent3MonthDetails: normalizePolibotRecent3MonthDetails(source.recent3MonthDetails || source.recent3Months),
     recent1Year: String(source.recent1Year || '').trim(),
     recent5Years: String(source.recent5Years || '').trim(),
     recentExam: String(source.recentExam || '').trim(),
@@ -2196,6 +2219,28 @@ function polibotDisclosureWindowReview(events = {}, requiredMonths = 0) {
 function polibotDisclosureRecent3MonthReview(profile = {}, events = {}) {
   if (!events.hasHira) return null;
   const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
+  const details = disclosure.recent3MonthDetails;
+  if (details) {
+    const values = POLIBOT_RECENT3_MONTH_FIELDS.map((key) => String(details[key] || '').trim().toLowerCase());
+    const answeredValues = values.filter(Boolean);
+    const noneValues = new Set(['none', 'no', '없음', '무', '해당없음', '해당 없음']);
+    const positiveValues = new Set(['yes', 'y', 'true', '있음', '예', '네', '유']);
+    if (answeredValues.length < POLIBOT_RECENT3_MONTH_FIELDS.length) {
+      return {
+        status: 'needs_review',
+        reasonCode: 'recent3_incomplete',
+        reason: '최근 3개월 고지 문진 항목 일부가 비어 있어 진단, 의심소견, 치료, 입원, 수술, 투약, 추가검사 여부를 모두 확인해야 합니다.'
+      };
+    }
+    if (values.every((value) => noneValues.has(value))) return null;
+    if (values.some((value) => positiveValues.has(value)) || String(details.note || '').trim()) {
+      return {
+        status: 'needs_review',
+        reasonCode: 'recent3_medical_event',
+        reason: '최근 3개월 고지 문진에 의료행위 단서가 있어 질병확정진단, 의심소견, 치료, 입원, 수술, 투약, 추가검사 여부를 확인해야 합니다.'
+      };
+    }
+  }
   const recentText = normalizePolibotMatchText(disclosure.recent3Months || '');
   if (/없음|무|해당\s*없|이상\s*없|문제\s*없|특이\s*없/.test(recentText)) return null;
   if (/있음|예|진단|의심|치료|입원|수술|투약|검사|소견|외래|처방/.test(recentText)) {
@@ -2496,8 +2541,8 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
   const medical = polibotUnderwritingMedicalText(profile);
   const routeText = String(profile.underwritingAssessment?.route || '').trim();
   const rawMedical = String(profile.medicalHistory || '').trim();
-  const noMedical = /없음|무|해당\s*없|이상\s*없|문제\s*없/i.test(`${medical} ${rawMedical} ${routeText}`);
-  if (!medical && !noMedical) return [];
+  const explicitNoMedical = /^(없음|무|해당\s*없음?|이상\s*없음?|문제\s*없음?|특이\s*사항\s*없음?)$/i.test(String(rawMedical || medical || '').trim());
+  if (!medical && !explicitNoMedical) return [];
   const text = normalizePolibotMatchText([
     medical,
     profile.familyHistory,
@@ -2527,6 +2572,7 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
     });
   };
   const hasHira = events.hasHira;
+  const noMedical = explicitNoMedical && !hasHira && !events.hasAdmissionSurgery && !events.hasLongMedication && !events.hasFollowup && !events.hasMajorDisease && !events.hasChronicDisease;
   const hasChronicMedication = events.hasLongMedication;
   const hasFollowup = events.hasFollowup;
   const hasAdmissionSurgery = events.hasAdmissionSurgery;
@@ -2797,7 +2843,7 @@ function compactPolibotMatchedCoverageCode(candidate = {}, query = '') {
 async function buildPolibotMatchedCoverageCodes(userId = '', profile = {}) {
   const queries = polibotCoverageCodeQueries(profile);
   if (!queries.length) return [];
-  const blockedReviewReasonCodes = new Set(['recent3_missing', 'recent3_medical_event']);
+  const blockedReviewReasonCodes = new Set(['recent3_missing', 'recent3_incomplete', 'recent3_medical_event']);
   const profileRecent3Review = polibotDisclosureRecent3MonthReview(profile, extractPolibotMedicalEvents(profile));
   const hasBlockingProfileDisclosureReview = profileRecent3Review && blockedReviewReasonCodes.has(profileRecent3Review.reasonCode);
   const allowedDisclosureCodes = new Set((Array.isArray(profile.actualCodes) ? profile.actualCodes : [])
@@ -2880,6 +2926,42 @@ function normalizePolibotDesignRecommendedCode(item = {}) {
     confidence: item.confidence || '',
     context: item.context || ''
   };
+}
+
+function groupPolibotDesignRecommendedCodes(items = []) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = [item.code, item.source].join('|');
+    const current = groups.get(key);
+    if (!current) {
+      groups.set(key, {
+        ...item,
+        productCount: item.productName ? 1 : 0,
+        companies: item.company ? [item.company] : [],
+        productNames: item.productName ? [item.productName] : []
+      });
+      continue;
+    }
+    const companies = [...new Set([...(current.companies || []), item.company].filter(Boolean))];
+    const productNames = [...new Set([...(current.productNames || []), item.productName].filter(Boolean))];
+    groups.set(key, {
+      ...current,
+      company: companies.slice(0, 2).join(', '),
+      productName: productNames[0] || current.productName || '',
+      connectedValue: productNames.length > 1 ? `${productNames[0]} 외 ${productNames.length - 1}개` : current.connectedValue,
+      productCount: productNames.length || current.productCount || 0,
+      companies,
+      productNames: productNames.slice(0, 5),
+      confidence: Math.max(Number(current.confidence || 0), Number(item.confidence || 0)) || current.confidence || item.confidence || ''
+    });
+  }
+  return [...groups.values()];
+}
+
+function formatPolibotReviewNeed(reason = '') {
+  const text = String(reason || '').trim();
+  if (!text) return '';
+  return /확인\s*필요$|검수\s*필요$/.test(text) ? text : `${text} 확인 필요`;
 }
 
 function polibotPriceStrategy(profile = {}) {
@@ -3695,9 +3777,9 @@ function buildPolibotDesignManagerSummary({
   const profileRecent3Review = polibotDisclosureRecent3MonthReview(profile, extractPolibotMedicalEvents(profile));
   const hasBlockingDisclosureReview = actualCodes.some((item) => {
     const reasonCodes = Array.isArray(item.reviewReasonCodes) ? item.reviewReasonCodes : [item.reviewReasonCode].filter(Boolean);
-    return reasonCodes.some((code) => ['recent3_missing', 'recent3_medical_event'].includes(code));
-  }) || ['recent3_missing', 'recent3_medical_event'].includes(profileRecent3Review?.reasonCode);
-  const recommendedCodes = matchedCoverageCodes
+    return reasonCodes.some((code) => ['recent3_missing', 'recent3_incomplete', 'recent3_medical_event'].includes(code));
+  }) || ['recent3_missing', 'recent3_incomplete', 'recent3_medical_event'].includes(profileRecent3Review?.reasonCode);
+  const recommendedCodes = groupPolibotDesignRecommendedCodes(matchedCoverageCodes
     .map(normalizePolibotDesignRecommendedCode)
     .filter(() => !hasBlockingDisclosureReview)
     .filter((item) => !needsReviewDisclosureCodes.has(item.code))
@@ -3705,7 +3787,7 @@ function buildPolibotDesignManagerSummary({
     .filter((item) => {
       const key = [item.code, item.company, item.productName].join('|');
       return item.code && !seenCode.has(key) && seenCode.add(key);
-    })
+    }))
     .slice(0, 18);
   const codeCategories = [...new Set(recommendedCodes.map((item) => item.category).filter(Boolean))];
   const priorityCoverage = [
@@ -6047,7 +6129,7 @@ function polibotConfidence({ profile, sources, keywordHits, productNames, qualit
   const reasons = normalizePolibotCautions([
     level === '낮음' && '고객 정보 또는 상품 근거 보강 필요',
     !profile.medicalHistory && '최종 가입 전 고지 확인 필요',
-    ...(Array.isArray(profile.riskHoldReasons) ? profile.riskHoldReasons.map((reason) => `${reason} 확인 필요`) : []),
+    ...(Array.isArray(profile.riskHoldReasons) ? profile.riskHoldReasons.map(formatPolibotReviewNeed) : []),
     catalogItems.some((item) => item.completeness === '부족') && '확정 상품의 가입조건/주의사항 정보가 부족해요.',
     (qualityReport?.recommendableProducts || 0) < 3 && '추천 가능한 상품 카탈로그가 아직 적어요.'
   ].filter(Boolean), profile);
@@ -6250,7 +6332,7 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     matchedCoverageCodes: recommendationMatchedCoverageCodes
   };
   const riskCautions = Array.isArray(profile.riskHoldReasons)
-    ? profile.riskHoldReasons.map((reason) => `${reason} 확인 필요`)
+    ? profile.riskHoldReasons.map(formatPolibotReviewNeed)
     : [];
   const catalogCautions = normalizePolibotCautions([
     ...riskCautions,
@@ -6493,9 +6575,19 @@ export async function savePolibotRecommendation(userId, {
     profile.existingMedicalPlan && profile.existingMedicalPlan !== '없음' && '실손 중복 여부',
     !polibotUnderwritingMedicalText(profile) && '병력/고지 이슈',
     (!profile.disclosureDetails.recent3Months || !profile.disclosureDetails.recent1Year || !profile.disclosureDetails.recent5Years) && '고지 기간별 상세',
-    ...profile.actualCodes.filter((item) => item.status === 'needs_review').slice(0, 4).map((item) => {
+    ...profile.actualCodes.filter((item) => item.status === 'needs_review').sort((a, b) => {
+      const priority = (item = {}) => {
+        const reasonCodes = Array.isArray(item.reviewReasonCodes) ? item.reviewReasonCodes : [item.reviewReasonCode].filter(Boolean);
+        if (reasonCodes.includes('recent3_medical_event')) return 1;
+        if (reasonCodes.includes('recent3_missing') || reasonCodes.includes('recent3_incomplete')) return 2;
+        if (reasonCodes.includes('lookback_short') || reasonCodes.includes('lookback_unknown')) return 3;
+        return 9;
+      };
+      return priority(a) - priority(b);
+    }).slice(0, 4).map((item) => {
       const reasonCodes = Array.isArray(item.reviewReasonCodes) ? item.reviewReasonCodes : [item.reviewReasonCode].filter(Boolean);
       if (reasonCodes.includes('recent3_missing')) return `${item.code} 최근 3개월 문진 확인 필요`;
+      if (reasonCodes.includes('recent3_incomplete')) return `${item.code} 최근 3개월 문진 전체 항목 확인 필요`;
       if (reasonCodes.includes('recent3_medical_event')) return `${item.code} 최근 3개월 고지 상세 확인 필요`;
       if (reasonCodes.includes('lookback_short') || reasonCodes.includes('lookback_unknown')) return `${item.code} 자료기간 확인 필요`;
       return `${item.code} 검수 필요`;
@@ -6543,7 +6635,7 @@ export async function savePolibotRecommendation(userId, {
     .slice(0, 3);
   timing.mark('recommendations');
   const recommendationNotice = recommendations.length
-    ? (riskHoldReasons.length ? `${riskHoldReasons.slice(0, 3).join(', ')} 확인이 필요해요. 추천 후보의 주의 조건에 표시했어요.` : '')
+    ? (riskHoldReasons.length ? `${riskHoldReasons.slice(0, 3).map(formatPolibotReviewNeed).join(', ')} 항목을 확인해 주세요. 추천 후보의 주의 조건에 표시했어요.` : '')
     : (qualityReport.recommendableProducts > 0
       ? '추천 가능한 상품은 있지만 입력한 고객 조건과 직접 맞는 조합을 찾지 못했어요. 니즈, 예산, 보험사 조건을 조금 더 구체화해 주세요.'
       : '추천 가능한 확정 상품 데이터가 부족해요. 상품 비교표나 설계 자료를 추가하거나 검토 필요 후보를 먼저 정리해 주세요.');

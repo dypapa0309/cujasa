@@ -108,4 +108,7 @@ test('classifies HIRA visit summaries separately from customer coverage analysis
   assert.equal(result.document.type, 'hira');
   assert.equal(result.document.customerCoverage, false);
   assert.equal(result.document.label, '심평원 자료');
+  assert.match(result.values.disclosureDetails.recent3Months, /최근 3개월 문진 필요/);
+  assert.match(result.values.underwritingAssessment.note, /최근 3개월/);
+  assert.ok(result.warnings.some((warning) => warning.includes('최근 3개월')));
 });

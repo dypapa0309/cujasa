@@ -239,6 +239,7 @@ function extractDisclosure(text = '') {
   const hiraSummary = buildHiraVisitDisclosureSummary(lines);
   const normalizedText = String(text || '').normalize('NFC');
   const isCustomerCoverageDocument = /전체\s*계약|계약\s*리스트|보장\s*현황|가입\s*현황|기준\s*담보|권장\s*금액/.test(normalizedText);
+  const isHiraDocument = /순번\s*병[·ㆍ\w\s]*의원[&/·ㆍ\w\s]*약국|요양급여비용|진료정보요약|건강보험\s*등\s*혜택받은\s*금액/.test(normalizedText);
   if (isCustomerCoverageDocument) {
     return {
       recent3Months: '',
@@ -263,7 +264,7 @@ function extractDisclosure(text = '') {
     .slice(0, 12);
   const joined = medicalLines.join(' / ');
   return {
-    recent3Months: '',
+    recent3Months: isHiraDocument ? '심평원 자료 제외 · 최근 3개월 문진 필요' : '',
     recent1Year: '',
     recent5Years: hiraSummary.recent5Years || joined,
     recentExam: [hiraSummary.recentExam, medicalLines.filter((line) => /검사|재검|추적|관찰|소견/.test(line)).join(' / ')].filter(Boolean).join(' / '),
@@ -461,7 +462,9 @@ export function parsePolibotCoverageDocumentText(text = '', fileName = '') {
       burden: '',
       surcharge: '',
       simpleReview: Object.values(disclosureDetails).some(Boolean) ? '고지 상세 기준 간편심사 비교' : '',
-      note: ''
+      note: /심평원 자료 제외 · 최근 3개월 문진 필요/.test(disclosureDetails.recent3Months || '')
+        ? '심평원 자료에는 최근 3개월 이력이 포함되지 않아 별도 문진 후 설계매니저 검수 필요'
+        : ''
     },
     analysisResult: buildAnalysisResult(currentCoverage, existingPolicyDetails)
   };
@@ -537,6 +540,7 @@ export async function analyzePolibotCoverageDocument({ fileName = '', base64 = '
     },
     warnings: [
       document.type === 'sales_material' && '보험사 상품자료로 보입니다. 고객 보장분석 파일을 넣어주세요.',
+      document.type === 'hira' && '심평원 자료는 최근 3개월 이력이 제외되므로 최근 3개월 문진 확인 후 추천 확정이 필요합니다.',
       document.type === 'unknown' && '고객 보장분석 문서인지 확인이 필요합니다.',
       extractedPolicyDetails.length === 0 && '계약리스트를 자동 추출하지 못했습니다.',
       Object.values(extractedCoverage).filter((item) => item.amount).length < 3 && '담보별 담보금액 추출이 적습니다.',

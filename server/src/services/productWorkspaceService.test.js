@@ -726,6 +726,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   });
   assert.equal((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.5.5' && item.kind === 'disclosure_recommendation'), false);
   assert.ok((hiraWorkspace.actualCodes || []).some((item) => item.code === '3.10.5' && item.status === 'needs_review'));
+  assert.equal((hiraWorkspace.actualCodes || []).some((item) => /^5\./.test(item.code || '') && item.kind === 'disclosure_recommendation'), false);
   assert.equal((hiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)), false);
   assert.equal((hiraWorkspace.designManagerReview?.recommendedCodes || []).length, 0);
   assert.match(hiraWorkspace.designManagerReview?.route || '', /동시 비교|표준/);
@@ -762,8 +763,31 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   });
   assert.ok((clearedHiraWorkspace.actualCodes || []).some((item) => item.code === '3.3.5' && item.status === 'recommended'));
   assert.ok((clearedHiraWorkspace.actualCodes || []).some((item) => item.code === '3.2.5' && item.status === 'recommended'));
+  assert.equal((clearedHiraWorkspace.actualCodes || []).some((item) => /^5\./.test(item.code || '') && item.kind === 'disclosure_recommendation'), false);
   assert.ok((clearedHiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)));
   assert.equal((clearedHiraWorkspace.actualCodes || []).some((item) => (item.reviewReasonCodes || []).includes('recent3_missing')), false);
+
+  const incompleteRecent3Workspace = await savePolibotRecommendation(userId, {
+    name: '심평원 최근3개월 일부 문진 고객',
+    age: '44',
+    gender: '여성',
+    needs: ['암', '뇌', '심장'],
+    budget: '16',
+    existingMedicalPlan: '있음',
+    medicalHistory: '심평원 5년 자료 기준 의료기관/약국 이용 12건 · 입원 0일. 수술 명시 없음. 장기투약 명시 없음.',
+    disclosureDetails: {
+      recent3Months: {
+        treatment: 'none',
+        confirmedBy: 'customer'
+      },
+      recent5Years: '심평원 5년 자료 기준 의료기관/약국 이용 12건',
+      admissionSurgery: '입원 0일, 수술 명시 없음'
+    },
+    existingPremium: '13',
+    purpose: '보장 강화'
+  });
+  assert.equal((incompleteRecent3Workspace.designManagerReview?.recommendedCodes || []).length, 0);
+  assert.ok((incompleteRecent3Workspace.actualCodes || []).some((item) => (item.reviewReasonCodes || []).includes('recent3_incomplete')));
 
   const recentEventWorkspace = await savePolibotRecommendation(userId, {
     name: '심평원 최근3개월 치료 고객',
