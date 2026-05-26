@@ -2279,7 +2279,14 @@ function normalizePolibotDisclosureCode(raw = '') {
   if (dotted) return `3.${Number(dotted[1])}.${Number(dotted[2])}`;
   const compact = value.match(/^3(\d{1,2})(\d{2})$/);
   if (compact) return `3.${Number(compact[1])}.${Number(compact[2])}`;
-  if (/^(325|335|355|333|310)$/.test(value)) return value;
+  const shorthand = {
+    310: '3.1.0',
+    325: '3.2.5',
+    333: '3.3.3',
+    335: '3.3.5',
+    355: '3.5.5'
+  };
+  if (shorthand[value]) return shorthand[value];
   return '';
 }
 

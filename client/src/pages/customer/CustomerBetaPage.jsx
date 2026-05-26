@@ -6243,7 +6243,14 @@ function normalizePolibotDisclosureCode(raw = '') {
   if (dotted) return `3.${Number(dotted[1])}.${Number(dotted[2])}`;
   const compact = value.match(/^3(\d{1,2})(\d{2})$/);
   if (compact) return `3.${Number(compact[1])}.${Number(compact[2])}`;
-  if (/^(325|335|355|333|310)$/.test(value)) return value;
+  const shorthand = {
+    310: '3.1.0',
+    325: '3.2.5',
+    333: '3.3.3',
+    335: '3.3.5',
+    355: '3.5.5'
+  };
+  if (shorthand[value]) return shorthand[value];
   return '';
 }
 
@@ -6403,6 +6410,62 @@ function buildPolibotManagerCodeRecommendations(form = {}) {
   return items.slice(0, 12);
 }
 
+function normalizePolibotAdvisorDisplayCodes(codes = []) {
+  const output = [];
+  const add = (item = {}) => {
+    if (!item?.code || output.some((row) => row.code === item.code && row.label === item.label)) return;
+    output.push(item);
+  };
+  (Array.isArray(codes) ? codes : []).forEach((item) => {
+    const code = displayValue(item?.code).trim();
+    if (!code) return;
+    if (code === 'ROUTE-SIMPLE-COMPARE') {
+      add({ ...item, code: '3.5.5', label: '간편고지 후보', status: 'applied', source: '설계매니저 기준' });
+      add({ ...item, code: '3.10.10', label: '간편고지 후보', status: 'applied', source: '설계매니저 기준' });
+      return;
+    }
+    if (code === 'ROUTE-STANDARD-FIRST') {
+      add({ ...item, code: '표준심사', label: '표준체 우선', status: 'applied', source: '설계매니저 기준' });
+      return;
+    }
+    if (code === 'MEDPLAN-DUP') {
+      add({ ...item, code: '실손중복', label: '기존 실손 중복 확인', status: 'review', source: item.source || '보장분석 자료' });
+      return;
+    }
+    if (code === 'UW-MUSCULOSKELETAL') {
+      add({ ...item, code: '부담보', label: '근골격계 확인', status: 'review' });
+      return;
+    }
+    if (code === 'UW-INTERNAL-MED') {
+      add({ ...item, code: '내과고지', label: '만성질환 투약 확인', status: 'review' });
+      return;
+    }
+    if (code === 'UW-FOLLOWUP-EXAM') {
+      add({ ...item, code: '추가검사', label: '3개월/1년 고지 확인', status: 'review' });
+      return;
+    }
+    if (code === 'UW-ADMISSION-SURGERY') {
+      add({ ...item, code: '입원수술', label: '5년 고지 확인', status: 'review' });
+      return;
+    }
+    if (code === 'HIRA-5Y-REVIEW') {
+      add({ ...item, code: '심평원5년', label: '청구 이력 확인', status: 'applied' });
+      return;
+    }
+    if (code === 'HIRA-PHARMACY-MULTI') {
+      add({ ...item, code: '투약확인', label: '처방일수/복용 여부', status: 'review' });
+      return;
+    }
+    if (code === 'HIRA-OUTPATIENT-MANY' || code === 'HIRA-MEDICAL-MULTI') {
+      add({ ...item, code: '반복진료', label: '동일 질환 반복 치료 확인', status: 'review' });
+      return;
+    }
+    if (/^NEED-/.test(code)) return;
+    add(item);
+  });
+  return output;
+}
+
 function groupPolibotCodes(codes = [], context = {}) {
   const groups = { applied: [], review: [], excluded: [] };
   const contextText = displayValue(context?.recommendationNotice || context?.status || context?.summary || '');
@@ -6413,7 +6476,7 @@ function groupPolibotCodes(codes = [], context = {}) {
     if (/^(review|caution|hold|manual_required)$/.test(raw) || /확인|검토|주의|보류/.test(raw)) return 'review';
     return '';
   };
-  (Array.isArray(codes) ? codes : []).forEach((item) => {
+  normalizePolibotAdvisorDisplayCodes(codes).forEach((item) => {
     const explicit = explicitTone(item);
     const text = `${explicit ? displayValue(item.tone || item.result || item.status) : ''} ${displayValue(item.label)} ${displayValue(item.source)} ${contextText}`;
     const key = explicit || (/제외|불가|거절|탈락|exclude|block/i.test(text)
