@@ -843,6 +843,45 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.equal((multiHiraWorkspace.managerCodes || []).some((item) => /치료횟수 48회/.test(item.reason || '')), false);
   assert.ok((multiHiraWorkspace.managerCodes || []).some((item) => /투약일수 35일/.test(item.reason || '')));
 
+  const sustainedMedicationWorkspace = await savePolibotRecommendation(userId, {
+    name: '심평원 상병 약제 고객',
+    age: '13',
+    gender: '여성',
+    needs: ['암', '뇌', '심장'],
+    budget: '12',
+    existingMedicalPlan: '있음',
+    medicalHistory: [
+      '심평원 자료종류: 상병정보, 약제정보',
+      '상병코드: F90.0 활동성 및 주의력 장애 ADHD',
+      '투약일수: 14일',
+      '투약 분류: ADHD/주의력결핍 · 지속투약 심사 필요'
+    ].join('\n'),
+    disclosureDetails: {
+      recent3Months: {
+        diagnosis: 'none',
+        suspicion: 'none',
+        treatment: 'none',
+        admission: 'none',
+        surgery: 'none',
+        medication: 'none',
+        extraExam: 'none',
+        confirmedBy: 'customer'
+      },
+      recent5Years: '심평원 자료종류: 상병정보, 약제정보',
+      currentMedication: '투약일수 14일 확인 · 지속투약 심사질환: ADHD/주의력결핍',
+      medicationRiskReview: '상병코드: F90.0 활동성 및 주의력 장애 ADHD\n투약일수: 14일\n투약 분류: ADHD/주의력결핍 · 지속투약 심사 필요',
+      hiraDiseaseCodes: [{ code: 'F90.0', name: '활동성 및 주의력 장애 ADHD' }]
+    },
+    existingPremium: '10',
+    purpose: '보장 강화'
+  });
+  assert.ok((sustainedMedicationWorkspace.managerCodes || []).some((item) => item.code === 'HIRA-SUSTAINED-MEDICATION'));
+  assert.ok((sustainedMedicationWorkspace.managerCodes || []).some((item) => item.code === 'EXCEPTION-DISEASE-MATCH'));
+  assert.equal((sustainedMedicationWorkspace.managerCodes || []).some((item) => item.code === 'HEALTHY-MEDICATION-30'), false);
+  assert.ok((sustainedMedicationWorkspace.exceptionDiseaseMatches || []).some((item) => ['F90', 'F90.0'].includes(item.kcdCode)));
+  assert.ok((sustainedMedicationWorkspace.consultationSummary?.medicalSummary || []).some((item) => /투약일수 14일|ADHD|주의력/.test(item)));
+  assert.ok((sustainedMedicationWorkspace.consultationSummary?.exceptionSummary || []).some((item) => /F90|주의력|운동과다/.test(item)));
+
   const incompleteRecent3Workspace = await savePolibotRecommendation(userId, {
     name: '심평원 최근3개월 일부 문진 고객',
     age: '44',

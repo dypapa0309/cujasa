@@ -277,6 +277,8 @@ function extractDisclosure(text = '') {
     followUp: [hiraSummary.followUp, medicalLines.filter((line) => /추적|관찰|재검/.test(line)).join(' / ')].filter(Boolean).join(' / '),
     healthyDisclosureCheck: hiraSummary.healthyDisclosureCheck || '',
     hiraDocumentTypes: hiraSummary.documentTypes || [],
+    medicationRiskReview: hiraSummary.medicationRiskReview || '',
+    hiraDiseaseCodes: hiraSummary.hiraDiseaseCodes || [],
     details: [hiraSummary.details, joined].filter(Boolean).join('\n')
   };
 }
@@ -333,12 +335,87 @@ function inferHiraMedicationDays(lines = [], pharmacyRows = []) {
   return pharmacyRows.reduce((sum, row) => sum + Number(row.outpatientDays || 0), 0);
 }
 
+function normalizeHiraKcdCode(value = '') {
+  const match = String(value || '').toUpperCase().trim().match(/^([A-Z])(\d{2})(?:\.?([0-9A-Z]{1,2}))?$/);
+  if (!match) return '';
+  return `${match[1]}${match[2]}${match[3] ? `.${match[3]}` : ''}`;
+}
+
+function extractHiraDiseaseCodes(lines = []) {
+  const found = [];
+  for (const line of lines) {
+    const compactLine = compact(line);
+    if (!/[A-Z]\d{2}|상병|질병|KCD|주상병|부상병/i.test(compactLine)) continue;
+    for (const match of compactLine.matchAll(/\b([A-Z]\d{2}(?:\.?[0-9A-Z]{1,2})?)\b/gi)) {
+      const code = normalizeHiraKcdCode(match[1]);
+      if (!code) continue;
+      const nameText = compactLine
+        .replace(new RegExp(`\\b${match[1]}\\b`, 'i'), ' ')
+        .replace(/^(?:주상병|부상병|상병|질병\s*코드|KCD|진단명|코드|명칭)\s*[:：]?\s*/i, '')
+        .slice(0, 80)
+        .trim();
+      found.push({
+        code,
+        name: nameText,
+        context: compactLine.slice(0, 160)
+      });
+    }
+  }
+  return found
+    .filter((item, index, all) => all.findIndex((row) => row.code === item.code) === index)
+    .slice(0, 20);
+}
+
+function hiraMedicationDiseaseReview({ lines = [], medicationDays = 0 } = {}) {
+  const codes = extractHiraDiseaseCodes(lines);
+  const text = lines.join(' ');
+  const hasCodePrefix = (letter, min, max) => codes.some((item) => {
+    const match = item.code.match(/^([A-Z])(\d{2})/);
+    if (!match || match[1] !== letter) return false;
+    const value = Number(match[2]);
+    return value >= min && value <= max;
+  });
+  const tags = [];
+  const add = (key, label, reason) => {
+    if (!tags.some((item) => item.key === key)) tags.push({ key, label, reason });
+  };
+  if (codes.some((item) => /^F90/.test(item.code)) || /ADHD|주의력\s*결핍|과잉행동/.test(text)) {
+    add('adhd', 'ADHD/주의력결핍', '지속 투약 가능성이 있어 단순 투약일수만으로 건강체 여부를 확정하지 않습니다.');
+  }
+  if (codes.some((item) => /^E30(?:\.1)?/.test(item.code)) || /성조숙|사춘기\s*조발|조발\s*사춘기/.test(text)) {
+    add('precocious_puberty', '성조숙증/사춘기장애', '호르몬 치료 등 지속 투약 가능성이 있어 치료 종료 여부와 현재 투약을 확인해야 합니다.');
+  }
+  if (hasCodePrefix('F', 0, 99) && !tags.some((item) => item.key === 'adhd')) {
+    add('psychiatric', '정신/행동 관련 상병', '정신건강의학과 계열은 투약 지속성과 고지 질문 해당 여부를 별도 확인해야 합니다.');
+  }
+  if ((hasCodePrefix('E', 0, 35) || /갑상선|호르몬|내분비/.test(text)) && !tags.some((item) => item.key === 'precocious_puberty')) {
+    add('endocrine', '내분비/호르몬 관련 상병', '내분비 질환은 같은 투약일수라도 지속 치료 여부에 따라 심사 판단이 달라질 수 있습니다.');
+  }
+  if (hasCodePrefix('I', 10, 15) || hasCodePrefix('E', 10, 14)) {
+    add('chronic_metabolic', '고혈압/당뇨 계열', '만성질환 투약 가능성이 있어 최근 수치와 현재 복용 여부를 확인해야 합니다.');
+  }
+  const level = tags.length ? 'sustained_medication_review' : medicationDays >= 30 ? 'healthy_threshold_review' : medicationDays > 0 ? 'medication_days_only' : '';
+  const summary = [
+    codes.length ? `상병코드: ${codes.map((item) => [item.code, item.name].filter(Boolean).join(' ')).join(' / ')}` : '',
+    medicationDays ? `투약일수: ${medicationDays}일` : '',
+    tags.length ? `투약 분류: ${tags.map((item) => item.label).join(', ')} · 지속투약 심사 필요` : '',
+    medicationDays >= 30 ? '건강체 기준 30일 이상 투약 확인' : ''
+  ].filter(Boolean).join('\n');
+  return {
+    codes,
+    tags,
+    level,
+    summary
+  };
+}
+
 function buildHiraVisitDisclosureSummary(lines = []) {
   const rows = parseHiraVisitRows(lines);
   const documentTypes = classifyHiraDocumentTypes(lines);
   if (!rows.length) {
     const text = lines.join(' ');
     const medicationDays = inferHiraMedicationDays(lines, []);
+    const medicationReview = hiraMedicationDiseaseReview({ lines, medicationDays });
     const treatmentCount = maxNumberForPatterns(text, [
       /(?:치료|진료|외래|통원)\s*(?:횟수|건수)?\s*[:：]?\s*(\d{1,3})\s*(?:회|건|일)/g,
       /(\d{1,3})\s*(?:회|건|일)\s*(?:치료|진료|외래|통원)/g
@@ -352,11 +429,14 @@ function buildHiraVisitDisclosureSummary(lines = []) {
       ].filter(Boolean).join('\n'),
       longTreatment: treatmentCount >= 7 ? `건강체 기준 7회 이상 치료 확인: ${treatmentCount}회` : '',
       longMedication: medicationDays >= 30 ? `건강체 기준 30일 이상 투약 확인: ${medicationDays}일` : '',
-      currentMedication: medicationDays ? `투약일수 ${medicationDays}일 확인` : '',
+      currentMedication: [medicationDays ? `투약일수 ${medicationDays}일 확인` : '', medicationReview.tags.length ? `지속투약 심사질환: ${medicationReview.tags.map((item) => item.label).join(', ')}` : ''].filter(Boolean).join(' · '),
+      medicationRiskReview: medicationReview.summary,
+      hiraDiseaseCodes: medicationReview.codes,
       details: [
         `심평원 자료종류: ${documentTypes.join(', ')}`,
         treatmentCount ? `치료횟수 ${treatmentCount}회` : '',
-        medicationDays ? `투약일수 ${medicationDays}일` : ''
+        medicationDays ? `투약일수 ${medicationDays}일` : '',
+        medicationReview.summary
       ].filter(Boolean).join('\n')
     };
   }
@@ -368,6 +448,7 @@ function buildHiraVisitDisclosureSummary(lines = []) {
   const inpatientTotal = rows.reduce((sum, row) => sum + row.inpatientDays, 0);
   const treatmentCount = medicalRows.reduce((sum, row) => sum + Number(row.outpatientDays || 0), 0);
   const medicationDays = inferHiraMedicationDays(lines, pharmacyRows);
+  const medicationReview = hiraMedicationDiseaseReview({ lines, medicationDays });
   const departmentTerms = [
     '정형외과', '내과', '가정의학과', '소아청소년과', '치과', '안과', '한방병원',
     '이비인후과', '피부과', '신경외과', '통증의학과', '산부인과', '비뇨의학과'
@@ -396,7 +477,7 @@ function buildHiraVisitDisclosureSummary(lines = []) {
       ? `${treatmentCount >= 7 ? `건강체 기준 7회 이상 치료 확인: ${treatmentCount}회` : '외래 이용 다수'}${notableProviders.length ? `: ${notableProviders.join(' / ')}` : ''}`
       : '',
     longMedication: medicationDays >= 30 || pharmacyRows.length >= 3 ? `${medicationDays >= 30 ? `건강체 기준 30일 이상 투약 확인: ${medicationDays}일` : `약국 이용 ${pharmacyRows.length}건`}${pharmacyProviders.length ? `: ${pharmacyProviders.join(' / ')}` : ''}` : '',
-    currentMedication: pharmacyRows.length || medicationDays ? [`약국 청구 이력 확인: ${pharmacyProviders.join(' / ')}`, medicationDays ? `투약일수 ${medicationDays}일` : ''].filter(Boolean).join(' · ') : '',
+    currentMedication: pharmacyRows.length || medicationDays || medicationReview.tags.length ? [`약국 청구 이력 확인: ${pharmacyProviders.join(' / ')}`, medicationDays ? `투약일수 ${medicationDays}일` : '', medicationReview.tags.length ? `지속투약 심사질환: ${medicationReview.tags.map((item) => item.label).join(', ')}` : ''].filter(Boolean).join(' · ') : '',
     majorDisease: departmentTerms.length ? `진료과 패턴: ${departmentTerms.join(', ')}` : '',
     followUp: rows.some((row) => /정형외과|내과|안과|한방병원/.test(row.provider))
       ? '진료과별 반복 방문 여부 상담 확인 필요'
@@ -406,9 +487,12 @@ function buildHiraVisitDisclosureSummary(lines = []) {
       treatmentCount ? `건강체 고지 체크: 치료횟수 ${treatmentCount}회${treatmentCount >= 7 ? ' · 7회 이상 치료 확인' : ''}` : '',
       medicationDays ? `건강체 고지 체크: 투약일수 ${medicationDays}일${medicationDays >= 30 ? ' · 30일 이상 투약 확인' : ''}` : ''
     ].filter(Boolean).join('\n'),
+    medicationRiskReview: medicationReview.summary,
+    hiraDiseaseCodes: medicationReview.codes,
     details: rows
       .slice(0, 20)
       .map((row) => `${row.provider} · 입원 ${row.inpatientDays}일 · 외래 ${row.outpatientDays}일`)
+      .concat(medicationReview.summary ? [medicationReview.summary] : [])
       .join('\n')
   };
 }
@@ -417,6 +501,7 @@ function buildMedicalHistorySummary(disclosureDetails = {}) {
   const values = [
     disclosureDetails.recent5Years,
     disclosureDetails.healthyDisclosureCheck,
+    disclosureDetails.medicationRiskReview,
     disclosureDetails.currentMedication,
     disclosureDetails.admissionSurgery,
     disclosureDetails.recentExam,

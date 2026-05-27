@@ -5373,17 +5373,18 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
     }
   };
 
-  const loadHiraMedicalFile = async (file, passwordOverride = '') => {
+  const loadHiraMedicalFile = async (file, passwordOverride = '', options = {}) => {
     if (!file) return;
+    const fileKey = options.fileKey || `${file.name}-${file.size || 0}-${file.lastModified || 0}`;
     setHiraFileName(file.name);
     const appendHiraFile = (meta = {}) => {
       setHiraFiles((prev) => [
-        ...prev.filter((item) => item.name !== file.name),
-        { name: file.name, type: meta.type || '심평원 자료' }
+        ...prev.filter((item) => item.id !== fileKey),
+        { id: fileKey, name: file.name, type: meta.type || '심평원 자료' }
       ]);
     };
     if (/\.pdf$/i.test(file.name)) {
-      setHiraParsing(true);
+      if (options.manageParsing !== false) setHiraParsing(true);
       try {
         const base64 = await fileToBase64Payload(file);
         const passwordCandidates = [
@@ -5421,7 +5422,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       } catch (err) {
         toast(err.message || '심평원 PDF를 읽지 못했어요. 비밀번호를 확인해주세요.', 'error');
       } finally {
-        setHiraParsing(false);
+        if (options.manageParsing !== false) setHiraParsing(false);
       }
       return;
     }
@@ -5439,6 +5440,23 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       toast('심평원 자료 내용을 병력/고지 메모에 넣었어요.', 'success');
     } catch (err) {
       toast(err.message || '파일을 읽지 못했어요.', 'error');
+    }
+  };
+
+  const loadHiraMedicalFiles = async (files = [], passwordOverride = '') => {
+    const selectedFiles = Array.from(files || []).filter(Boolean);
+    if (selectedFiles.length === 0) return;
+    setHiraParsing(true);
+    try {
+      for (let index = 0; index < selectedFiles.length; index += 1) {
+        const file = selectedFiles[index];
+        await loadHiraMedicalFile(file, passwordOverride, {
+          manageParsing: false,
+          fileKey: `${file.name}-${file.size || 0}-${file.lastModified || 0}-${index}`
+        });
+      }
+    } finally {
+      setHiraParsing(false);
     }
   };
 
@@ -5552,6 +5570,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           coverageDocumentFileName={coverageDocumentFileName}
           coverageDocumentFiles={coverageDocumentFiles}
           onLoadHiraMedicalFile={loadHiraMedicalFile}
+          onLoadHiraMedicalFiles={loadHiraMedicalFiles}
           hiraFileName={hiraFileName}
           hiraFiles={hiraFiles}
           hiraPassword={hiraPassword}
@@ -5662,6 +5681,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       <div className="grid min-w-0 gap-4">
         <PanelCard title="2. 고객 분석" className="min-w-0">
           <PolibotConsultationDraft draft={workspace.consultationDraft} profile={workspace.customerProfile || form} saving={saving} />
+          <PolibotConsultationSummaryCard summary={workspace.consultationSummary} />
+          <PolibotExceptionDiseaseMatchList matches={workspace.exceptionDiseaseMatches || workspace.designManagerReview?.exceptionDiseaseMatches || []} />
         </PanelCard>
         <PanelCard title="3. 상품 추천" className="min-w-0 xl:max-h-[calc(100vh-23rem)] xl:overflow-y-auto">
           {workspaceLoading && <Notice>자료 목록은 백그라운드에서 확인 중입니다. 고객 조건 입력과 추천 실행은 바로 할 수 있어요.</Notice>}
@@ -5730,6 +5751,7 @@ function PolibotRecommendStepper({
   coverageDocumentFileName = '',
   coverageDocumentFiles = [],
   onLoadHiraMedicalFile,
+  onLoadHiraMedicalFiles,
   hiraFileName = '',
   hiraFiles = [],
   hiraPassword = '',
@@ -5765,8 +5787,8 @@ function PolibotRecommendStepper({
     ['recent1Year', '1년', '추가검사/재검사'],
     ['recent5Years', '5년', '입원/수술/7일치료/30일투약']
   ];
-  const managerCodes = buildPolibotManagerCodeRecommendations(form);
-  const actualCodes = buildPolibotActualCodes(form);
+  const managerCodes = (workspace.managerCodes || []).length ? workspace.managerCodes : buildPolibotManagerCodeRecommendations(form);
+  const actualCodes = (workspace.actualCodes || []).length ? workspace.actualCodes : buildPolibotActualCodes(form);
   const filterCodes = [...actualCodes, ...(workspace.matchedCoverageCodes || []), ...managerCodes, ...collectPolibotCodes(workspace, workspace.consultationDraft, form.disclosureDetails, form.medicalHistory)];
   const filterCodeGroups = groupPolibotCodes(filterCodes, workspace);
   const recommendationCodes = collectPolibotCodes(workspace.actualCodes, workspace.matchedCoverageCodes, workspace.managerCodes, workspace, recommendations);
@@ -5893,7 +5915,13 @@ function PolibotRecommendStepper({
                     onChange={(event) => {
                       const files = Array.from(event.target.files || []);
                       event.target.value = '';
-                      files.forEach((file) => onLoadHiraMedicalFile?.(file, hiraPassword));
+                      if (onLoadHiraMedicalFiles) {
+                        onLoadHiraMedicalFiles(files, hiraPassword);
+                        return;
+                      }
+                      files.forEach((file, index) => onLoadHiraMedicalFile?.(file, hiraPassword, {
+                        fileKey: `${file.name}-${file.size || 0}-${file.lastModified || 0}-${index}`
+                      }));
                     }}
                   />
                 </label>
@@ -5914,8 +5942,8 @@ function PolibotRecommendStepper({
               </div>
               {hiraFiles.length > 0 ? (
                 <div className="grid gap-1">
-                  {hiraFiles.map((file) => (
-                    <div key={file.name} className="truncate text-xs font-black text-zinc-400">심평원 자료: {file.name}{file.type ? ` · ${file.type}` : ''}</div>
+                  {hiraFiles.map((file, index) => (
+                    <div key={file.id || `${file.name}-${index}`} className="truncate text-xs font-black text-zinc-400">심평원 자료: {file.name}{file.type ? ` · ${file.type}` : ''}</div>
                   ))}
                 </div>
               ) : hiraFileName ? <div className="truncate text-xs font-black text-zinc-400">심평원 자료: {hiraFileName}</div> : null}
@@ -5941,6 +5969,8 @@ function PolibotRecommendStepper({
               profileReady={profileReady}
               hardMissingLabels={hardMissingLabels}
             />
+            <PolibotConsultationSummaryCard summary={workspace.consultationSummary} />
+            <PolibotExceptionDiseaseMatchList matches={workspace.exceptionDiseaseMatches || workspace.designManagerReview?.exceptionDiseaseMatches || []} />
             <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -6154,6 +6184,81 @@ function PolibotConsultationDraft({ draft, profile, saving = false }) {
       <div className="grid gap-2">
         <div className="text-xs font-black text-zinc-500">주의 조건</div>
         <SimpleInfoList items={(draft.cautions || []).length ? draft.cautions : ['추가 확인 필요']} />
+      </div>
+    </div>
+  );
+}
+
+function PolibotConsultationSummaryCard({ summary }) {
+  if (!summary) return null;
+  const customer = summary.profile || {};
+  const customerText = typeof customer === 'string'
+    ? customer
+    : (summary.profileLabel || [customer.name, customer.birthdate, customer.age ? `${customer.age}세` : '', customer.gender].filter(Boolean).join(' · '));
+  const sections = [
+    ['고객', [customerText, summary.purpose].filter(Boolean).join(' · ')],
+    ['필요 보장', (summary.needs || []).join(', ')],
+    ['보장분석', (summary.coverageSummary || []).join(' · ')],
+    ['고지/심평원', [...(summary.medicalSummary || []), ...(summary.disclosureSummary || [])].slice(0, 4).join(' · ')],
+    ['추천 방향', summary.route],
+    ['추가 확인', (summary.nextQuestions || summary.missing || []).slice(0, 4).join(' · ')]
+  ].filter(([, value]) => displayValue(value));
+  return (
+    <div className="grid gap-2 rounded-2xl border border-cyan-300/15 bg-cyan-400/5 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-black text-zinc-200">1차 정리</div>
+          <div className="mt-0.5 text-xs font-bold text-zinc-600">개인정보, 보장분석, 심평원, 목적, 고지사항을 합친 추천 전 기준입니다.</div>
+        </div>
+        <span className="rounded-full border border-cyan-200/20 bg-cyan-300/10 px-2.5 py-1 text-[10px] font-black text-cyan-100">통합</span>
+      </div>
+      <div className="grid gap-2 md:grid-cols-2">
+        {sections.map(([label, value]) => (
+          <div key={label} className="rounded-xl bg-black/20 px-3 py-2">
+            <div className="text-[10px] font-black text-zinc-600">{label}</div>
+            <div className="mt-1 text-xs font-bold leading-relaxed text-zinc-300">{value}</div>
+          </div>
+        ))}
+      </div>
+      {(summary.exceptionSummary || []).length > 0 && (
+        <div className="rounded-xl border border-amber-300/20 bg-amber-400/10 px-3 py-2 text-xs font-bold leading-relaxed text-amber-100/80">
+          예외질환 대조: {summary.exceptionSummary.slice(0, 3).join(' · ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PolibotExceptionDiseaseMatchList({ matches = [] }) {
+  const safeMatches = Array.isArray(matches) ? matches.filter((item) => item?.diseaseName || item?.kcdCode).slice(0, 6) : [];
+  if (!safeMatches.length) return null;
+  const toneFor = (impact = '') => {
+    if (impact === 'exception_candidate') return 'border-red-300/20 bg-red-400/10 text-red-100';
+    if (impact === 'conditional_candidate') return 'border-amber-300/20 bg-amber-400/10 text-amber-100';
+    return 'border-white/10 bg-black/20 text-zinc-300';
+  };
+  return (
+    <div className="grid gap-2 rounded-2xl border border-amber-300/15 bg-amber-400/5 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-black text-zinc-200">예외질환 매칭</div>
+          <div className="mt-0.5 text-xs font-bold text-zinc-600">심평원 상병코드와 병력 문구를 서버 예외질환 자료와 대조한 결과입니다.</div>
+        </div>
+        <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-black text-zinc-500">{safeMatches.length}개</span>
+      </div>
+      <div className="grid gap-2">
+        {safeMatches.map((item, index) => (
+          <div key={`${item.company}-${item.kcdCode}-${item.diseaseName}-${index}`} className={`rounded-xl border px-3 py-2 ${toneFor(item.impact)}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-black/25 px-2 py-0.5 text-[10px] font-black">{item.kcdCode || '코드 없음'}</span>
+              <span className="text-xs font-black">{item.diseaseName}</span>
+              <span className="text-[10px] font-black opacity-70">{item.company}</span>
+            </div>
+            <div className="mt-1 text-[11px] font-bold leading-relaxed opacity-80">
+              {[item.matchType, item.conditionText, (item.conditionFlags || []).join('/')].filter(Boolean).join(' · ')}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

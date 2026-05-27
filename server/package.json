@@ -15,7 +15,8 @@
     "test:trend-content": "node src/scripts/testTrendInspiredContent.js --no-ai",
     "scheduler:daily": "node src/scripts/runDailyPipelineCron.js",
     "assistant:fixture-candidates": "node src/scripts/exportWorkspaceAssistantFixtureCandidates.js",
-    "polibot:ingest": "node src/scripts/ingestPolibotKnowledge.js"
+    "polibot:ingest": "node src/scripts/ingestPolibotKnowledge.js",
+    "polibot:exceptions": "node --expose-gc src/scripts/buildPolibotExceptionDiseases.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",

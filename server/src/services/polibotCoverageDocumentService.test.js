@@ -137,3 +137,26 @@ test('extracts HIRA basic and medication thresholds for healthy disclosure revie
   assert.match(result.values.medicalHistory, /치료횟수 8회/);
   assert.match(result.values.medicalHistory, /투약일수 35일/);
 });
+
+test('classifies HIRA medication days with disease codes for sustained medication review', async () => {
+  const text = `
+상병정보
+주상병 F90.0 활동성 및 주의력 장애 ADHD
+약제정보
+순번 병·의원&약국 입원(외래)일수 총 진료비 건강보험 등 혜택받은 금액 내가 낸 의료비
+1 행복약국 0(0) 20,000 14,000 6,000
+처방 약 14일분
+총 투약일수 14일
+`;
+  const result = await analyzePolibotCoverageDocument({
+    fileName: '상병정보_약제정보.txt',
+    mimeType: 'text/plain',
+    base64: Buffer.from(text, 'utf8').toString('base64')
+  });
+  assert.equal(result.document.type, 'hira');
+  assert.ok(result.values.disclosureDetails.hiraDocumentTypes.includes('상병정보'));
+  assert.match(result.values.disclosureDetails.medicationRiskReview, /F90\.0/);
+  assert.match(result.values.disclosureDetails.medicationRiskReview, /ADHD/);
+  assert.match(result.values.disclosureDetails.currentMedication, /지속투약 심사질환/);
+  assert.doesNotMatch(result.values.disclosureDetails.healthyDisclosureCheck, /30일 이상 투약 확인/);
+});
