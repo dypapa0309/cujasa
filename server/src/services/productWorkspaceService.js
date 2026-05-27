@@ -2176,6 +2176,8 @@ function polibotUnderwritingMedicalText(profile = {}) {
     .filter(Boolean)
     .map((value) => Array.isArray(value)
       ? value.map((item) => typeof item === 'object' ? [item.code, item.name, item.context].filter(Boolean).join(' ') : String(item || '')).join(' ')
+      : value && typeof value === 'object'
+        ? Object.values(value).filter((item) => typeof item === 'string' || typeof item === 'number').join(' ')
       : String(value || ''))
     .filter((value) => !looksLikeCoverageTable(String(value || '')))
     .join(' ');
@@ -2253,18 +2255,29 @@ function inferPolibotMedicalWindowMonths(text = '') {
   return null;
 }
 
+function stripNegatedPolibotMedicalTerms(text = '') {
+  return String(text || '')
+    .replace(/입원\s*0\s*일/g, '')
+    .replace(/외래\s*0\s*일/g, '')
+    .replace(/치료횟수\s*0\s*회/g, '')
+    .replace(/투약일수\s*0\s*일/g, '')
+    .replace(/처방일수\s*0\s*일/g, '')
+    .replace(/(?:진단|의심소견|치료|입원|수술|투약|추가검사)\s*:\s*(?:none|no|없음|무|해당없음|해당\s*없음)/gi, '')
+    .replace(/입원\s*\/\s*수술\s*(?:없음|없|무|미확인)/g, '')
+    .replace(/입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|무|미확인)/g, '')
+    .replace(/수술\s*(?:명시\s*)?(?:없음|없|무|미확인)/g, '')
+    .replace(/입원\s*(?:명시\s*)?(?:없음|없|무|미확인)/g, '')
+    .replace(/(?:장기\s*)?투약\s*(?:명시\s*)?(?:없음|없|무|미확인)/g, '')
+    .replace(/복용\s*(?:명시\s*)?(?:없음|없|무|미확인)/g, '')
+    .replace(/처방\s*(?:명시\s*)?(?:없음|없|무|미확인)/g, '');
+}
+
 function extractPolibotMedicalEvents(profile = {}) {
   const medical = polibotUnderwritingMedicalText(profile);
   const text = normalizePolibotMatchText(`${medical} ${profile.familyHistory || ''}`);
   const diseaseSignals = polibotDiseaseSignals(profile);
   const coverageWindowMonths = inferPolibotMedicalWindowMonths(text);
-  const positiveText = text
-    .replace(/입원\s*0\s*일/g, '')
-    .replace(/외래\s*0\s*일/g, '')
-    .replace(/입원\s*\/\s*수술\s*(?:없음|없|미확인)/g, '')
-    .replace(/입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|미확인)/g, '')
-    .replace(/수술\s*(?:명시\s*)?(?:없음|없|미확인)/g, '')
-    .replace(/입원\s*(?:명시\s*)?(?:없음|없|미확인)/g, '');
+  const positiveText = stripNegatedPolibotMedicalTerms(text);
   const numbersFor = (pattern) => [...text.matchAll(pattern)]
     .map((match) => Number(match[1]))
     .filter((value) => Number.isFinite(value));
@@ -2297,9 +2310,9 @@ function extractPolibotMedicalEvents(profile = {}) {
     /진료비정보|요양급여비용|혜택받은\s*금액|진료비/.test(text) && '진료비정보',
     /상병정보|질병\s*코드|kcd|주상병|부상병/.test(text) && '상병정보'
   ].filter(Boolean);
-  const hasNoSurgery = /입원\s*\/\s*수술\s*(?:없음|없|미확인)|입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|미확인)|수술\s*(?:명시\s*)?(?:없음|없|미확인)|수술.*(?:없음|없|미확인)/.test(text);
-  const hasNoAdmission = /입원\s*\/\s*수술\s*(?:없음|없|미확인)|입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|미확인)|입원\s*0\s*일|입원\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);
-  const hasNoLongMedication = /(?:장기\s*)?투약\s*(?:명시\s*)?(?:없음|없|미확인)|복용\s*(?:명시\s*)?(?:없음|없|미확인)|처방\s*(?:명시\s*)?(?:없음|없|미확인)/.test(text);
+  const hasNoSurgery = /수술\s*:\s*(?:none|no|없음|무|해당없음)|입원\s*\/\s*수술\s*(?:없음|없|무|미확인)|입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|무|미확인)|수술\s*(?:명시\s*)?(?:없음|없|무|미확인)|수술.*(?:없음|없|무|미확인)/i.test(text);
+  const hasNoAdmission = /입원\s*:\s*(?:none|no|없음|무|해당없음)|입원\s*\/\s*수술\s*(?:없음|없|무|미확인)|입원\s*(?:및|,|·)?\s*수술\s*(?:없음|없|무|미확인)|입원\s*0\s*일|입원\s*(?:명시\s*)?(?:없음|없|무|미확인)/i.test(text);
+  const hasNoLongMedication = /투약\s*:\s*(?:none|no|없음|무|해당없음)|투약일수\s*0\s*일|처방일수\s*0\s*일|(?:장기\s*)?투약\s*(?:명시\s*)?(?:없음|없|무|미확인)|복용\s*(?:명시\s*)?(?:없음|없|무|미확인)|처방\s*(?:명시\s*)?(?:없음|없|무|미확인)/i.test(text);
   const hasAdmission = admissionDays > 0 || (/입원/.test(positiveText) && !hasNoAdmission);
   const hasSurgery = /수술|시술/.test(positiveText) && !hasNoSurgery;
   const hasMajorDisease = diseaseSignals.major || /암|백혈병|협심증|심근경색|심장판막|간경화|뇌졸중|뇌출혈|뇌경색|에이즈|hiv|후유증|전이|재발|c\d{2}|i2[0-5]|i6[0-9]/i.test(text);
@@ -2313,8 +2326,8 @@ function extractPolibotMedicalEvents(profile = {}) {
     (/내분비|호르몬|갑상선|E0[0-7]|E2[0-9]|E3[0-5]/i.test(medicationReviewText)) && '내분비/호르몬 관련 상병'
   ].filter(Boolean).filter((item, index, all) => all.indexOf(item) === index);
   const hasSustainedMedicationReview = sustainedMedicationTags.length > 0 || /지속투약\s*심사|지속\s*투약|현재\s*복용|처방\s*유지/.test(medicationReviewText);
-  const hasLongMedication = !hasNoLongMedication && (hasHealthyMedicationThreshold || hasChronicDisease || /투약|복용|처방\s*유지|현재\s*처방|30일\s*이상\s*투약|장기\s*처방|약\s*복용/i.test(text));
-  const hasFollowup = /검사|재검|추적|관찰|소견|결절|용종|검진/.test(text);
+  const hasLongMedication = !hasNoLongMedication && (hasHealthyMedicationThreshold || hasChronicDisease || /투약|복용|처방\s*유지|현재\s*처방|30일\s*이상\s*투약|장기\s*처방|약\s*복용/i.test(positiveText));
+  const hasFollowup = /검사|재검|추적|관찰|소견|결절|용종|검진/.test(positiveText);
   const highRiskDepartment = /순환기|심장|신경과|신경외과|종양|혈액|내분비|신장|호흡기/.test(text);
   const moderateRiskDepartment = /정형외과|내과|가정의학과|한방병원|치과|안과|소아청소년과/.test(text);
   const hasHira = /심평원|의료기관|병원|약국|진료|외래|처방/.test(text);
@@ -2358,7 +2371,12 @@ function extractPolibotMedicalEvents(profile = {}) {
     hasFollowup,
     highRiskDepartment,
     moderateRiskDepartment,
-    hasLightHiraUse: hasHira && !hasMajorDisease && !hasAdmission && !hasSurgery && !hasLongMedication,
+    hasLightHiraUse: hasHira
+      && (outpatientDays > 0 || pharmacyClaims > 0 || institutionClaims > 0 || treatmentCount > 0 || medicationDays > 0 || hasFollowup || (diseaseSignals.codes || []).length > 0)
+      && !hasMajorDisease
+      && !hasAdmission
+      && !hasSurgery
+      && !hasLongMedication,
     diseaseSignals,
     reasons
   };
@@ -2519,7 +2537,7 @@ const POLIBOT_DISCLOSURE_RULES = [
     label: '추적관찰/검사 이력 간편고지',
     category: '간편고지',
     priority: 76,
-    when: ({ events }) => (events.hasFollowup || events.hasHira) && !events.hasAdmissionSurgery && !events.hasMajorDisease,
+    when: ({ events }) => (events.hasFollowup || events.hasLightHiraUse) && !events.hasAdmissionSurgery && !events.hasMajorDisease,
     reason: '검사/재검/추적관찰 또는 심평원 이력이 있어 3.3.5 질문형을 비교 후보로 둡니다.',
     nextCheck: '검사 결과가 단순 추적관찰인지 추가 치료 지시인지 구분하세요.'
   },
@@ -2838,7 +2856,7 @@ function buildPolibotManagerCodeRecommendations(profile = {}) {
       source: '심평원 자료'
     });
   }
-  if (/정형외과|한방병원|관절|허리|목|디스크|염좌/.test(text)) {
+  if (/정형외과|한방병원|관절|허리|목|디스크|염좌/.test(events.positiveText || text)) {
     add(items, {
       code: 'UW-MUSCULOSKELETAL',
       label: '근골격계 부담보 확인',
@@ -2847,7 +2865,7 @@ function buildPolibotManagerCodeRecommendations(profile = {}) {
       source: '심평원/고지 자료'
     });
   }
-  if (/내과|고혈압|혈압|당뇨|고지혈|콜레스테롤|지질/.test(text)) {
+  if (/내과|고혈압|혈압|당뇨|고지혈|콜레스테롤|지질/.test(events.positiveText || text)) {
     add(items, {
       code: 'UW-INTERNAL-MED',
       label: '내과성 질환 고지 확인',
@@ -2856,7 +2874,7 @@ function buildPolibotManagerCodeRecommendations(profile = {}) {
       source: '심평원/고지 자료'
     });
   }
-  if (/검사|재검|추적|관찰|소견/.test(text)) {
+  if (events.hasFollowup) {
     add(items, {
       code: 'UW-FOLLOWUP-EXAM',
       label: '추가검사/추적관찰 확인',
@@ -2866,7 +2884,7 @@ function buildPolibotManagerCodeRecommendations(profile = {}) {
       source: '고지 자료'
     });
   }
-  if (/입원|수술|시술/.test(text)) {
+  if (events.hasAdmissionSurgery) {
     add(items, {
       code: 'UW-ADMISSION-SURGERY',
       label: '입원/수술 이력 확인',
@@ -2895,7 +2913,7 @@ function buildPolibotManagerCodeRecommendations(profile = {}) {
       source: '보장분석 자료'
     });
   }
-  if (/간편|유병|고지\s*심사|표준\/간편|표준심사와 간편심사|조건부|당뇨|고혈압|투약|부담보|할증/.test(text) || items.some((item) => item.severity === 'high')) {
+  if (/간편|유병|고지\s*심사|표준\/간편|표준심사와 간편심사|조건부|당뇨|고혈압|부담보|할증/.test(events.positiveText || text) || events.hasLongMedication || items.some((item) => item.severity === 'high')) {
     add(items, {
       code: 'ROUTE-SIMPLE-COMPARE',
       label: '표준/간편 동시 비교',
@@ -3075,7 +3093,7 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
       confidence: hasChronicMedication ? 86 : 82
     });
   }
-  if (hasFollowup || (hasHira && !hasAdmissionSurgery && !hasMajor)) {
+  if (hasFollowup || events.hasLightHiraUse) {
     add({
       code: '3.3.5',
       reason: hasFollowup
@@ -3875,16 +3893,25 @@ function polibotUnderwritingRoute(profile = {}, catalogItems = []) {
   const text = `${medical} ${profile.familyHistory || ''}`;
   const events = extractPolibotMedicalEvents(profile);
   const age = polibotAgeValue(profile);
+  const hasNoEventHira = events.hasHira
+    && !events.hasLightHiraUse
+    && !events.hasAdmissionSurgery
+    && !events.hasChronicDisease
+    && !events.hasLongMedication
+    && !events.hasFollowup
+    && !events.hasMajorDisease
+    && !events.hasHealthyTreatmentThreshold
+    && !events.hasHealthyMedicationThreshold
+    && !events.hasSustainedMedicationReview;
   const hasNoMedical = Boolean(medical)
-    && /^(없음|무|해당\s*없음?|이상\s*없음?|문제\s*없음?|특이\s*사항\s*없음?)$/i.test(medical.trim())
-    && !events.hasHira
+    && (/^(없음|무|해당\s*없음?|이상\s*없음?|문제\s*없음?|특이\s*사항\s*없음?)$/i.test(medical.trim()) || hasNoEventHira)
     && !events.hasAdmissionSurgery
     && !events.hasChronicDisease
     && !events.hasLongMedication
     && !events.hasFollowup
     && !events.hasMajorDisease;
   const hasChronic = events.hasChronicDisease || /협심증|심근경색|뇌졸중|심장|간경화/i.test(text);
-  const hasRecentRedFlag = /최근|3개월|의심|소견|추가검사|재검|치료|투약|30일|7일/i.test(text) || events.hasAdmissionSurgery || events.highRiskDepartment;
+  const hasRecentRedFlag = /3개월|의심|소견|추가검사|재검|치료|투약|30일|7일/i.test(events.positiveText || text) || events.hasAdmissionSurgery || events.highRiskDepartment;
   const hasMajorDisease = events.hasMajorDisease;
   const productText = catalogItems.map((item) => `${item.productName || ''} ${item.productGroup || ''} ${(item.coverageKeywords || []).join(' ')}`).join(' ');
   const hasSimpleProduct = /간편|유병|고지|325|335|355|310|3\.2\.5|3\.5\.5|3\.10/.test(productText);

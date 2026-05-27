@@ -801,6 +801,39 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.equal((clearedHiraWorkspace.actualCodes || []).some((item) => /^5\./.test(item.code || '') && item.kind === 'disclosure_recommendation'), false);
   assert.ok((clearedHiraWorkspace.designManagerReview?.recommendedCodes || []).some((item) => ['3.2.5', '3.3.5'].includes(item.code)));
   assert.equal((clearedHiraWorkspace.actualCodes || []).some((item) => (item.reviewReasonCodes || []).includes('recent3_missing')), false);
+  assert.equal((clearedHiraWorkspace.managerCodes || []).some((item) => item.code === 'UW-ADMISSION-SURGERY'), false);
+
+  const noEventHiraWorkspace = await savePolibotRecommendation(userId, {
+    name: '심평원 무사고 고객',
+    age: '38',
+    gender: '남성',
+    needs: ['암', '뇌', '심장'],
+    budget: '16',
+    existingMedicalPlan: '없음',
+    medicalHistory: '심평원 자료종류: 기본진료정보, 약제정보\n최근 5년 특이 진료 없음. 투약일수 0일. 입원 0일. 수술 없음. 장기투약 없음.',
+    disclosureDetails: {
+      recent3Months: {
+        diagnosis: 'none',
+        suspicion: 'none',
+        treatment: 'none',
+        admission: 'none',
+        surgery: 'none',
+        medication: 'none',
+        extraExam: 'none',
+        confirmedBy: 'customer'
+      },
+      recent1Year: '없음',
+      recent5Years: '없음',
+      currentMedication: '없음',
+      admissionSurgery: '입원 0일, 수술 없음'
+    },
+    existingPremium: '8',
+    purpose: '보장 강화'
+  });
+  assert.equal((noEventHiraWorkspace.managerCodes || []).some((item) => item.code === 'UW-ADMISSION-SURGERY'), false);
+  assert.equal((noEventHiraWorkspace.managerCodes || []).some((item) => item.code === 'HEALTHY-MEDICATION-30'), false);
+  assert.equal((noEventHiraWorkspace.actualCodes || []).some((item) => /^3\./.test(item.code || '')), false);
+  assert.match(noEventHiraWorkspace.designManagerReview?.route || '', /표준/);
 
   const multiHiraWorkspace = await savePolibotRecommendation(userId, {
     name: '심평원 기본 약제 고객',
