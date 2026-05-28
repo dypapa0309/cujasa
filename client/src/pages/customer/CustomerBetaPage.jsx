@@ -7643,6 +7643,100 @@ function PolibotGenerateButton({ saving, canGenerate, usage, onGenerate }) {
   );
 }
 
+function polibotRecommendationCompany(recommendation = {}) {
+  const catalogItems = Array.isArray(recommendation.catalogItems) ? recommendation.catalogItems : [];
+  return recommendation.company
+    || catalogItems.map((item) => displayValue(item.company)).filter(Boolean)[0]
+    || '-';
+}
+
+function polibotRecommendationProductNames(recommendation = {}) {
+  const catalogItems = Array.isArray(recommendation.catalogItems) ? recommendation.catalogItems : [];
+  const names = catalogItems.map((item) => displayValue(item.productName || item.name)).filter(Boolean);
+  const fallback = displayValue(recommendation.name).replace(/^(손보|생보)\s*추천\s*/i, '');
+  return [...new Set(names.length ? names : [fallback].filter(Boolean))].slice(0, 2).join(' + ') || '-';
+}
+
+function polibotRecommendationReason(recommendation = {}) {
+  const analysis = recommendation.decisionAnalysis || {};
+  const summary = recommendation.reviewSummary || {};
+  return summary.summary
+    || recommendation.coverageGap
+    || (recommendation.advisorExplanation || [])[0]
+    || (analysis.why || [])[0]
+    || recommendation.reason
+    || '고객 조건 기준 후보';
+}
+
+function polibotRecommendationRisk(recommendation = {}) {
+  const reviewReasons = recommendation.reviewReasons || recommendation.reviewSummary?.blockers || [];
+  const routineChecks = recommendation.routineChecks || recommendation.reviewSummary?.routineChecks || [];
+  const cautions = recommendation.cautions || [];
+  const risk = [...reviewReasons, ...routineChecks, ...cautions].map(displayValue).filter(Boolean)[0];
+  if (risk) return risk;
+  if (recommendation.confidence?.level === '낮음') return '자료 신뢰도 확인';
+  return '기본 고지 확인';
+}
+
+function PolibotRecommendationComparison({ groups = [], onSelect, testMode = false }) {
+  const visibleGroups = groups.filter(([, , items]) => items.length > 0);
+  if (!visibleGroups.length) return null;
+  return (
+    <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-sm font-black text-zinc-100">추천 비교표</div>
+          <div className="mt-0.5 text-xs font-bold text-zinc-600">보험사, 상품, 예산, 고지 리스크를 같은 기준으로 봅니다.</div>
+        </div>
+        <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-black text-zinc-500">상담용</span>
+      </div>
+      {visibleGroups.map(([key, label, items]) => (
+        <div key={key} className="grid gap-1.5">
+          <div className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-2">
+            <span className="text-xs font-black text-zinc-200">{label}</span>
+            <span className="text-[10px] font-black text-zinc-600">{items.length}/3개</span>
+          </div>
+          <div className="hidden rounded-xl border border-white/10 bg-black/25 md:block">
+            <div className="grid grid-cols-[1.1fr_1.4fr_.9fr_1.3fr_1.2fr_.9fr] gap-0 border-b border-white/10 px-3 py-2 text-[10px] font-black text-zinc-600">
+              <div>보험사</div>
+              <div>상품/조합</div>
+              <div>보험료</div>
+              <div>추천 이유</div>
+              <div>고지 리스크</div>
+              <div>상태</div>
+            </div>
+            {items.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onSelect?.(item)}
+                className="grid w-full grid-cols-[1.1fr_1.4fr_.9fr_1.3fr_1.2fr_.9fr] gap-0 border-b border-white/5 px-3 py-2 text-left text-xs font-bold text-zinc-300 last:border-b-0 hover:bg-white/[0.04]"
+              >
+                <div className="min-w-0 truncate pr-2 font-black text-zinc-100">{polibotRecommendationCompany(item)}</div>
+                <div className="min-w-0 truncate pr-2">{polibotRecommendationProductNames(item)}</div>
+                <div className="min-w-0 truncate pr-2">{[item.premium || '확인 필요', testMode && item.additionalBudgetMemo ? item.additionalBudgetMemo : ''].filter(Boolean).join(' · ')}</div>
+                <div className="min-w-0 truncate pr-2">{polibotRecommendationReason(item)}</div>
+                <div className="min-w-0 truncate pr-2 text-amber-100/80">{polibotRecommendationRisk(item)}</div>
+                <div className="min-w-0 truncate text-zinc-500">{item.recommendationStatusLabel || item.recommendationStatus || item.confidence?.level || '검토'}</div>
+              </button>
+            ))}
+          </div>
+          <div className="grid gap-1.5 md:hidden">
+            {items.map((item) => (
+              <button key={item.id} type="button" onClick={() => onSelect?.(item)} className="grid gap-1 rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-left">
+                <div className="text-xs font-black text-zinc-100">{polibotRecommendationCompany(item)} · {polibotRecommendationProductNames(item)}</div>
+                <div className="text-[11px] font-bold text-zinc-500">보험료: {item.premium || '확인 필요'}</div>
+                <div className="text-[11px] font-bold text-zinc-500">이유: {polibotRecommendationReason(item)}</div>
+                <div className="text-[11px] font-black text-amber-100/80">고지: {polibotRecommendationRisk(item)}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PolibotRecommendationList({ recommendations, saveMemo, onMemoChange, onSelect, saving, canGenerate, usage, onGenerate, showGenerate = false, testMode = false }) {
   const recommendationState = recommendations.some((item) => (item.reviewReasons || []).length > 0 || item.recommendationStatus === 'needs_review')
     ? '확인 필요 추천'
@@ -7706,6 +7800,7 @@ function PolibotRecommendationList({ recommendations, saveMemo, onMemoChange, on
         <div className="text-sm font-black text-zinc-100">{testMode ? recommendationState : '추천 후보'} {recommendations.length}개</div>
         <p className="mt-1 text-xs leading-relaxed text-zinc-500">손보 최대 3개, 생보 최대 3개로 나눠 보여줍니다. 카드를 눌러 근거와 주의 조건을 확인한 뒤 고객목록에 저장하세요.</p>
       </div>
+      <PolibotRecommendationComparison groups={groupedRecommendations} onSelect={onSelect} testMode={testMode} />
       <div className="grid gap-2">
         {groupedRecommendations.map(([key, label, items]) => (
           <div key={key} className="grid gap-2">
