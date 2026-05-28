@@ -6522,10 +6522,11 @@ function PolibotSelectCard({ label, value, onChange, options, invalid = false })
 function PolibotDateCard({ label, value, onChange }) {
   const current = value ? new Date(`${value}T00:00:00`) : new Date();
   const safeCurrent = Number.isNaN(current.getTime()) ? new Date() : current;
+  const pickerRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [viewYear, setViewYear] = useState(safeCurrent.getFullYear());
   const [viewMonth, setViewMonth] = useState(safeCurrent.getMonth());
-  const years = Array.from({ length: 42 }, (_, index) => new Date().getFullYear() + 1 - index);
+  const years = Array.from({ length: 90 }, (_, index) => new Date().getFullYear() + 1 - index);
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstDay = new Date(viewYear, viewMonth, 1).getDay();
   const cells = [
@@ -6538,17 +6539,37 @@ function PolibotDateCard({ label, value, onChange }) {
     setViewYear(next.getFullYear());
     setViewMonth(next.getMonth());
   };
+  useEffect(() => {
+    if (!value) return;
+    setViewYear(safeCurrent.getFullYear());
+    setViewMonth(safeCurrent.getMonth());
+  }, [value]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutside = (event) => {
+      if (!pickerRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
   return (
-    <div className="relative min-w-0">
+    <div ref={pickerRef} className="relative min-w-0">
       <button
-      type="button"
-      className="grid w-full min-w-0 cursor-pointer gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-left text-[11px] font-black text-zinc-500 transition hover:border-white/20 hover:bg-white/[0.06]"
-      onClick={(event) => {
-        event.preventDefault();
-        setOpen((prev) => !prev);
-      }}
-    >
-      {label}
+        type="button"
+        className="grid w-full min-w-0 cursor-pointer gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-left text-[11px] font-black text-zinc-500 transition hover:border-white/20 hover:bg-white/[0.06]"
+        onClick={(event) => {
+          event.preventDefault();
+          setOpen((prev) => !prev);
+        }}
+      >
+        {label}
         <span className="flex h-10 min-w-0 items-center justify-between rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-xs font-bold text-zinc-100">
           <span className={value ? 'text-zinc-100' : 'text-zinc-600'}>{value || '연도. 월. 일.'}</span>
           <span className="text-zinc-500">⌄</span>
