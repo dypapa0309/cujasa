@@ -187,13 +187,24 @@ function extractInsuranceNeeds(text = '') {
   return [...new Set(needs)].slice(0, 6);
 }
 
+function extractExistingMedicalPlan(text = '') {
+  const value = String(text || '');
+  const match = value.match(/실손|실비/);
+  if (!match) return '';
+  const nearby = value.slice(match.index, match.index + 42);
+  if (/없|미가입|안\s*들|미보유|없음/.test(nearby)) return '없음';
+  if (/있|가입|들었|보유|유지/.test(nearby)) return '있음';
+  return '확인 필요';
+}
+
 function extractInsuranceDetails(text = '') {
   const draft = {};
-  if (/실손|실비/.test(text)) {
-    draft.existingMedicalPlan = /없|미가입|안\s*들/.test(text) ? '없음' : /있|가입|들었/.test(text) ? '있음' : '확인 필요';
-  }
+  const existingMedicalPlan = extractExistingMedicalPlan(text);
+  if (existingMedicalPlan) draft.existingMedicalPlan = existingMedicalPlan;
   if (/고지|병력|수술|입원|투약|진단|치료/.test(text)) {
-    draft.medicalHistory = /없|이상\s*없/.test(text) ? '없음' : '확인 필요';
+    draft.medicalHistory = /[A-Z]\d{2}|통원|입원|수술|투약중|복용중|처방|치료중|완치/i.test(text)
+      ? text
+      : /없|이상\s*없/.test(text) ? '없음' : '확인 필요';
   }
   if (/가족력/.test(text)) draft.familyHistory = '확인 필요';
   if (/운전/.test(text)) draft.driving = /안\s*함|안해|없/.test(text) ? '운전 안함' : '운전함';
@@ -204,6 +215,103 @@ function extractInsuranceDetails(text = '') {
   else if (/신규|처음/.test(text)) draft.purpose = '신규 가입';
   else if (/보강|강화|추가/.test(text)) draft.purpose = '보장 강화';
   return draft;
+}
+
+function polibotDisclosureDecision(text = '', pattern) {
+  const value = String(text || '');
+  const index = value.search(pattern);
+  if (index < 0) return '';
+  const after = value.slice(index, index + 30);
+  if (/있|유|받|함|했다|치료|검사|입원|수술|투약|처방|복용|진단/i.test(after)) return '있음';
+  if (/없|무|해당\s*없|이상\s*없|문제\s*없/i.test(after)) return '없음';
+  const nearby = value.slice(Math.max(0, index - 18), index + 48);
+  if (/없|무|해당\s*없|이상\s*없|문제\s*없/i.test(nearby)) return '없음';
+  if (/있|유|받|함|했다|치료|검사|입원|수술|투약|처방|복용|진단/i.test(nearby)) return '있음';
+  return '확인 필요';
+}
+
+function normalizePolibotDateText(value = '') {
+  const text = String(value || '').trim();
+  const match = text.match(/\b((?:19|20)?\d{2})[./-](\d{1,2})[./-](\d{1,2})\b/);
+  if (!match) return '';
+  const year = match[1].length === 2 ? `20${match[1]}` : match[1];
+  return `${year}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
+}
+
+function extractPolibotDisclosureDetails(text = '') {
+  const value = String(text || '');
+  const recent3Months = polibotDisclosureDecision(value, /3\s*개월|최근\s*3|삼개월/);
+  const recent1Year = polibotDisclosureDecision(value, /1\s*년|일년|최근\s*1년/);
+  const recent5Years = polibotDisclosureDecision(value, /5\s*년|오년|최근\s*5년/);
+  const admissionSurgery = polibotDisclosureDecision(value, /입원|수술|시술/);
+  const longTreatment = polibotDisclosureDecision(value, /7\s*일|칠일|장기\s*치료|치료\s*\d+\s*일/);
+  const longMedication = polibotDisclosureDecision(value, /30\s*일|삼십일|장기\s*투약|투약\s*\d+\s*일|처방\s*\d+\s*일/);
+  const currentMedication = polibotDisclosureDecision(value, /현재\s*(?:투약|복용|치료)|약\s*(?:복용|먹|처방)|투약중|복용중/);
+  const followUp = polibotDisclosureDecision(value, /추적\s*관찰|재검|추가\s*검사|소견/);
+  const completeCure = /완치|치료\s*종결/.test(value) ? '완치' : /치료중|투약중|복용중|추적\s*관찰/.test(value) ? '확인 필요' : '';
+  const recent3MonthValues = {};
+  if (/최근\s*3\s*개월|3\s*개월/.test(value)) {
+    if (/진찰|진료|통원|외래/.test(value)) recent3MonthValues.consultation = /없|무/.test(value) ? '없음' : '있음';
+    if (/입원/.test(value)) recent3MonthValues.hospitalization = /없|무/.test(value) ? '없음' : '있음';
+    if (/수술|시술/.test(value)) recent3MonthValues.surgery = /없|무/.test(value) ? '없음' : '있음';
+    if (/검사|재검/.test(value)) recent3MonthValues.exam = /없|무/.test(value) ? '없음' : '있음';
+    if (/투약|처방|복용/.test(value)) recent3MonthValues.medication = /없|무/.test(value) ? '없음' : '있음';
+  }
+  const details = [
+    /고지|병력|질병|상병|입원|수술|통원|투약|처방|치료|진단|검사/i.test(value) ? value : ''
+  ].filter(Boolean).join('\n');
+  return Object.fromEntries(Object.entries({
+    recent3Months,
+    recent3MonthDetails: Object.keys(recent3MonthValues).length ? recent3MonthValues : '',
+    recent1Year,
+    recent5Years,
+    admissionSurgery,
+    longTreatment,
+    longMedication,
+    currentMedication,
+    followUp,
+    completeCure,
+    details
+  }).filter(([, item]) => item && (typeof item !== 'object' || Object.keys(item).length)));
+}
+
+function extractPolibotDiseaseEvents(text = '') {
+  const value = String(text || '');
+  const diseaseMap = [
+    ['고혈압', 'I10'],
+    ['당뇨', 'E11'],
+    ['고지혈', 'E78'],
+    ['이상지질혈증', 'E78'],
+    ['백내장', 'H25'],
+    ['디스크', 'M51'],
+    ['허리디스크', 'M51'],
+    ['갑상선', 'E04'],
+    ['위염', 'K29'],
+    ['용종', 'K63.5']
+  ];
+  const kcdCode = (value.match(/\b([A-Z]\d{2}(?:\.?[0-9A-Z]{1,2})?)\b/i)?.[1] || '').toUpperCase();
+  const diseaseName = diseaseMap.find(([name]) => value.includes(name))?.[0] || '';
+  const mappedCode = diseaseMap.find(([name]) => name === diseaseName)?.[1] || '';
+  const eventType = /수술|시술/.test(value) ? '수술'
+    : /입원/.test(value) ? '입원'
+      : /투약|처방|복용|약/.test(value) ? '투약'
+        : /통원|외래|진료|치료|검사/.test(value) ? '통원' : '';
+  const status = /완치|치료\s*종결/.test(value) ? '완치'
+    : /추적\s*관찰|재검/.test(value) ? '추적관찰'
+      : /투약중|복용중|약\s*먹|약\s*복용/.test(value) ? '투약중'
+        : /치료중/.test(value) ? '치료중' : '';
+  const carrierType = /생보|생명|라이프/.test(value) ? 'life' : /손보|손해|화재/.test(value) ? 'nonlife' : '';
+  const occurredAt = normalizePolibotDateText(value);
+  if (!kcdCode && !diseaseName && !eventType) return [];
+  return [{
+    occurredAt,
+    eventType,
+    kcdCode: kcdCode || mappedCode,
+    diseaseName,
+    carrierType,
+    status,
+    memo: value
+  }];
 }
 
 const POLIBOT_WORKFLOW_REQUIRED_FIELDS = [
@@ -220,21 +328,45 @@ const POLIBOT_WORKFLOW_CONFIRM_FIELDS = [
 
 function compactDraftValue(value) {
   if (Array.isArray(value)) return value.filter(Boolean).join(', ');
+  if (value && typeof value === 'object') return Object.values(value).map(compactDraftValue).filter(Boolean).join(', ');
   return String(value ?? '').trim();
 }
 
 function normalizePolibotDraft(draft = {}) {
-  return Object.fromEntries(
-    Object.entries(draft || {})
-      .filter(([, value]) => value !== undefined && value !== null && compactDraftValue(value) !== '')
-      .map(([key, value]) => [key, Array.isArray(value) ? value.filter(Boolean).join(', ') : String(value).trim()])
-  );
+  const normalizeValue = (value) => {
+    if (Array.isArray(value)) {
+      if (value.every((item) => !item || typeof item !== 'object')) return value.map((item) => String(item || '').trim()).filter(Boolean).join(', ');
+      return value.map((item) => item && typeof item === 'object' ? normalizeValue(item) : String(item || '').trim()).filter((item) => compactDraftValue(item));
+    }
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value)
+        .map(([key, item]) => [key, normalizeValue(item)])
+        .filter(([, item]) => compactDraftValue(item) !== ''));
+    }
+    return String(value ?? '').trim();
+  };
+  return Object.fromEntries(Object.entries(draft || {})
+    .map(([key, value]) => [key, normalizeValue(value)])
+    .filter(([, value]) => value !== undefined && value !== null && compactDraftValue(value) !== ''));
 }
 
 function mergePolibotWorkflowDraft(previous = {}, incoming = {}) {
+  const prev = normalizePolibotDraft(previous);
+  const next = normalizePolibotDraft(incoming);
   return {
-    ...normalizePolibotDraft(previous),
-    ...normalizePolibotDraft(incoming)
+    ...prev,
+    ...next,
+    disclosureDetails: {
+      ...(prev.disclosureDetails && typeof prev.disclosureDetails === 'object' ? prev.disclosureDetails : {}),
+      ...(next.disclosureDetails && typeof next.disclosureDetails === 'object' ? next.disclosureDetails : {}),
+      diseaseEvents: [
+        ...(Array.isArray(prev.disclosureDetails?.diseaseEvents) ? prev.disclosureDetails.diseaseEvents : []),
+        ...(Array.isArray(next.disclosureDetails?.diseaseEvents) ? next.disclosureDetails.diseaseEvents : [])
+      ].filter((item, index, all) => {
+        const key = [item?.occurredAt, item?.eventType, item?.kcdCode, item?.diseaseName].join('|');
+        return key !== '|||' && all.findIndex((row) => [row?.occurredAt, row?.eventType, row?.kcdCode, row?.diseaseName].join('|') === key) === index;
+      })
+    }
   };
 }
 
@@ -255,7 +387,11 @@ function extractPolibotWorkflowDraft(message = '', workflow = {}) {
     gender: /여성|여자|^여$|\s여\s/.test(text) ? '여성' : /남성|남자|^남$|\s남\s/.test(text) ? '남성' : '',
     needs: extractInsuranceNeeds(text).join(', '),
     budget: '',
-    ...extractInsuranceDetails(text)
+    ...extractInsuranceDetails(text),
+    disclosureDetails: {
+      ...extractPolibotDisclosureDetails(text),
+      diseaseEvents: extractPolibotDiseaseEvents(text)
+    }
   };
 
   const explicitTarget = text.match(/(?:목표|예산|희망|생각(?:하는)?|원하는)\s*(?:월\s*)?(?:보험료)?\s*(\d{1,3}(?:\.\d+)?)\s*(?:만|만원)?/);
@@ -281,10 +417,17 @@ function extractPolibotWorkflowDraft(message = '', workflow = {}) {
     if (!lastField && /월|만원|보험료|예산/.test(text)) draft.budget = bareNumber;
   }
 
-  if (/실손|실비/.test(text) && /없|미가입|안\s*들/.test(text)) draft.existingMedicalPlan = '없음';
-  if (/실손|실비/.test(text) && /있|가입|들었/.test(text)) draft.existingMedicalPlan = '있음';
+  const existingMedicalPlan = extractExistingMedicalPlan(text);
+  if (existingMedicalPlan) draft.existingMedicalPlan = existingMedicalPlan;
   if (/고지|병력|수술|입원|투약|진단|치료/.test(text) && /없|이상\s*없|문제\s*없/.test(text)) draft.medicalHistory = '없음';
-  if (/고지|병력|수술|입원|투약|진단|치료/.test(text) && /있|필요|받았|했다|함/.test(text)) draft.medicalHistory = '있음';
+  if (/고지|병력|수술|입원|투약|진단|치료|통원|처방|복용|질병코드|상병/.test(text) && /있|필요|받았|했다|함|중|I\d{2}|E\d{2}|H\d{2}|M\d{2}/i.test(text)) {
+    draft.medicalHistory = text;
+  }
+  if (lastField === 'medicalHistory' && /없|이상\s*없|문제\s*없/.test(text) && !draft.disclosureDetails?.diseaseEvents?.length) {
+    draft.medicalHistory = '없음';
+  }
+  if (lastField === 'existingMedicalPlan' && /없|미가입|안\s*들/.test(text)) draft.existingMedicalPlan = '없음';
+  if (lastField === 'existingMedicalPlan' && /있|가입|들었/.test(text)) draft.existingMedicalPlan = '있음';
 
   if (/가족력/.test(text) && /없|이상\s*없/.test(text)) draft.familyHistory = '없음';
   if (/암\s*가족력/.test(text)) draft.familyHistory = '암 가족력';
@@ -595,7 +738,7 @@ export function classifyWorkspaceAssistantIntent({ message, currentProduct = 'cu
 
   if (productId === 'polibot') {
     const summary = summarizePolibot(workspace.polibot || {});
-    if (/왜\s*안|안\s*돼|실패|추천.*없|상품.*없|안\s*나/.test(text)) {
+    if (/왜\s*(?:추천|상품).*(?:안|없)|(?:추천|상품).*(?:왜|안\s*돼|실패|안\s*나)|(?:추천|상품)\s*(?:결과|후보)?\s*없/.test(text)) {
       const reason = summary.recommendationNotice
         || (summary.recommendableProducts <= 0
           ? '추천에 쓸 확정 상품 데이터가 아직 부족해요.'
@@ -626,14 +769,21 @@ export function classifyWorkspaceAssistantIntent({ message, currentProduct = 'cu
     }
     const needs = extractInsuranceNeeds(text);
     if (/추천|상품|보험|보장/.test(text) && (extractAge(text) || needs.length > 0)) {
+      const explicitTarget = text.match(/(?:목표|예산|희망|생각(?:하는)?|원하는)\s*(?:월\s*)?(?:보험료)?\s*(\d{1,3}(?:\.\d+)?)\s*(?:만|만원)?/);
+      const explicitCurrent = text.match(/(?:현재|지금|기존|납입)\s*(?:월\s*)?(?:보험료|납입)?\s*(\d{1,3}(?:\.\d+)?)\s*(?:만|만원)?/);
       const draft = {
-        name: extractName(text),
+        name: extractWorkflowName(text),
         age: extractAge(text),
         gender: /여성|여자|여/.test(text) ? '여성' : /남성|남자|남/.test(text) ? '남성' : '',
         needs: needs.join('\n'),
-        budget: extractBudget(text),
+        budget: explicitTarget?.[1] || extractBudget(text),
+        existingPremium: explicitCurrent?.[1] || '',
         company: '전체 보험사',
-        ...extractInsuranceDetails(text)
+        ...extractInsuranceDetails(text),
+        disclosureDetails: {
+          ...extractPolibotDisclosureDetails(text),
+          diseaseEvents: extractPolibotDiseaseEvents(text)
+        }
       };
       return normalizeAssistantResult({
         answer: 'POLIBOT 상품 추천 초안을 채웠어요. 오른쪽 패널에서 고객 조건을 확인한 뒤 추천 초안 만들기를 눌러주세요.',
@@ -915,7 +1065,8 @@ export async function answerWorkspaceAssistant(userId, payload = {}) {
         'Allowed action values: run, settings, posts, home, billing, dexor, spread, polibot, infludex, dexor-upload, dexor-grade, dexor-download, spread-campaign, spread-applicants, spread-review, polibot-upload, polibot-recommend, polibot-customers, polibot-download, infludex-upload, infludex-grade, infludex-download, or empty string.',
         'If the inferred product is not in availableProducts, choose the product id action only, not a task action.',
         'For POLIBOT insurance recommendation, extract name, age, gender, needs, budget, and set company to 전체 보험사 unless user exactly names an available company.',
-        'For POLIBOT details, draft may also include existingMedicalPlan, existingPremium, medicalHistory, familyHistory, driving, renewalPreference, purpose.',
+        'For POLIBOT details, draft may also include existingMedicalPlan, existingPremium, medicalHistory, familyHistory, driving, renewalPreference, purpose, and disclosureDetails.',
+        'For POLIBOT disclosureDetails, preserve recent3Months, recent1Year, recent5Years, admissionSurgery, longTreatment, longMedication, currentMedication, followUp, completeCure, details, and diseaseEvents with occurredAt, eventType, kcdCode, diseaseName, carrierType, status, memo when the user mentions dates, disease codes, disease names, outpatient/admission/surgery/medication, or 1-year/5-year notices.',
         'If POLIBOT recommendation is blocked or user asks why it failed, answer using recommendationNotice, recommendableProducts, reviewNeededProducts, and ocrNeeded. Prefer action polibot-upload.',
         'For DEXOR, use dexor-upload for candidate/category drafts, dexor-grade for analysis results, dexor-download for CSV/export.',
         'For CUJASA settings, draft keys are target_audience, tone, content_scope.',

@@ -10,6 +10,7 @@ import {
   resetInfludexWorkspace,
   reviewSpreadSubmission,
   searchPolibotCoverageCodes,
+  searchPolibotDiseaseCodes,
   saveInfludexCandidates,
   deleteSublogSubscription,
   listSublogSubscriptions,
@@ -80,6 +81,22 @@ router.get('/polibot/code-search', async (req, res, next) => {
       query: req.query?.q || req.query?.query || '',
       company: req.query?.company || '',
       coverage: req.query?.coverage || '',
+      limit: req.query?.limit || 30
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get('/polibot/disease-search', async (req, res, next) => {
+  try {
+    if (!requireWorkspaceServiceOpen(req, res, 'polibot')) return;
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await searchPolibotDiseaseCodes(user.userId, {
+      query: req.query?.q || req.query?.query || '',
+      eventType: req.query?.eventType || '',
+      carrierType: req.query?.carrierType || '',
       limit: req.query?.limit || 30
     }));
   } catch (error) {

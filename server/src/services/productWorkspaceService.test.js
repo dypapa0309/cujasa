@@ -17,6 +17,7 @@ import {
   saveInfludexCandidates,
   savePolibotRecommendation,
   savePolibotRecommendationFeedback,
+  searchPolibotDiseaseCodes,
   saveSpreadApplicants,
   saveSpreadCampaign,
   saveSublogSubscription,
@@ -218,6 +219,202 @@ test('getProductWorkspaceStatus includes POLIBOT common catalog readiness', asyn
   assert.ok(status.qualityReport?.companies?.includes('메리츠화재'));
   assert.ok(status.catalog?.companies?.includes('메리츠화재'));
   assert.ok(status.knowledgeDbSummary?.companies?.some((item) => item.name === '메리츠화재'));
+});
+
+test('POLIBOT disease code search and selected events feed disclosure code analysis', async () => {
+  const userId = '11111111-2026-4110-8110-101010101018';
+  await dbInsert('users', {
+    id: userId,
+    email: 'polibot-disease-events-test@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT Disease Events',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      unlimitedUsage: true,
+      workspace: {}
+    }
+  });
+
+  const search = await searchPolibotDiseaseCodes(userId, {
+    query: 'I10',
+    eventType: '통원',
+    carrierType: 'nonlife',
+    limit: 10
+  });
+  assert.ok(search.results.length >= 1);
+  assert.ok(search.results.every((item) => item.carrierType === 'nonlife'));
+  assert.ok(search.results.some((item) => item.kcdCode === 'I10' || item.diseaseName.includes('고혈압')));
+
+  const workspace = await savePolibotRecommendation(userId, {
+    name: '질병코드 고객',
+    age: '45',
+    gender: '남성',
+    needs: ['암'],
+    budget: '12',
+    existingMedicalPlan: '없음',
+    medicalHistory: '질병코드 선택 입력',
+    disclosureDetails: {
+      recent3Months: '없음',
+      recent1Year: '있음',
+      recent5Years: '있음',
+      diseaseEvents: [{
+        occurredAt: '2026-01-15',
+        eventType: '통원',
+        kcdCode: 'I10',
+        diseaseName: '고혈압',
+        carrierType: 'nonlife',
+        status: '치료중',
+        memo: '혈압약 복용'
+      }]
+    },
+    underwritingAssessment: { route: '표준심사' },
+    analysisResult: { gaps: '암', remodelList: '암 진단비 보완' },
+    purpose: '보장 강화'
+  });
+
+  assert.ok((workspace.customerProfile?.actualCodes || []).some((item) => item.code === 'I10'));
+  assert.match(JSON.stringify(workspace.consultationSummary?.disclosureSummary || []), /I10|고혈압/);
+});
+
+test('POLIBOT separates life and nonlife carrier recommendations for ambiguous brand names', async () => {
+  const userId = '11111111-2026-4110-8110-101010101019';
+  const nonlifeSourceId = '11111111-2026-4110-8110-101010101020';
+  const lifeSourceId = '11111111-2026-4110-8110-101010101021';
+  await dbInsert('users', {
+    id: userId,
+    email: 'polibot-carrier-split-test@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT Carrier Split',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      unlimitedUsage: true,
+      workspace: {}
+    }
+  });
+  await dbInsert('polibot_knowledge_sources', {
+    id: nonlifeSourceId,
+    user_id: null,
+    scope: 'global',
+    source_channel: 'local_ingest',
+    status: 'recommendable',
+    file_name: 'carrier-split-db손해.txt',
+    file_type: 'txt',
+    file_hash: 'carrier-split-db-file-hash',
+    text_hash: 'carrier-split-db-text-hash',
+    month: '2026-05',
+    company: 'DB손해보험',
+    companies: ['DB손해보험'],
+    product_group: '암',
+    keywords: ['암'],
+    product_names: ['DB손해 암 보험'],
+    normalized_source: {
+      id: nonlifeSourceId,
+      fileName: 'carrier-split-db손해.txt',
+      month: '2026-05',
+      company: 'DB손해보험',
+      companies: ['DB손해보험'],
+      productGroup: '암',
+      keywords: ['암'],
+      productNames: ['DB손해 암 보험'],
+      catalogItems: []
+    },
+    metadata: { recommendationEligible: true, evidenceQualityScore: 90 }
+  });
+  await dbInsert('polibot_knowledge_sources', {
+    id: lifeSourceId,
+    user_id: null,
+    scope: 'global',
+    source_channel: 'local_ingest',
+    status: 'recommendable',
+    file_name: 'carrier-split-kb라이프.txt',
+    file_type: 'txt',
+    file_hash: 'carrier-split-kb-file-hash',
+    text_hash: 'carrier-split-kb-text-hash',
+    month: '2026-05',
+    company: 'KB라이프',
+    companies: ['KB라이프'],
+    product_group: '암',
+    keywords: ['암'],
+    product_names: ['KB라이프 암 보험'],
+    normalized_source: {
+      id: lifeSourceId,
+      fileName: 'carrier-split-kb라이프.txt',
+      month: '2026-05',
+      company: 'KB라이프',
+      companies: ['KB라이프'],
+      productGroup: '암',
+      keywords: ['암'],
+      productNames: ['KB라이프 암 보험'],
+      catalogItems: []
+    },
+    metadata: { recommendationEligible: true, evidenceQualityScore: 90 }
+  });
+  await dbInsert('polibot_catalog_items', {
+    id: '11111111-2026-4110-8110-101010101022',
+    source_id: nonlifeSourceId,
+    user_id: null,
+    scope: 'global',
+    status: 'recommendable',
+    company: 'DB손해보험',
+    product_name: 'DB손해 암 보험',
+    product_group: '암',
+    coverage_keywords: ['암'],
+    premium_example: '월 80,000원',
+    age_range: '20-65세',
+    renewal_type: '비갱신형',
+    completeness: '충분',
+    confidence_score: 92,
+    metadata: {}
+  });
+  await dbInsert('polibot_catalog_items', {
+    id: '11111111-2026-4110-8110-101010101023',
+    source_id: lifeSourceId,
+    user_id: null,
+    scope: 'global',
+    status: 'recommendable',
+    company: 'KB라이프',
+    product_name: 'KB라이프 암 보험',
+    product_group: '암',
+    coverage_keywords: ['암'],
+    premium_example: '월 82,000원',
+    age_range: '20-65세',
+    renewal_type: '비갱신형',
+    completeness: '충분',
+    confidence_score: 92,
+    metadata: {}
+  });
+
+  const workspace = await savePolibotRecommendation(userId, {
+    name: '보험사 구분 고객',
+    age: '45',
+    gender: '남성',
+    needs: ['암'],
+    budget: '12',
+    company: '전체 보험사',
+    existingMedicalPlan: '없음',
+    medicalHistory: '없음',
+    disclosureDetails: { recent3Months: '없음', recent1Year: '없음', recent5Years: '없음' },
+    underwritingAssessment: { route: '표준심사' },
+    analysisResult: { gaps: '암', remodelList: '암 진단비 보완' },
+    purpose: '보장 강화'
+  });
+
+  const nonlife = (workspace.recommendations || []).filter((item) => item.carrierType === 'nonlife');
+  const life = (workspace.recommendations || []).filter((item) => item.carrierType === 'life');
+  assert.ok(nonlife.some((item) => /DB손해/.test(JSON.stringify(item))));
+  assert.ok(life.some((item) => /KB라이프/.test(JSON.stringify(item))));
 });
 
 test('POLIBOT customer flows use imported extraction catalog data', async () => {

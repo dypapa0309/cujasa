@@ -183,6 +183,31 @@ const polibotRecent3MonthFields = [
   { key: 'medication', label: '투약' },
   { key: 'extraExam', label: '추가검사' }
 ];
+const polibotDisclosureDecisionOptions = [
+  { value: '', label: '미확인' },
+  { value: '없음', label: '없음' },
+  { value: '있음', label: '있음' },
+  { value: '확인 필요', label: '확인 필요' }
+];
+const polibotDiseaseEventOptions = [
+  { value: '', label: '전체' },
+  { value: '통원', label: '통원' },
+  { value: '입원', label: '입원' },
+  { value: '수술', label: '수술' },
+  { value: '투약', label: '투약' }
+];
+const polibotCarrierTypeOptions = [
+  { value: '', label: '손보+생보' },
+  { value: 'nonlife', label: '손보' },
+  { value: 'life', label: '생보' }
+];
+const polibotDiseaseStatusOptions = [
+  { value: '', label: '상태 미확인' },
+  { value: '완치', label: '완치' },
+  { value: '치료중', label: '치료중' },
+  { value: '추적관찰', label: '추적관찰' },
+  { value: '투약중', label: '투약중' }
+];
 const createPolibotRecent3MonthState = () => Object.fromEntries(polibotRecent3MonthFields.map((field) => [field.key, '']));
 const polibotPolicyTemplate = {
   company: '',
@@ -217,7 +242,8 @@ const createPolibotCoverageState = () => Object.fromEntries(polibotCoverageField
 const createPolibotPolicyRows = () => [{ ...polibotPolicyTemplate }];
 const createPolibotDisclosureState = () => ({
   ...Object.fromEntries(polibotDisclosureFields.map((field) => [field.key, ''])),
-  recent3Months: createPolibotRecent3MonthState()
+  recent3Months: createPolibotRecent3MonthState(),
+  diseaseEvents: []
 });
 const mergePolibotTextLines = (...values) => [...new Set(values.flatMap((value) => String(value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)))].join('\n');
 const polibotPolicyKey = (policy = {}) => [
@@ -265,6 +291,17 @@ const hasPolibotRecent3MonthAnswers = (value) => (
 const mergePolibotDisclosureDetails = (current = {}, next = {}) => {
   if (!next || typeof next !== 'object') return current || {};
   const merged = { ...(current || {}), ...next };
+  if (Array.isArray(current?.diseaseEvents) || Array.isArray(next?.diseaseEvents)) {
+    const rows = [...(Array.isArray(current?.diseaseEvents) ? current.diseaseEvents : []), ...(Array.isArray(next?.diseaseEvents) ? next.diseaseEvents : [])]
+      .filter((item) => item && typeof item === 'object');
+    const seen = new Set();
+    merged.diseaseEvents = rows.filter((item) => {
+      const key = [item.occurredAt, item.eventType, item.kcdCode || item.code, item.diseaseName || item.name, item.company].map(displayValue).join('|');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(-20);
+  }
   if (current?.recent3Months && next?.recent3Months) {
     if (hasPolibotRecent3MonthAnswers(current.recent3Months) && typeof next.recent3Months === 'string') {
       merged.recent3Months = current.recent3Months;
@@ -1771,18 +1808,14 @@ function TaskDrawer(props) {
   const { action, loadError, closing, onClose } = props;
   const Icon = action.icon;
   const compactPreview = ['dexor', 'spread', 'polibot', 'infludex', 'sublog'].includes(action.key);
-  const isTestUser = String(props.currentUser?.email || '').trim().toLowerCase() === 'test1@test.com';
-  const compactPolibotStepper = action.key === 'polibot-recommend' && isTestUser;
   const wideBilling = action.key === 'billing';
   const wideWorkspace = action.key === 'polibot-recommend';
-  const desktopWidthClass = compactPolibotStepper
-    ? 'lg:w-[min(680px,calc(100vw-340px))]'
-    : wideBilling
+  const desktopWidthClass = wideBilling
       ? 'lg:w-[min(1180px,calc(100vw-340px))]'
       : wideWorkspace
-      ? 'lg:w-[min(980px,calc(100vw-340px))]'
+      ? 'lg:w-[min(1280px,calc(100vw-324px))] xl:w-[min(1380px,calc(100vw-332px))]'
       : 'lg:w-[min(640px,calc(100vw-340px))]';
-  const mobileWidthClass = wideBilling ? 'w-[min(1120px,96vw)]' : 'w-[min(420px,92vw)]';
+  const mobileWidthClass = wideBilling || wideWorkspace ? 'w-[min(1120px,96vw)]' : 'w-[min(420px,92vw)]';
 
   return (
     <div className={`fixed inset-0 z-40 transition-opacity duration-300 lg:pointer-events-none ${closing ? 'bg-black/0 opacity-0 lg:bg-transparent' : 'bg-black/45 opacity-100 lg:bg-transparent'}`}>
@@ -5314,6 +5347,16 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   useEffect(() => {
     if (assistantDraft?.actionKey !== 'polibot-recommend' || !assistantDraft.values) return;
     const values = assistantDraft.values;
+    const eventLines = Array.isArray(values.disclosureDetails?.diseaseEvents)
+      ? values.disclosureDetails.diseaseEvents.map((item) => [
+        item.occurredAt && `발생일: ${item.occurredAt}`,
+        item.eventType && `구분: ${item.eventType}`,
+        (item.kcdCode || item.code) && `질병코드: ${item.kcdCode || item.code}`,
+        (item.diseaseName || item.name) && `병명: ${item.diseaseName || item.name}`,
+        item.status && `상태: ${item.status}`,
+        item.memo
+      ].filter(Boolean).join(' · ')).filter(Boolean)
+      : [];
     setForm((prev) => ({
       ...prev,
       name: values.name ?? prev.name,
@@ -5329,8 +5372,10 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       currentCoverage: values.currentCoverage && typeof values.currentCoverage === 'object' ? { ...prev.currentCoverage, ...values.currentCoverage } : prev.currentCoverage,
       existingMedicalPlan: values.existingMedicalPlan ?? prev.existingMedicalPlan,
       existingPremium: values.existingPremium ?? prev.existingPremium,
-      medicalHistory: values.medicalHistory ?? prev.medicalHistory,
-      disclosureDetails: values.disclosureDetails && typeof values.disclosureDetails === 'object' ? mergePolibotDisclosureDetails(prev.disclosureDetails, values.disclosureDetails) : prev.disclosureDetails,
+      medicalHistory: mergePolibotTextLines(prev.medicalHistory, values.medicalHistory, ...eventLines),
+      disclosureDetails: values.disclosureDetails && typeof values.disclosureDetails === 'object'
+        ? mergePolibotDisclosureDetails(prev.disclosureDetails, values.disclosureDetails)
+        : prev.disclosureDetails,
       underwritingAssessment: values.underwritingAssessment && typeof values.underwritingAssessment === 'object' ? { ...prev.underwritingAssessment, ...values.underwritingAssessment } : prev.underwritingAssessment,
       analysisResult: values.analysisResult && typeof values.analysisResult === 'object' ? { ...prev.analysisResult, ...values.analysisResult } : prev.analysisResult,
       familyHistory: values.familyHistory ?? prev.familyHistory,
@@ -5338,13 +5383,28 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       renewalPreference: values.renewalPreference ?? prev.renewalPreference,
       purpose: values.purpose ?? prev.purpose
     }));
+    if (values.disclosureDetails?.diseaseEvents?.length || values.disclosureDetails?.recent1Year || values.disclosureDetails?.recent5Years) {
+      setTestStep(2);
+    } else if (values.purpose || values.budget || values.needs) {
+      setTestStep(3);
+    }
   }, [assistantDraft]);
 
   const save = async () => {
     setSubmitAttempted(true);
+    const effectiveAge = form.age || calculateAgeFromBirthdate(form.birthdate);
+    const missingRequired = [
+      !effectiveAge && '나이',
+      selectedNeeds.length === 0 && '필요 보장',
+      !normalizePolibotPremiumInput(form.budget) && '예산'
+    ].filter(Boolean);
+    if (missingRequired.length > 0) {
+      if (useStepperRecommendationFlow) setTestStep(3);
+      toast(`추천 전에 ${missingRequired.join(', ')} 정보를 먼저 입력해 주세요.`, 'error');
+      return;
+    }
     setSaving(true);
     try {
-      const effectiveAge = form.age || calculateAgeFromBirthdate(form.birthdate);
       const next = await api.post('/api/product-workspace/polibot/recommend', {
         ...form,
         age: effectiveAge,
@@ -5359,8 +5419,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       }, { timeoutMs: 120000 });
       setWorkspace(next);
       setSelectedRecommendation(null);
-      if (useStepperRecommendationFlow) setTestStep(3);
       const hasNextRecommendations = Array.isArray(next?.recommendations) && next.recommendations.length > 0;
+      if (useStepperRecommendationFlow && (hasNextRecommendations || next?.recommendationNotice)) setTestStep(4);
       toast(
         hasNextRecommendations ? '추천 초안을 만들었어요.' : '추천 보류 조건을 확인해 주세요.',
         hasNextRecommendations ? 'success' : 'info'
@@ -5760,8 +5820,9 @@ function PolibotRecommendStepper({
 }) {
   const steps = [
     { id: 1, title: '자료접수', caption: '보장분석·심평원' },
-    { id: 2, title: '목적·검수', caption: '고객 목적·설계매니저' },
-    { id: 3, title: '추천안', caption: '가격·인수조건' }
+    { id: 2, title: '고지정리', caption: '병력·질병코드' },
+    { id: 3, title: '추천조건', caption: '목적·예산·보장' },
+    { id: 4, title: '추천안', caption: '손보·생보 후보' }
   ];
   const canGenerate = workspaceLoaded && !saving && usage.remaining > 0;
   const notice = workspace.recommendationNotice || '';
@@ -5787,6 +5848,11 @@ function PolibotRecommendStepper({
     ['recent1Year', '1년', '추가검사/재검사'],
     ['recent5Years', '5년', '입원/수술/7일치료/30일투약']
   ];
+  const setDisclosurePatch = (patch) => setForm((prev) => ({
+    ...prev,
+    disclosureDetails: { ...(prev.disclosureDetails || {}), ...patch }
+  }));
+  const markDisclosureClear = (patch) => setDisclosurePatch(patch);
   const managerCodes = (workspace.managerCodes || []).length ? workspace.managerCodes : buildPolibotManagerCodeRecommendations(form);
   const actualCodes = (workspace.actualCodes || []).length ? workspace.actualCodes : buildPolibotActualCodes(form);
   const filterCodes = [...actualCodes, ...(workspace.matchedCoverageCodes || []), ...managerCodes, ...collectPolibotCodes(workspace, workspace.consultationDraft, form.disclosureDetails, form.medicalHistory)];
@@ -5798,8 +5864,9 @@ function PolibotRecommendStepper({
   );
   const stepBadge = (stepId) => {
     if (stepId === 1 && !profileReady) return '입력';
-    if (stepId === 2 && hardMissingLabels.length) return `필수 ${hardMissingLabels.length}`;
-    if (stepId === 3 && !hasRecommendations) return '대기';
+    if (stepId === 2 && filterMissingLabels.includes('심평원/병력 자료')) return '확인';
+    if (stepId === 3 && hardMissingLabels.length) return `필수 ${hardMissingLabels.length}`;
+    if (stepId === 4 && !hasRecommendations) return '대기';
     return '완료';
   };
 
@@ -5807,7 +5874,7 @@ function PolibotRecommendStepper({
     <div className="grid min-w-0 gap-3">
       {!workspaceLoaded && <PolibotLoadingBanner label="월별 상품 DB와 보험사 자료를 불러오는 중" />}
       <div className="rounded-2xl border border-white/10 bg-black/20 p-2.5">
-        <div className="grid gap-2 md:grid-cols-3">
+        <div className="grid gap-2 md:grid-cols-4">
           {steps.map((item) => {
             const active = step === item.id;
             const badge = stepBadge(item.id);
@@ -5956,7 +6023,7 @@ function PolibotRecommendStepper({
       )}
 
       {step === 2 && (
-        <PanelCard title="2. 설계매니저 코드 분석" className="min-w-0 p-4">
+        <PanelCard title="2. 병력/고지 정리" className="min-w-0 p-4">
           <div className="grid gap-3">
             {saving && <PolibotLoadingBanner label="고객 병력과 polidoc 기준을 대조하는 중" />}
             <PolibotManagerDesk
@@ -5971,11 +6038,81 @@ function PolibotRecommendStepper({
             />
             <PolibotConsultationSummaryCard summary={workspace.consultationSummary} />
             <PolibotExceptionDiseaseMatchList matches={workspace.exceptionDiseaseMatches || workspace.designManagerReview?.exceptionDiseaseMatches || []} />
+            <div className="grid gap-2 rounded-2xl border border-emerald-300/15 bg-emerald-400/5 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-black text-zinc-200">빠른 없음 처리</div>
+                  <div className="mt-0.5 text-xs font-bold text-zinc-600">이상이 없는 항목은 한 번에 정리하고, 걸리는 병력만 카드로 추가합니다.</div>
+                </div>
+                <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-black text-emerald-100">1차 고지</span>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                <button type="button" onClick={() => markDisclosureClear({ recent1Year: '없음' })} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">1년 고지 없음</button>
+                <button type="button" onClick={() => markDisclosureClear({ recent5Years: '없음', admissionSurgery: '없음', longTreatment: '없음', longMedication: '없음' })} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">5년 고지 없음</button>
+                <button type="button" onClick={() => markDisclosureClear({ currentMedication: '없음', followUp: '없음', completeCure: '해당 없음' })} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-xs font-black text-zinc-300 hover:border-white/25 hover:text-zinc-100">현재 치료/투약 없음</button>
+              </div>
+            </div>
+
+            <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
+              <div>
+                <div className="text-sm font-black text-zinc-200">1차 고지</div>
+                <div className="mt-0.5 text-xs font-bold text-zinc-600">최근 기간별 문진과 병력 이벤트를 먼저 정리합니다.</div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                <PolibotSelectCard label="기존 실손 여부" value={form.existingMedicalPlan} onChange={(value) => setForm((prev) => ({ ...prev, existingMedicalPlan: value }))} options={[{ value: '', label: '미확인' }, { value: '있음', label: '있음' }, { value: '없음', label: '없음' }, { value: '확인 필요', label: '확인 필요' }]} invalid={isMissing('기존 실손 여부')} />
+                <PolibotSelectCard label="현재 투약" value={form.disclosureDetails?.currentMedication || ''} onChange={(value) => setDisclosurePatch({ currentMedication: value })} options={polibotDisclosureDecisionOptions} />
+              </div>
+              <PolibotRecent3MonthChecklist
+                value={form.disclosureDetails?.recent3Months}
+                onChange={(value) => setForm((prev) => ({ ...prev, disclosureDetails: { ...(prev.disclosureDetails || {}), recent3Months: value } }))}
+              />
+              <PolibotDiseaseCodePicker
+                value={form.disclosureDetails?.diseaseEvents || []}
+                onChange={(diseaseEvents) => setForm((prev) => ({ ...prev, disclosureDetails: { ...(prev.disclosureDetails || {}), diseaseEvents } }))}
+                onAppendMedicalHistory={(line) => setForm((prev) => ({
+                  ...prev,
+                  medicalHistory: mergePolibotTextLines(prev.medicalHistory, line),
+                  disclosureDetails: {
+                    ...(prev.disclosureDetails || {}),
+                    details: mergePolibotTextLines(prev.disclosureDetails?.details, line)
+                  }
+                }))}
+              />
+              <div className="grid gap-2">
+                {quickDisclosure.map(([key, label]) => (
+                  <PolibotSelectCard
+                    key={key}
+                    label={`${label} 고지`}
+                    value={form.disclosureDetails?.[key] || ''}
+                    onChange={(nextValue) => setForm((prev) => ({ ...prev, disclosureDetails: { ...(prev.disclosureDetails || {}), [key]: nextValue } }))}
+                    options={polibotDisclosureDecisionOptions}
+                  />
+                ))}
+              </div>
+              <textarea className={`${inputClass} min-h-[80px]`} value={form.disclosureDetails?.details || ''} onChange={(event) => setForm((prev) => ({ ...prev, disclosureDetails: { ...(prev.disclosureDetails || {}), details: event.target.value } }))} placeholder="기타 고지 메모, 코드 후보, 부담보 예상 등을 입력" />
+            </div>
+
+            <PolibotCodeSummary
+              title="설계매니저 분석 코드"
+              description="두 자료에서 고지, 인수, 중복 확인 기준을 정리합니다."
+              groups={filterCodeGroups}
+              empty="보장분석과 심평원 자료를 넣으면 코드가 표시됩니다."
+            />
+            <PolibotDisclosureAssessmentList assessments={workspace.designManagerReview?.codeAssessments || []} />
+
+            <DarkButton onClick={() => onStepChange(3)} className="w-full">추천 조건으로 이동</DarkButton>
+          </div>
+        </PanelCard>
+      )}
+
+      {step === 3 && (
+        <PanelCard title="3. 추천 조건" className="min-w-0 p-4">
+          <div className="grid gap-3">
             <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-black text-zinc-200">추천 기준</div>
-                  <div className="mt-0.5 text-xs font-bold text-zinc-600">필요 보장, 예산, 보험사 범위를 추천 후보 산정 기준으로 씁니다.</div>
+                  <div className="mt-0.5 text-xs font-bold text-zinc-600">고객 목적, 필요 보장, 예산만 정하면 손보/생보 후보를 나눠 계산합니다.</div>
                 </div>
                 <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-black text-zinc-500">POLIBOT</span>
               </div>
@@ -5990,49 +6127,30 @@ function PolibotRecommendStepper({
               </div>
               <div className="grid gap-2 md:grid-cols-2">
                 <label className={labelClass}>목표 월 보험료<input inputMode="decimal" className={fieldClass('예산')} value={form.budget} onChange={(event) => setForm((prev) => ({ ...prev, budget: event.target.value }))} onBlur={() => setForm((prev) => ({ ...prev, budget: normalizePolibotPremiumInput(prev.budget) }))} placeholder="예: 30" /></label>
+                <label className={labelClass}>현재 보험료<input className={inputClass} value={form.existingPremium} onChange={(event) => setForm((prev) => ({ ...prev, existingPremium: event.target.value }))} placeholder="예: 18" /></label>
+                <DarkSelect label="갱신 선호" value={form.renewalPreference} onChange={(value) => setForm((prev) => ({ ...prev, renewalPreference: value }))} options={[{ value: '', label: '미확인' }, { value: '비갱신 선호', label: '비갱신 선호' }, { value: '허용', label: '허용' }, { value: '상관 없음', label: '상관 없음' }]} />
                 <DarkSelect label="보험사 범위" value={form.company} onChange={(value) => setForm((prev) => ({ ...prev, company: value }))} options={companies.map((company) => ({ value: company, label: company === '전체 보험사' ? `전체 보험사 (${catalogCompanies.length}개)` : company }))} searchable searchPlaceholder="보험사 검색" />
               </div>
               <PolibotCompanyHint companies={catalogCompanies} selectedCompany={form.company} loading={!workspaceLoaded} onOpenKnowledge={onOpenKnowledge} />
-            </div>
-
-            <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3">
-              <div className="text-sm font-black text-zinc-200">고지 기준</div>
-              <div className="grid gap-2 md:grid-cols-2">
-                <DarkSelect label="기존 실손 여부" value={form.existingMedicalPlan} onChange={(value) => setForm((prev) => ({ ...prev, existingMedicalPlan: value }))} options={[{ value: '', label: '미확인' }, { value: '있음', label: '있음' }, { value: '없음', label: '없음' }, { value: '확인 필요', label: '확인 필요' }]} invalid={isMissing('기존 실손 여부')} />
-                <DarkSelect label="갱신 선호" value={form.renewalPreference} onChange={(value) => setForm((prev) => ({ ...prev, renewalPreference: value }))} options={[{ value: '', label: '미확인' }, { value: '비갱신 선호', label: '비갱신 선호' }, { value: '허용', label: '허용' }, { value: '상관 없음', label: '상관 없음' }]} />
-                <label className={labelClass}>현재 보험료<input className={inputClass} value={form.existingPremium} onChange={(event) => setForm((prev) => ({ ...prev, existingPremium: event.target.value }))} placeholder="예: 18" /></label>
-              </div>
-              <PolibotRecent3MonthChecklist
-                value={form.disclosureDetails?.recent3Months}
-                onChange={(value) => setForm((prev) => ({ ...prev, disclosureDetails: { ...(prev.disclosureDetails || {}), recent3Months: value } }))}
-              />
-              <div className="grid gap-2">
-                {quickDisclosure.map(([key, label, placeholder]) => (
-                  <label key={key} className={labelClass}>{label} 고지<input className={inputClass} value={form.disclosureDetails?.[key] || ''} onChange={(event) => setForm((prev) => ({ ...prev, disclosureDetails: { ...(prev.disclosureDetails || {}), [key]: event.target.value } }))} placeholder={placeholder} /></label>
-                ))}
-              </div>
-              <textarea className={`${inputClass} min-h-[80px]`} value={form.disclosureDetails?.details || ''} onChange={(event) => setForm((prev) => ({ ...prev, disclosureDetails: { ...(prev.disclosureDetails || {}), details: event.target.value } }))} placeholder="기타 고지 메모, 코드 후보, 부담보 예상 등을 입력" />
               <div className="rounded-2xl border border-white/10 bg-black/20 px-3 py-2 text-xs font-bold leading-relaxed text-zinc-500">{premiumHint}</div>
             </div>
-
             <PolibotCodeSummary
-              title="설계매니저 분석 코드"
-              description="두 자료에서 고지, 인수, 중복 확인 기준을 정리합니다."
+              title="추천 전 적용 코드"
+              description="2단계에서 정리한 고지/질병 코드가 추천 필터에 반영됩니다."
               groups={filterCodeGroups}
-              empty="보장분석과 심평원 자료를 넣으면 코드가 표시됩니다."
+              empty="병력 이벤트나 심평원 자료를 넣으면 코드가 표시됩니다."
+              compact
             />
-            <PolibotDisclosureAssessmentList assessments={workspace.designManagerReview?.codeAssessments || []} />
-
-            <DarkButton onClick={save} disabled={!canGenerate} loading={saving} loadingLabel="필터링 중" className="w-full">
-              {usage.remaining <= 0 ? '남은 횟수 없음' : filterReady ? '코드 분석 후 상품추천' : '필수값 확인 필요'}
+            <DarkButton onClick={save} disabled={!canGenerate} loading={saving} loadingLabel="추천 중" className="w-full">
+              {usage.remaining <= 0 ? '남은 횟수 없음' : filterReady ? '손보·생보 추천 생성' : '필수값 확인 필요'}
             </DarkButton>
             {usage.remaining <= 0 && <Notice>사용 가능 횟수가 남아 있지 않아요. 결제 또는 권한 조정 후 다시 실행할 수 있어요.</Notice>}
           </div>
         </PanelCard>
       )}
 
-      {step === 3 && (
-        <PanelCard title="3. 추천안 검토" className="min-w-0 p-4">
+      {step === 4 && (
+        <PanelCard title="4. 추천안 검토" className="min-w-0 p-4">
           <div className="grid gap-3">
             <div className="grid gap-2 rounded-2xl border border-white/10 bg-black/20 p-3 md:grid-cols-3">
               <PolibotStatusRow label="고객" value={[form.name, form.age ? `${form.age}세` : '', form.gender].filter(Boolean).join(' · ') || '미입력'} />
@@ -6367,6 +6485,241 @@ function PolibotRecent3MonthChecklist({ value, onChange }) {
   );
 }
 
+function PolibotSelectCard({ label, value, onChange, options, invalid = false }) {
+  const selectRef = useRef(null);
+  const safeOptions = (Array.isArray(options) ? options : []).map((option) => {
+    if (option && typeof option === 'object') {
+      return {
+        value: displayValue(option.value ?? option.id ?? option.label ?? option.name),
+        label: displayValue(option.label ?? option.name ?? option.value ?? option.id)
+      };
+    }
+    const text = displayValue(option);
+    return { value: text, label: text };
+  });
+  return (
+    <label
+      className={`grid min-w-0 cursor-pointer gap-1 rounded-xl border bg-white/[0.03] p-2.5 text-[11px] font-black text-zinc-500 transition hover:border-white/20 hover:bg-white/[0.06] ${invalid ? 'border-red-400/45' : 'border-white/10'}`}
+      onMouseDown={(event) => {
+        if (event.target === selectRef.current) return;
+        selectRef.current?.focus();
+        selectRef.current?.showPicker?.();
+      }}
+    >
+      {label}
+      <select
+        ref={selectRef}
+        className={`${inputClass} h-10 min-w-0 cursor-pointer py-2 text-xs ${invalid ? invalidFieldClass : ''}`}
+        value={displayValue(value)}
+        onChange={(event) => onChange?.(event.target.value)}
+      >
+        {safeOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function PolibotDateCard({ label, value, onChange }) {
+  const inputRef = useRef(null);
+  return (
+    <label
+      className="grid min-w-0 cursor-pointer gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-[11px] font-black text-zinc-500 transition hover:border-white/20 hover:bg-white/[0.06]"
+      onMouseDown={(event) => {
+        if (event.target === inputRef.current) return;
+        inputRef.current?.focus();
+        inputRef.current?.showPicker?.();
+      }}
+    >
+      {label}
+      <input
+        ref={inputRef}
+        type="date"
+        className={`${inputClass} h-10 min-w-0 cursor-pointer py-2 text-xs [color-scheme:dark]`}
+        value={value}
+        onChange={(event) => onChange?.(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function PolibotDiseaseCodePicker({ value = [], onChange, onAppendMedicalHistory }) {
+  const toast = useToast();
+  const [occurredAt, setOccurredAt] = useState('');
+  const [eventType, setEventType] = useState('');
+  const [carrierType, setCarrierType] = useState('');
+  const [query, setQuery] = useState('');
+  const [manualName, setManualName] = useState('');
+  const [manualCode, setManualCode] = useState('');
+  const [status, setStatus] = useState('');
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const selected = Array.isArray(value) ? value : [];
+  const search = async () => {
+    const keyword = query.trim();
+    if (!keyword) {
+      toast('질병코드나 병명을 입력해 주세요.', 'error');
+      return;
+    }
+    setSearching(true);
+    try {
+      const params = new URLSearchParams({
+        q: keyword,
+        eventType,
+        carrierType,
+        limit: '24'
+      });
+      const data = await api.get(`/api/product-workspace/polibot/disease-search?${params.toString()}`, { timeoutMs: 8000 });
+      setResults(Array.isArray(data?.results) ? data.results : []);
+      if (!data?.results?.length) toast(data?.notice || '검색 결과가 없어요.', 'info');
+    } catch (err) {
+      toast(err.message || '질병코드 검색에 실패했어요.', 'error');
+    } finally {
+      setSearching(false);
+    }
+  };
+  const addDisease = (item) => {
+    const next = {
+      occurredAt,
+      eventType: eventType || item.eventType || '',
+      kcdCode: item.kcdCode || '',
+      diseaseName: item.diseaseName || '',
+      company: item.company || '',
+      carrierType: item.carrierType || '',
+      conditionText: item.conditionText || '',
+      status,
+      memo: [item.carrierTypeLabel, status, item.eligibilityLevel, item.conditionText].filter(Boolean).join(' · ')
+    };
+    const key = [next.occurredAt, next.eventType, next.kcdCode, next.diseaseName, next.company].join('|');
+    const merged = [
+      ...selected.filter((row) => [row.occurredAt, row.eventType, row.kcdCode, row.diseaseName, row.company].join('|') !== key),
+      next
+    ].slice(-20);
+    onChange?.(merged);
+    onAppendMedicalHistory?.([
+      occurredAt && `발생일: ${occurredAt}`,
+      next.eventType && `구분: ${next.eventType}`,
+      next.kcdCode && `질병코드: ${next.kcdCode}`,
+      next.diseaseName && `병명: ${next.diseaseName}`,
+      next.company && `기준보험사: ${next.company}`,
+      next.conditionText && `인수기준: ${next.conditionText}`
+    ].filter(Boolean).join(' · '));
+    toast('질병코드를 고지 기준에 추가했어요.', 'success');
+  };
+  const addManualDisease = () => {
+    const diseaseName = manualName.trim() || query.trim();
+    const kcdCode = manualCode.trim().toUpperCase();
+    if (!diseaseName && !kcdCode) {
+      toast('병명이나 질병코드를 입력해 주세요.', 'error');
+      return;
+    }
+    addDisease({
+      kcdCode,
+      diseaseName,
+      eventType,
+      carrierType,
+      carrierTypeLabel: carrierType === 'life' ? '생보' : carrierType === 'nonlife' ? '손보' : '',
+      conditionText: '직접 입력'
+    });
+    setManualName('');
+    setManualCode('');
+  };
+  const removeDisease = (index) => {
+    onChange?.(selected.filter((_, rowIndex) => rowIndex !== index));
+  };
+  const updateDisease = (index, patch) => {
+    onChange?.(selected.map((item, rowIndex) => rowIndex === index ? { ...item, ...patch } : item));
+  };
+  return (
+    <div className="grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-black text-zinc-200">질병분류기호 검색</div>
+          <div className="mt-0.5 text-xs font-bold text-zinc-600">발생일과 통원/입원/수술/투약 구분을 선택한 뒤 질병코드 또는 병명으로 검색합니다.</div>
+        </div>
+        <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] font-black text-zinc-500">{selected.length}개 선택</span>
+      </div>
+      <div className="grid gap-2">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-[minmax(210px,1.2fr)_minmax(140px,.8fr)_minmax(150px,.85fr)_minmax(150px,.85fr)]">
+          <PolibotDateCard label="연월일(발생일)" value={occurredAt} onChange={setOccurredAt} />
+          <PolibotSelectCard label="구분" value={eventType} onChange={setEventType} options={polibotDiseaseEventOptions} />
+          <PolibotSelectCard label="자료" value={carrierType} onChange={setCarrierType} options={polibotCarrierTypeOptions} />
+          <PolibotSelectCard label="현재 상태" value={status} onChange={setStatus} options={polibotDiseaseStatusOptions} />
+        </div>
+        <div className="grid min-w-0 gap-2 md:grid-cols-[minmax(0,1fr)_96px]">
+          <label className="grid min-w-0 gap-1 text-[11px] font-black text-zinc-500">
+            질병코드/병명
+            <input
+              className={inputClass}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  search();
+                }
+              }}
+              placeholder="예: I10, 고혈압, 백내장"
+            />
+          </label>
+          <div className="flex items-end">
+            <DarkButton size="sm" onClick={search} disabled={searching} loading={searching} loadingLabel="검색 중" className="h-11 w-full">검색</DarkButton>
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-2 rounded-xl bg-white/[0.03] p-2 md:grid-cols-[120px_minmax(0,1fr)_90px]">
+        <label className="grid gap-1 text-[11px] font-black text-zinc-500">
+          질병코드
+          <input className={inputClass} value={manualCode} onChange={(event) => setManualCode(event.target.value)} placeholder="예: I10" />
+        </label>
+        <label className="grid gap-1 text-[11px] font-black text-zinc-500">
+          병명 직접입력
+          <input className={inputClass} value={manualName} onChange={(event) => setManualName(event.target.value)} placeholder="검색 결과가 없을 때 직접 입력" />
+        </label>
+        <div className="flex items-end">
+          <DarkButton size="sm" variant="ghost" onClick={addManualDisease} className="h-11 w-full">직접 추가</DarkButton>
+        </div>
+      </div>
+      {results.length > 0 && (
+        <div className="grid max-h-72 gap-2 overflow-y-auto pr-1">
+          {results.map((item) => (
+            <button key={`${item.id}-${item.company}`} type="button" onClick={() => addDisease(item)} className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-left hover:border-white/25 hover:bg-white/5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-white text-zinc-950 px-2 py-0.5 text-[10px] font-black">{item.kcdCode || '코드 없음'}</span>
+                <span className="text-xs font-black text-zinc-100">{item.diseaseName}</span>
+                <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-black text-zinc-500">{item.carrierTypeLabel}</span>
+                <span className="text-[10px] font-black text-zinc-600">{item.company}</span>
+              </div>
+              <div className="mt-1 text-[11px] font-bold leading-relaxed text-zinc-500">{[item.diseaseCategory, item.conditionText].filter(Boolean).join(' · ')}</div>
+            </button>
+          ))}
+        </div>
+      )}
+      {selected.length > 0 && (
+        <div className="grid gap-1.5">
+          {selected.map((item, index) => (
+            <div key={`${item.kcdCode}-${item.diseaseName}-${item.company}-${index}`} className="grid gap-2 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-3 py-2">
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_130px_auto] md:items-start">
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-black text-emerald-50">{[item.occurredAt, item.eventType, item.kcdCode, item.diseaseName].filter(Boolean).join(' · ')}</div>
+                  <div className="mt-1 truncate text-[11px] font-bold text-emerald-100/70">{[item.company, item.conditionText].filter(Boolean).join(' · ')}</div>
+                </div>
+                <PolibotSelectCard label="상태" value={item.status || ''} onChange={(nextStatus) => updateDisease(index, { status: nextStatus })} options={polibotDiseaseStatusOptions} />
+                <button type="button" onClick={() => removeDisease(index)} className="h-8 rounded-lg border border-white/10 px-2 text-[10px] font-black text-zinc-300 hover:bg-white/10">삭제</button>
+              </div>
+              <input
+                className={`${inputClass} py-2 text-xs`}
+                value={item.memo || ''}
+                onChange={(event) => updateDisease(index, { memo: event.target.value })}
+                placeholder="확인 메모"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PolibotManagerDesk({ coverageDocumentFileName = '', hiraFileName = '', actualCodes = [], matchedCoverageCodes = [], managerCodes = [], designManagerReview = null, profileReady = false, hardMissingLabels = [] }) {
   const reviewCodes = managerCodes.filter((item) => item.status !== 'applied');
   const appliedCodes = managerCodes.filter((item) => item.status === 'applied');
@@ -6494,9 +6847,14 @@ function collectPolibotCodes(...sources) {
       return;
     }
     if (typeof value === 'object') {
-      const tone = value.status || value.tone || value.result || inheritedTone || inferTone(value.reason || value.label || value.title || value.name || value.memo || '');
-      pushCode(value.code || value.disclosureCode || value.underwritingCode || value.productCode, value.label || value.title || value.name || value.reason || '코드', value.source || value.fileName || source, tone);
-      ['codes', 'codeCandidates', 'actualCodes', 'managerCodes', 'codeAssessments', 'decisionAnalysis', 'disclosureCodes', 'underwritingCodes', 'matchedCodes', 'matchedCoverageCodes', 'recommendationCodes', 'recommendedCodes', 'designManagerReview', 'designManagerSummary', 'evidence', 'evidenceMatches', 'evidenceAnchors', 'catalogItems', 'linkedBenefitGroups', 'routineChecks', 'reviewReasons', 'cautions', 'disclosureMemo', 'underwritingMemo'].forEach((key) => visit(value[key], value.fileName || value.source || source, tone));
+      const tone = value.status || value.tone || value.result || inheritedTone || inferTone(value.reason || value.label || value.title || value.name || value.diseaseName || value.memo || '');
+      pushCode(
+        value.code || value.kcdCode || value.disclosureCode || value.underwritingCode || value.productCode,
+        value.label || value.title || value.name || value.diseaseName || value.reason || '코드',
+        value.source || value.fileName || value.company || source,
+        tone
+      );
+      ['codes', 'codeCandidates', 'actualCodes', 'managerCodes', 'codeAssessments', 'decisionAnalysis', 'disclosureCodes', 'underwritingCodes', 'matchedCodes', 'matchedCoverageCodes', 'recommendationCodes', 'recommendedCodes', 'diseaseEvents', 'hiraDiseaseCodes', 'designManagerReview', 'designManagerSummary', 'evidence', 'evidenceMatches', 'evidenceAnchors', 'catalogItems', 'linkedBenefitGroups', 'routineChecks', 'reviewReasons', 'cautions', 'disclosureMemo', 'underwritingMemo'].forEach((key) => visit(value[key], value.fileName || value.source || source, tone));
     }
   };
   sources.forEach((source) => visit(source));
@@ -7008,58 +7366,75 @@ function PolibotRecommendationList({ recommendations, saveMemo, onMemoChange, on
   const recommendationState = recommendations.some((item) => (item.reviewReasons || []).length > 0 || item.recommendationStatus === 'needs_review')
     ? '확인 필요 추천'
     : '추천 후보';
+  const groupedRecommendations = [
+    ['nonlife', '손보 추천', recommendations.filter((item) => item.carrierType === 'nonlife')],
+    ['life', '생보 추천', recommendations.filter((item) => item.carrierType === 'life')],
+    ['other', '기타 추천', recommendations.filter((item) => !['nonlife', 'life'].includes(item.carrierType))]
+  ].filter(([, , items]) => items.length > 0);
+  const renderRecommendation = (item) => {
+    const itemCodes = collectPolibotCodes(item);
+    const itemCodeGroups = groupPolibotCodes(itemCodes, item);
+    const designSummary = item.designManagerSummary || item.decisionAnalysis?.designManagerSummary || {};
+    const checkItems = [
+      designSummary.route && `심사 경로: ${designSummary.route}`,
+      designSummary.nextAction && `다음 작업: ${designSummary.nextAction}`,
+      ...(designSummary.sellerQuestions || []).slice(0, 2),
+      ...(item.reviewReasons || []).slice(0, 2),
+      ...(item.routineChecks || []).slice(0, 1)
+    ].filter(Boolean);
+    return (
+      <button key={item.id} type="button" onClick={() => onSelect(item)} className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">{item.type === 'bundle' ? '조합 추천' : '단품 추천'}</span>
+              {item.carrierTypeLabel && <span className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-black text-zinc-500">{item.carrierTypeLabel}</span>}
+            </div>
+            <div className="mt-1 break-keep text-sm font-black text-zinc-100">{item.name}</div>
+            {!testMode && <div className="mt-1 text-[11px] font-bold text-zinc-600">확신도 {item.confidence?.level || '보통'} · 점수 {item.score || '-'}</div>}
+            <div className="mt-2 grid gap-1.5">
+              <PolibotCodeBadges codes={itemCodeGroups.applied} empty={itemCodeGroups.review?.length ? '' : '코드 대조 전'} limit={3} tone="applied" />
+              {(itemCodeGroups.review || []).length > 0 && <PolibotCodeBadges codes={itemCodeGroups.review} limit={2} tone="review" />}
+            </div>
+          </div>
+          <ChevronRight size={18} className="mt-1 shrink-0 text-zinc-600" />
+        </div>
+        <div className="mt-3 grid gap-1 text-xs leading-relaxed text-zinc-500">
+          {item.coverageGap && <div>핵심 보완: {item.coverageGap}</div>}
+          {testMode && <div>보험료: {item.premium || '보험료 자료 없음'}</div>}
+          {testMode && item.additionalBudgetMemo && <div>예산 기준: {item.additionalBudgetMemo}</div>}
+          {designSummary.route && <div>설계매니저: {designSummary.route}{designSummary.nextAction ? ` · ${designSummary.nextAction}` : ''}</div>}
+          {item.feedback && <div className="text-zinc-400">피드백: {item.feedback}{item.feedbackReason ? ` · ${item.feedbackReason}` : ''}</div>}
+          {(((item.reviewReasons || []).length > 0 || (item.routineChecks || []).length > 0 || (item.cautions || []).length > 0) || !testMode) && (
+            <div className="rounded-xl border border-amber-400/20 bg-amber-950/10 px-3 py-2 font-black text-amber-100/90">
+              확인 조건: {checkItems.slice(0, 3).join(' · ') || (item.cautions || [])[0] || '고지사항과 기존 보험 중복 여부 확인'}
+            </div>
+          )}
+          {!testMode && (item.confidence?.reasons || []).slice(0, 2).map((reason) => (
+            <div key={reason}>확인 메모: {reason}</div>
+          ))}
+          {testMode && item.confidence?.level === '낮음' && <div className="text-zinc-600">자료 신뢰도 확인 필요</div>}
+        </div>
+      </button>
+    );
+  };
   return (
     <div className="grid gap-3">
       {saving && <PolibotLoadingBanner label="추천 후보를 다시 계산하는 중" />}
       <div className="rounded-2xl bg-black/25 px-4 py-3">
         <div className="text-sm font-black text-zinc-100">{testMode ? recommendationState : '추천 후보'} {recommendations.length}개</div>
-        <p className="mt-1 text-xs leading-relaxed text-zinc-500">카드를 눌러 근거와 주의 조건을 확인한 뒤 고객목록에 저장하세요.</p>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-500">손보 최대 3개, 생보 최대 3개로 나눠 보여줍니다. 카드를 눌러 근거와 주의 조건을 확인한 뒤 고객목록에 저장하세요.</p>
       </div>
       <div className="grid gap-2">
-        {recommendations.map((item) => {
-          const itemCodes = collectPolibotCodes(item);
-          const itemCodeGroups = groupPolibotCodes(itemCodes, item);
-          const designSummary = item.designManagerSummary || item.decisionAnalysis?.designManagerSummary || {};
-          const checkItems = [
-            designSummary.route && `심사 경로: ${designSummary.route}`,
-            designSummary.nextAction && `다음 작업: ${designSummary.nextAction}`,
-            ...(designSummary.sellerQuestions || []).slice(0, 2),
-            ...(item.reviewReasons || []).slice(0, 2),
-            ...(item.routineChecks || []).slice(0, 1)
-          ].filter(Boolean);
-          return (
-          <button key={item.id} type="button" onClick={() => onSelect(item)} className="rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-left transition hover:border-white/20 hover:bg-white/5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-zinc-600">{item.type === 'bundle' ? '조합 추천' : '단품 추천'}</div>
-                <div className="mt-1 break-keep text-sm font-black text-zinc-100">{item.name}</div>
-                {!testMode && <div className="mt-1 text-[11px] font-bold text-zinc-600">확신도 {item.confidence?.level || '보통'} · 점수 {item.score || '-'}</div>}
-                <div className="mt-2 grid gap-1.5">
-                  <PolibotCodeBadges codes={itemCodeGroups.applied} empty={itemCodeGroups.review?.length ? '' : '코드 대조 전'} limit={3} tone="applied" />
-                  {(itemCodeGroups.review || []).length > 0 && <PolibotCodeBadges codes={itemCodeGroups.review} limit={2} tone="review" />}
-                </div>
-              </div>
-              <ChevronRight size={18} className="mt-1 shrink-0 text-zinc-600" />
+        {groupedRecommendations.map(([key, label, items]) => (
+          <div key={key} className="grid gap-2">
+            <div className="flex items-center justify-between rounded-xl bg-white/[0.04] px-3 py-2">
+              <span className="text-xs font-black text-zinc-200">{label}</span>
+              <span className="text-[10px] font-black text-zinc-600">{items.length}/3개</span>
             </div>
-            <div className="mt-3 grid gap-1 text-xs leading-relaxed text-zinc-500">
-              {item.coverageGap && <div>핵심 보완: {item.coverageGap}</div>}
-              {testMode && <div>보험료: {item.premium || '보험료 자료 없음'}</div>}
-              {testMode && item.additionalBudgetMemo && <div>예산 기준: {item.additionalBudgetMemo}</div>}
-              {designSummary.route && <div>설계매니저: {designSummary.route}{designSummary.nextAction ? ` · ${designSummary.nextAction}` : ''}</div>}
-              {item.feedback && <div className="text-zinc-400">피드백: {item.feedback}{item.feedbackReason ? ` · ${item.feedbackReason}` : ''}</div>}
-              {(((item.reviewReasons || []).length > 0 || (item.routineChecks || []).length > 0 || (item.cautions || []).length > 0) || !testMode) && (
-                <div className="rounded-xl border border-amber-400/20 bg-amber-950/10 px-3 py-2 font-black text-amber-100/90">
-                  확인 조건: {checkItems.slice(0, 3).join(' · ') || (item.cautions || [])[0] || '고지사항과 기존 보험 중복 여부 확인'}
-                </div>
-              )}
-              {!testMode && (item.confidence?.reasons || []).slice(0, 2).map((reason) => (
-                <div key={reason}>확인 메모: {reason}</div>
-              ))}
-              {testMode && item.confidence?.level === '낮음' && <div className="text-zinc-600">자료 신뢰도 확인 필요</div>}
-            </div>
-          </button>
-          );
-        })}
+            {items.map(renderRecommendation)}
+          </div>
+        ))}
       </div>
       <label className={`${labelClass} mt-1`}>저장 메모<textarea className={inputClass} rows="2" value={saveMemo} onChange={(event) => onMemoChange(event.target.value)} placeholder="고객에게 확인할 내용이나 메모를 적어두세요." /></label>
       {showGenerate && <PolibotGenerateButton saving={saving} canGenerate={canGenerate} usage={usage} onGenerate={onGenerate} />}

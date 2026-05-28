@@ -61,6 +61,26 @@ test('extracts POLIBOT recommendation draft fields', () => {
   assert.equal(result.draft.company, '전체 보험사');
 });
 
+test('extracts POLIBOT disclosure and disease events from consultation text', () => {
+  const result = classify('김민수 45세 남성 암 뇌 심장 보험 추천 목표 20 현재 12 실손 없음 2026.01.15 I10 고혈압 통원 투약중 1년고지 있음 5년고지 없음 비갱신 선호', {
+    currentProduct: 'polibot'
+  });
+  assert.equal(result.action, 'polibot-recommend');
+  assert.equal(result.draft.name, '김민수');
+  assert.equal(result.draft.age, '45');
+  assert.equal(result.draft.budget, '20');
+  assert.equal(result.draft.existingPremium, '12');
+  assert.equal(result.draft.existingMedicalPlan, '없음');
+  assert.equal(result.draft.renewalPreference, '비갱신 선호');
+  assert.equal(result.draft.disclosureDetails.recent1Year, '있음');
+  assert.equal(result.draft.disclosureDetails.recent5Years, '없음');
+  assert.equal(result.draft.disclosureDetails.diseaseEvents[0].occurredAt, '2026-01-15');
+  assert.equal(result.draft.disclosureDetails.diseaseEvents[0].kcdCode, 'I10');
+  assert.equal(result.draft.disclosureDetails.diseaseEvents[0].diseaseName, '고혈압');
+  assert.equal(result.draft.disclosureDetails.diseaseEvents[0].eventType, '투약');
+  assert.equal(result.draft.disclosureDetails.diseaseEvents[0].status, '투약중');
+});
+
 test('clarifies ambiguous utterances without opening a panel', () => {
   const result = classify('도와줘');
   assert.equal(result.intent, 'clarification_required');
@@ -110,7 +130,7 @@ test('test workflow collects POLIBOT recommendation fields across turns', () => 
   assert.ok(first.missingFields.some((field) => field.key === 'medicalHistory'));
 
   const second = buildTestWorkspaceAssistantWorkflow({
-    message: '실손 없음 고지 없음',
+    message: '실손 없음 고지 없음 2025-03-01 H25 백내장 수술 완치 1년고지 있음 5년고지 있음',
     currentProduct: 'polibot',
     workflow: {
       enabled: true,
@@ -119,7 +139,11 @@ test('test workflow collects POLIBOT recommendation fields across turns', () => 
     }
   });
   assert.equal(second.draft.existingMedicalPlan, '없음');
-  assert.equal(second.draft.medicalHistory, '없음');
+  assert.match(second.draft.medicalHistory, /백내장|H25/);
+  assert.equal(second.draft.disclosureDetails.recent1Year, '있음');
+  assert.equal(second.draft.disclosureDetails.recent5Years, '있음');
+  assert.equal(second.draft.disclosureDetails.diseaseEvents[0].kcdCode, 'H25');
+  assert.equal(second.draft.disclosureDetails.diseaseEvents[0].eventType, '수술');
   assert.equal(second.readyToSubmit, true);
   assert.equal(second.missingFields.filter((field) => field.importance === 'confirm').length, 0);
 });

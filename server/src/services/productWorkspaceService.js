@@ -115,6 +115,27 @@ function polibotExceptionDiseaseData() {
   return POLIBOT_EXCEPTION_DISEASE_DATA;
 }
 
+function normalizePolibotCarrierType(value = '') {
+  const text = String(value || '').normalize('NFC').trim().toLowerCase();
+  if (['nonlife', '손보', '손해보험'].includes(text) || /손보|손해|화재/.test(text)) return 'nonlife';
+  if (['life', '생보', '생명보험'].includes(text) || /생보|생명|라이프/.test(text)) return 'life';
+  return '';
+}
+
+function inferPolibotCarrierTypeFromCompany(company = '') {
+  const text = String(company || '').normalize('NFC');
+  if (/생보|생명|라이프|교보|라이나|미래에셋|푸본/.test(text)) return 'life';
+  if (/손보|손해|화재|해상/.test(text)) return 'nonlife';
+  if (/메리츠|현대해상|DB손보|DB손해|KB손보|KB손해|농협손해|롯데손보|롯데손해|하나손보|하나손해|흥국화재|삼성화재/.test(text)) return 'nonlife';
+  if (/DB생명|KB라이프|KB생명|하나생명|신한라이프|신한생명|한화생명|흥국생명|농협생명/.test(text)) return 'life';
+  return '';
+}
+
+function polibotItemCarrierType(item = {}) {
+  return normalizePolibotCarrierType(item.carrierType || item.insuranceType || item.productType)
+    || inferPolibotCarrierTypeFromCompany(item.company || (item.companies || [])[0] || item.sourceFileName || item.evidenceFile || item.fileName || '');
+}
+
 function normalizePolibotKcdCode(value = '') {
   const match = String(value || '').toUpperCase().trim().match(/^([A-Z])(\d{2})(?:\.?([0-9A-Z]{1,2}))?$/);
   if (!match) return '';
@@ -128,15 +149,18 @@ function polibotKcdBase(code = '') {
 function polibotExceptionDiseaseTerms(profile = {}) {
   const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
   const hiraCodes = Array.isArray(disclosure.hiraDiseaseCodes) ? disclosure.hiraDiseaseCodes : [];
+  const diseaseEvents = Array.isArray(disclosure.diseaseEvents) ? disclosure.diseaseEvents : [];
   const text = [
     profile.medicalHistory,
     disclosure.medicationRiskReview,
     disclosure.currentMedication,
     disclosure.majorDisease,
-    disclosure.details
+    disclosure.details,
+    ...diseaseEvents.flatMap((item) => [item.diseaseName, item.kcdCode, item.status, item.memo])
   ].filter(Boolean).join(' ');
   const terms = [
     ...hiraCodes.flatMap((item) => [item.name, item.context]),
+    ...diseaseEvents.flatMap((item) => [item.diseaseName, item.kcdCode, item.status, item.memo]),
     ...[...text.matchAll(/상병코드\s*[:：]?\s*[A-Z]\d{2}(?:\.?[0-9A-Z]{1,2})?\s*([가-힣A-Za-z0-9\s·ㆍ()/-]{2,40})/gi)].map((match) => match[1])
   ];
   return [...new Set(terms
@@ -149,6 +173,7 @@ function polibotExceptionDiseaseTerms(profile = {}) {
 function polibotProfileKcdCodes(profile = {}) {
   const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
   const fromHira = Array.isArray(disclosure.hiraDiseaseCodes) ? disclosure.hiraDiseaseCodes.map((item) => item.code) : [];
+  const fromDiseaseEvents = Array.isArray(disclosure.diseaseEvents) ? disclosure.diseaseEvents.map((item) => item.kcdCode) : [];
   const fromActual = Array.isArray(profile.actualCodes)
     ? profile.actualCodes.filter((item) => item.kind === 'KCD').map((item) => item.code)
     : [];
@@ -158,7 +183,7 @@ function polibotProfileKcdCodes(profile = {}) {
     disclosure.details
   ].filter(Boolean).join(' ');
   const fromText = [...text.matchAll(/\b([A-Z]\d{2}(?:\.?[0-9A-Z]{1,2})?)\b/gi)].map((match) => match[1]);
-  return [...new Set([...fromHira, ...fromActual, ...fromText].map(normalizePolibotKcdCode).filter(Boolean))].slice(0, 30);
+  return [...new Set([...fromHira, ...fromDiseaseEvents, ...fromActual, ...fromText].map(normalizePolibotKcdCode).filter(Boolean))].slice(0, 30);
 }
 
 function dexorScoreLabel(score) {
@@ -2045,6 +2070,19 @@ function normalizePolibotRecent3MonthDisclosure(raw = '') {
 
 function normalizePolibotDisclosureDetails(raw = {}) {
   const source = raw && typeof raw === 'object' ? raw : {};
+  const diseaseEvents = Array.isArray(source.diseaseEvents)
+    ? source.diseaseEvents.map((item) => ({
+      occurredAt: String(item?.occurredAt || '').trim(),
+      eventType: String(item?.eventType || '').trim(),
+      kcdCode: normalizePolibotKcdCode(item?.kcdCode || item?.code || ''),
+      diseaseName: String(item?.diseaseName || item?.name || '').trim(),
+      company: String(item?.company || '').trim(),
+      carrierType: normalizePolibotCarrierType(item?.carrierType || ''),
+      conditionText: String(item?.conditionText || '').trim(),
+      status: String(item?.status || '').trim(),
+      memo: String(item?.memo || '').trim()
+    })).filter((item) => item.kcdCode || item.diseaseName || item.memo).slice(0, 20)
+    : [];
   return {
     recent3Months: normalizePolibotRecent3MonthDisclosure(source.recent3Months),
     recent3MonthDetails: normalizePolibotRecent3MonthDetails(source.recent3MonthDetails || source.recent3Months),
@@ -2057,6 +2095,7 @@ function normalizePolibotDisclosureDetails(raw = {}) {
     currentMedication: String(source.currentMedication || '').trim(),
     medicationRiskReview: String(source.medicationRiskReview || '').trim(),
     hiraDiseaseCodes: Array.isArray(source.hiraDiseaseCodes) ? source.hiraDiseaseCodes : [],
+    diseaseEvents,
     majorDisease: String(source.majorDisease || '').trim(),
     completeCure: String(source.completeCure || '').trim(),
     followUp: String(source.followUp || '').trim(),
@@ -2172,10 +2211,21 @@ function polibotUnderwritingMedicalText(profile = {}) {
   const medical = String(profile.medicalHistory || '').trim();
   const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
   const looksLikeCoverageTable = (value = '') => /암\s*진단|뇌\/심장|뇌혈관질환|허혈성심장질환|운전자|실손|일반암|유사암|고액암|수술비|입원비|담보|가입금액|보험료/i.test(value);
+  const disclosureEventText = (item = {}) => [
+    item.code,
+    item.kcdCode,
+    item.name,
+    item.diseaseName,
+    item.context,
+    item.eventType,
+    item.status,
+    item.memo,
+    item.conditionText
+  ].filter(Boolean).join(' ');
   const disclosureText = Object.values(disclosure)
     .filter(Boolean)
     .map((value) => Array.isArray(value)
-      ? value.map((item) => typeof item === 'object' ? [item.code, item.name, item.context].filter(Boolean).join(' ') : String(item || '')).join(' ')
+      ? value.map((item) => typeof item === 'object' ? disclosureEventText(item) : String(item || '')).join(' ')
       : value && typeof value === 'object'
         ? Object.values(value).filter((item) => typeof item === 'string' || typeof item === 'number').join(' ')
       : String(value || ''))
@@ -3146,9 +3196,20 @@ function buildPolibotRecommendedDisclosureCodes(profile = {}) {
 
 function buildPolibotActualCodes(profile = {}) {
   const disclosure = normalizePolibotDisclosureDetails(profile.disclosureDetails);
+  const disclosureEventText = (item = {}) => [
+    item.code,
+    item.kcdCode,
+    item.name,
+    item.diseaseName,
+    item.context,
+    item.eventType,
+    item.status,
+    item.memo,
+    item.conditionText
+  ].filter(Boolean).join(' ');
   const disclosureText = Object.values(disclosure)
     .map((value) => Array.isArray(value)
-      ? value.map((item) => typeof item === 'object' ? [item.code, item.name, item.context].filter(Boolean).join(' ') : String(item || '')).join(' ')
+      ? value.map((item) => typeof item === 'object' ? disclosureEventText(item) : String(item || '')).join(' ')
       : String(value || ''))
     .filter(Boolean)
     .join('\n');
@@ -3304,7 +3365,14 @@ function buildPolibotConsultationSummary(profile = {}, consultationDraft = null,
     disclosure.recent1Year && `1년: ${disclosure.recent1Year}`,
     disclosure.recent5Years && `5년: ${compactPolibotText(disclosure.recent5Years, 160)}`,
     disclosure.currentMedication && `현재/장기 투약: ${compactPolibotText(disclosure.currentMedication, 160)}`,
-    disclosure.admissionSurgery && `입원/수술: ${compactPolibotText(disclosure.admissionSurgery, 160)}`
+    disclosure.admissionSurgery && `입원/수술: ${compactPolibotText(disclosure.admissionSurgery, 160)}`,
+    ...(disclosure.diseaseEvents || []).slice(0, 3).map((item) => [
+      item.occurredAt,
+      item.eventType,
+      item.kcdCode,
+      item.diseaseName,
+      item.status
+    ].filter(Boolean).join(' · '))
   ].filter(Boolean);
   const exceptionSummary = exceptionDiseaseMatches.slice(0, 6).map((item) => [
     item.company,
@@ -5108,6 +5176,87 @@ export async function searchPolibotCoverageCodes(userId, params = {}) {
     notice: results.length
       ? '검수 상태가 함께 표시됩니다. 추천 가능 상태가 아닌 근거는 고객 제시 전 확인이 필요합니다.'
       : '일치하는 코드 후보를 찾지 못했습니다. 보장명, 보험사, 숫자 코드를 바꿔 다시 검색해 주세요.'
+  };
+}
+
+export async function searchPolibotDiseaseCodes(userId, params = {}) {
+  await getGrant(userId, 'polibot');
+  const query = String(params.query || params.q || '').normalize('NFC').trim();
+  const eventType = String(params.eventType || '').normalize('NFC').trim();
+  const carrierType = normalizePolibotCarrierType(params.carrierType || '');
+  const limit = Math.max(1, Math.min(80, Number(params.limit || 30) || 30));
+  const normalizedQuery = query.toLowerCase().replace(/\s+/g, '');
+  const normalizedCode = normalizePolibotKcdCode(query);
+  const { diseases, summary } = polibotExceptionDiseaseData();
+  const eventPattern = eventType === '통원'
+    ? /통원|외래|진료|치료|검사/
+    : eventType === '입원'
+      ? /입원/
+      : eventType === '수술'
+        ? /수술|시술/
+        : eventType === '투약'
+          ? /투약|처방|복용|약/
+          : null;
+  const scored = [];
+  for (const item of diseases) {
+    if (carrierType && item.carrierType !== carrierType) continue;
+    const code = normalizePolibotKcdCode(item.kcdCode || '');
+    const name = String(item.diseaseName || '').normalize('NFC');
+    const haystack = [
+      code,
+      name,
+      ...(Array.isArray(item.aliases) ? item.aliases : []),
+      item.kcdChapter,
+      item.diseaseCategory,
+      item.company,
+      item.conditionText
+    ].filter(Boolean).join(' ').toLowerCase().replace(/\s+/g, '');
+    const eventMatches = !eventPattern || eventPattern.test(`${item.conditionText || ''} ${item.rawLine || ''} ${item.diseaseName || ''}`);
+    let score = 0;
+    if (!query) score = 1;
+    else if (normalizedCode && code === normalizedCode) score = 100;
+    else if (normalizedCode && code.startsWith(normalizedCode)) score = 88;
+    else if (name.replace(/\s+/g, '').includes(normalizedQuery)) score = 82;
+    else if (haystack.includes(normalizedQuery)) score = 64;
+    if (score <= 0) continue;
+    if (eventPattern && !eventMatches) {
+      if ((normalizedCode && (code === normalizedCode || code.startsWith(normalizedCode))) || name.replace(/\s+/g, '').includes(normalizedQuery)) score -= 8;
+      else continue;
+    }
+    if (item.eligibilityLevel === 'immediate_accept' || item.eligibilityLevel === 'acceptable') score += 6;
+    if (item.requiresReview) score -= 2;
+    scored.push({ item, score });
+  }
+  const results = scored
+    .sort((a, b) => b.score - a.score || String(a.item.company || '').localeCompare(String(b.item.company || ''), 'ko'))
+    .slice(0, limit)
+    .map(({ item, score }) => ({
+      id: item.id,
+      score,
+      kcdCode: item.kcdCode || '',
+      diseaseName: item.diseaseName || '',
+      aliases: item.aliases || [],
+      diseaseCategory: item.diseaseCategory || '',
+      kcdChapter: item.kcdChapter || '',
+      company: item.company || '',
+      carrierType: item.carrierType || '',
+      carrierTypeLabel: item.carrierType === 'life' ? '생보' : item.carrierType === 'nonlife' ? '손보' : '미분류',
+      eventType,
+      eligibilityLevel: item.eligibilityLevel || '',
+      conditionText: item.conditionText || '',
+      disclosureTypes: item.disclosureTypes || [],
+      sourceFileName: item.sourceFileName || ''
+    }));
+  return {
+    query,
+    eventType,
+    carrierType,
+    count: results.length,
+    totalDiseases: summary?.diseaseCount || diseases.length,
+    results,
+    notice: results.length
+      ? '질병분류기호와 예외질환 기준을 같이 보여줍니다. 보험사별 최종 인수는 설계매니저 검수 후 확정하세요.'
+      : '일치하는 질병코드/병명을 찾지 못했습니다. 코드 일부나 병명 키워드를 바꿔 검색해 주세요.'
   };
 }
 
@@ -7034,14 +7183,16 @@ function buildPolibotExcludedCandidates(evidence = [], profile = {}) {
     }));
 }
 
-function buildPolibotRecommendation({ profile, evidence, label, type, index, seed }) {
+function buildPolibotRecommendation({ profile, evidence, label, type, index, seed, carrierType = '' }) {
   const sources = evidence.slice(index, index + (type === 'bundle' ? 3 : 1));
   const primary = sources[0] || {};
   const keywordHits = [...new Set(sources.flatMap((source) => source.keywordHits || []).filter(Boolean))].slice(0, 6);
   const productGroup = primary.productGroup || label;
   const selectedCompany = String(profile.company || '').trim();
+  const selectedCarrierType = normalizePolibotCarrierType(carrierType || profile.carrierType || '');
   const rawCatalogItems = sources.flatMap((source) => sourceCatalogItems(source, profile.catalogReviews))
     .filter((item) => !selectedCompany || selectedCompany === '전체 보험사' || item.company === selectedCompany || (item.companies || []).includes(selectedCompany))
+    .filter((item) => !selectedCarrierType || polibotItemCarrierType(item) === selectedCarrierType)
     .filter((item) => isPolibotCatalogItemProfileEligible(item, profile))
     .sort((a, b) => polibotCatalogItemScore(b, profile) - polibotCatalogItemScore(a, profile));
   const needMatchedItems = rawCatalogItems.filter((item) => catalogItemMatchesNeeds(item, profile.needs));
@@ -7167,8 +7318,10 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
     blendedScore
   ));
   return {
-    id: `polibot-rec-${hashText(`${type}-${name}-${index}-${Date.now()}`)}`,
+    id: `polibot-rec-${hashText(`${selectedCarrierType || 'all'}-${type}-${name}-${index}-${Date.now()}`)}`,
     type,
+    carrierType: selectedCarrierType,
+    carrierTypeLabel: selectedCarrierType === 'life' ? '생보' : selectedCarrierType === 'nonlife' ? '손보' : '',
     name,
     score: adjustedScore,
     headline: type === 'bundle' ? '근거 자료를 묶어 만든 추천 조합이에요.' : '근거 자료에서 찾은 단품 추천이에요.',
@@ -7379,27 +7532,34 @@ export async function savePolibotRecommendation(userId, {
     .slice(0, 6);
   const recommendationEvidence = productEvidence;
   const labels = recommendationEvidence.map((source) => source.productGroup || '보장 검토');
-  const singleRecommendations = labels.slice(0, 4).map((label, index) => buildPolibotRecommendation({
-    profile: enrichedProfile,
-    evidence: recommendationEvidence,
-    label,
-    type: 'single',
-    index,
-    seed
-  }));
-  const bundleRecommendations = recommendationEvidence.length >= 2 ? [0, 1].map((offset) => buildPolibotRecommendation({
-    profile: enrichedProfile,
-    evidence: recommendationEvidence,
-    label: offset === 0 ? '질병/실손' : '생활비/간병',
-    type: 'bundle',
-    index: offset,
-    seed: seed + 17
-  })) : [];
-  const recommendations = [...singleRecommendations, ...bundleRecommendations]
-    .filter((item) => item && item.evidence.length > 0)
-    .sort((a, b) => b.score - a.score)
-    .filter((item, index, items) => items.findIndex((candidate) => candidate.name === item.name) === index)
-    .slice(0, 3);
+  const buildCarrierRecommendations = (carrierType) => {
+    const singleRecommendations = labels.slice(0, 5).map((label, index) => buildPolibotRecommendation({
+      profile: { ...enrichedProfile, carrierType },
+      evidence: recommendationEvidence,
+      label,
+      type: 'single',
+      index,
+      seed: seed + (carrierType === 'life' ? 101 : 0),
+      carrierType
+    }));
+    const bundleRecommendations = recommendationEvidence.length >= 2 ? [0, 1].map((offset) => buildPolibotRecommendation({
+      profile: { ...enrichedProfile, carrierType },
+      evidence: recommendationEvidence,
+      label: offset === 0 ? '질병/실손' : '생활비/간병',
+      type: 'bundle',
+      index: offset,
+      seed: seed + 17 + (carrierType === 'life' ? 101 : 0),
+      carrierType
+    })) : [];
+    return [...singleRecommendations, ...bundleRecommendations]
+      .filter((item) => item && item.evidence.length > 0)
+      .sort((a, b) => b.score - a.score)
+      .filter((item, index, items) => items.findIndex((candidate) => candidate.name === item.name) === index)
+      .slice(0, 3);
+  };
+  const nonlifeRecommendations = buildCarrierRecommendations('nonlife');
+  const lifeRecommendations = buildCarrierRecommendations('life');
+  const recommendations = [...nonlifeRecommendations, ...lifeRecommendations];
   timing.mark('recommendations');
   const recommendationNotice = recommendations.length
     ? (riskHoldReasons.length ? `${riskHoldReasons.slice(0, 3).map(formatPolibotReviewNeed).join(', ')} 항목을 확인해 주세요. 추천 후보의 주의 조건에 표시했어요.` : '')
