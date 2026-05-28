@@ -15,6 +15,7 @@ import {
   getProductWorkspaceStatus,
   listSublogSubscriptions,
   saveInfludexCandidates,
+  savePolibotDraft,
   savePolibotRecommendation,
   savePolibotRecommendationFeedback,
   searchPolibotDiseaseCodes,
@@ -529,6 +530,50 @@ test('POLIBOT incomplete recommendation stores draft without consuming usage', a
   assert.equal(workspace.customerProfile.age, '45');
   assert.equal(workspace.recommendations.length, 0);
   assert.match(workspace.recommendationNotice, /필요 보장/);
+  assert.equal(workspace.usage.used, 0);
+  assert.equal(workspace.usage.remaining, 5);
+});
+
+test('POLIBOT draft autosave stores chat-filled fields without consuming usage', async () => {
+  const userId = '11111111-2026-4110-8110-202020202029';
+  await dbInsert('users', {
+    id: userId,
+    email: 'polibot-draft-autosave-test@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT Draft Autosave',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      usage: { polibot: { limit: 5, used: 0 } },
+      workspace: {}
+    }
+  });
+
+  const workspace = await savePolibotDraft(userId, {
+    name: '채팅고객',
+    phone: '010-1234-5678',
+    birthdate: '1985-05-01',
+    age: '41',
+    gender: '남성',
+    needs: '암, 뇌',
+    budget: '20',
+    disclosureDetails: {
+      recent1Year: '없음',
+      diseaseEvents: [{ occurredAt: '2026-01-01', eventType: '통원', kcdCode: 'I10', diseaseName: '고혈압' }]
+    }
+  });
+
+  assert.equal(workspace.customerProfile.name, '채팅고객');
+  assert.equal(workspace.customerProfile.phone, '010-1234-5678');
+  assert.equal(workspace.customerProfile.birthdate, '1985-05-01');
+  assert.deepEqual(workspace.customerProfile.needs, ['암', '뇌']);
+  assert.equal(workspace.customerProfile.disclosureDetails.diseaseEvents[0].kcdCode, 'I10');
+  assert.equal(workspace.recommendations.length, 0);
   assert.equal(workspace.usage.used, 0);
   assert.equal(workspace.usage.remaining, 5);
 });

@@ -2127,6 +2127,54 @@ function normalizePolibotAnalysisResult(raw = {}) {
   };
 }
 
+function normalizePolibotCustomerProfile({
+  name = '',
+  phone = '',
+  birthdate = '',
+  age = '',
+  gender = '',
+  needs = '',
+  budget = '',
+  company = '',
+  existingPolicies = '',
+  existingPolicyDetails = [],
+  currentCoverage = {},
+  existingMedicalPlan = '',
+  existingPremium = '',
+  medicalHistory = '',
+  disclosureDetails = {},
+  underwritingAssessment = {},
+  analysisResult = {},
+  familyHistory = '',
+  driving = '',
+  renewalPreference = '',
+  purpose = ''
+} = {}) {
+  return {
+    name: String(name || '').trim(),
+    phone: String(phone || '').trim(),
+    birthdate: String(birthdate || '').trim(),
+    age: String(age || '').trim(),
+    gender: String(gender || '').trim(),
+    needs: normalizeList(needs),
+    budget: String(budget || '').trim(),
+    company: String(company || '').trim() || '전체 보험사',
+    existingPolicies: String(existingPolicies || '').trim(),
+    existingPolicyDetails: normalizePolibotPolicyDetails(existingPolicyDetails),
+    currentCoverage: normalizePolibotCurrentCoverage(currentCoverage),
+    existingMedicalPlan: String(existingMedicalPlan || '').trim(),
+    existingPremium: String(existingPremium || '').trim(),
+    medicalHistory: String(medicalHistory || '').trim(),
+    disclosureDetails: normalizePolibotDisclosureDetails(disclosureDetails),
+    underwritingAssessment: normalizePolibotUnderwritingAssessment(underwritingAssessment),
+    analysisResult: normalizePolibotAnalysisResult(analysisResult),
+    familyHistory: String(familyHistory || '').trim(),
+    driving: String(driving || '').trim(),
+    renewalPreference: String(renewalPreference || '').trim(),
+    purpose: POLIBOT_PURPOSES.includes(String(purpose || '').trim()) ? String(purpose || '').trim() : String(purpose || '').trim()
+  };
+}
+
 function polibotCurrentCoverageAnalysis(profile = {}) {
   const currentCoverage = normalizePolibotCurrentCoverage(profile.currentCoverage);
   const needs = Array.isArray(profile.needs) ? profile.needs : [];
@@ -7368,6 +7416,8 @@ function buildPolibotRecommendation({ profile, evidence, label, type, index, see
 
 export async function savePolibotRecommendation(userId, {
   name = '',
+  phone = '',
+  birthdate = '',
   age = '',
   gender = '',
   needs = '',
@@ -7387,27 +7437,29 @@ export async function savePolibotRecommendation(userId, {
   renewalPreference = '',
   purpose = ''
 } = {}) {
-  const profile = {
-    name: String(name || '').trim(),
-    age: String(age || '').trim(),
-    gender: String(gender || '').trim(),
-    needs: normalizeList(needs),
-    budget: String(budget || '').trim(),
-    company: String(company || '').trim() || '전체 보험사',
-    existingPolicies: String(existingPolicies || '').trim(),
-    existingPolicyDetails: normalizePolibotPolicyDetails(existingPolicyDetails),
-    currentCoverage: normalizePolibotCurrentCoverage(currentCoverage),
-    existingMedicalPlan: String(existingMedicalPlan || '').trim(),
-    existingPremium: String(existingPremium || '').trim(),
-    medicalHistory: String(medicalHistory || '').trim(),
-    disclosureDetails: normalizePolibotDisclosureDetails(disclosureDetails),
-    underwritingAssessment: normalizePolibotUnderwritingAssessment(underwritingAssessment),
-    analysisResult: normalizePolibotAnalysisResult(analysisResult),
-    familyHistory: String(familyHistory || '').trim(),
-    driving: String(driving || '').trim(),
-    renewalPreference: String(renewalPreference || '').trim(),
-    purpose: POLIBOT_PURPOSES.includes(String(purpose || '').trim()) ? String(purpose || '').trim() : String(purpose || '').trim()
-  };
+  const profile = normalizePolibotCustomerProfile({
+    name,
+    phone,
+    birthdate,
+    age,
+    gender,
+    needs,
+    budget,
+    company,
+    existingPolicies,
+    existingPolicyDetails,
+    currentCoverage,
+    existingMedicalPlan,
+    existingPremium,
+    medicalHistory,
+    disclosureDetails,
+    underwritingAssessment,
+    analysisResult,
+    familyHistory,
+    driving,
+    renewalPreference,
+    purpose
+  });
   const premiumPlan = buildPolibotPremiumPlan(profile);
   const timing = createPolibotTimingLogger('polibot_recommend_timing');
   profile.targetPremium = premiumPlan.targetPremium;
@@ -7665,6 +7717,27 @@ export async function savePolibotCatalogReviews(userId, reviews = {}) {
   return updateWorkspace(userId, 'polibot', {
     catalogReviews: nextReviews
   });
+}
+
+export async function savePolibotDraft(userId, values = {}) {
+  const currentWorkspace = await getPolibotCustomerWorkspace(userId);
+  const profile = normalizePolibotCustomerProfile({
+    ...(currentWorkspace.customerProfile || {}),
+    ...(values || {})
+  });
+  const qualityReport = currentWorkspace.qualityReport || buildPolibotQualityReport([], {});
+  const consultationDraft = buildPolibotConsultationDraft(profile, qualityReport);
+  const consultationSummary = buildPolibotConsultationSummary(profile, consultationDraft, buildPolibotExceptionDiseaseMatches(profile));
+  const nextWorkspace = await updateWorkspace(userId, 'polibot', {
+    customerProfile: profile,
+    consultationDraft,
+    consultationSummary,
+    recommendations: Array.isArray(currentWorkspace.recommendations) ? currentWorkspace.recommendations : [],
+    exceptionDiseaseMatches: buildPolibotExceptionDiseaseMatches(profile),
+    draftSavedAt: now(),
+    recommendationNotice: currentWorkspace.recommendationNotice || ''
+  });
+  return compactPolibotSavedWorkspace(nextWorkspace);
 }
 
 export async function savePolibotCustomer(userId, { id = '', name = '', age = '', memo = '', recommendationId = '', selectedRecommendation = null, profile = null } = {}) {

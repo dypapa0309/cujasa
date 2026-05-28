@@ -16,6 +16,7 @@ import {
   listSublogSubscriptions,
   saveDexorCandidates,
   savePolibotCustomer,
+  savePolibotDraft,
   savePolibotKnowledge,
   savePolibotRecommendationFeedback,
   savePolibotRecommendation,
@@ -349,6 +350,17 @@ router.post('/polibot/recommend', async (req, res, next) => {
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await savePolibotRecommendation(user.userId, req.body || {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/polibot/draft', async (req, res, next) => {
+  try {
+    if (!requireWorkspaceServiceOpen(req, res, 'polibot')) return;
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await savePolibotDraft(user.userId, req.body || {}));
   } catch (error) {
     next(error);
   }

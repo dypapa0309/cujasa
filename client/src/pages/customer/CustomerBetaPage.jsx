@@ -5362,6 +5362,9 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const [hiraFiles, setHiraFiles] = useState([]);
   const [hiraPassword, setHiraPassword] = useState('');
   const [hiraParsing, setHiraParsing] = useState(false);
+  const [draftSaveState, setDraftSaveState] = useState({ status: '', savedAt: '' });
+  const draftSaveTimerRef = useRef(null);
+  const lastDraftPayloadRef = useRef('');
   const workspaceLoading = !workspaceLoaded;
   const usage = workspaceUsage(workspace);
   const summaryCompanies = Array.isArray(workspace.knowledgeDbSummary?.companies)
@@ -5387,6 +5390,15 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       : [...selectedNeeds, need];
     setNeeds(next);
   };
+  const buildDraftPayload = useCallback(() => {
+    const effectiveAge = form.age || calculateAgeFromBirthdate(form.birthdate);
+    return {
+      ...form,
+      age: effectiveAge,
+      needs: selectedNeeds.join(', '),
+      budget: normalizePolibotPremiumInput(form.budget)
+    };
+  }, [form, selectedNeeds]);
 
   useEffect(() => {
     if (!localStatus) return;
@@ -5483,6 +5495,58 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       setTestStep(3);
     }
   }, [assistantDraft]);
+
+  useEffect(() => {
+    if (!workspaceLoaded || saving) return undefined;
+    const payload = buildDraftPayload();
+    const hasDraftContent = [
+      payload.name,
+      payload.phone,
+      payload.birthdate,
+      payload.age,
+      payload.gender,
+      payload.needs,
+      payload.budget,
+      payload.existingPolicies,
+      payload.existingMedicalPlan,
+      payload.existingPremium,
+      payload.medicalHistory,
+      payload.familyHistory,
+      payload.driving,
+      payload.renewalPreference,
+      payload.purpose,
+      payload.disclosureDetails,
+      payload.underwritingAssessment,
+      payload.analysisResult
+    ].some(polibotValueHasContent);
+    if (!hasDraftContent) return undefined;
+    const signature = JSON.stringify(payload);
+    if (signature === lastDraftPayloadRef.current) return undefined;
+    setDraftSaveState((prev) => ({ ...prev, status: 'saving' }));
+    if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
+    draftSaveTimerRef.current = window.setTimeout(() => {
+      api.post('/api/product-workspace/polibot/draft', payload, { timeoutMs: 10000 })
+        .then((next) => {
+          lastDraftPayloadRef.current = signature;
+          setWorkspace((prev) => ({
+            ...prev,
+            ...(next || {}),
+            catalog: prev.catalog || next?.catalog,
+            qualityReport: next?.qualityReport || prev.qualityReport,
+            knowledgeDbSummary: prev.knowledgeDbSummary || next?.knowledgeDbSummary,
+            usage: next?.usage || prev.usage
+          }));
+          setDraftSaveState({ status: 'saved', savedAt: new Date().toISOString() });
+        })
+        .catch((err) => {
+          console.warn('[polibot-draft-autosave]', err.message);
+          setDraftSaveState((prev) => ({ ...prev, status: 'error' }));
+        });
+    }, 1200);
+    return () => {
+      if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
+    };
+  }, [buildDraftPayload, saving, workspaceLoaded]);
 
   const save = async () => {
     setSubmitAttempted(true);
@@ -5697,6 +5761,11 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
     return (
       <div className="grid gap-4">
         {workspaceLoading && <PolibotLoadingBanner label="자료 목록은 백그라운드에서 확인 중" />}
+        {draftSaveState.status && !workspaceLoading && (
+          <div className={`rounded-2xl border px-3 py-2 text-xs font-black ${draftSaveState.status === 'error' ? 'border-red-400/25 bg-red-950/10 text-red-200' : 'border-white/10 bg-black/20 text-zinc-500'}`}>
+            {draftSaveState.status === 'saving' ? '입력값 자동저장 중' : draftSaveState.status === 'saved' ? '입력값 자동저장 완료' : '자동저장 실패'}
+          </div>
+        )}
         <PolibotRecommendStepper
           step={testStep}
           onStepChange={setTestStep}
