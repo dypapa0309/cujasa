@@ -6797,6 +6797,7 @@ function PolibotDiseaseCodePicker({ value = [], onChange, onAppendMedicalHistory
   const [status, setStatus] = useState('');
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [editingIndex, setEditingIndex] = useState(null);
   const selected = Array.isArray(value) ? value : [];
   const search = async () => {
     const keyword = query.trim();
@@ -6869,6 +6870,7 @@ function PolibotDiseaseCodePicker({ value = [], onChange, onAppendMedicalHistory
   };
   const removeDisease = (index) => {
     onChange?.(selected.filter((_, rowIndex) => rowIndex !== index));
+    setEditingIndex((current) => (current === index ? null : current));
   };
   const updateDisease = (index, patch) => {
     onChange?.(selected.map((item, rowIndex) => rowIndex === index ? { ...item, ...patch } : item));
@@ -6943,13 +6945,48 @@ function PolibotDiseaseCodePicker({ value = [], onChange, onAppendMedicalHistory
           {selected.map((item, index) => (
             <div key={`${item.kcdCode}-${item.diseaseName}-${item.company}-${index}`} className="grid gap-2 rounded-xl border border-emerald-300/20 bg-emerald-400/10 px-3 py-2">
               <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_130px_auto] md:items-start">
-                <div className="min-w-0">
-                  <div className="truncate text-xs font-black text-emerald-50">{[item.occurredAt, item.eventType, item.kcdCode, item.diseaseName].filter(Boolean).join(' · ')}</div>
-                  <div className="mt-1 truncate text-[11px] font-bold text-emerald-100/70">{[item.company, item.conditionText].filter(Boolean).join(' · ')}</div>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingIndex((current) => (current === index ? null : index))}
+                  className="min-w-0 rounded-lg px-1 py-0.5 text-left hover:bg-white/10"
+                >
+                  <div className="truncate text-xs font-black text-emerald-50">{[item.occurredAt, item.eventType, item.kcdCode, item.diseaseName].filter(Boolean).join(' · ') || '질병 이벤트'}</div>
+                  <div className="mt-1 truncate text-[11px] font-bold text-emerald-100/70">{[item.company, item.conditionText].filter(Boolean).join(' · ') || '카드를 눌러 상세 수정'}</div>
+                </button>
                 <PolibotSelectCard label="상태" value={item.status || ''} onChange={(nextStatus) => updateDisease(index, { status: nextStatus })} options={polibotDiseaseStatusOptions} />
-                <button type="button" onClick={() => removeDisease(index)} className="h-8 rounded-lg border border-white/10 px-2 text-[10px] font-black text-zinc-300 hover:bg-white/10">삭제</button>
+                <div className="grid grid-cols-2 gap-1.5 md:grid-cols-1">
+                  <button type="button" onClick={() => setEditingIndex((current) => (current === index ? null : index))} className="h-8 rounded-lg border border-white/10 px-2 text-[10px] font-black text-zinc-300 hover:bg-white/10">{editingIndex === index ? '접기' : '수정'}</button>
+                  <button type="button" onClick={() => removeDisease(index)} className="h-8 rounded-lg border border-white/10 px-2 text-[10px] font-black text-zinc-300 hover:bg-white/10">삭제</button>
+                </div>
               </div>
+              {editingIndex === index && (
+                <div className="grid gap-2 rounded-xl border border-white/10 bg-black/20 p-2">
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    <PolibotDateCard label="발생일" value={item.occurredAt || ''} onChange={(nextValue) => updateDisease(index, { occurredAt: nextValue })} />
+                    <PolibotSelectCard label="구분" value={item.eventType || ''} onChange={(nextValue) => updateDisease(index, { eventType: nextValue })} options={polibotDiseaseEventOptions} />
+                    <PolibotSelectCard label="자료" value={item.carrierType || ''} onChange={(nextValue) => updateDisease(index, { carrierType: nextValue })} options={polibotCarrierTypeOptions} />
+                    <PolibotSelectCard label="상태" value={item.status || ''} onChange={(nextValue) => updateDisease(index, { status: nextValue })} options={polibotDiseaseStatusOptions} />
+                  </div>
+                  <div className="grid gap-2 md:grid-cols-[120px_minmax(0,1fr)_minmax(0,1fr)]">
+                    <label className="grid gap-1 text-[11px] font-black text-zinc-500">
+                      질병코드
+                      <input className={`${inputClass} py-2 text-xs`} value={item.kcdCode || ''} onChange={(event) => updateDisease(index, { kcdCode: event.target.value.toUpperCase() })} placeholder="예: I10" />
+                    </label>
+                    <label className="grid gap-1 text-[11px] font-black text-zinc-500">
+                      병명
+                      <input className={`${inputClass} py-2 text-xs`} value={item.diseaseName || ''} onChange={(event) => updateDisease(index, { diseaseName: event.target.value })} placeholder="예: 고혈압" />
+                    </label>
+                    <label className="grid gap-1 text-[11px] font-black text-zinc-500">
+                      기준 보험사
+                      <input className={`${inputClass} py-2 text-xs`} value={item.company || ''} onChange={(event) => updateDisease(index, { company: event.target.value })} placeholder="예: DB손해보험" />
+                    </label>
+                  </div>
+                  <label className="grid gap-1 text-[11px] font-black text-zinc-500">
+                    인수기준/조건
+                    <input className={`${inputClass} py-2 text-xs`} value={item.conditionText || ''} onChange={(event) => updateDisease(index, { conditionText: event.target.value })} placeholder="예: 완치 후 N개월, 부담보 검토" />
+                  </label>
+                </div>
+              )}
               <input
                 className={`${inputClass} py-2 text-xs`}
                 value={item.memo || ''}
