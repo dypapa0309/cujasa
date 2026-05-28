@@ -5399,6 +5399,32 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       budget: normalizePolibotPremiumInput(form.budget)
     };
   }, [form, selectedNeeds]);
+  const saveDraftPayload = useCallback(async (payload, signature = JSON.stringify(payload)) => {
+    setDraftSaveState((prev) => ({ ...prev, status: 'saving' }));
+    try {
+      const next = await api.post('/api/product-workspace/polibot/draft', payload, { timeoutMs: 10000 });
+      lastDraftPayloadRef.current = signature;
+      setWorkspace((prev) => ({
+        ...prev,
+        ...(next || {}),
+        catalog: prev.catalog || next?.catalog,
+        qualityReport: next?.qualityReport || prev.qualityReport,
+        knowledgeDbSummary: prev.knowledgeDbSummary || next?.knowledgeDbSummary,
+        usage: next?.usage || prev.usage
+      }));
+      setDraftSaveState({ status: 'saved', savedAt: new Date().toISOString(), error: '' });
+      return true;
+    } catch (err) {
+      console.warn('[polibot-draft-autosave]', err.message);
+      setDraftSaveState((prev) => ({ ...prev, status: 'error', error: err.message || '자동저장 실패' }));
+      return false;
+    }
+  }, []);
+  const retryDraftSave = useCallback(() => {
+    if (!workspaceLoaded || saving) return;
+    const payload = buildDraftPayload();
+    saveDraftPayload(payload);
+  }, [buildDraftPayload, saveDraftPayload, saving, workspaceLoaded]);
 
   useEffect(() => {
     if (!localStatus) return;
@@ -5525,28 +5551,12 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
     setDraftSaveState((prev) => ({ ...prev, status: 'saving' }));
     if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
     draftSaveTimerRef.current = window.setTimeout(() => {
-      api.post('/api/product-workspace/polibot/draft', payload, { timeoutMs: 10000 })
-        .then((next) => {
-          lastDraftPayloadRef.current = signature;
-          setWorkspace((prev) => ({
-            ...prev,
-            ...(next || {}),
-            catalog: prev.catalog || next?.catalog,
-            qualityReport: next?.qualityReport || prev.qualityReport,
-            knowledgeDbSummary: prev.knowledgeDbSummary || next?.knowledgeDbSummary,
-            usage: next?.usage || prev.usage
-          }));
-          setDraftSaveState({ status: 'saved', savedAt: new Date().toISOString() });
-        })
-        .catch((err) => {
-          console.warn('[polibot-draft-autosave]', err.message);
-          setDraftSaveState((prev) => ({ ...prev, status: 'error' }));
-        });
+      saveDraftPayload(payload, signature);
     }, 1200);
     return () => {
       if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
     };
-  }, [buildDraftPayload, saving, workspaceLoaded]);
+  }, [buildDraftPayload, saveDraftPayload, saving, workspaceLoaded]);
 
   const save = async () => {
     setSubmitAttempted(true);
@@ -5762,8 +5772,19 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
       <div className="grid gap-4">
         {workspaceLoading && <PolibotLoadingBanner label="자료 목록은 백그라운드에서 확인 중" />}
         {draftSaveState.status && !workspaceLoading && (
-          <div className={`rounded-2xl border px-3 py-2 text-xs font-black ${draftSaveState.status === 'error' ? 'border-red-400/25 bg-red-950/10 text-red-200' : 'border-white/10 bg-black/20 text-zinc-500'}`}>
-            {draftSaveState.status === 'saving' ? '입력값 자동저장 중' : draftSaveState.status === 'saved' ? '입력값 자동저장 완료' : '자동저장 실패'}
+          <div className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-xs font-black ${draftSaveState.status === 'error' ? 'border-red-400/25 bg-red-950/10 text-red-200' : 'border-white/10 bg-black/20 text-zinc-500'}`}>
+            <span>
+              {draftSaveState.status === 'saving'
+                ? '입력값 자동저장 중'
+                : draftSaveState.status === 'saved'
+                  ? `입력값 자동저장 완료${draftSaveState.savedAt ? ` · ${new Date(draftSaveState.savedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}`
+                  : `자동저장 실패${draftSaveState.error ? ` · ${draftSaveState.error}` : ''}`}
+            </span>
+            {draftSaveState.status === 'error' && (
+              <button type="button" onClick={retryDraftSave} className="h-7 rounded-lg border border-red-200/20 px-2 text-[10px] font-black text-red-100 hover:bg-red-100/10">
+                다시 저장
+              </button>
+            )}
           </div>
         )}
         <PolibotRecommendStepper
