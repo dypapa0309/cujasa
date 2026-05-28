@@ -6500,7 +6500,7 @@ function PolibotSelectCard({ label, value, onChange, options, invalid = false })
   return (
     <label
       className={`grid min-w-0 cursor-pointer gap-1 rounded-xl border bg-white/[0.03] p-2.5 text-[11px] font-black text-zinc-500 transition hover:border-white/20 hover:bg-white/[0.06] ${invalid ? 'border-red-400/45' : 'border-white/10'}`}
-      onMouseDown={(event) => {
+      onClick={(event) => {
         if (event.target === selectRef.current) return;
         selectRef.current?.focus();
         selectRef.current?.showPicker?.();
@@ -6520,25 +6520,83 @@ function PolibotSelectCard({ label, value, onChange, options, invalid = false })
 }
 
 function PolibotDateCard({ label, value, onChange }) {
-  const inputRef = useRef(null);
+  const current = value ? new Date(`${value}T00:00:00`) : new Date();
+  const safeCurrent = Number.isNaN(current.getTime()) ? new Date() : current;
+  const [open, setOpen] = useState(false);
+  const [viewYear, setViewYear] = useState(safeCurrent.getFullYear());
+  const [viewMonth, setViewMonth] = useState(safeCurrent.getMonth());
+  const years = Array.from({ length: 42 }, (_, index) => new Date().getFullYear() + 1 - index);
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const cells = [
+    ...Array.from({ length: firstDay }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1)
+  ];
+  const formatDate = (day) => `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const shiftMonth = (delta) => {
+    const next = new Date(viewYear, viewMonth + delta, 1);
+    setViewYear(next.getFullYear());
+    setViewMonth(next.getMonth());
+  };
   return (
-    <label
-      className="grid min-w-0 cursor-pointer gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-[11px] font-black text-zinc-500 transition hover:border-white/20 hover:bg-white/[0.06]"
-      onMouseDown={(event) => {
-        if (event.target === inputRef.current) return;
-        inputRef.current?.focus();
-        inputRef.current?.showPicker?.();
+    <div className="relative min-w-0">
+      <button
+      type="button"
+      className="grid w-full min-w-0 cursor-pointer gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-2.5 text-left text-[11px] font-black text-zinc-500 transition hover:border-white/20 hover:bg-white/[0.06]"
+      onClick={(event) => {
+        event.preventDefault();
+        setOpen((prev) => !prev);
       }}
     >
       {label}
-      <input
-        ref={inputRef}
-        type="date"
-        className={`${inputClass} h-10 min-w-0 cursor-pointer py-2 text-xs [color-scheme:dark]`}
-        value={value}
-        onChange={(event) => onChange?.(event.target.value)}
-      />
-    </label>
+        <span className="flex h-10 min-w-0 items-center justify-between rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-xs font-bold text-zinc-100">
+          <span className={value ? 'text-zinc-100' : 'text-zinc-600'}>{value || '연도. 월. 일.'}</span>
+          <span className="text-zinc-500">⌄</span>
+        </span>
+      </button>
+      {open && (
+        <div className="absolute left-0 right-0 z-50 mt-2 rounded-2xl border border-white/10 bg-zinc-950 p-3 shadow-2xl shadow-black/50">
+          <div className="grid grid-cols-[36px_minmax(0,1fr)_36px] items-center gap-2">
+            <button type="button" onClick={() => shiftMonth(-1)} className="h-9 rounded-xl border border-white/10 text-zinc-400 hover:bg-white/10">‹</button>
+            <div className="grid grid-cols-2 gap-2">
+              <select className={`${inputClass} h-9 py-1 text-xs`} value={viewYear} onChange={(event) => setViewYear(Number(event.target.value))}>
+                {years.map((year) => <option key={year} value={year}>{year}년</option>)}
+              </select>
+              <select className={`${inputClass} h-9 py-1 text-xs`} value={viewMonth} onChange={(event) => setViewMonth(Number(event.target.value))}>
+                {Array.from({ length: 12 }, (_, index) => <option key={index} value={index}>{index + 1}월</option>)}
+              </select>
+            </div>
+            <button type="button" onClick={() => shiftMonth(1)} className="h-9 rounded-xl border border-white/10 text-zinc-400 hover:bg-white/10">›</button>
+          </div>
+          <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-black text-zinc-600">
+            {['일', '월', '화', '수', '목', '금', '토'].map((day) => <div key={day}>{day}</div>)}
+          </div>
+          <div className="mt-1 grid grid-cols-7 gap-1">
+            {cells.map((day, index) => {
+              const nextValue = day ? formatDate(day) : '';
+              const active = nextValue && nextValue === value;
+              return day ? (
+                <button
+                  key={nextValue}
+                  type="button"
+                  onClick={() => {
+                    onChange?.(nextValue);
+                    setOpen(false);
+                  }}
+                  className={`h-8 rounded-lg text-xs font-black ${active ? 'bg-white text-zinc-950' : 'bg-black/30 text-zinc-300 hover:bg-white/10'}`}
+                >
+                  {day}
+                </button>
+              ) : <div key={`blank-${index}`} />;
+            })}
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => { onChange?.(''); setOpen(false); }} className="h-9 rounded-xl border border-white/10 text-xs font-black text-zinc-500 hover:bg-white/10">초기화</button>
+            <button type="button" onClick={() => setOpen(false)} className="h-9 rounded-xl bg-white text-xs font-black text-zinc-950">닫기</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
