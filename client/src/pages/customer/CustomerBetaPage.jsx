@@ -311,6 +311,86 @@ const mergePolibotDisclosureDetails = (current = {}, next = {}) => {
   }
   return merged;
 };
+const polibotValueHasContent = (value) => {
+  if (Array.isArray(value)) return value.some(polibotValueHasContent);
+  if (value && typeof value === 'object') return Object.values(value).some(polibotValueHasContent);
+  return displayValue(value).length > 0;
+};
+const mergePolibotNonEmptyObject = (current = {}, next = {}) => {
+  if (!next || typeof next !== 'object') return current || {};
+  return Object.entries(next).reduce((merged, [key, value]) => {
+    if (!polibotValueHasContent(value)) return merged;
+    return { ...merged, [key]: value };
+  }, { ...(current || {}) });
+};
+const hydratePolibotFormFromWorkspace = (current = {}, workspace = {}) => {
+  const profile = workspace?.customerProfile && typeof workspace.customerProfile === 'object' ? workspace.customerProfile : {};
+  if (!Object.keys(profile).length) return current;
+  const next = { ...current };
+  [
+    'name',
+    'phone',
+    'birthdate',
+    'age',
+    'gender',
+    'budget',
+    'company',
+    'existingPolicies',
+    'existingMedicalPlan',
+    'existingPremium',
+    'medicalHistory',
+    'familyHistory',
+    'driving',
+    'renewalPreference',
+    'purpose'
+  ].forEach((key) => {
+    if (polibotValueHasContent(current[key])) return;
+    if (!polibotValueHasContent(profile[key])) return;
+    next[key] = key === 'budget' ? normalizePolibotPremiumInput(profile[key]) : profile[key];
+  });
+  if (!polibotValueHasContent(current.needs) && polibotValueHasContent(profile.needs)) {
+    next.needs = Array.isArray(profile.needs) ? profile.needs.map(displayValue).filter(Boolean).join(', ') : profile.needs;
+  }
+  if (Array.isArray(profile.existingPolicyDetails) && profile.existingPolicyDetails.length) {
+    next.existingPolicyDetails = mergePolibotPolicyDetails(current.existingPolicyDetails, profile.existingPolicyDetails);
+  }
+  if (profile.currentCoverage && typeof profile.currentCoverage === 'object') {
+    next.currentCoverage = mergePolibotCoverageValues(current.currentCoverage, profile.currentCoverage);
+  }
+  if (profile.disclosureDetails && typeof profile.disclosureDetails === 'object') {
+    next.disclosureDetails = mergePolibotDisclosureDetails(current.disclosureDetails, profile.disclosureDetails);
+  }
+  if (profile.underwritingAssessment && typeof profile.underwritingAssessment === 'object') {
+    next.underwritingAssessment = mergePolibotNonEmptyObject(current.underwritingAssessment, profile.underwritingAssessment);
+  }
+  if (profile.analysisResult && typeof profile.analysisResult === 'object') {
+    next.analysisResult = mergePolibotNonEmptyObject(current.analysisResult, profile.analysisResult);
+  }
+  return next;
+};
+const normalizePolibotNeedLabel = (value) => {
+  const label = displayValue(value).replace(/\s+/g, ' ');
+  if (!label) return '';
+  if (/암/.test(label)) return '암';
+  if (/뇌|뇌혈관|뇌졸중/.test(label)) return '뇌';
+  if (/심장|허혈|심근/.test(label)) return '심장';
+  if (/수술/.test(label)) return '수술';
+  if (/입원/.test(label)) return '입원';
+  if (/실손|실비/.test(label)) return '실손';
+  if (/생활비|간병|치매/.test(label)) return '생활비';
+  if (/운전자/.test(label)) return '운전자';
+  if (label.length <= 12 && !/전체|기타|미분류/.test(label)) return label;
+  return '';
+};
+const buildPolibotNeedOptionsFromWorkspace = (workspace = {}) => {
+  const rawGroups = [
+    ...(Array.isArray(workspace.catalog?.productGroups) ? workspace.catalog.productGroups : []),
+    ...(Array.isArray(workspace.qualityReport?.productGroups) ? workspace.qualityReport.productGroups : []),
+    ...(Array.isArray(workspace.knowledgeDbSummary?.productGroups) ? workspace.knowledgeDbSummary.productGroups.map((item) => item?.name || item) : [])
+  ];
+  const normalized = rawGroups.map(normalizePolibotNeedLabel).filter(Boolean);
+  return [...new Set([...polibotNeedOptions, ...normalized])].slice(0, 14);
+};
 const coverageAmountValue = (value) => (value && typeof value === 'object' ? value.amount || '' : value || '');
 const polibotTargetPremiumQuickOptions = ['10', '20', '30', '40', '50'];
 const polibotGenderOptions = [
@@ -5295,6 +5375,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const catalogCompanies = rawCatalogCompanies.map(displayValue).filter(Boolean);
   const companies = ['전체 보험사', ...catalogCompanies];
   const recommendations = Array.isArray(workspace.recommendations) ? workspace.recommendations : [];
+  const needOptions = useMemo(() => buildPolibotNeedOptionsFromWorkspace(workspace), [workspace]);
   const hasAnalysis = Boolean(workspace.consultationDraft);
   const hasRecommendations = recommendations.length > 0;
   const legacyProgressStep = hasRecommendations ? 3 : hasAnalysis ? 2 : 1;
@@ -5320,18 +5401,31 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
 
   useEffect(() => {
     let cancelled = false;
-    api.get('/api/product-workspace/polibot/status', { timeoutMs: 5000 })
-      .then((data) => {
+    Promise.allSettled([
+      api.get('/api/product-workspace/polibot/status', { timeoutMs: 5000 }),
+      api.get('/api/product-workspace/polibot/customer-workspace', { timeoutMs: 5000 })
+    ])
+      .then((results) => {
         if (cancelled) return;
+        const status = results[0]?.status === 'fulfilled' ? results[0].value : null;
+        const saved = results[1]?.status === 'fulfilled' ? results[1].value : null;
+        if (!status && !saved) {
+          const reason = results.find((item) => item?.reason)?.reason;
+          throw reason || new Error('추천 데이터 일부를 불러오지 못했어요.');
+        }
         setWorkspace((prev) => ({
           ...prev,
-          usage: data?.usage || prev.usage,
-          status: data?.health || prev.status,
-          summary: data?.summary || prev.summary,
-          catalog: data?.catalog || prev.catalog,
-          qualityReport: data?.qualityReport || prev.qualityReport,
-          knowledgeDbSummary: data?.knowledgeDbSummary || prev.knowledgeDbSummary
+          ...(saved || {}),
+          usage: saved?.usage || status?.usage || prev.usage,
+          status: status?.health || saved?.status || prev.status,
+          summary: status?.summary || saved?.summary || prev.summary,
+          catalog: status?.catalog || saved?.catalog || prev.catalog,
+          qualityReport: status?.qualityReport || saved?.qualityReport || prev.qualityReport,
+          knowledgeDbSummary: status?.knowledgeDbSummary || saved?.knowledgeDbSummary || prev.knowledgeDbSummary
         }));
+        if (saved?.customerProfile) {
+          setForm((prev) => hydratePolibotFormFromWorkspace(prev, saved));
+        }
       })
       .catch((err) => {
         if (!cancelled) toast(err.message || '추천 데이터 일부를 불러오지 못했어요.', 'error');
@@ -5610,6 +5704,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
           setForm={setForm}
           selectedNeeds={selectedNeeds}
           toggleNeed={toggleNeed}
+          needOptions={needOptions}
           usage={usage}
           companies={companies}
           catalogCompanies={catalogCompanies}
@@ -5678,7 +5773,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
               <div className="text-[11px] font-bold text-zinc-600">{selectedNeeds.length || 0}개 선택</div>
             </div>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-2 2xl:grid-cols-4">
-              {polibotNeedOptions.map((need) => (
+              {needOptions.map((need) => (
                 <button
                   key={need}
                   type="button"
@@ -5791,6 +5886,7 @@ function PolibotRecommendStepper({
   setForm,
   selectedNeeds,
   toggleNeed,
+  needOptions = polibotNeedOptions,
   usage,
   companies,
   catalogCompanies,
@@ -6119,7 +6215,7 @@ function PolibotRecommendStepper({
               <DarkSelect label="고객 목적" value={form.purpose} onChange={(value) => setForm((prev) => ({ ...prev, purpose: value }))} options={polibotPurposeOptions} invalid={isMissing('고객 목적')} />
               <div className={isMissing('필요 보장') ? 'rounded-2xl border border-red-400/35 bg-red-950/10 p-2.5' : 'grid gap-2'}>
                 <div className="flex flex-wrap gap-2">
-                  {polibotNeedOptions.map((need) => (
+                  {needOptions.map((need) => (
                     <button key={need} type="button" onClick={() => toggleNeed(need)} className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-2 text-center text-xs font-black leading-none transition ${selectedNeeds.includes(need) ? 'border-white bg-white text-zinc-950 shadow-sm shadow-white/10' : 'border-white/10 bg-black/20 text-zinc-400 hover:border-white/25 hover:text-zinc-200'}`}>{need}</button>
                   ))}
                 </div>
