@@ -15,6 +15,7 @@ import {
   getProductWorkspaceStatus,
   listSublogSubscriptions,
   saveInfludexCandidates,
+  savePolibotCustomer,
   savePolibotDraft,
   savePolibotRecommendation,
   savePolibotRecommendationFeedback,
@@ -576,6 +577,55 @@ test('POLIBOT draft autosave stores chat-filled fields without consuming usage',
   assert.equal(workspace.recommendations.length, 0);
   assert.equal(workspace.usage.used, 0);
   assert.equal(workspace.usage.remaining, 5);
+});
+
+test('POLIBOT saved customers keep contact and disclosure profile fields', async () => {
+  const userId = '11111111-2026-4110-8110-202020202039';
+  await dbInsert('users', {
+    id: userId,
+    email: 'polibot-customer-contact-test@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT Customer Contact',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      usage: { polibot: { limit: 5, used: 0 } },
+      workspace: {}
+    }
+  });
+
+  const draft = await savePolibotDraft(userId, {
+    name: '저장고객',
+    phone: '010-9999-0000',
+    birthdate: '1980-01-01',
+    age: '46',
+    gender: '여성',
+    needs: ['암'],
+    budget: '15',
+    existingMedicalPlan: '2세대 실손',
+    medicalHistory: '고혈압 약 복용',
+    disclosureDetails: {
+      recent3Months: '없음',
+      recent1Year: '있음',
+      recent5Years: '없음',
+      diseaseEvents: [{ occurredAt: '2026-02-01', eventType: '통원', kcdCode: 'I10', diseaseName: '고혈압' }]
+    }
+  });
+
+  const workspace = await savePolibotCustomer(userId, { profile: draft.customerProfile, memo: '상담 후 저장' });
+  const customer = workspace.customers[0];
+
+  assert.equal(customer.name, '저장고객');
+  assert.equal(customer.phone, '010-9999-0000');
+  assert.equal(customer.birthdate, '1980-01-01');
+  assert.equal(customer.existingMedicalPlan, '2세대 실손');
+  assert.equal(customer.medicalHistory, '고혈압 약 복용');
+  assert.equal(customer.disclosureDetails.diseaseEvents[0].kcdCode, 'I10');
 });
 
 test('POLIBOT coverage analysis parses mixed 억 and 만 amounts precisely', async () => {

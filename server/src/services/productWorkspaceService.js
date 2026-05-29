@@ -7757,6 +7757,8 @@ export async function savePolibotCustomer(userId, { id = '', name = '', age = ''
   const customer = {
     id: String(id || '').trim() || `polibot-customer-${hashText(`${currentProfile.name || name}-${currentProfile.age || age}-${Date.now()}`)}`,
     name: String(name || currentProfile.name || '').trim() || '이름 미입력',
+    phone: String(currentProfile.phone || '').trim(),
+    birthdate: String(currentProfile.birthdate || '').trim(),
     age: String(age || currentProfile.age || '').trim(),
     gender: String(currentProfile.gender || '').trim(),
     needs: Array.isArray(currentProfile.needs) ? currentProfile.needs : [],

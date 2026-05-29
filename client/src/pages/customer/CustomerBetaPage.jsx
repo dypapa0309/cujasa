@@ -4044,7 +4044,7 @@ function AccountInfoRow({ label, value }) {
   return (
     <div className="grid gap-1 rounded-2xl bg-black/25 px-4 py-3">
       <div className="text-[11px] font-black uppercase tracking-wide text-zinc-600">{label}</div>
-      <div className="break-words text-sm font-bold text-zinc-200">{displayValue(value)}</div>
+      <div className="whitespace-pre-line break-words text-sm font-bold text-zinc-200">{displayValue(value)}</div>
     </div>
   );
 }
@@ -6857,16 +6857,18 @@ function PolibotDiseaseCodePicker({ value = [], onChange, onAppendMedicalHistory
     }
   };
   const addDisease = (item) => {
+    const effectiveCarrierType = item.carrierType || carrierType || '';
+    const effectiveCarrierTypeLabel = item.carrierTypeLabel || (effectiveCarrierType === 'life' ? '생보' : effectiveCarrierType === 'nonlife' ? '손보' : '');
     const next = {
       occurredAt,
       eventType: eventType || item.eventType || '',
       kcdCode: item.kcdCode || '',
       diseaseName: item.diseaseName || '',
       company: item.company || '',
-      carrierType: item.carrierType || '',
+      carrierType: effectiveCarrierType,
       conditionText: item.conditionText || '',
       status,
-      memo: [item.carrierTypeLabel, status, item.eligibilityLevel, item.conditionText].filter(Boolean).join(' · ')
+      memo: [effectiveCarrierTypeLabel, status, item.eligibilityLevel, item.conditionText].filter(Boolean).join(' · ')
     };
     const key = [next.occurredAt, next.eventType, next.kcdCode, next.diseaseName, next.company].join('|');
     const merged = [
@@ -6904,7 +6906,7 @@ function PolibotDiseaseCodePicker({ value = [], onChange, onAppendMedicalHistory
   };
   const removeDisease = (index) => {
     onChange?.(selected.filter((_, rowIndex) => rowIndex !== index));
-    setEditingIndex((current) => (current === index ? null : current));
+    setEditingIndex(null);
   };
   const updateDisease = (index, patch) => {
     onChange?.(selected.map((item, rowIndex) => rowIndex === index ? { ...item, ...patch } : item));
@@ -8284,7 +8286,7 @@ function PolibotCustomersPanel() {
   const [workspace, setWorkspace] = useState({});
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [editing, setEditing] = useState(false);
-  const [editForm, setEditForm] = useState({ name: '', age: '', memo: '' });
+  const [editForm, setEditForm] = useState({ name: '', phone: '', birthdate: '', age: '', memo: '' });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -8296,7 +8298,13 @@ function PolibotCustomersPanel() {
   const openCustomer = (customer) => {
     setSelectedCustomer(customer);
     setEditing(false);
-    setEditForm({ name: customer.name || '', age: customer.age || '', memo: customer.memo || '' });
+    setEditForm({
+      name: customer.name || '',
+      phone: customer.phone || '',
+      birthdate: customer.birthdate || '',
+      age: customer.age || '',
+      memo: customer.memo || ''
+    });
   };
 
   const saveEdit = async () => {
@@ -8306,7 +8314,11 @@ function PolibotCustomersPanel() {
       const next = await api.post('/api/product-workspace/polibot/customers', {
         ...selectedCustomer,
         ...editForm,
-        id: selectedCustomer.id
+        id: selectedCustomer.id,
+        profile: {
+          ...selectedCustomer,
+          ...editForm
+        }
       });
       setWorkspace(next);
       const updated = next.customers?.find((item) => item.id === selectedCustomer.id);
@@ -8336,7 +8348,7 @@ function PolibotCustomersPanel() {
       </PanelCard>
       {selectedCustomer && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-3xl border border-white/10 bg-[#191919] p-5 shadow-2xl shadow-black/60">
+          <div className="max-h-[88vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-white/10 bg-[#191919] p-5 shadow-2xl shadow-black/60">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-lg font-black text-zinc-100">{selectedCustomer.name}</div>
@@ -8347,14 +8359,28 @@ function PolibotCustomersPanel() {
             {editing ? (
               <div className="mt-5 grid gap-3">
                 <label className={labelClass}>고객명<input className={inputClass} value={editForm.name} onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))} /></label>
-                <label className={labelClass}>나이<input className={inputClass} value={editForm.age} onChange={(event) => setEditForm((prev) => ({ ...prev, age: event.target.value }))} /></label>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className={labelClass}>연락처<input className={inputClass} value={editForm.phone} onChange={(event) => setEditForm((prev) => ({ ...prev, phone: event.target.value }))} placeholder="010-0000-0000" /></label>
+                  <label className={labelClass}>생년월일<input className={inputClass} value={editForm.birthdate} onChange={(event) => setEditForm((prev) => ({ ...prev, birthdate: event.target.value }))} placeholder="1980-01-01" /></label>
+                  <label className={labelClass}>나이<input className={inputClass} value={editForm.age} onChange={(event) => setEditForm((prev) => ({ ...prev, age: event.target.value }))} /></label>
+                </div>
                 <label className={labelClass}>메모<textarea className={inputClass} rows="4" value={editForm.memo} onChange={(event) => setEditForm((prev) => ({ ...prev, memo: event.target.value }))} /></label>
                 <DarkButton onClick={saveEdit} disabled={saving} loading={saving} loadingLabel="저장 중">수정 저장</DarkButton>
               </div>
             ) : (
               <div className="mt-5 grid gap-3 text-sm text-zinc-400">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <AccountInfoRow label="연락처" value={selectedCustomer.phone || '미입력'} />
+                  <AccountInfoRow label="생년월일" value={selectedCustomer.birthdate || '미입력'} />
+                  <AccountInfoRow label="예산" value={selectedCustomer.budget || '미입력'} />
+                </div>
                 <AccountInfoRow label="필요 보장" value={(selectedCustomer.needs || []).join(', ') || '미입력'} />
+                <AccountInfoRow label="기존 실손" value={selectedCustomer.existingMedicalPlan || '미입력'} />
+                <AccountInfoRow label="병력/고지" value={[selectedCustomer.medicalHistory, selectedCustomer.disclosureDetails?.recent3Months && `3개월: ${selectedCustomer.disclosureDetails.recent3Months}`, selectedCustomer.disclosureDetails?.recent1Year && `1년: ${selectedCustomer.disclosureDetails.recent1Year}`, selectedCustomer.disclosureDetails?.recent5Years && `5년: ${selectedCustomer.disclosureDetails.recent5Years}`].filter(Boolean).join(' · ') || '미입력'} />
+                <AccountInfoRow label="질병 이벤트" value={(selectedCustomer.disclosureDetails?.diseaseEvents || []).map((item) => [item.occurredAt, item.eventType, item.kcdCode, item.diseaseName, item.status].filter(Boolean).join(' · ')).join('\n') || '없음'} />
                 <AccountInfoRow label="추천 결과" value={selectedCustomer.selectedRecommendation?.name || '미선택'} />
+                <AccountInfoRow label="추천 상태" value={selectedCustomer.selectedRecommendation?.recommendationStatusLabel || selectedCustomer.selectedRecommendation?.recommendationStatus || '미입력'} />
+                <AccountInfoRow label="저장 추천 수" value={`${selectedCustomer.recommendations?.length || 0}개`} />
                 <AccountInfoRow label="메모" value={selectedCustomer.memo || '메모 없음'} />
                 <DarkButton variant="ghost" onClick={() => setEditing(true)}>수정</DarkButton>
               </div>
@@ -8378,7 +8404,7 @@ function PolibotDownloadPanel() {
   }, [toast]);
 
   const filteredCustomers = (workspace.customers || []).filter((customer) => {
-    const text = [customer.name, customer.memo, customer.selectedRecommendation?.name].filter(Boolean).join(' ');
+    const text = [customer.name, customer.phone, customer.birthdate, customer.memo, customer.selectedRecommendation?.name, customer.medicalHistory].filter(Boolean).join(' ');
     if (filters.query && !text.includes(filters.query)) return false;
     const date = customer.updatedAt || customer.createdAt || '';
     if (filters.from && date && date.slice(0, 10) < filters.from) return false;
@@ -8389,21 +8415,40 @@ function PolibotDownloadPanel() {
   });
 
   const downloadCsv = () => {
+    const diseaseEventsText = (events = []) => (Array.isArray(events) ? events : [])
+      .map((item) => [item.occurredAt, item.eventType, item.carrierType, item.kcdCode, item.diseaseName, item.status, item.company].filter(Boolean).join(' · '))
+      .join(' | ');
+    const disclosureText = (details = {}) => {
+      const safeDetails = details && typeof details === 'object' ? details : {};
+      return [
+        safeDetails.recent3Months && `3개월: ${safeDetails.recent3Months}`,
+        safeDetails.recent1Year && `1년: ${safeDetails.recent1Year}`,
+        safeDetails.recent5Years && `5년: ${safeDetails.recent5Years}`,
+        diseaseEventsText(safeDetails.diseaseEvents)
+      ].filter(Boolean).join(' | ');
+    };
     const rowsSource = filters.target === 'latest'
-      ? [{ name: workspace.customerProfile?.name || '현재 추천', recommendations: workspace.recommendations || [] }]
+      ? [{ ...(workspace.customerProfile || {}), name: workspace.customerProfile?.name || '현재 추천', recommendations: workspace.recommendations || [], consultationDraft: workspace.consultationDraft }]
       : filteredCustomers;
     let header = [];
     let rows = [];
     if (filters.type === 'draft') {
-      header = ['customerName', 'age', 'gender', 'needs', 'completeness', 'missing', 'nextQuestions', 'cautions', 'memo'];
+      header = ['customerName', 'phone', 'birthdate', 'age', 'gender', 'needs', 'budget', 'existingMedicalPlan', 'medicalHistory', 'disclosure', 'diseaseEvents', 'completeness', 'missing', 'nextQuestions', 'cautions', 'memo'];
       rows = rowsSource.map((customer) => {
         const draft = customer.consultationDraft || workspace.consultationDraft || {};
         const profile = customer.name ? customer : workspace.customerProfile || {};
         return [
           profile.name || customer.name,
+          profile.phone || customer.phone,
+          profile.birthdate || customer.birthdate,
           profile.age || customer.age,
           profile.gender || customer.gender,
           (profile.needs || draft.needs || []).join(' | '),
+          profile.budget || customer.budget,
+          profile.existingMedicalPlan || customer.existingMedicalPlan,
+          profile.medicalHistory || customer.medicalHistory,
+          disclosureText(profile.disclosureDetails || customer.disclosureDetails),
+          diseaseEventsText(profile.disclosureDetails?.diseaseEvents || customer.disclosureDetails?.diseaseEvents),
           draft.completeness || '',
           (draft.missing || []).join(' | '),
           (draft.nextQuestions || []).join(' | '),
@@ -8412,13 +8457,20 @@ function PolibotDownloadPanel() {
         ].map(csvEscape).join(',');
       });
     } else if (filters.type === 'customers') {
-      header = ['customerName', 'age', 'gender', 'needs', 'budget', 'selectedRecommendation', 'confidence', 'feedback', 'feedbackReason', 'excludedCandidates', 'memo', 'savedAt'];
+      header = ['customerName', 'phone', 'birthdate', 'age', 'gender', 'needs', 'budget', 'existingMedicalPlan', 'medicalHistory', 'disclosure', 'diseaseEvents', 'recommendationCount', 'selectedRecommendation', 'confidence', 'feedback', 'feedbackReason', 'excludedCandidates', 'memo', 'savedAt'];
       rows = rowsSource.map((customer) => [
         customer.name,
+        customer.phone,
+        customer.birthdate,
         customer.age,
         customer.gender,
         (customer.needs || []).join(' | '),
         customer.budget,
+        customer.existingMedicalPlan,
+        customer.medicalHistory,
+        disclosureText(customer.disclosureDetails),
+        diseaseEventsText(customer.disclosureDetails?.diseaseEvents),
+        customer.recommendations?.length || 0,
         customer.selectedRecommendation?.name || '',
         customer.selectedRecommendation?.confidence?.level || '',
         customer.selectedRecommendation?.feedback || '',
@@ -8440,17 +8492,23 @@ function PolibotDownloadPanel() {
         source.summary || ''
       ].map(csvEscape).join(','))));
     } else {
-      header = ['customerName', 'recommendationName', 'type', 'score', 'confidence', 'feedback', 'feedbackReason', 'coverageGap', 'premium', 'cautions', 'excludedCandidates', 'nextQuestions', 'evidenceProducts', 'evidenceFiles'];
+      header = ['customerName', 'recommendationName', 'carrierType', 'carrierTypeLabel', 'type', 'score', 'confidence', 'recommendationStatus', 'designManagerRoute', 'matchedCoverageCodes', 'feedback', 'feedbackReason', 'coverageGap', 'premium', 'additionalBudgetMemo', 'cautions', 'excludedCandidates', 'nextQuestions', 'evidenceProducts', 'evidenceFiles'];
       rows = rowsSource.flatMap((customer) => (customer.recommendations || workspace.recommendations || []).map((rec) => [
         customer.name,
         rec.name,
+        rec.carrierType,
+        rec.carrierTypeLabel,
         rec.type === 'bundle' ? '조합' : '단품',
         rec.score,
         rec.confidence?.level || '',
+        rec.recommendationStatusLabel || rec.recommendationStatus || '',
+        rec.designManagerReview?.route || customer.designManagerReview?.route || workspace.designManagerReview?.route || '',
+        (rec.matchedCoverageCodes || workspace.matchedCoverageCodes || []).map((item) => item.code || item.name || item.label || '').filter(Boolean).join(' | '),
         rec.feedback || '',
         rec.feedbackReason || '',
         rec.coverageGap,
         rec.premium,
+        rec.additionalBudgetMemo || '',
         (rec.cautions || []).join(' | '),
         (rec.excludedCandidates || []).map((item) => `${item.name}: ${item.reason}`).join(' | '),
         (rec.nextQuestions || []).join(' | '),
