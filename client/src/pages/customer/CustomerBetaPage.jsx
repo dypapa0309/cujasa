@@ -1940,7 +1940,7 @@ function TaskDrawer(props) {
           {action.key === 'spread-review' && <SpreadReviewPanel reloadCurrentUser={props.reloadCurrentUser} />}
           {action.key === 'polibot-upload' && <PolibotUploadPanel currentUser={props.currentUser} onOpenAction={props.onOpenAction} />}
           {action.key === 'polibot-recommend' && <PolibotRecommendPanel assistantDraft={props.assistantDraft} reloadCurrentUser={props.reloadCurrentUser} onOpenAction={props.onOpenAction} currentUser={props.currentUser} />}
-          {action.key === 'polibot-customers' && <PolibotCustomersPanel />}
+          {action.key === 'polibot-customers' && <PolibotCustomersPanel onOpenAction={props.onOpenAction} />}
           {action.key === 'polibot-download' && <PolibotDownloadPanel />}
           {action.key === 'infludex-upload' && <InfludexUploadPanel onOpenGrade={() => props.onOpenAction?.('infludex-grade')} />}
           {action.key === 'infludex-grade' && <InfludexGradePanel reloadCurrentUser={props.reloadCurrentUser} onOpenUpload={() => props.onOpenAction?.('infludex-upload')} />}
@@ -8281,13 +8281,14 @@ function PolibotRecommendationModal({ recommendation, profile, onClose, onSave, 
   );
 }
 
-function PolibotCustomersPanel() {
+function PolibotCustomersPanel({ onOpenAction }) {
   const toast = useToast();
   const [workspace, setWorkspace] = useState({});
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', phone: '', birthdate: '', age: '', memo: '' });
   const [saving, setSaving] = useState(false);
+  const [loadingCustomer, setLoadingCustomer] = useState(false);
 
   useEffect(() => {
     api.get('/api/product-workspace/polibot/customer-workspace')
@@ -8329,6 +8330,26 @@ function PolibotCustomersPanel() {
       toast(err.message || '고객 수정에 실패했어요.', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const loadCustomerToRecommendation = async () => {
+    if (!selectedCustomer) return;
+    setLoadingCustomer(true);
+    try {
+      const next = await api.post('/api/product-workspace/polibot/draft', {
+        ...selectedCustomer,
+        recommendationId: selectedCustomer.selectedRecommendation?.id || '',
+        selectedRecommendation: selectedCustomer.selectedRecommendation || null
+      }, { timeoutMs: 10000 });
+      setWorkspace((prev) => ({ ...prev, ...(next || {}) }));
+      toast('선택한 고객 정보를 추천 입력창에 불러왔어요.', 'success');
+      setSelectedCustomer(null);
+      onOpenAction?.('polibot-recommend');
+    } catch (err) {
+      toast(err.message || '고객 정보를 불러오지 못했어요.', 'error');
+    } finally {
+      setLoadingCustomer(false);
     }
   };
 
@@ -8382,7 +8403,10 @@ function PolibotCustomersPanel() {
                 <AccountInfoRow label="추천 상태" value={selectedCustomer.selectedRecommendation?.recommendationStatusLabel || selectedCustomer.selectedRecommendation?.recommendationStatus || '미입력'} />
                 <AccountInfoRow label="저장 추천 수" value={`${selectedCustomer.recommendations?.length || 0}개`} />
                 <AccountInfoRow label="메모" value={selectedCustomer.memo || '메모 없음'} />
-                <DarkButton variant="ghost" onClick={() => setEditing(true)}>수정</DarkButton>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <DarkButton onClick={loadCustomerToRecommendation} disabled={loadingCustomer} loading={loadingCustomer} loadingLabel="불러오는 중">추천 입력창에 불러오기</DarkButton>
+                  <DarkButton variant="ghost" onClick={() => setEditing(true)}>수정</DarkButton>
+                </div>
               </div>
             )}
           </div>
@@ -8433,7 +8457,7 @@ function PolibotDownloadPanel() {
     let header = [];
     let rows = [];
     if (filters.type === 'draft') {
-      header = ['customerName', 'phone', 'birthdate', 'age', 'gender', 'needs', 'budget', 'existingMedicalPlan', 'medicalHistory', 'disclosure', 'diseaseEvents', 'completeness', 'missing', 'nextQuestions', 'cautions', 'memo'];
+      header = ['고객명', '연락처', '생년월일', '나이', '성별', '필요보장', '목표월보험료', '기존실손', '병력메모', '고지요약', '질병이벤트', '완성도', '누락항목', '다음질문', '주의사항', '메모'];
       rows = rowsSource.map((customer) => {
         const draft = customer.consultationDraft || workspace.consultationDraft || {};
         const profile = customer.name ? customer : workspace.customerProfile || {};
@@ -8457,7 +8481,7 @@ function PolibotDownloadPanel() {
         ].map(csvEscape).join(',');
       });
     } else if (filters.type === 'customers') {
-      header = ['customerName', 'phone', 'birthdate', 'age', 'gender', 'needs', 'budget', 'existingMedicalPlan', 'medicalHistory', 'disclosure', 'diseaseEvents', 'recommendationCount', 'selectedRecommendation', 'confidence', 'feedback', 'feedbackReason', 'excludedCandidates', 'memo', 'savedAt'];
+      header = ['고객명', '연락처', '생년월일', '나이', '성별', '필요보장', '목표월보험료', '기존실손', '병력메모', '고지요약', '질병이벤트', '저장추천수', '선택추천', '신뢰도', '피드백', '피드백사유', '제외후보', '메모', '저장일'];
       rows = rowsSource.map((customer) => [
         customer.name,
         customer.phone,
@@ -8480,7 +8504,7 @@ function PolibotDownloadPanel() {
         customer.updatedAt || customer.createdAt || ''
       ].map(csvEscape).join(','));
     } else if (filters.type === 'evidence') {
-      header = ['customerName', 'recommendation', 'month', 'fileName', 'company', 'productGroup', 'keywords', 'summary'];
+      header = ['고객명', '추천명', '자료월', '파일명', '보험사', '상품군', '키워드', '요약'];
       rows = rowsSource.flatMap((customer) => (customer.recommendations || workspace.recommendations || []).flatMap((rec) => (rec.evidence || []).map((source) => [
         customer.name,
         rec.name,
@@ -8492,7 +8516,7 @@ function PolibotDownloadPanel() {
         source.summary || ''
       ].map(csvEscape).join(','))));
     } else {
-      header = ['customerName', 'recommendationName', 'carrierType', 'carrierTypeLabel', 'type', 'score', 'confidence', 'recommendationStatus', 'designManagerRoute', 'matchedCoverageCodes', 'feedback', 'feedbackReason', 'coverageGap', 'premium', 'additionalBudgetMemo', 'cautions', 'excludedCandidates', 'nextQuestions', 'evidenceProducts', 'evidenceFiles'];
+      header = ['고객명', '추천명', '보험구분', '보험구분명', '추천유형', '점수', '신뢰도', '추천상태', '설계매니저경로', '매칭담보코드', '피드백', '피드백사유', '보장공백', '보험료', '추가예산메모', '주의사항', '제외후보', '다음질문', '근거상품', '근거파일'];
       rows = rowsSource.flatMap((customer) => (customer.recommendations || workspace.recommendations || []).map((rec) => [
         customer.name,
         rec.name,
