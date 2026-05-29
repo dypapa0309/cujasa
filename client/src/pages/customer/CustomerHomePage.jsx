@@ -38,7 +38,7 @@ export default function CustomerHomePage({ account, currentUser, trialStatus, se
         ? '자동화 실행 중'
         : '자동화 중지됨';
   const statusMessage = isExpired
-    ? '결제 탭에서 월결제를 연장하거나 영구구매로 전환해주세요'
+    ? '결제 탭에서 월결제를 연장하거나 1년 이용권으로 전환해주세요'
     : !isActive
       ? '계정 상태를 확인해주세요'
       : automationRunning

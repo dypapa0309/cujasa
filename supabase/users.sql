@@ -96,8 +96,8 @@ alter table billing_products add column if not exists app_product_id text not nu
 insert into billing_products (id, app_product_id, name, plan, amount, billing_cycle, max_accounts, active)
 values
   ('sponsored_monthly_19000', 'cujasa', 'CUJASA 스폰서 스타터', 'monthly', 19000, 'monthly', 1, true),
-  ('onetime_590000', 'cujasa', 'CUJASA 프로 영구구매', 'onetime', 590000, 'once', 4, true),
-  ('monthly_59000', 'cujasa', 'CUJASA 베이직 월정액', 'monthly', 59000, 'monthly', 2, true),
+  ('onetime_590000', 'cujasa', 'CUJASA 프로 1년 이용', 'onetime', 590000, 'once', 4, true),
+  ('monthly_59000', 'cujasa', 'CUJASA 베이직 월정액', 'monthly', 129000, 'monthly', 2, true),
   ('monthly_129000', 'cujasa', 'CUJASA 베이직 월정액(판매 중단)', 'monthly', 129000, 'monthly', 2, false),
   ('dexor_credit_5000', 'dexor', 'DEXOR 크레딧 10회 충전', 'onetime', 5000, 'once', 0, true),
   ('dexor_credit_10000', 'dexor', 'DEXOR 크레딧 25회 충전', 'onetime', 10000, 'once', 0, true),
@@ -110,9 +110,9 @@ values
   ('spread_basic_monthly_149000', 'spread', 'SPREAD 베이직 월정액', 'monthly', 149000, 'monthly', 0, true),
   ('spread_pro_monthly_390000', 'spread', 'SPREAD 프로 월정액', 'monthly', 390000, 'monthly', 0, true),
   ('polibot_starter_monthly_39000', 'polibot', 'POLIBOT 스타터 월정액', 'monthly', 29000, 'monthly', 0, true),
-  ('polibot_basic_monthly_99000', 'polibot', 'POLIBOT 베이직 월정액', 'monthly', 79000, 'monthly', 0, true),
+  ('polibot_basic_monthly_99000', 'polibot', 'POLIBOT 베이직 월정액 50회', 'monthly', 79000, 'monthly', 0, true),
   ('polibot_pro_monthly_290000', 'polibot', 'POLIBOT 프로 월정액', 'monthly', 290000, 'monthly', 0, false),
-  ('polibot_lifetime_590000', 'polibot', 'POLIBOT 프로 영구구매', 'onetime', 590000, 'once', 0, true)
+  ('polibot_lifetime_590000', 'polibot', 'POLIBOT 프로 1년 이용', 'onetime', 590000, 'once', 0, true)
 on conflict (id) do update set
   app_product_id = excluded.app_product_id,
   name = excluded.name,

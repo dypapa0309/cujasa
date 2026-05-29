@@ -212,7 +212,7 @@ const tables = {
     {
       id: 'onetime_590000',
       app_product_id: 'cujasa',
-      name: 'CUJASA 프로 영구구매',
+      name: 'CUJASA 프로 1년 이용',
       plan: 'onetime',
       amount: 590000,
       billing_cycle: 'once',
@@ -366,7 +366,7 @@ const tables = {
     {
       id: 'polibot_basic_monthly_99000',
       app_product_id: 'polibot',
-      name: 'POLIBOT 베이직 월정액 100회',
+      name: 'POLIBOT 베이직 월정액 50회',
       plan: 'monthly',
       amount: 79000,
       billing_cycle: 'monthly',
@@ -388,7 +388,7 @@ const tables = {
     {
       id: 'polibot_lifetime_590000',
       app_product_id: 'polibot',
-      name: 'POLIBOT 프로 영구구매',
+      name: 'POLIBOT 프로 1년 이용',
       plan: 'onetime',
       amount: 590000,
       billing_cycle: 'once',
@@ -422,6 +422,7 @@ const tables = {
   billing_payments: [],
   billing_subscriptions: [],
   billing_agreements: [],
+  user_login_devices: [],
   blog_posts: [],
   setup_tasks: [],
   purchase_inquiries: [],

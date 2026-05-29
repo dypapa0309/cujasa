@@ -654,8 +654,8 @@ alter table billing_products add column if not exists app_product_id text not nu
 insert into billing_products (id, app_product_id, name, plan, amount, billing_cycle, max_accounts, active)
 values
   ('sponsored_monthly_19000', 'cujasa', 'CUJASA 스폰서 스타터', 'monthly', 19000, 'monthly', 1, true),
-  ('onetime_590000', 'cujasa', 'CUJASA 프로 영구구매', 'onetime', 590000, 'once', 4, true),
-  ('monthly_59000', 'cujasa', 'CUJASA 베이직 월정액', 'monthly', 59000, 'monthly', 2, true),
+  ('onetime_590000', 'cujasa', 'CUJASA 프로 1년 이용', 'onetime', 590000, 'once', 4, true),
+  ('monthly_59000', 'cujasa', 'CUJASA 베이직 월정액', 'monthly', 129000, 'monthly', 2, true),
   ('monthly_129000', 'cujasa', 'CUJASA 베이직 월정액(판매 중단)', 'monthly', 129000, 'monthly', 2, false),
   ('dexor_credit_5000', 'dexor', 'DEXOR 크레딧 10회 충전', 'onetime', 5000, 'once', 0, true),
   ('dexor_credit_10000', 'dexor', 'DEXOR 크레딧 25회 충전', 'onetime', 10000, 'once', 0, true),
@@ -668,9 +668,9 @@ values
   ('spread_basic_monthly_149000', 'spread', 'SPREAD 베이직 월정액', 'monthly', 149000, 'monthly', 0, true),
   ('spread_pro_monthly_390000', 'spread', 'SPREAD 프로 월정액', 'monthly', 390000, 'monthly', 0, true),
   ('polibot_starter_monthly_39000', 'polibot', 'POLIBOT 스타터 월정액', 'monthly', 29000, 'monthly', 0, true),
-  ('polibot_basic_monthly_99000', 'polibot', 'POLIBOT 베이직 월정액', 'monthly', 79000, 'monthly', 0, true),
+  ('polibot_basic_monthly_99000', 'polibot', 'POLIBOT 베이직 월정액 50회', 'monthly', 79000, 'monthly', 0, true),
   ('polibot_pro_monthly_290000', 'polibot', 'POLIBOT 프로 월정액', 'monthly', 290000, 'monthly', 0, false),
-  ('polibot_lifetime_590000', 'polibot', 'POLIBOT 프로 영구구매', 'onetime', 590000, 'once', 0, true)
+  ('polibot_lifetime_590000', 'polibot', 'POLIBOT 프로 1년 이용', 'onetime', 590000, 'once', 0, true)
 on conflict (id) do update set
   app_product_id = excluded.app_product_id,
   name = excluded.name,
@@ -738,6 +738,24 @@ create table if not exists billing_agreements (
   created_at timestamptz not null default now()
 );
 
+create table if not exists user_login_devices (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references users(id) on delete cascade,
+  device_id text not null,
+  device_type text not null check (device_type in ('desktop', 'mobile')),
+  fingerprint_hash text not null,
+  label text,
+  user_agent text,
+  first_ip text,
+  last_ip text,
+  status text not null default 'active' check (status in ('active', 'blocked', 'revoked')),
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, device_id)
+);
+
 create table if not exists sponsor_campaigns (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -775,6 +793,8 @@ create index if not exists idx_billing_payments_order on billing_payments(order_
 create index if not exists idx_billing_subscriptions_user on billing_subscriptions(user_id, status);
 create index if not exists idx_users_archived_at on users(archived_at, created_at desc);
 create index if not exists idx_billing_agreements_user on billing_agreements(user_id, accepted_at desc);
+create index if not exists idx_user_login_devices_user_type
+  on user_login_devices(user_id, device_type, status);
 
 create table if not exists setup_tasks (
   id uuid primary key default gen_random_uuid(),

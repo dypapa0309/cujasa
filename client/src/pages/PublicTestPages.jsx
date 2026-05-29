@@ -84,7 +84,7 @@ const purchaseCatalog = {
     points: ['Threads 계정별 자동 예약', '쿠팡 파트너스 링크 연결', '셋팅 및 재연결 지원'],
     plans: [
       { id: 'monthly_59000', name: '베이직 월정액', price: '129,000원 / 월', badge: '추천', features: ['Threads 계정 2개', '매일 자동 예약', '초기 셋팅 지원'] },
-      { id: 'onetime_590000', name: '프로 영구구매', price: '590,000원', badge: '장기 운영', features: ['Threads 계정 4개', '일시불 이용', '장기 운영 셋팅'] }
+      { id: 'onetime_590000', name: '프로 1년 이용', price: '590,000원', originalPrice: '990,000원', discount: '40% 할인', badge: '1년 이용', features: ['Threads 계정 4개', '일시불 이용', '1년 운영 셋팅'] }
     ]
   },
   dexor: {
@@ -112,8 +112,8 @@ const purchaseCatalog = {
     intro: '고객 정보, 보장분석 자료, 추천 근거를 정리해 상담자가 빠르게 판단하게 합니다.',
     points: ['고객 상담 요약', '보장분석 자료 정리', '추천 근거 생성'],
     plans: [
-      { id: 'polibot_basic_monthly_99000', name: '베이직', price: '79,000원 / 월', badge: '추천', features: ['월 보장분석 100회', '고객별 히스토리', '추천 근거 정리'] },
-      { id: 'polibot_lifetime_590000', name: '프로 영구구매', price: '590,000원', badge: '장기', features: ['장기 이용', '팀 운영', '우선 지원'] }
+      { id: 'polibot_basic_monthly_99000', name: '베이직', price: '79,000원 / 월', badge: '추천', features: ['월 보장분석 50회', '고객별 히스토리', '추천 근거 정리'] },
+      { id: 'polibot_lifetime_590000', name: '프로 1년 이용', price: '590,000원', originalPrice: '990,000원', discount: '40% 할인', badge: '1년 이용', features: ['1년 이용', '팀 운영', '우선 지원'] }
     ]
   },
   infludex: {
@@ -467,7 +467,11 @@ export function ProductPurchasePage({ productId = 'cujasa' }) {
                   >
                     <div className={`inline-flex border-2 px-2 py-1 font-mono text-[11px] font-black ${active ? 'border-[#fffdf2] bg-[#facc15] text-[#111111]' : 'border-[#111111] bg-[#facc15]'}`}>{plan.badge}</div>
                     <div className="mt-4 font-mono text-2xl font-black">{plan.name}</div>
-                    <div className="mt-2 font-mono text-xl font-black">{plan.price}</div>
+                    <div className="mt-2 grid gap-1 font-mono">
+                      {plan.originalPrice && <span className={`text-sm font-black line-through ${active ? 'text-[#a1a1aa]' : 'text-[#7c6f51]'}`}>{plan.originalPrice}</span>}
+                      {plan.discount && <span className="text-sm font-black text-[#ef4444]">{plan.discount}</span>}
+                      <span className="text-xl font-black">{plan.price}</span>
+                    </div>
                     <div className={`mt-4 grid gap-2 text-sm font-black leading-5 ${active ? 'text-[#fffdf2]' : 'text-[#5f5133]'}`}>
                       {plan.features.map((feature) => (
                         <span key={feature} className="flex items-center gap-2">

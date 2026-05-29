@@ -17,6 +17,7 @@ function resolveApiBaseUrl() {
 
 const baseUrl = resolveApiBaseUrl();
 const tokenKey = 'cujasa_admin_token';
+const deviceIdKey = 'cujasa_device_id';
 const defaultTimeoutMs = Number(import.meta.env.VITE_API_TIMEOUT_MS || 45000);
 let activeRequests = 0;
 let loadingTimer = null;
@@ -57,6 +58,34 @@ export function setAuthToken(token) {
   else localStorage.removeItem(tokenKey);
 }
 
+function randomDeviceId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `device-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+export function getDeviceContext() {
+  if (typeof window === 'undefined') return null;
+  let deviceId = localStorage.getItem(deviceIdKey);
+  if (!deviceId) {
+    deviceId = randomDeviceId();
+    localStorage.setItem(deviceIdKey, deviceId);
+  }
+  const ua = navigator.userAgent || '';
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+  const fingerprintSource = [
+    ua,
+    navigator.platform || '',
+    navigator.language || '',
+    Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+  ].join('|');
+  return {
+    deviceId,
+    deviceType: isMobile ? 'mobile' : 'desktop',
+    fingerprintHash: btoa(unescape(encodeURIComponent(fingerprintSource))).slice(0, 160),
+    label: isMobile ? 'Mobile browser' : 'Desktop browser'
+  };
+}
+
 function emitAuthExpired() {
   if (typeof window === 'undefined') return;
   window.dispatchEvent(new CustomEvent('jasain-auth-expired'));
@@ -85,12 +114,18 @@ async function request(path, options = {}) {
     : null;
   try {
     const token = getAuthToken();
+    const device = getDeviceContext();
     let res;
     try {
       res = await fetch(`${baseUrl}${path}`, {
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(device ? {
+            'X-CUJASA-Device-Id': device.deviceId,
+            'X-CUJASA-Device-Type': device.deviceType,
+            'X-CUJASA-Device-Fingerprint': device.fingerprintHash
+          } : {}),
           ...(requestOptions.headers || {})
         },
         ...requestOptions,

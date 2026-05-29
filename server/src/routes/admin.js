@@ -444,14 +444,15 @@ router.post('/setup-tasks/normalize-onetime', async (req, res, next) => {
     for (const userId of userIds) {
       const user = await dbGet('users', { id: userId });
       if (!user) continue;
+      const in365Days = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
       const [nextUser] = await dbUpdate('users', { id: userId }, {
         plan: 'onetime',
-        billing_status: 'paid',
-        paid_until: null,
+        billing_status: 'active',
+        paid_until: in365Days,
         max_accounts: Math.max(Number(user.max_accounts || 0), 2)
       });
       await grantUserProduct(userId, 'cujasa', { status: 'active', role: 'customer' });
-      updated.push({ id: userId, email: user.email, plan: nextUser?.plan || 'onetime', billingStatus: nextUser?.billing_status || 'paid' });
+      updated.push({ id: userId, email: user.email, plan: nextUser?.plan || 'onetime', billingStatus: nextUser?.billing_status || 'active' });
     }
     res.json({ ok: true, count: updated.length, users: updated });
   } catch (e) { next(e); }
@@ -807,9 +808,10 @@ router.post('/users/:id/plan', async (req, res, next) => {
     if (!user) return res.status(404).json({ error: 'User not found' });
     const now = new Date();
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const in365Days = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString();
     const patchByPlan = {
       free: { status: 'active', plan: 'free', billing_status: 'none', paid_until: null },
-      onetime: { status: 'active', plan: 'onetime', billing_status: 'paid', paid_until: null },
+      onetime: { status: 'active', plan: 'onetime', billing_status: 'active', paid_until: in365Days },
       monthly: { status: 'active', plan: 'monthly', billing_status: 'active', paid_until: in30Days },
       suspended: { status: 'suspended' }
     };
@@ -823,6 +825,25 @@ router.post('/users/:id/plan', async (req, res, next) => {
     }
     clearAuthContextCache(req.params.id);
     res.json({ ...updated, password_hash: undefined });
+  } catch (e) { next(e); }
+});
+
+router.get('/users/:id/devices', async (req, res, next) => {
+  try {
+    const user = await dbGet('users', { id: req.params.id });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const rows = await dbList('user_login_devices', { user_id: req.params.id }, { order: 'last_seen_at', ascending: false });
+    res.json(rows);
+  } catch (e) { next(e); }
+});
+
+router.post('/users/:id/devices/reset', async (req, res, next) => {
+  try {
+    const user = await dbGet('users', { id: req.params.id });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const rows = await dbUpdate('user_login_devices', { user_id: req.params.id, status: 'active' }, { status: 'revoked' });
+    clearAuthContextCache(req.params.id);
+    res.json({ ok: true, revoked: rows.length });
   } catch (e) { next(e); }
 });
 

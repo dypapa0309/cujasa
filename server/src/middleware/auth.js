@@ -1,6 +1,7 @@
 import { isTokenConfigured, listUserProducts, shouldBypassAuth, verifyToken } from '../services/authService.js';
 import { dbGet, dbList } from '../services/supabaseService.js';
 import { refreshUserEntitlement } from '../services/billingEntitlementService.js';
+import { assertActiveRequestDevice } from '../services/deviceSessionService.js';
 
 const AUTH_CONTEXT_CACHE_TTL_MS = Math.max(0, Number(process.env.AUTH_CONTEXT_CACHE_TTL_MS || 30000));
 const AUTH_CONTEXT_DETAIL_TIMEOUT_MS = Math.max(1000, Number(process.env.AUTH_CONTEXT_DETAIL_TIMEOUT_MS || 5000));
@@ -144,6 +145,7 @@ export async function requireAuth(req, res, next) {
       }
       if (context.user.status === 'suspended') return res.status(403).json({ error: 'Account suspended' });
       if (context.user.archived_at) return res.status(403).json({ error: 'Account archived' });
+      await assertActiveRequestDevice({ user: context.user, tokenPayload: payload, req });
       req.user = {
         type: 'user',
         userId: payload.userId,

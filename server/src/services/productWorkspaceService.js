@@ -1451,6 +1451,9 @@ function normalizeUsage(settings = {}, productId) {
 function grantHasUnlimitedUsage(grant = {}, user = null) {
   const settings = grant.settings && typeof grant.settings === 'object' ? grant.settings : {};
   const email = String(user?.email || '').trim().toLowerCase();
+  const accessEndsAt = settings.accessEndsAt ? new Date(settings.accessEndsAt).getTime() : null;
+  const accessExpired = Number.isFinite(accessEndsAt) && accessEndsAt < Date.now();
+  if (accessExpired) return UNLIMITED_TEST_EMAILS.has(email);
   return settings.unlimitedUsage === true
     || grant.unlimitedUsage === true
     || UNLIMITED_TEST_EMAILS.has(email);

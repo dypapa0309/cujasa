@@ -5,6 +5,7 @@ import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from './supabaseService.j
 import { redactBillingSettings } from './redactionService.js';
 import { createAccount } from './accountService.js';
 import { throwIfProductServiceClosed } from '../utils/productAvailability.js';
+import { authorizeLoginDevice } from './deviceSessionService.js';
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
 const REGISTER_USERNAME_RE = /^[a-zA-Z0-9._-]{3,30}$/;
@@ -99,15 +100,18 @@ async function findUserByLogin(login = '') {
   return normalized.includes('@') ? null : dbGet('users', { email: normalized });
 }
 
-async function sessionForUser(user) {
+async function sessionForUser(user, options = {}) {
   const products = await listUserProducts(user.id);
+  const device = options.device || null;
   const token = makeToken({
     sub: user.email,
     username: user.username || null,
     role: 'user',
     userId: user.id,
     maxAccounts: user.max_accounts,
-    products: products.map((product) => product.productId)
+    products: products.map((product) => product.productId),
+    ...(device?.device_id || device?.deviceId ? { deviceId: device.device_id || device.deviceId } : {}),
+    ...(device?.id ? { deviceSessionId: device.id } : {})
   });
   return {
     token,
@@ -116,7 +120,8 @@ async function sessionForUser(user) {
     username: user.username || null,
     userId: user.id,
     maxAccounts: user.max_accounts,
-    products
+    products,
+    ...(device ? { device: { id: device.id, type: device.device_type || device.deviceType } } : {})
   };
 }
 
@@ -304,10 +309,11 @@ export async function updateUserProductSettings(userId, productId, settingsPatch
     const plan = ['free', 'onetime', 'monthly', 'suspended'].includes(rawBilling.plan) ? rawBilling.plan : 'free';
     const now = new Date();
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const in365Days = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString();
     const billing = {
       plan,
-      status: plan === 'suspended' ? 'suspended' : plan === 'free' ? 'none' : plan === 'onetime' ? 'paid' : 'active',
-      paidUntil: plan === 'monthly' ? (rawBilling.paidUntil || in30Days) : null,
+      status: plan === 'suspended' ? 'suspended' : plan === 'free' ? 'none' : 'active',
+      paidUntil: plan === 'monthly' ? (rawBilling.paidUntil || in30Days) : plan === 'onetime' ? (rawBilling.paidUntil || in365Days) : null,
       updatedAt: now.toISOString()
     };
     next.billing = billing;
@@ -329,7 +335,7 @@ export async function updateUserProductSettings(userId, productId, settingsPatch
   return updated;
 }
 
-export async function loginUser(email, password) {
+export async function loginUser(email, password, options = {}) {
   const user = await findUserByLogin(email);
   if (!user) {
     const error = new Error('Invalid email or password');
@@ -346,7 +352,8 @@ export async function loginUser(email, password) {
     error.status = 401;
     throw error;
   }
-  return sessionForUser(user);
+  const device = await authorizeLoginDevice({ user, device: options.device || {}, req: options.req });
+  return sessionForUser(user, { device });
 }
 
 export async function createUser(email, password, maxAccounts = 2, buyerName = '', options = {}) {
@@ -374,7 +381,7 @@ export async function createUser(email, password, maxAccounts = 2, buyerName = '
   return user;
 }
 
-export async function registerFreeUser({ username, password, passwordConfirm, buyerName, buyer_name, phone, privacyConsent, privacy_consent, productId, product_id }) {
+export async function registerFreeUser({ username, password, passwordConfirm, buyerName, buyer_name, phone, privacyConsent, privacy_consent, productId, product_id }, options = {}) {
   const normalizedUsername = normalizeUsername(username);
   const normalizedPhone = normalizePhone(phone);
   const selectedProductId = normalizeRegisterProductId(productId ?? product_id);
@@ -455,7 +462,7 @@ export async function registerFreeUser({ username, password, passwordConfirm, bu
   return {
     ok: true,
     message: '회원가입이 완료되었습니다.',
-    ...(await sessionForUser(user))
+    ...(await sessionForUser(user, options))
   };
 }
 

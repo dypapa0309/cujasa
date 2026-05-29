@@ -29,8 +29,8 @@ test('applyPaidEntitlement grants SPREAD monthly campaign usage', async () => {
   assert.equal(grant.settings.lastPlanPayment.productId, 'spread_basic_monthly_149000');
 });
 
-test('applyPaidEntitlement grants POLIBOT lifetime access', async () => {
-  const user = await createUser(`polibot-lifetime-${Date.now()}-${Math.random().toString(16).slice(2)}@example.com`, 'password123', 2, '폴리봇');
+test('applyPaidEntitlement grants POLIBOT annual access', async () => {
+  const user = await createUser(`polibot-annual-${Date.now()}-${Math.random().toString(16).slice(2)}@example.com`, 'password123', 2, '폴리봇');
   const product = await dbGet('billing_products', { id: 'polibot_lifetime_590000' });
 
   await applyPaidEntitlement({ userId: user.id, product, payment: { id: 'payment-polibot' }, paidAt: new Date('2026-05-10T00:00:00.000Z'), source: 'test' });
@@ -38,5 +38,6 @@ test('applyPaidEntitlement grants POLIBOT lifetime access', async () => {
   const grant = await dbGet('user_products', { user_id: user.id, product_id: 'polibot' });
   assert.equal(grant.status, 'active');
   assert.equal(grant.settings.unlimitedUsage, true);
+  assert.equal(grant.settings.accessEndsAt, '2027-05-10T00:00:00.000Z');
   assert.equal(grant.settings.lastPlanPayment.productId, 'polibot_lifetime_590000');
 });

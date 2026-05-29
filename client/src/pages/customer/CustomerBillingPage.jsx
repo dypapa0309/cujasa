@@ -15,7 +15,7 @@ function formatDate(value) {
 }
 
 function billingTitle(billing) {
-  if (billing?.plan === 'onetime' && billing?.status === 'paid') return '영구 이용 중';
+  if (billing?.plan === 'onetime' && billing?.paidUntil) return `${formatDate(billing.paidUntil)}까지 이용 가능`;
   if (billing?.status === 'active') return `${formatDate(billing.paidUntil)}까지 이용 가능`;
   if (billing?.status === 'past_due') return '이용 기간 만료';
   if (billing?.status === 'pending') return '입금 대기';
@@ -189,7 +189,7 @@ export default function CustomerBillingPage({ currentUser }) {
     const product = productsById[productId];
     setAgreementIntent({
       type,
-      product: productId === 'monthly_59000' && product ? { ...product, amount: 129000 } : product
+      product
     });
   };
 
@@ -219,7 +219,7 @@ export default function CustomerBillingPage({ currentUser }) {
         </div>
         {billing?.status === 'past_due' && (
           <div className="mt-4 rounded-xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
-            자동화 실행이 잠시 중지됐습니다. 월결제를 연장하거나 영구구매로 전환해주세요.
+            자동화 실행이 잠시 중지됐습니다. 월결제를 연장하거나 1년 이용권으로 전환해주세요.
           </div>
         )}
         {billing?.paidUntil && billing?.status !== 'past_due' && (
@@ -248,10 +248,11 @@ export default function CustomerBillingPage({ currentUser }) {
       <div className="grid gap-4">
         <PlanCard
           icon={Landmark}
-          title="프로 영구구매"
+          title="프로 1년 이용"
           priceText="590,000원"
           originalPriceText="990,000원"
-          caption="가상계좌 결제"
+          discountText="40% 할인"
+          caption="가상계좌 일시불 결제"
           product={productsById.onetime_590000}
           busy={busy === 'onetime'}
           onClick={() => openAgreement('onetime', 'onetime_590000')}
@@ -261,7 +262,7 @@ export default function CustomerBillingPage({ currentUser }) {
           title={billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액'}
           priceText="129,000원 / 월"
           caption={activeSubscription ? `활성 · 다음 결제 ${formatDate(activeSubscription.nextBillingAt)}` : '가상계좌 결제'}
-          product={productsById.monthly_59000 ? { ...productsById.monthly_59000, amount: 129000 } : null}
+          product={productsById.monthly_59000 || null}
           busy={busy === 'monthly'}
           onClick={() => openAgreement('monthly', 'monthly_59000')}
         />
@@ -281,7 +282,7 @@ export default function CustomerBillingPage({ currentUser }) {
   );
 }
 
-function PlanCard({ icon: Icon, title, priceText, originalPriceText, caption, product, busy, onClick }) {
+function PlanCard({ icon: Icon, title, priceText, originalPriceText, discountText, caption, product, busy, onClick }) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-5">
       <div className="flex items-start gap-3">
@@ -298,6 +299,7 @@ function PlanCard({ icon: Icon, title, priceText, originalPriceText, caption, pr
           </div>
           <div className="mt-1 grid gap-1 leading-tight">
             {originalPriceText && <span className="text-sm font-black text-gray-400 line-through">{originalPriceText}</span>}
+            {discountText && <span className="text-xs font-black text-coupang">{discountText}</span>}
             <span className="text-2xl font-black">{priceText}</span>
           </div>
           <div className="mt-1 text-sm text-gray-400">{caption}</div>

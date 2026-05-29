@@ -546,7 +546,7 @@ function formatBillingDate(value) {
 }
 
 function billingTitle(billing) {
-  if (billing?.plan === 'onetime' && billing?.status === 'paid') return '영구 이용 중';
+  if (billing?.plan === 'onetime' && billing?.paidUntil) return `${formatBillingDate(billing.paidUntil)}까지 이용 가능`;
   if (billing?.status === 'active') return `${formatBillingDate(billing.paidUntil)}까지 이용 가능`;
   if (billing?.status === 'past_due') return '이용 기간 만료';
   if (billing?.status === 'pending') return '입금 대기';
@@ -3527,7 +3527,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
   const cujasaPlans = [
     {
       id: 'monthly_59000',
-      product: productsById.monthly_59000 ? { ...productsById.monthly_59000, amount: 129000 } : null,
+      product: productsById.monthly_59000 || null,
       title: billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액',
       priceText: '129,000원 / 월',
       caption: activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '광고 없이 안정적으로 운영',
@@ -3540,14 +3540,15 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
     {
       id: 'onetime_590000',
       product: productsById.onetime_590000 ? { ...productsById.onetime_590000, max_accounts: 4 } : null,
-      title: '프로 영구구매',
+      title: '프로 1년 이용',
       priceText: '590,000원',
       originalPriceText: '990,000원',
-      caption: '장기 운영용 일시불',
-      badge: '평생 이용',
-      buttonLabel: '영구구매 신청',
+      discountText: '40% 할인',
+      caption: '1년 운영용 일시불',
+      badge: '1년 이용',
+      buttonLabel: '1년 이용 신청',
       icon: Landmark,
-      features: ['Threads 계정 4개 운영', '광고 없는 콘텐츠/추천 흐름', '가상계좌 일시불 결제', '장기 운영용 셋업 지원']
+      features: ['Threads 계정 4개 운영', '광고 없는 콘텐츠/추천 흐름', '가상계좌 일시불 결제', '1년 운영용 셋업 지원']
     }
   ];
 
@@ -3585,7 +3586,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
         </div>
         {billing?.status === 'past_due' && (
           <div className="mt-4 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm font-bold text-zinc-300">
-            확인 필요 · 자동화 실행이 잠시 중지됐어요. 월결제를 연장하거나 영구구매로 전환해 주세요.
+            확인 필요 · 자동화 실행이 잠시 중지됐어요. 월결제를 연장하거나 1년 이용권으로 전환해 주세요.
           </div>
         )}
         {billing?.paidUntil && billing?.status !== 'past_due' && (
@@ -3613,10 +3614,11 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
       <div className="grid gap-3">
         <LegacyBetaPlanCard
           icon={Landmark}
-          title="프로 영구구매"
+          title="프로 1년 이용"
           priceText="590,000원"
           originalPriceText="990,000원"
-          caption="가상계좌 결제"
+          discountText="40% 할인"
+          caption="가상계좌 일시불 결제"
           product={productsById.onetime_590000 ? { ...productsById.onetime_590000, max_accounts: 4 } : null}
           busy={busy === 'onetime_590000'}
           onClick={() => requestAgreement('onetime', productsById.onetime_590000, (snapshot) => startOnetime('onetime_590000', snapshot))}
@@ -3626,9 +3628,9 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
           title={billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액'}
           priceText="129,000원 / 월"
           caption={activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '가상계좌 결제'}
-          product={productsById.monthly_59000 ? { ...productsById.monthly_59000, amount: 129000 } : null}
+          product={productsById.monthly_59000 || null}
           busy={busy === 'monthly_59000'}
-          onClick={() => requestAgreement('monthly', productsById.monthly_59000 ? { ...productsById.monthly_59000, amount: 129000 } : null, (snapshot) => startMonthly('monthly_59000', snapshot))}
+          onClick={() => requestAgreement('monthly', productsById.monthly_59000 || null, (snapshot) => startMonthly('monthly_59000', snapshot))}
         />
       </div>
 
@@ -3788,7 +3790,7 @@ function buildWorkspacePricingCatalog({ productsById, cujasaPlans, currentUser }
           title: '스타터',
           caption: '가볍게 상담 추천 시작',
           buttonLabel: '스타터 시작',
-          features: ['상담/추천 100회', '지식 업로드 기본', '가상계좌 월 단위 이용']
+          features: ['상담/추천 50회', '지식 업로드 기본', '가상계좌 월 단위 이용']
         }),
         pricingPlan(productsById, 'polibot_basic_monthly_99000', { name: 'POLIBOT 베이직 월정액', app_product_id: 'polibot', amount: 79000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
           title: '베이직',
@@ -3797,15 +3799,17 @@ function buildWorkspacePricingCatalog({ productsById, cujasaPlans, currentUser }
           buttonLabel: '베이직 시작',
           features: ['상담/추천 500회', '고객별 추천 히스토리', '상품 추천 근거 정리']
         }),
-        pricingPlan(productsById, 'polibot_lifetime_590000', { name: 'POLIBOT 프로 영구구매', app_product_id: 'polibot', amount: 590000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
-          title: '프로 영구구매',
+        pricingPlan(productsById, 'polibot_lifetime_590000', { name: 'POLIBOT 프로 1년 이용', app_product_id: 'polibot', amount: 590000, billing_cycle: 'once', plan: 'onetime', max_accounts: 0 }, {
+          title: '프로 1년 이용',
           caption: '팀 단위 상담 운영',
-          buttonLabel: '영구구매 신청',
-          features: ['상담/추천 장기 이용', '팀 단위 운영', '우선 지원']
+          originalPriceText: '990,000원',
+          discountText: '40% 할인',
+          buttonLabel: '1년 이용 신청',
+          features: ['상담/추천 1년 이용', '팀 단위 운영', '우선 지원']
         })
       ],
       comparisonRows: [
-        { label: '상담/추천 한도', values: ['100회 / 월', '500회 / 월', '장기 이용'] },
+        { label: '상담/추천 한도', values: ['50회 / 월', '500회 / 월', '1년 이용'] },
         { label: '지식 업로드', values: ['기본', '확장', '팀 운영'] },
         { label: '추천 히스토리', values: ['기본', '포함', '고급'] },
         { label: '결제 방식', values: ['가상계좌', '가상계좌', '가상계좌'] }
@@ -3934,7 +3938,7 @@ function TestBillingPricingPage({
 
         {billing?.status === 'past_due' && (
           <div className="border-b border-rose-500/20 bg-rose-500/10 px-5 py-3 text-sm font-black text-rose-200 lg:px-7">
-            자동화 실행이 잠시 중지됐어요. 월결제를 연장하거나 영구구매로 전환해 주세요.
+            자동화 실행이 잠시 중지됐어요. 월결제를 연장하거나 1년 이용권으로 전환해 주세요.
           </div>
         )}
         {latestWaiting && (
@@ -4007,7 +4011,7 @@ function TestPricingColumn({ plan, index, busy, onClick }) {
     <article className={`flex min-h-[390px] flex-col border-b border-white/10 px-6 py-7 lg:border-b-0 lg:border-l lg:px-7 lg:py-8 lg:first:border-l-0 ${featured ? 'bg-white/[0.07]' : 'bg-[#171717]'}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-xs font-black uppercase tracking-[0.08em] text-zinc-500">{plan.product?.billing_cycle === 'once' ? 'Lifetime' : 'Growth'}</div>
+          <div className="text-xs font-black uppercase tracking-[0.08em] text-zinc-500">{plan.product?.billing_cycle === 'once' ? 'Annual' : 'Growth'}</div>
           <h3 className={`mt-4 text-2xl font-black leading-snug tracking-normal ${plan.testOnly ? 'text-zinc-500' : 'text-zinc-50'}`}>{plan.title}</h3>
           <p className="mt-3 text-sm font-bold leading-6 text-zinc-400">{plan.caption}</p>
         </div>
@@ -4017,7 +4021,7 @@ function TestPricingColumn({ plan, index, busy, onClick }) {
           </span>
         )}
       </div>
-      <PriceDisplay originalPriceText={plan.originalPriceText} priceText={plan.priceText} className="mt-9" />
+      <PriceDisplay originalPriceText={plan.originalPriceText} discountText={plan.discountText} priceText={plan.priceText} className="mt-9" />
       <ul className="mt-8 grid gap-5 text-sm font-bold leading-7 text-zinc-300">
         {plan.features.map((feature) => (
           <li key={feature} className="flex gap-3">
@@ -4049,7 +4053,7 @@ function AccountInfoRow({ label, value }) {
   );
 }
 
-function LegacyBetaPlanCard({ icon: Icon, title, priceText, originalPriceText, caption, product, busy, onClick }) {
+function LegacyBetaPlanCard({ icon: Icon, title, priceText, originalPriceText, discountText, caption, product, busy, onClick }) {
   return (
     <PanelCard>
       <div className="flex items-start gap-3">
@@ -4064,7 +4068,7 @@ function LegacyBetaPlanCard({ icon: Icon, title, priceText, originalPriceText, c
               계정 {product?.max_accounts ?? 2}개
             </span>
           </div>
-          <PriceDisplay originalPriceText={originalPriceText} priceText={priceText} className="mt-1" size="compact" />
+          <PriceDisplay originalPriceText={originalPriceText} discountText={discountText} priceText={priceText} className="mt-1" size="compact" />
           <div className="mt-1 text-sm text-zinc-500">{caption}</div>
         </div>
       </div>
@@ -4075,19 +4079,20 @@ function LegacyBetaPlanCard({ icon: Icon, title, priceText, originalPriceText, c
   );
 }
 
-function PriceDisplay({ originalPriceText, priceText, className = '', size = 'default', featured = false }) {
+function PriceDisplay({ originalPriceText, discountText, priceText, className = '', size = 'default', featured = false }) {
   const priceClass = size === 'compact' ? 'text-2xl' : 'text-3xl';
   const originalClass = featured ? 'text-zinc-500' : 'text-zinc-500';
   const currentClass = featured ? 'text-zinc-950' : 'text-zinc-50';
   return (
     <div className={`grid gap-1 leading-tight tracking-normal ${className}`}>
       {originalPriceText && <span className={`text-sm font-black line-through ${originalClass}`}>{originalPriceText}</span>}
+      {discountText && <span className="text-xs font-black text-coupang">{discountText}</span>}
       <span className={`${priceClass} font-black ${currentClass}`}>{priceText}</span>
     </div>
   );
 }
 
-function BetaPlanCard({ icon: Icon, title, priceText, originalPriceText, caption, badge, features = [], featured = false, testOnly = false, buttonLabel = '결제하기', product, busy, onClick }) {
+function BetaPlanCard({ icon: Icon, title, priceText, originalPriceText, discountText, caption, badge, features = [], featured = false, testOnly = false, buttonLabel = '결제하기', product, busy, onClick }) {
   return (
     <div className={`flex min-h-[360px] flex-col rounded-3xl border p-4 ${featured ? 'border-white/30 bg-zinc-100 text-zinc-950' : 'border-white/10 bg-black/25 text-zinc-100'}`}>
       <div className="flex items-start gap-3">
@@ -4116,7 +4121,7 @@ function BetaPlanCard({ icon: Icon, title, priceText, originalPriceText, caption
           </div>
         </div>
       </div>
-      <PriceDisplay originalPriceText={originalPriceText} priceText={priceText} className="mt-5" size="compact" featured={featured} />
+      <PriceDisplay originalPriceText={originalPriceText} discountText={discountText} priceText={priceText} className="mt-5" size="compact" featured={featured} />
       <div className={`mt-2 min-h-10 text-sm leading-relaxed ${featured ? 'text-zinc-600' : 'text-zinc-500'}`}>{caption}</div>
       <ul className={`mt-5 grid gap-2 text-xs font-bold leading-relaxed ${featured ? 'text-zinc-700' : 'text-zinc-300'}`}>
         {features.map((item) => (

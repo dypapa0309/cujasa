@@ -8,6 +8,7 @@ const DEXOR_PRODUCT_ID = 'dexor';
 const INFLUDEX_PRODUCT_ID = 'infludex';
 const POLIBOT_PRODUCT_ID = 'polibot';
 const MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+const YEAR_DAYS = 365;
 const BASIC_MAX_ACCOUNTS = 2;
 export const DEXOR_CREDIT_PRODUCTS = {
   dexor_credit_5000: 10,
@@ -24,7 +25,7 @@ export const MONTHLY_USAGE_PRODUCTS = {
   spread_starter_monthly_49000: { productId: 'spread', limit: 3 },
   spread_basic_monthly_149000: { productId: 'spread', limit: 10 },
   spread_pro_monthly_390000: { productId: 'spread', limit: 30 },
-  polibot_basic_monthly_99000: { productId: 'polibot', limit: 100 }
+  polibot_basic_monthly_99000: { productId: 'polibot', limit: 50 }
 };
 
 async function addUsageCredits({ userId, productId, product, payment, credits, paidAt, source }) {
@@ -86,18 +87,21 @@ async function applyMonthlyUsageGrant({ userId, product, payment, paidAt, source
   return dbGet('users', { id: userId });
 }
 
-async function applyPolibotLifetimeGrant({ userId, product, payment, paidAt, source }) {
+async function applyPolibotAnnualGrant({ userId, product, payment, paidAt, source }) {
   await grantUserProduct(userId, POLIBOT_PRODUCT_ID, { status: 'active', role: 'customer' });
   const grant = await dbGet('user_products', { user_id: userId, product_id: POLIBOT_PRODUCT_ID });
   const current = grant?.settings && typeof grant.settings === 'object' ? grant.settings : {};
+  const accessEndsAt = addEntitlementDays(paidAt, YEAR_DAYS).toISOString();
   await dbUpdate('user_products', { user_id: userId, product_id: POLIBOT_PRODUCT_ID }, {
     settings: {
       ...current,
       unlimitedUsage: true,
+      accessEndsAt,
       lastPlanPayment: {
         productId: product.id,
         paymentId: payment?.id || null,
         paidAt: new Date(paidAt).toISOString(),
+        accessEndsAt,
         source
       }
     }
@@ -123,19 +127,21 @@ export async function applyPaidEntitlement({ userId, product, payment, paidAt = 
     return applyMonthlyUsageGrant({ userId, product, payment, paidAt, source, ...monthlyUsage });
   }
   if (appProductId === POLIBOT_PRODUCT_ID) {
-    return applyPolibotLifetimeGrant({ userId, product, payment, paidAt, source });
+    return applyPolibotAnnualGrant({ userId, product, payment, paidAt, source });
   }
   const paidDate = new Date(paidAt);
   const user = await dbGet('users', { id: userId });
   const isMonthly = product.billing_cycle === 'monthly' || product.plan === 'monthly';
+  const isAnnualOnetime = product.billing_cycle === 'once' || product.plan === 'onetime';
   let paidUntil = null;
-  let billingStatus = 'paid';
+  let billingStatus = 'active';
 
   if (isMonthly) {
     const currentUntil = user?.paid_until ? new Date(user.paid_until) : null;
     const base = currentUntil && currentUntil.getTime() > paidDate.getTime() ? currentUntil : paidDate;
     paidUntil = new Date(base.getTime() + MONTH_MS).toISOString();
-    billingStatus = 'active';
+  } else if (isAnnualOnetime) {
+    paidUntil = addEntitlementDays(paidDate, YEAR_DAYS).toISOString();
   }
 
   const [updatedUser] = await dbUpdate('users', { id: userId }, {
@@ -184,9 +190,12 @@ export async function createManualPayment({ userId, productId, amount, paidAt, m
 }
 
 export async function expireDueEntitlements({ now = new Date() } = {}) {
-  const users = await dbList('users', { plan: 'monthly' }, {
+  const users = await dbList('users', {}, {
     select: 'id,plan,billing_status,paid_until',
-    in: { billing_status: ['active', 'past_due'] },
+    in: {
+      plan: ['monthly', 'onetime'],
+      billing_status: ['active', 'past_due']
+    },
     lt: { paid_until: now.toISOString() },
     limit: Math.max(100, Number(process.env.BILLING_EXPIRE_BATCH_LIMIT || 1000))
   });
@@ -201,7 +210,7 @@ export async function expireDueEntitlements({ now = new Date() } = {}) {
 async function expireUserEntitlement(userOrId, { now = new Date() } = {}) {
   const user = typeof userOrId === 'string' ? await dbGet('users', { id: userOrId }) : userOrId;
   if (!user) return null;
-  if (user.plan !== 'monthly') return null;
+  if (!['monthly', 'onetime'].includes(user.plan)) return null;
   if (!['active', 'past_due'].includes(user.billing_status)) return null;
   if (!user.paid_until || new Date(user.paid_until).getTime() >= now.getTime()) return null;
   const [updated] = await dbUpdate('users', { id: user.id }, { billing_status: 'past_due' });
@@ -216,7 +225,7 @@ export async function refreshUserEntitlement(userId) {
   const user = expiredUser || existingUser;
   const products = await dbList('user_products', { user_id: userId, product_id: CUJASA_PRODUCT_ID });
   const product = products[0] || null;
-  const isExpired = user?.plan === 'monthly'
+  const isExpired = ['monthly', 'onetime'].includes(user?.plan)
     && user?.paid_until
     && new Date(user.paid_until).getTime() < Date.now();
   return {

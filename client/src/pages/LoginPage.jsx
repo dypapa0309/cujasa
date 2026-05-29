@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowRight, BarChart3, CalendarClock, CheckCircle2, ChevronRight, Link2, PenLine, Search, ShieldCheck, X } from 'lucide-react';
-import { api, setAuthToken } from '../lib/api.js';
+import { api, getDeviceContext, setAuthToken } from '../lib/api.js';
 import { CURRENT_PRODUCT, PRODUCTS, productById, productIdFromPath } from '../config/products.js';
 
 const inputClass = 'w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-700 outline-none focus:border-white/30';
@@ -38,7 +38,7 @@ const productDetailContent = {
     ],
     plans: [
       { title: '베이직 월정액', price: '129,000원 / 월', badge: '추천', featured: true, features: ['Threads 계정 2개', '광고 없는 운영', '셋업·재연결 지원'] },
-      { title: '프로 영구구매', price: '590,000원', originalPrice: '990,000원', badge: '장기 운영', features: ['Threads 계정 4개', '일시불 이용', '장기 운영 셋업'] }
+      { title: '프로 1년 이용', price: '590,000원', originalPrice: '990,000원', discount: '40% 할인', badge: '1년 이용', features: ['Threads 계정 4개', '일시불 이용', '1년 운영 셋업'] }
     ]
   },
   dexor: {
@@ -112,8 +112,8 @@ const productDetailContent = {
       { icon: CheckCircle2, title: '상품 추천', body: '추천 방향과 근거를 상담자가 확인할 수 있게 정리합니다.' }
     ],
     plans: [
-      { title: '베이직', price: '79,000원 / 월', badge: '추천', featured: true, features: ['월 보장분석 100회', '고객별 히스토리', '추천 근거 정리'] },
-      { title: '프로 영구구매', price: '590,000원', badge: '장기 운영', features: ['상담/추천 장기 이용', '팀 단위 운영', '우선 지원'] }
+      { title: '베이직', price: '79,000원 / 월', badge: '추천', featured: true, features: ['월 보장분석 50회', '고객별 히스토리', '추천 근거 정리'] },
+      { title: '프로 1년 이용', price: '590,000원', originalPrice: '990,000원', discount: '40% 할인', badge: '1년 이용', features: ['상담/추천 1년 이용', '팀 단위 운영', '우선 지원'] }
     ]
   },
   infludex: {
@@ -248,7 +248,7 @@ export default function LoginPage({ onLogin }) {
     setBusy(true);
     setError('');
     try {
-      const result = await api.post('/api/auth/login', form);
+      const result = await api.post('/api/auth/login', { ...form, device: getDeviceContext() });
       setAuthToken(result.token);
       onLogin(result);
       ensureBetaHash();
@@ -504,6 +504,7 @@ function ProductDetailDrawer({ product, open, onClose, onRegister, onLogin }) {
                   </div>
                   <div className="grid gap-1 text-right leading-tight">
                     {plan.originalPrice && <span className="text-sm font-black text-zinc-500 line-through">{plan.originalPrice}</span>}
+                    {plan.discount && <span className="text-xs font-black text-rose-500">{plan.discount}</span>}
                     <span className="text-lg font-black">{plan.price}</span>
                   </div>
                 </div>

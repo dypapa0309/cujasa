@@ -51,7 +51,7 @@ async function withAuthDetailTimeout(label, promise, fallback) {
 
 router.post('/register', loginRateLimit, async (req, res, next) => {
   try {
-    const result = await registerFreeUser(req.body || {});
+    const result = await registerFreeUser(req.body || {}, { req, device: req.body?.device || null });
     const entitlement = await withAuthDetailTimeout('register entitlement refresh', refreshUserEntitlement(result.userId), null);
     result.products = await withAuthDetailTimeout('register products refresh', listUserProducts(result.userId), result.products || []);
     result.billing = entitlement?.billing || null;
@@ -66,7 +66,7 @@ router.post('/login', loginRateLimit, async (req, res, next) => {
     if (isAdminLoginCandidate(req.body.email)) {
       return res.json(loginAdmin(req.body.email, req.body.password));
     }
-    const result = await loginUser(req.body.email, req.body.password);
+    const result = await loginUser(req.body.email, req.body.password, { req, device: req.body.device || null });
     if (result.type === 'user') {
       const entitlement = await withAuthDetailTimeout('login entitlement refresh', refreshUserEntitlement(result.userId), null);
       result.billing = entitlement?.billing || null;
