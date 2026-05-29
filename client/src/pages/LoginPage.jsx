@@ -582,18 +582,6 @@ function AuthPanel({
         </button>
       </div>
 
-      <div className="mt-5 rounded-2xl border border-white/10 bg-black/25 p-3">
-        <div className="flex items-start gap-3">
-          <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-red-500/10 text-red-200">
-            <ShieldCheck size={18} />
-          </div>
-          <div>
-            <div className="text-sm font-black text-zinc-100">{previewProduct?.name || 'JASAIN'} 체험 계정</div>
-            <p className="mt-1 text-xs font-bold leading-5 text-zinc-500">가입 후 선택한 솔루션을 바로 확인합니다.</p>
-          </div>
-        </div>
-      </div>
-
       {mode === 'login' ? (
         <div className="mt-5 grid gap-4">
           <label className={labelClass}>아이디 또는 이메일<input className={inputClass} type="text" autoComplete="username" value={form.email} onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))} /></label>
