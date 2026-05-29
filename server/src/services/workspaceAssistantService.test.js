@@ -79,6 +79,14 @@ test('extracts POLIBOT disclosure and disease events from consultation text', ()
   assert.equal(result.draft.disclosureDetails.diseaseEvents[0].diseaseName, '고혈압');
   assert.equal(result.draft.disclosureDetails.diseaseEvents[0].eventType, '투약');
   assert.equal(result.draft.disclosureDetails.diseaseEvents[0].status, '투약중');
+
+  const recent3 = classify('폴리봇 보험 추천 최근 3개월 통원 있음 입원 없음 추가검사 있음 투약 없음', {
+    currentProduct: 'polibot'
+  });
+  assert.equal(recent3.draft.disclosureDetails.recent3MonthDetails.treatment, '있음');
+  assert.equal(recent3.draft.disclosureDetails.recent3MonthDetails.admission, '없음');
+  assert.equal(recent3.draft.disclosureDetails.recent3MonthDetails.extraExam, '있음');
+  assert.equal(recent3.draft.disclosureDetails.recent3MonthDetails.medication, '없음');
 });
 
 test('clarifies ambiguous utterances without opening a panel', () => {

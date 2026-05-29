@@ -251,11 +251,34 @@ function extractPolibotDisclosureDetails(text = '') {
   const completeCure = /완치|치료\s*종결/.test(value) ? '완치' : /치료중|투약중|복용중|추적\s*관찰/.test(value) ? '확인 필요' : '';
   const recent3MonthValues = {};
   if (/최근\s*3\s*개월|3\s*개월/.test(value)) {
-    if (/진찰|진료|통원|외래/.test(value)) recent3MonthValues.consultation = /없|무/.test(value) ? '없음' : '있음';
-    if (/입원/.test(value)) recent3MonthValues.hospitalization = /없|무/.test(value) ? '없음' : '있음';
-    if (/수술|시술/.test(value)) recent3MonthValues.surgery = /없|무/.test(value) ? '없음' : '있음';
-    if (/검사|재검/.test(value)) recent3MonthValues.exam = /없|무/.test(value) ? '없음' : '있음';
-    if (/투약|처방|복용/.test(value)) recent3MonthValues.medication = /없|무/.test(value) ? '없음' : '있음';
+    const recent3Decision = (aliases = []) => {
+      const source = aliases.join('|');
+      const direct = value.match(new RegExp(`(?:${source})\\s*(있음|없음|있|없|유|무|받음|받았|했다|함)`));
+      if (direct) {
+        return /없|무/.test(direct[1]) ? '없음' : '있음';
+      }
+      const match = value.match(new RegExp(source));
+      if (!match) return '';
+      const index = match.index || 0;
+      const nearby = value.slice(index, index + 28);
+      if (/없|무|해당\s*없|이상\s*없|문제\s*없/.test(nearby)) return '없음';
+      if (/있|유|받|함|했다|치료|검사|입원|수술|투약|처방|복용|진단/.test(nearby)) return '있음';
+      return '확인 필요';
+    };
+    const diagnosis = recent3Decision(['진단']);
+    const suspicion = recent3Decision(['의심', '소견']);
+    const treatment = recent3Decision(['진찰', '진료', '통원', '외래', '치료']);
+    const admission = recent3Decision(['입원']);
+    const surgery = recent3Decision(['수술', '시술']);
+    const extraExam = recent3Decision(['검사', '재검', '추가검사']);
+    const medication = recent3Decision(['투약', '처방', '복용']);
+    if (diagnosis) recent3MonthValues.diagnosis = diagnosis;
+    if (suspicion) recent3MonthValues.suspicion = suspicion;
+    if (treatment) recent3MonthValues.treatment = treatment;
+    if (admission) recent3MonthValues.admission = admission;
+    if (surgery) recent3MonthValues.surgery = surgery;
+    if (extraExam) recent3MonthValues.extraExam = extraExam;
+    if (medication) recent3MonthValues.medication = medication;
   }
   const details = [
     /고지|병력|질병|상병|입원|수술|통원|투약|처방|치료|진단|검사/i.test(value) ? value : ''

@@ -6249,8 +6249,15 @@ function PolibotRecommendStepper({
                 <PolibotSelectCard label="현재 투약" value={form.disclosureDetails?.currentMedication || ''} onChange={(value) => setDisclosurePatch({ currentMedication: value })} options={polibotDisclosureDecisionOptions} />
               </div>
               <PolibotRecent3MonthChecklist
-                value={form.disclosureDetails?.recent3Months}
-                onChange={(value) => setForm((prev) => ({ ...prev, disclosureDetails: { ...(prev.disclosureDetails || {}), recent3Months: value } }))}
+                value={form.disclosureDetails?.recent3MonthDetails || form.disclosureDetails?.recent3Months}
+                onChange={(value) => setForm((prev) => ({
+                  ...prev,
+                  disclosureDetails: {
+                    ...(prev.disclosureDetails || {}),
+                    recent3Months: value,
+                    recent3MonthDetails: value
+                  }
+                }))}
               />
               <PolibotDiseaseCodePicker
                 value={form.disclosureDetails?.diseaseEvents || []}
@@ -6613,7 +6620,13 @@ function PolibotCompanyHint({ companies = [], selectedCompany = '전체 보험�
 
 function normalizePolibotRecent3MonthValue(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
-    return { ...createPolibotRecent3MonthState(), ...value };
+    return {
+      ...createPolibotRecent3MonthState(),
+      ...value,
+      treatment: value.treatment || value.consultation || '',
+      admission: value.admission || value.hospitalization || '',
+      extraExam: value.extraExam || value.exam || ''
+    };
   }
   const note = displayValue(value);
   return { ...createPolibotRecent3MonthState(), note };

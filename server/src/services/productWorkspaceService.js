@@ -2032,11 +2032,11 @@ function normalizePolibotRecent3MonthDetails(raw = '') {
     return {
       diagnosis: String(raw.diagnosis || '').trim(),
       suspicion: String(raw.suspicion || '').trim(),
-      treatment: String(raw.treatment || '').trim(),
-      admission: String(raw.admission || '').trim(),
+      treatment: String(raw.treatment || raw.consultation || '').trim(),
+      admission: String(raw.admission || raw.hospitalization || '').trim(),
       surgery: String(raw.surgery || '').trim(),
       medication: String(raw.medication || '').trim(),
-      extraExam: String(raw.extraExam || '').trim(),
+      extraExam: String(raw.extraExam || raw.exam || '').trim(),
       confirmedBy: String(raw.confirmedBy || '').trim(),
       note: String(raw.note || '').trim()
     };
