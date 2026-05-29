@@ -144,7 +144,13 @@ const corsOptions = {
     return callback(new Error(`CORS blocked origin: ${origin}`));
   },
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-CUJASA-Device-Id',
+    'X-CUJASA-Device-Type',
+    'X-CUJASA-Device-Fingerprint'
+  ],
   credentials: true,
   optionsSuccessStatus: 204
 };
