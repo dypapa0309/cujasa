@@ -1257,7 +1257,7 @@ test('scores POLIBOT persona recommendations with underwriting and item breakdow
   assert.equal((recentEventWorkspace.designManagerReview?.recommendedCodes || []).length, 0);
 });
 
-test('generates POLIBOT recommendation outputs for 10 persona scenarios', async () => {
+test('generates POLIBOT recommendation outputs for 50 persona scenarios', async () => {
   await ingestPolibotKnowledge({
     scope: 'global',
     sourceChannel: 'local_ingest',
@@ -1307,7 +1307,7 @@ test('generates POLIBOT recommendation outputs for 10 persona scenarios', async 
     dryRun: false
   });
 
-  const personas = [
+  const corePersonas = [
     { id: '15151515-1515-4151-8151-151515151501', name: '표준 건강 고객', age: '34', gender: '남성', needs: ['암', '뇌', '심장'], budget: '18', existingMedicalPlan: '없음', medicalHistory: '없음', existingPremium: '12', purpose: '보장 강화', renewalPreference: '비갱신 선호' },
     { id: '15151515-1515-4151-8151-151515151502', name: '당뇨 유병자 고객', age: '55', gender: '남성', needs: ['암', '뇌', '유병자'], budget: '12', existingMedicalPlan: '있음', medicalHistory: '당뇨 진단 후 약 복용 중', existingPremium: '18', purpose: '보험료 절감' },
     { id: '15151515-1515-4151-8151-151515151503', name: '운전자 보장 고객', age: '42', gender: '여성', needs: ['운전자'], budget: '5', existingMedicalPlan: '있음', medicalHistory: '없음', existingPremium: '4', purpose: '신규 가입', renewalPreference: '허용' },
@@ -1319,6 +1319,61 @@ test('generates POLIBOT recommendation outputs for 10 persona scenarios', async 
     { id: '15151515-1515-4151-8151-151515151509', name: '가입연령 경계 고객', age: '82', gender: '여성', needs: ['치매', '간병'], budget: '18', existingMedicalPlan: '있음', medicalHistory: '없음', existingPremium: '12', purpose: '보장 강화', renewalPreference: '허용' },
     { id: '15151515-1515-4151-8151-151515151510', name: '초저예산 고객', age: '45', gender: '남성', needs: ['암', '뇌', '심장'], budget: '3', existingMedicalPlan: '없음', medicalHistory: '없음', existingPremium: '3', purpose: '보험료 절감' }
   ];
+  const personaVariants = [
+    { label: '신혼 건강형', age: 29, gender: '여성', needs: ['암', '입원', '수술'], budget: 11, history: '없음', purpose: '신규 가입', renewal: '비갱신 선호' },
+    { label: '30대 남성 표준형', age: 36, gender: '남성', needs: ['암', '뇌', '심장'], budget: 16, history: '없음', purpose: '보장 강화', renewal: '비갱신 선호' },
+    { label: '40대 여성 수술보강형', age: 44, gender: '여성', needs: ['암', '수술', '입원'], budget: 13, history: '갑상선 결절 추적관찰', purpose: '리모델링', renewal: '상관 없음' },
+    { label: '고혈압 약복용형', age: 52, gender: '남성', needs: ['암', '뇌', '유병자'], budget: 12, history: 'I10 고혈압 약 복용 중. 입원/수술 없음', purpose: '보험료 절감', renewal: '허용' },
+    { label: '당뇨 고지형', age: 58, gender: '여성', needs: ['암', '뇌', '심장', '유병자'], budget: 14, history: 'E11 당뇨 진단 후 경구약 복용 중', purpose: '보장 강화', renewal: '허용' },
+    { label: '고지혈증 경증형', age: 49, gender: '남성', needs: ['암', '심장'], budget: 10, history: '고지혈증 약 복용 중', purpose: '보험료 절감', renewal: '상관 없음' },
+    { label: '운전자 단독형', age: 37, gender: '여성', needs: ['운전자'], budget: 4, history: '없음', purpose: '신규 가입', renewal: '허용' },
+    { label: '운전자 고예산형', age: 63, gender: '남성', needs: ['운전자', '상해'], budget: 7, history: '무릎 통원 치료 이력', purpose: '보장 강화', renewal: '허용' },
+    { label: '자녀 입원수술형', age: 11, gender: '여성', needs: ['암', '입원', '수술', '상해'], budget: 9, history: '없음', purpose: '신규 가입', renewal: '비갱신 선호' },
+    { label: '청년 어린이보험형', age: 27, gender: '남성', needs: ['암', '뇌', '심장', '상해'], budget: 12, history: '없음', purpose: '신규 가입', renewal: '비갱신 선호' },
+    { label: '간병 준비형', age: 66, gender: '여성', needs: ['간병', '치매'], budget: 15, history: '고혈압 약 복용 중', purpose: '보장 강화', renewal: '허용' },
+    { label: '고령 치매 경계형', age: 78, gender: '남성', needs: ['치매', '간병'], budget: 17, history: '전립선 비대증 통원 치료', purpose: '신규 가입', renewal: '허용' },
+    { label: '초저예산 암보장형', age: 41, gender: '여성', needs: ['암'], budget: 3, history: '없음', purpose: '보험료 절감', renewal: '상관 없음' },
+    { label: '고예산 보장강화형', age: 46, gender: '남성', needs: ['암', '뇌', '심장', '수술', '입원'], budget: 30, history: '없음', purpose: '보장 강화', renewal: '비갱신 선호' },
+    { label: '실손 보유 리모델링형', age: 53, gender: '여성', needs: ['암', '뇌', '심장'], budget: 18, history: '없음', purpose: '리모델링', renewal: '상관 없음' },
+    { label: '보험료 과다형', age: 47, gender: '남성', needs: ['암', '뇌', '심장'], budget: 9, history: '없음', purpose: '보험료 절감', renewal: '비갱신 선호' },
+    { label: '최근 통원 확인형', age: 39, gender: '여성', needs: ['암', '입원'], budget: 13, history: '최근 감기 통원 치료 후 완치', purpose: '신규 가입', renewal: '상관 없음' },
+    { label: '입원 이력 검토형', age: 57, gender: '남성', needs: ['암', '뇌', '심장', '유병자'], budget: 16, history: '2024년 담석 입원 치료 후 완치', purpose: '보장 강화', renewal: '허용' },
+    { label: '수술 이력 검토형', age: 62, gender: '여성', needs: ['암', '수술', '간병'], budget: 19, history: '백내장 수술 이력. 현재 치료 종료', purpose: '리모델링', renewal: '허용' },
+    { label: '심장 KCD 검토형', age: 60, gender: '남성', needs: ['심장', '수술'], budget: 15, history: 'I47 부정맥 진단 후 약 복용 중', purpose: '보장 강화', renewal: '허용' }
+  ];
+  const generatedPersonas = Array.from({ length: 40 }, (_, index) => {
+    const variant = personaVariants[index % personaVariants.length];
+    const sequence = index + 11;
+    const ageOffset = Math.floor(index / personaVariants.length);
+    const age = Math.min(82, Number(variant.age) + ageOffset);
+    const hasMedicalPlan = index % 3 === 0 ? '없음' : '있음';
+    return {
+      id: randomUUID(),
+      name: `${variant.label} ${sequence}`,
+      age: String(age),
+      gender: variant.gender,
+      needs: variant.needs,
+      budget: String(variant.budget + (index % 4 === 0 ? 2 : 0)),
+      existingMedicalPlan: hasMedicalPlan,
+      medicalHistory: variant.history,
+      existingPremium: String(Math.max(0, Number(variant.budget) + (hasMedicalPlan === '있음' ? 5 : 0))),
+      purpose: variant.purpose,
+      renewalPreference: variant.renewal,
+      disclosureDetails: {
+        recent3Months: index % 5 === 0 ? { treatment: 'none', admission: 'none', surgery: 'none', medication: 'none', extraExam: 'none' } : '없음',
+        recent1Year: /통원|입원|수술/.test(variant.history) ? '있음' : '없음',
+        recent5Years: variant.history === '없음' ? '없음' : variant.history,
+        diseaseEvents: variant.history === '없음' ? [] : [{
+          occurredAt: `202${index % 5 + 1}-0${index % 9 + 1}-15`,
+          eventType: /수술/.test(variant.history) ? '수술' : /입원/.test(variant.history) ? '입원' : '통원',
+          kcdCode: /I47/.test(variant.history) ? 'I47' : /I10|고혈압/.test(variant.history) ? 'I10' : /E11|당뇨/.test(variant.history) ? 'E11' : '',
+          diseaseName: variant.history,
+          status: /완치|종료/.test(variant.history) ? '완치' : '치료중'
+        }]
+      }
+    };
+  });
+  const personas = [...corePersonas, ...generatedPersonas];
 
   const outputs = [];
   for (const persona of personas) {
@@ -1344,7 +1399,7 @@ test('generates POLIBOT recommendation outputs for 10 persona scenarios', async 
     });
   }
 
-  assert.equal(outputs.length, 10);
+  assert.equal(outputs.length, 50);
   outputs.forEach((output) => {
     assert.ok(output.recommendation, output.persona);
     assert.ok(output.recommendation.decisionAnalysis?.decisionScore?.scoreFormula?.components?.length >= 1, output.persona);
