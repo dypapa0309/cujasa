@@ -91,6 +91,7 @@ function isStableHumanlikeCandidate(candidate) {
         && engagement?.checks?.saveWorthiness
       )
     )
+    && engagement?.checks?.humanWarmth
     && !engagement?.checks?.shallowChecklist
     && !engagement?.checks?.genericTemplate
     && !engagement?.checks?.repetitiveFallback

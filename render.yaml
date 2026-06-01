@@ -95,6 +95,10 @@ services:
         value: "1"
       - key: THREADS_REPLY_LINK_MODE_ENABLED
         value: "true"
+      - key: ENABLE_INTERNAL_DAILY_PIPELINE_CRON
+        value: "false"
+      - key: ENABLE_STARTUP_DAILY_CATCH_UP
+        value: "false"
       - key: INFLUDEX_SERVICE_OPEN
         value: "true"
       - key: APIFY_API_TOKEN
@@ -129,3 +133,23 @@ services:
         sync: false
       - key: SCHEDULER_SECRET
         sync: false
+
+  - type: cron
+    name: cujasa-daily-pipeline-continuation
+    env: node
+    plan: starter
+    rootDir: .
+    buildCommand: npm install --prefix server
+    startCommand: npm run scheduler:daily --prefix server
+    schedule: "30 17-21 * * *"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SCHEDULER_API_BASE_URL
+        sync: false
+      - key: SCHEDULER_SECRET
+        sync: false
+      - key: SCHEDULER_MODE
+        value: continuation
+      - key: SCHEDULER_TRIGGERED_BY
+        value: render_cron_continuation

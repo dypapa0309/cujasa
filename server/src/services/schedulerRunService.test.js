@@ -138,3 +138,160 @@ test('runDailyPipelineOnce closes as partial when account budget leaves pending 
   assert.equal(result.summary.pending.some((row) => row.accountId === second.id), true);
   assert.equal(result.summary.results.some((row) => row.accountId === first.id), true);
 });
+
+test('runDailyPipelineOnce continuation keeps previous daily results in the summary', async () => {
+  const project = await dbInsert('projects', {
+    name: 'continuation summary test',
+    type: 'coupang',
+    status: 'active'
+  });
+  const first = await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'continuation account one',
+    platform: 'threads',
+    account_handle: '@continuation-one',
+    automation_status: 'running',
+    status: 'active'
+  });
+  const second = await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'continuation account two',
+    platform: 'threads',
+    account_handle: '@continuation-two',
+    automation_status: 'running',
+    status: 'active'
+  });
+  const runDateKst = '2099-02-08';
+
+  const firstRun = await runDailyPipelineOnce({
+    triggeredBy: 'test_continuation_first',
+    runDateKst,
+    maxAccounts: 1,
+    mode: 'scheduled'
+  });
+  const secondRun = await runDailyPipelineOnce({
+    triggeredBy: 'test_continuation_second',
+    runDateKst,
+    mode: 'continuation'
+  });
+
+  assert.equal(firstRun.status, 'partial');
+  assert.equal(secondRun.duplicate, false);
+  assert.equal(secondRun.summary.results.some((row) => row.accountId === first.id), true);
+  assert.equal(secondRun.summary.results.some((row) => row.accountId === second.id), true);
+});
+
+test('runDailyPipelineOnce keeps recoverable accounts pending when no future queue exists', async () => {
+  const project = await dbInsert('projects', {
+    name: 'future queue coverage test',
+    type: 'coupang',
+    status: 'active'
+  });
+  const account = await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'coverage throttle account',
+    platform: 'threads',
+    account_handle: '@coverage-throttle',
+    automation_status: 'running',
+    status: 'active',
+    threads_access_token: 'token',
+    threads_user_id: 'threads-user',
+    threads_token_status: 'valid',
+    coupang_access_key: 'access',
+    coupang_secret_key: 'secret',
+    coupang_partner_id: 'partner',
+    coupang_tracking_code: 'tracking'
+  });
+
+  await dbInsert('pipeline_runs', {
+    account_id: account.id,
+    project_id: project.id,
+    status: 'running',
+    started_at: new Date().toISOString()
+  });
+
+  const result = await runDailyPipelineOnce({
+    triggeredBy: 'test_future_queue_coverage',
+    runDateKst: '2099-02-07',
+    mode: 'scheduled'
+  });
+
+  assert.equal(result.duplicate, false);
+  assert.equal(result.status, 'partial');
+  assert.equal(result.run.status, 'partial');
+  assert.equal(result.summary.futureQueueCoverage.missingFutureQueueCount > 0, true);
+  assert.equal(result.summary.pending.some((row) => row.accountId === account.id), true);
+});
+
+test('dailyPipelineStatus enriches legacy completed runs with live future queue coverage', async () => {
+  const project = await dbInsert('projects', {
+    name: 'legacy coverage status test',
+    type: 'coupang',
+    status: 'active'
+  });
+  await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'legacy coverage account',
+    platform: 'threads',
+    account_handle: '@legacy-coverage',
+    automation_status: 'running',
+    status: 'active'
+  });
+  await dbInsert('scheduler_runs', {
+    job_name: 'daily-pipeline',
+    run_date_kst: '2099-02-09',
+    status: 'completed',
+    triggered_by: 'legacy_test',
+    started_at: '2099-02-08T17:00:00.000Z',
+    finished_at: '2099-02-08T17:05:00.000Z',
+    summary: {
+      results: [],
+      pendingCount: 0
+    }
+  });
+
+  const status = await dailyPipelineStatus(new Date('2099-02-09T00:30:00.000Z'));
+
+  assert.equal(status.status, 'completed');
+  assert.equal(status.run.summary.futureQueueCoverage.missingFutureQueueCount > 0, true);
+});
+
+test('dailyPipelineStatus treats posted run-date queues as coverage', async () => {
+  const project = await dbInsert('projects', {
+    name: 'posted coverage status test',
+    type: 'coupang',
+    status: 'active'
+  });
+  const account = await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'posted coverage account',
+    platform: 'threads',
+    account_handle: '@posted-coverage',
+    automation_status: 'running',
+    status: 'active'
+  });
+  await dbInsert('post_queue', {
+    account_id: account.id,
+    project_id: project.id,
+    status: 'posted',
+    posted_at: '2099-02-10T01:00:00.000Z',
+    scheduled_at: '2099-02-10T01:00:00.000Z'
+  });
+  await dbInsert('scheduler_runs', {
+    job_name: 'daily-pipeline',
+    run_date_kst: '2099-02-10',
+    status: 'completed',
+    triggered_by: 'posted_coverage_test',
+    started_at: '2099-02-09T17:00:00.000Z',
+    finished_at: '2099-02-09T17:05:00.000Z',
+    summary: {
+      results: [],
+      pendingCount: 0
+    }
+  });
+
+  const status = await dailyPipelineStatus(new Date('2099-02-10T12:00:00.000Z'));
+  const missingIds = status.run.summary.futureQueueCoverage.missingFutureQueue.map((row) => row.accountId);
+
+  assert.equal(missingIds.includes(account.id), false);
+});

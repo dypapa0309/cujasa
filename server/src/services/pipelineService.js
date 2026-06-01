@@ -256,7 +256,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
           postsCreated: totalPosts
         });
       } catch (err) {
-        if (err.code === 'COUPANG_RATE_LIMIT') throw err;
+        if ([DEFERRED_COUPANG_THROTTLE, PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED, 'COUPANG_RATE_LIMIT'].includes(err.code)) throw err;
         await logActivity({ account_id: account.id, project_id: account.project_id, action: 'pipeline_topic_failed', level: 'warn', message: `topic ${topic.id}: ${err.message}` });
       }
     }

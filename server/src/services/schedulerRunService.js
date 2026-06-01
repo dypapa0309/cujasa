@@ -119,6 +119,133 @@ function summarizePipelineResults(pipeline = []) {
   };
 }
 
+function isAutomationRunningAccount(account = {}) {
+  return account?.status === 'active' && account?.automation_status === 'running';
+}
+
+function kstDayRangeFromDateString(runDateKst = kstDateString()) {
+  const [year, month, day] = String(runDateKst).split('-').map((part) => Number(part));
+  const start = new Date(Date.UTC(year, month - 1, day) - KST_OFFSET_MS);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, end };
+}
+
+function hasRunDateQueueCoverage(rows = [], accountId, runDateKst = kstDateString()) {
+  const { start, end } = kstDayRangeFromDateString(runDateKst);
+  return rows.some((row) => {
+    if (row.account_id !== accountId) return false;
+    if (!['scheduled', 'retry', 'posting', 'posted'].includes(row.status)) return false;
+    const time = new Date(row.posted_at || row.scheduled_at || 0).getTime();
+    return time >= start.getTime() && time < end.getTime();
+  });
+}
+
+function missingFutureQueueReason(row = {}) {
+  const code = row.code || row.reason || row.status || 'NO_FUTURE_QUEUE';
+  const message = row.message || row.error || row.reason || '당일 예약 큐가 없습니다.';
+  if (/threads_reconnect|reply_permission|token|oauth/i.test(code) || /Threads.*토큰|재연결|댓글 권한/i.test(message)) {
+    return { code: 'THREADS_RECONNECT_REQUIRED', recoverable: false };
+  }
+  if (['deferred_coupang_throttle', 'DEFERRED_COUPANG_THROTTLE', 'deferred_time_budget', 'PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED', 'COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE', 'already_running'].includes(code)) {
+    return { code, recoverable: true };
+  }
+  if (['NO_DRAFT_POSTS', 'QUALITY_FILTER_REJECTED_DRAFTS', 'NO_REAL_COUPANG_LINKS', 'NO_REAL_PRODUCTS', 'NO_QUEUEABLE_DRAFTS', 'preflight_failed', 'coupang_settings'].includes(code)) {
+    return { code, recoverable: false };
+  }
+  return { code, recoverable: false };
+}
+
+async function buildFutureQueueCoverage(pipeline = [], { runDateKst = kstDateString() } = {}) {
+  const rows = Array.isArray(pipeline) ? pipeline : (Array.isArray(pipeline?.results) ? pipeline.results : []);
+  const resultByAccountId = new Map(rows.map((row) => [row.accountId, row]));
+  const [accounts, queue] = await Promise.all([
+    dbList('accounts', { status: 'active' }),
+    dbList('post_queue')
+  ]);
+  const activeRunning = accounts.filter(isAutomationRunningAccount);
+  const missingFutureQueue = [];
+  for (const account of activeRunning) {
+    if (hasRunDateQueueCoverage(queue, account.id, runDateKst)) continue;
+    const result = resultByAccountId.get(account.id) || {};
+    const reason = missingFutureQueueReason(result);
+    missingFutureQueue.push({
+      accountId: account.id,
+      accountName: account.name,
+      accountHandle: account.account_handle || '',
+      status: result.status || null,
+      code: reason.code,
+      reason: result.reason || result.message || result.error || '당일 예약 큐가 없습니다.',
+      recoverable: reason.recoverable
+    });
+  }
+  const recoverableMissingFutureQueue = missingFutureQueue.filter((row) => row.recoverable);
+  const blockedMissingFutureQueue = missingFutureQueue.filter((row) => !row.recoverable);
+  return {
+    activeRunningCount: activeRunning.length,
+    missingFutureQueue,
+    missingFutureQueueCount: missingFutureQueue.length,
+    recoverableMissingFutureQueue,
+    recoverableMissingFutureQueueCount: recoverableMissingFutureQueue.length,
+    blockedMissingFutureQueue,
+    blockedMissingFutureQueueCount: blockedMissingFutureQueue.length
+  };
+}
+
+function mergePendingWithRecoverableMissing(pending = [], recoverableMissingFutureQueue = []) {
+  const merged = [...pending];
+  const seen = new Set(merged.map((row) => row.accountId).filter(Boolean));
+  for (const row of recoverableMissingFutureQueue) {
+    if (!row.accountId || seen.has(row.accountId)) continue;
+    merged.push({
+      accountId: row.accountId,
+      accountName: row.accountName,
+      reason: row.code || 'missing_future_queue'
+    });
+    seen.add(row.accountId);
+  }
+  return merged;
+}
+
+function mergeDailyPipelineResultRows(previousRows = [], currentRows = []) {
+  const merged = new Map();
+  for (const row of [...previousRows, ...currentRows]) {
+    const key = row.accountId || row.pipelineRunId || `${row.accountName || 'row'}:${merged.size}`;
+    merged.set(key, row);
+  }
+  return [...merged.values()];
+}
+
+function summarizeDailyPipelineRows(rows = [], base = {}) {
+  const byStatus = rows.reduce((acc, row) => {
+    const key = row.status || (row.ok ? 'ok' : 'unknown');
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const reconnectRequired = rows.filter((row) => {
+    const text = [
+      row.status,
+      row.code,
+      row.reason,
+      row.message,
+      row.error
+    ].filter(Boolean).join(' ');
+    return /reply_permission_required|threads_reconnect|threads_reconnect_required|Threads.*재연결|댓글 권한|재연결 필요|access token|OAuth/i.test(text);
+  }).length;
+  return {
+    ...base,
+    total: rows.length,
+    processed: rows.length,
+    ok: rows.filter((row) => row.ok === true || row.status === 'ok').length,
+    skipped: rows.filter((row) => row.status === 'skipped').length,
+    reconnectRequired,
+    skippedOther: Math.max(0, rows.filter((row) => row.status === 'skipped').length - reconnectRequired),
+    noLinkCandidates: rows.filter((row) => row.status === 'no_link_candidates').length,
+    error: rows.filter((row) => row.ok === false || row.status === 'error').length,
+    byStatus,
+    results: rows
+  };
+}
+
 function isDuplicateSchedulerRunError(error) {
   return /scheduler_runs|duplicate key|idx_scheduler_runs_job_date|unique/i.test(error.message || '');
 }
@@ -253,18 +380,43 @@ export async function dailyPipelineStatus(date = now()) {
   const windowPassed = hasDailyPipelineWindowPassed(date);
   const stale = isStaleSchedulerRun(run, date);
   const summary = schedulerRunSummary(run);
+  const liveFutureQueueCoverage = run && !summary.futureQueueCoverage
+    ? await buildFutureQueueCoverage({ results: summary.results || [] }, { runDateKst }).catch((error) => ({
+      coverageError: error.message || 'future queue coverage check failed',
+      activeRunningCount: null,
+      missingFutureQueue: [],
+      missingFutureQueueCount: null,
+      recoverableMissingFutureQueue: [],
+      recoverableMissingFutureQueueCount: 0,
+      blockedMissingFutureQueue: [],
+      blockedMissingFutureQueueCount: 0
+    }))
+    : null;
+  const enrichedSummary = liveFutureQueueCoverage
+    ? { ...summary, futureQueueCoverage: liveFutureQueueCoverage }
+    : summary;
   const progress = schedulerProgress(run);
   const startedAt = run?.started_at ? new Date(run.started_at).getTime() : 0;
   const finishedAt = run?.finished_at ? new Date(run.finished_at).getTime() : 0;
-  const durationMs = summary.durationMs ?? (finishedAt && startedAt ? finishedAt - startedAt : (run?.status === 'running' && startedAt ? date.getTime() - startedAt : null));
-  const pendingCount = summary.pendingCount ?? (Array.isArray(summary.pending) ? summary.pending.length : 0);
+  const durationMs = enrichedSummary.durationMs ?? (finishedAt && startedAt ? finishedAt - startedAt : (run?.status === 'running' && startedAt ? date.getTime() - startedAt : null));
+  const basePendingCount = enrichedSummary.pendingCount ?? (Array.isArray(enrichedSummary.pending) ? enrichedSummary.pending.length : 0);
+  const pendingCount = Math.max(basePendingCount, enrichedSummary.futureQueueCoverage?.recoverableMissingFutureQueueCount || 0);
+  const publicStatus = run
+    ? schedulerPublicStatus({
+      ...run,
+      summary: {
+        ...enrichedSummary,
+        pendingCount
+      }
+    }, date)
+    : schedulerPublicStatus(run, date);
   return {
     jobName: DAILY_PIPELINE_JOB,
     runDateKst,
     windowPassed,
     missing: windowPassed && !run,
     stale,
-    status: schedulerPublicStatus(run, date),
+    status: publicStatus,
     durationMs,
     heartbeatAt: progress.updatedAt || summary.heartbeatAt || null,
     pendingCount,
@@ -278,7 +430,7 @@ export async function dailyPipelineStatus(date = now()) {
       durationMs,
       heartbeatAt: progress.updatedAt || summary.heartbeatAt || null,
       pendingCount,
-      summary,
+      summary: enrichedSummary,
       errorMessage: run.error_message || null
     } : null
   };
@@ -398,9 +550,34 @@ export async function runDailyPipelineOnce({
     const cleanup = await cleanupUnusedPipelineArtifacts({ mode: 'apply' });
     const oldIssues = await cleanupOldQueueIssues({ mode: 'apply' });
     const oldActivityLogs = await cleanupOldActivityLogs({ mode: 'apply' });
+    const summarized = summarizePipelineResults(pipeline);
+    const mergedResults = mergeDailyPipelineResultRows(previousSummary.results, summarized.results);
+    const aggregate = allowPartialResume
+      ? summarizeDailyPipelineRows(mergedResults, {
+        pipelineStatus: summarized.pipelineStatus,
+        durationMs: (Number(previousSummary.durationMs) || 0) + (Number(summarized.durationMs) || 0)
+      })
+      : summarized;
+    const futureCoverage = await buildFutureQueueCoverage(pipeline, { runDateKst }).catch((error) => ({
+      coverageError: error.message || 'future queue coverage check failed',
+      activeRunningCount: null,
+      missingFutureQueue: [],
+      missingFutureQueueCount: null,
+      recoverableMissingFutureQueue: [],
+      recoverableMissingFutureQueueCount: 0,
+      blockedMissingFutureQueue: [],
+      blockedMissingFutureQueueCount: 0
+    }));
+    const pending = mergePendingWithRecoverableMissing(
+      summarized.pending,
+      futureCoverage.recoverableMissingFutureQueue
+    );
     const finishedAt = now().toISOString();
     const summary = {
-      ...summarizePipelineResults(pipeline),
+      ...aggregate,
+      pending,
+      pendingCount: pending.length,
+      futureQueueCoverage: futureCoverage,
       mode,
       options: effectiveOptions,
       expiredPipelines: expiredPipelines.length,
@@ -411,7 +588,7 @@ export async function runDailyPipelineOnce({
       oldIssues,
       oldActivityLogs,
       completedAt: finishedAt,
-      durationMs: Date.now() - runStartedAt,
+      durationMs: allowPartialResume ? aggregate.durationMs : Date.now() - runStartedAt,
       heartbeatAt: finishedAt
     };
     const status = summary.pendingCount > 0 || pipeline.status === 'partial' ? 'partial' : 'completed';

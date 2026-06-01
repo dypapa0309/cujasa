@@ -890,6 +890,7 @@ function dailyPipelineLabel(dailyPipeline) {
   if (!dailyPipeline) return '-';
   if (dailyPipeline.missing) return '누락';
   if (dailyPipeline.stale || dailyPipeline.status === 'stale') return '멈춤';
+  if (dailyPipeline.status === 'completed' && (dailyPipeline.run?.summary?.futureQueueCoverage?.missingFutureQueueCount || 0) > 0) return '확인 필요';
   if (dailyPipeline.status === 'completed') return '성공';
   if (dailyPipeline.status === 'partial') return '부분 완료';
   if (dailyPipeline.status === 'running') return '실행중';
@@ -901,6 +902,7 @@ function dailyPipelineTone(dailyPipeline) {
   if (!dailyPipeline) return 'warn';
   if (dailyPipeline.missing || dailyPipeline.stale || dailyPipeline.status === 'stale' || dailyPipeline.status === 'failed') return 'error';
   if (dailyPipeline.status === 'running' || dailyPipeline.status === 'pending' || dailyPipeline.status === 'partial') return 'warn';
+  if (dailyPipeline.status === 'completed' && (dailyPipeline.run?.summary?.futureQueueCoverage?.missingFutureQueueCount || 0) > 0) return 'warn';
   return 'ok';
 }
 
@@ -915,7 +917,9 @@ function dailyPipelineHint(dailyPipeline) {
   if (dailyPipeline.status === 'completed') {
     const reconnect = summary.reconnectRequired || 0;
     const skippedOther = summary.skippedOther ?? Math.max(0, (summary.skipped || 0) - reconnect);
-    return `대상 ${summary.total || 0} · 예약 성공 ${summary.ok || 0} · 재연결 필요 ${reconnect} · 기타 스킵 ${skippedOther} · 시스템 오류 ${summary.error || 0}`;
+    const missingFuture = summary.futureQueueCoverage?.missingFutureQueueCount || 0;
+    const missingText = missingFuture > 0 ? ` · 당일 예약 없음 ${missingFuture}` : '';
+    return `대상 ${summary.total || 0} · 예약 성공 ${summary.ok || 0} · 재연결 필요 ${reconnect} · 기타 스킵 ${skippedOther} · 시스템 오류 ${summary.error || 0}${missingText}`;
   }
   if (dailyPipeline.status === 'running') {
     const progress = dailyPipeline.progress || summary.progress || {};
