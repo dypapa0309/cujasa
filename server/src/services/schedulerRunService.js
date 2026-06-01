@@ -380,7 +380,7 @@ export async function dailyPipelineStatus(date = now()) {
   const windowPassed = hasDailyPipelineWindowPassed(date);
   const stale = isStaleSchedulerRun(run, date);
   const summary = schedulerRunSummary(run);
-  const liveFutureQueueCoverage = run && !summary.futureQueueCoverage
+  const liveFutureQueueCoverage = run
     ? await buildFutureQueueCoverage({ results: summary.results || [] }, { runDateKst }).catch((error) => ({
       coverageError: error.message || 'future queue coverage check failed',
       activeRunningCount: null,
@@ -400,7 +400,10 @@ export async function dailyPipelineStatus(date = now()) {
   const finishedAt = run?.finished_at ? new Date(run.finished_at).getTime() : 0;
   const durationMs = enrichedSummary.durationMs ?? (finishedAt && startedAt ? finishedAt - startedAt : (run?.status === 'running' && startedAt ? date.getTime() - startedAt : null));
   const basePendingCount = enrichedSummary.pendingCount ?? (Array.isArray(enrichedSummary.pending) ? enrichedSummary.pending.length : 0);
-  const pendingCount = Math.max(basePendingCount, enrichedSummary.futureQueueCoverage?.recoverableMissingFutureQueueCount || 0);
+  const livePendingCount = enrichedSummary.futureQueueCoverage?.recoverableMissingFutureQueueCount;
+  const pendingCount = Number.isFinite(Number(livePendingCount))
+    ? Number(livePendingCount)
+    : basePendingCount;
   const publicStatus = run
     ? schedulerPublicStatus({
       ...run,
