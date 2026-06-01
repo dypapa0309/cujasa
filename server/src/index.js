@@ -62,7 +62,9 @@ const allowedOrigins = new Set([
   'https://dexor.jasain.kr',
   'https://dexor-pearl.vercel.app',
   'https://cujasa.vercel.app',
-  'https://cujasa.onrender.com'
+  'https://cujasa.onrender.com',
+  'https://polibot-jasain.web.app',
+  'https://polibot-jasain.firebaseapp.com'
 ]);
 const BLOG_CANONICAL_HOST = 'blog.jasain.kr';
 
