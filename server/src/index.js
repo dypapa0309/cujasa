@@ -151,7 +151,10 @@ const corsOptions = {
     'Authorization',
     'X-CUJASA-Device-Id',
     'X-CUJASA-Device-Type',
-    'X-CUJASA-Device-Fingerprint'
+    'X-CUJASA-Device-Fingerprint',
+    'X-POLIBOT-Device-Id',
+    'X-POLIBOT-Device-Type',
+    'X-POLIBOT-Device-Fingerprint'
   ],
   credentials: true,
   optionsSuccessStatus: 204
