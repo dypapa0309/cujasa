@@ -4640,6 +4640,10 @@ function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
             const displayRank = ({ '씨랭크/다이아': 'S', '최적화': 'A', '준최적화': 'B', '일반': 'C', '제외/재검토': 'D' })[item.scoreLabel || item.grade] || item.scoreLabel || item.grade;
             const strengthenedRank = item.strengthenedGrade || displayRank;
             const adjusted = strengthenedRank !== displayRank;
+            const searchLabel = item.searchValidation?.label || item.exposureValidation?.label || '검색 확인 전';
+            const confidenceScore = item.dataConfidence?.score ? ` · ${item.dataConfidence.score}점` : '';
+            const confidenceLabel = item.dataConfidence?.level ? `${item.dataConfidence.level}${confidenceScore}` : '신뢰도 미확인';
+            const flags = Array.isArray(item.verificationFlags) ? item.verificationFlags.filter(Boolean) : [];
             return (
               <div key={item.id} className="rounded-2xl bg-black/25 px-4 py-3">
                 <div className="flex items-center justify-between gap-3">
@@ -4656,6 +4660,23 @@ function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
                 </div>
                 <div className="mt-2 text-xs font-bold text-zinc-300">{item.strengthenedDecision || item.scoreComment || dexorScoreComment(item.score)}</div>
                 <div className="mt-2 text-xs font-bold text-zinc-600">{item.candidateCategory || item.targetCategory || '카테고리 미입력'}</div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <DexorSignal label="검색 실측" value={searchLabel} sub={item.searchValidation?.matchedKeyword || item.searchValidation?.status || '상위노출 검증'} />
+                  <DexorSignal label="데이터 신뢰도" value={confidenceLabel} sub={item.dataConfidence?.sourceLabel || '계산 근거'} />
+                  <DexorSignal label="판정 상태" value={item.gradeStatus || '유지'} sub={item.contentQualityScore ? `콘텐츠 ${item.contentQualityScore}점` : '품질 신호'} />
+                </div>
+                {flags.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {flags.slice(0, 3).map((flag) => (
+                      <span key={flag} className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2 py-1 text-[11px] font-black text-amber-100">
+                        {flag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {item.reasonSummary && (
+                  <p className="mt-2 line-clamp-2 text-xs font-bold leading-relaxed text-zinc-500">{item.reasonSummary}</p>
+                )}
               </div>
             );
           })}

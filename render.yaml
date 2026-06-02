@@ -15,6 +15,12 @@ services:
         sync: false
       - key: OPENAI_MODEL
         value: gpt-4o-mini
+      - key: NAVER_SEARCH_CLIENT_ID
+        sync: false
+      - key: NAVER_SEARCH_CLIENT_SECRET
+        sync: false
+      - key: NAVER_SEARCH_VALIDATION_RANGE
+        value: "100"
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
