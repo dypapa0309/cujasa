@@ -354,13 +354,15 @@ function dexorNormalizeSearchResult(item = {}) {
   };
 }
 
-async function dexorFetchNaverBlogSearch(query, { display = DEXOR_SEARCH_VALIDATION_RANGE } = {}) {
+async function dexorFetchNaverBlogSearch(query, { display = DEXOR_SEARCH_VALIDATION_RANGE, cache = null } = {}) {
   const credentials = dexorNaverSearchCredentials();
   if (!credentials) {
     const error = new Error('네이버 검색 API 키가 설정되지 않았습니다.');
     error.code = 'naver_credentials_missing';
     throw error;
   }
+  const cacheKey = `${query}:${display}`;
+  if (cache?.has(cacheKey)) return cache.get(cacheKey);
   const params = new URLSearchParams({
     query,
     display: String(display),
@@ -376,10 +378,12 @@ async function dexorFetchNaverBlogSearch(query, { display = DEXOR_SEARCH_VALIDAT
   });
   if (!response.ok) throw new Error(`네이버 블로그 검색 API 실패 (${response.status})`);
   const payload = await response.json();
-  return {
+  const result = {
     total: Number(payload.total || 0),
     items: Array.isArray(payload.items) ? payload.items.map(dexorNormalizeSearchResult) : []
   };
+  cache?.set(cacheKey, result);
+  return result;
 }
 
 function dexorCompetitionScoreFromTotal(total) {
@@ -400,10 +404,55 @@ function dexorBuildSearchValidationQueries(campaign, derivedKeywords = []) {
   return [...new Set([...pairedTerms, ...baseTerms, ...derivedTerms]
     .map((word) => String(word || '').replace(/\s+/g, ' ').trim())
     .filter((word) => word.length >= 2 && word.length <= 40))]
-    .slice(0, 4);
+    .slice(0, 5);
 }
 
-async function dexorCollectSearchValidation(url, campaign, derivedKeywords = []) {
+function dexorSearchValidationScore({ matches = [], checked = [] } = {}) {
+  const successfulChecked = checked.filter((item) => item.total !== null).length;
+  const rankedMatches = matches.filter((item) => Number.isFinite(Number(item.rank)) && Number(item.rank) > 0);
+  if (!rankedMatches.length) {
+    return {
+      validationScore: 0,
+      bestRank: null,
+      averageRank: null,
+      matchedKeywordCount: 0,
+      exactPostCount: 0,
+      successfulChecked,
+      rankScore: 0,
+      averageRankScore: 0,
+      diversityScore: 0
+    };
+  }
+  const ranks = rankedMatches.map((item) => Number(item.rank));
+  const bestRank = Math.min(...ranks);
+  const averageRank = Math.round((ranks.reduce((sum, rank) => sum + rank, 0) / ranks.length) * 10) / 10;
+  const exactPostCount = rankedMatches.filter((item) => item.exactPost).length;
+  const matchedKeywordCount = new Set(rankedMatches.map((item) => item.query)).size;
+  const denominator = Math.max(1, Math.min(3, successfulChecked || checked.length || 3));
+  const diversityScore = Math.min(100, Math.round((matchedKeywordCount / denominator) * 100));
+  const rankScore = dexorRankScore(bestRank);
+  const averageRankScore = dexorRankScore(Math.round(averageRank));
+  const exactBonus = exactPostCount > 0 ? 8 : 0;
+  const validationScore = Math.round(dexorClamp(
+    rankScore * 0.5
+    + averageRankScore * 0.22
+    + diversityScore * 0.2
+    + exactBonus
+  ));
+  return {
+    validationScore,
+    bestRank,
+    averageRank,
+    matchedKeywordCount,
+    exactPostCount,
+    successfulChecked,
+    rankScore,
+    averageRankScore,
+    diversityScore
+  };
+}
+
+async function dexorCollectSearchValidation(url, campaign, derivedKeywords = [], options = {}) {
   const blogId = dexorGetBlogId(url);
   const logNo = dexorGetLogNo(url);
   const checkedKeywords = dexorBuildSearchValidationQueries(campaign, derivedKeywords);
@@ -446,7 +495,7 @@ async function dexorCollectSearchValidation(url, campaign, derivedKeywords = [])
   const totals = [];
   for (const query of checkedKeywords) {
     try {
-      const result = await dexorFetchNaverBlogSearch(query);
+      const result = await dexorFetchNaverBlogSearch(query, { cache: options.searchCache || null });
       totals.push(result.total);
       const exactIndex = result.items.findIndex((item) => item.blogId === blogId && (!logNo || item.logNo === logNo));
       const blogIndex = result.items.findIndex((item) => item.blogId === blogId);
@@ -491,14 +540,23 @@ async function dexorCollectSearchValidation(url, campaign, derivedKeywords = [])
     : null;
   const bestMatch = matches.sort((a, b) => a.rank - b.rank)[0] || null;
   const hasSuccessfulCheck = checked.some((item) => item.total !== null);
+  const score = dexorSearchValidationScore({ matches, checked });
 
   if (bestMatch) {
     return {
       status: 'validated',
-      label: `"${bestMatch.query}" ${bestMatch.rank}위 실측${bestMatch.exactPost ? '' : ' · 블로그 기준'}`,
-      reason: `네이버 블로그 검색 상위 ${DEXOR_SEARCH_VALIDATION_RANGE}개 안에서 후보 블로그를 확인했습니다.`,
-      bestRank: bestMatch.rank,
+      label: `${score.matchedKeywordCount}개 키워드 · 최고 ${score.bestRank}위 · 평균 ${score.averageRank}위${score.exactPostCount ? ' · 포스트 일치' : ' · 블로그 기준'}`,
+      reason: `네이버 블로그 검색 상위 ${DEXOR_SEARCH_VALIDATION_RANGE}개 안에서 후보 블로그를 ${score.matchedKeywordCount}개 키워드로 확인했습니다.`,
+      bestRank: score.bestRank,
+      averageRank: score.averageRank,
       matchedKeyword: bestMatch.query,
+      matchedKeywordCount: score.matchedKeywordCount,
+      exactPostCount: score.exactPostCount,
+      validationScore: score.validationScore,
+      rankScore: score.rankScore,
+      averageRankScore: score.averageRankScore,
+      diversityScore: score.diversityScore,
+      successfulChecked: score.successfulChecked,
       checkedKeywords,
       checkedCount: checked.length,
       range: DEXOR_SEARCH_VALIDATION_RANGE,
@@ -526,7 +584,12 @@ async function dexorCollectSearchValidation(url, campaign, derivedKeywords = [])
     label: `검색 상위 ${DEXOR_SEARCH_VALIDATION_RANGE}위 내 미확인`,
     reason: `${checkedKeywords.slice(0, 3).join(', ')} 검색 결과에서 후보 블로그가 확인되지 않았습니다.`,
     bestRank: null,
+    averageRank: null,
     matchedKeyword: '',
+    matchedKeywordCount: 0,
+    exactPostCount: 0,
+    validationScore: 0,
+    successfulChecked: score.successfulChecked,
     checkedKeywords,
     checkedCount: checked.length,
     range: DEXOR_SEARCH_VALIDATION_RANGE,
@@ -538,12 +601,12 @@ async function dexorCollectSearchValidation(url, campaign, derivedKeywords = [])
 
 function dexorSearchRankBoost(searchValidation = {}) {
   if (searchValidation.status === 'validated') {
-    const rank = Number(searchValidation.bestRank || 0);
-    if (rank > 0 && rank <= 3) return 12;
-    if (rank <= 5) return 10;
-    if (rank <= 10) return 8;
-    if (rank <= 20) return 4;
-    if (rank <= 30) return 1;
+    const score = Number(searchValidation.validationScore || 0);
+    const exactBonus = Number(searchValidation.exactPostCount || 0) > 0 ? 2 : 0;
+    if (score >= 88) return 12 + exactBonus;
+    if (score >= 76) return 9 + exactBonus;
+    if (score >= 64) return 6 + exactBonus;
+    if (score >= 45) return 2;
     return -2;
   }
   if (searchValidation.status === 'not_found') return -5;
@@ -666,7 +729,9 @@ async function dexorAnalyzeExposurePotential(url, mode = 'quick', campaignInput 
   };
   const derivedKeywords = dexorExtractCandidateKeywords(recentFivePosts, campaign, 2);
   const derivedKeywordBonus = Math.min(8, derivedKeywords.reduce((sum, item) => sum + item.weight, 0) / 4);
-  const searchValidation = await dexorCollectSearchValidation(url, campaign, derivedKeywords);
+  const searchValidation = await dexorCollectSearchValidation(url, campaign, derivedKeywords, {
+    searchCache: campaignInput.searchCache || null
+  });
   const searchBoost = dexorSearchRankBoost(searchValidation);
   const topicHits = signals.posts.reduce((sum, post) => sum + post.topicHits + dexorWeightedTopicScore(post.title, industryWords), 0);
   const maxTopicHits = signals.posts.length * 5;
@@ -725,7 +790,7 @@ async function dexorAnalyzeExposurePotential(url, mode = 'quick', campaignInput 
     riskFlags.push('검색 상위권 실측 미확인');
     riskPenalty += 8;
     gradeCap = dexorMinGrade(gradeCap, 'B');
-  } else if (searchValidation.status === 'validated' && Number(searchValidation.bestRank || 0) > 30) {
+  } else if (searchValidation.status === 'validated' && Number(searchValidation.validationScore || 0) < 45) {
     riskFlags.push('검색 순위 약함');
     riskPenalty += 3;
   }
@@ -733,7 +798,7 @@ async function dexorAnalyzeExposurePotential(url, mode = 'quick', campaignInput 
   const rssScore = cRankFit * 0.36 + diaFit * 0.34 + competitorSimilarity * 0.2 + (100 - keywordCompetition) * 0.1;
   const exposureScore = Math.round(dexorClamp(rssScore + recentKeywordCoverage * 0.05 + derivedKeywordBonus + searchBoost - riskPenalty));
   const dailyVisitorAverage = dailyVisitorSignal?.estimatedAverage || 0;
-  const strongSearchExposure = searchValidation.status === 'validated' && Number(searchValidation.bestRank || 0) > 0 && Number(searchValidation.bestRank || 0) <= 10;
+  const strongSearchExposure = searchValidation.status === 'validated' && Number(searchValidation.validationScore || 0) >= 76;
   const strongRecentTopicExposure = topicFit >= 35
     && (recentKeywordCheck.recentFiveMatchedCount >= 3 || recentKeywordCheck.matchedCount >= 5);
   const severeExposureRisk = Boolean(latestPostDays > 45
@@ -762,7 +827,7 @@ async function dexorAnalyzeExposurePotential(url, mode = 'quick', campaignInput 
       ? `최근 5개 글에서 보조 검토 키워드로 ${derivedKeywords.map((item) => item.keyword).join(', ')}를 추렸습니다.`
       : '최근 5개 글에서 뚜렷한 보조 검토 키워드는 추출되지 않았습니다.',
     searchValidation.status === 'validated'
-      ? `네이버 검색 실측 결과 "${searchValidation.matchedKeyword}"에서 ${searchValidation.bestRank}위로 확인되어 상위노출 근거를 반영했습니다.`
+      ? `네이버 검색 실측 결과 ${searchValidation.matchedKeywordCount}개 키워드에서 확인됐고 최고 ${searchValidation.bestRank}위, 평균 ${searchValidation.averageRank}위로 계산했습니다.`
       : searchValidation.status === 'not_found'
         ? `${searchValidation.checkedKeywords.slice(0, 3).join(', ')} 검색 상위 ${searchValidation.range}위 내에서는 후보 블로그가 확인되지 않아 보수적으로 보정했습니다.`
         : `${searchValidation.label}: ${searchValidation.reason}`,
@@ -949,11 +1014,12 @@ function dexorExposureSignal({ candidate = {}, targetCategory = '기타', candid
 
 function dexorSearchValidationExposureSignal(searchValidation = {}, fallback = {}) {
   const rank = Number(searchValidation.bestRank || searchValidation.rank || 0) || null;
+  const validationScore = Number(searchValidation.validationScore || 0);
   const keywordCount = Array.isArray(searchValidation.matches)
     ? searchValidation.matches.length
     : Number(searchValidation.keywordCount || fallback.keywordCount || 0);
   if (searchValidation.status === 'validated' && rank) {
-    const score = dexorRankScore(rank);
+    const score = validationScore || dexorRankScore(rank);
     const status = score >= 78 ? 'strong' : score >= 58 ? 'proven' : score >= 38 ? 'weak' : 'low';
     const bonus = status === 'strong' ? 10 : status === 'proven' ? 6 : status === 'weak' ? 1 : -5;
     return {
@@ -988,6 +1054,7 @@ function dexorSearchValidationExposureSignal(searchValidation = {}, fallback = {
 
 function dexorDataConfidence({ candidate = {}, daysSinceRecent = null, hasParsedMetrics = false, exposureSignal = null, contentQualityScore = 50 } = {}) {
   const hasSearchProof = exposureSignal && ['strong', 'proven'].includes(exposureSignal.status);
+  const hasRssSignals = Boolean(candidate.rssVerified);
   if (candidate.recentPostAt && hasParsedMetrics) {
     return {
       level: '높음',
@@ -1002,6 +1069,14 @@ function dexorDataConfidence({ candidate = {}, daysSinceRecent = null, hasParsed
       score: exposureSignal.status === 'strong' ? 76 : 66,
       sourceLabel: '검색 결과 기반',
       reason: '최근글일이 직접 입력되지 않아도 실제 검색 노출과 콘텐츠 신호가 확인되어 기본 신뢰도를 보정했습니다.'
+    };
+  }
+  if (hasRssSignals) {
+    return {
+      level: '보통',
+      score: 64,
+      sourceLabel: '네이버 RSS 기반',
+      reason: '최근 공개 RSS 글은 직접 확인했지만 방문자수는 추정값이므로 상위 등급은 보수적으로 보정합니다.'
     };
   }
   if (candidate.recentPostAt || hasParsedMetrics) {
@@ -1021,7 +1096,9 @@ function dexorDataConfidence({ candidate = {}, daysSinceRecent = null, hasParsed
 }
 
 function strengthenDexorResult({ score, scoreLabel, candidate, daysSinceRecent, targetCategory, candidateCategory, exposureSignal, contentQualityScore = 50, riskFlags = [] }) {
-  const hasParsedMetrics = Boolean(candidate.recentPostAt || candidate.visitEstimate || candidate.reactionEstimate);
+  const hasDirectRecentDate = Boolean(candidate.recentPostAt && candidate.recentPostAtSource !== 'rss');
+  const hasDirectVisitEstimate = Boolean(candidate.visitEstimate && candidate.visitEstimateSource !== 'rss-estimated');
+  const hasParsedMetrics = Boolean(hasDirectRecentDate || hasDirectVisitEstimate || candidate.reactionEstimate);
   const dataConfidence = dexorDataConfidence({ candidate, daysSinceRecent, hasParsedMetrics, exposureSignal, contentQualityScore });
   const legacyIndex = normalizeLegacyDexorIndex(candidate.legacyIndex);
   const verificationFlags = [];
@@ -1062,6 +1139,10 @@ function strengthenDexorResult({ score, scoreLabel, candidate, daysSinceRecent, 
   }
   if (candidate.adMemo) {
     verificationFlags.push('광고/협찬 메모 확인');
+  }
+  if (candidate.visitEstimateSource === 'rss-estimated') {
+    verificationFlags.push('일방문자수 추정값');
+    if (scoreLabel === 'S') gradeCap = dexorMinGrade(gradeCap, 'A');
   }
   if (daysSinceRecent !== null && daysSinceRecent > 60) {
     verificationFlags.push('최근 활동 확인 필요');
@@ -1661,6 +1742,14 @@ function normalizeDexorCategory(value = '') {
   if (!text) return '';
   if (/자동|auto/i.test(text)) return '기타';
   return DEXOR_CATEGORIES.find((category) => text.includes(category) || category.includes(text)) || text;
+}
+
+function normalizeDexorTargetKeyword(value = '') {
+  return String(value || '')
+    .replace(/[|/·,]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60);
 }
 
 function deriveBlogNameFromUrl(url = '') {
@@ -5688,9 +5777,10 @@ export async function deleteSublogSubscription(userId, subscriptionId) {
   return { ok: true };
 }
 
-export async function saveDexorCandidates(userId, { urls = '', fileName = '', targetCategory = '' } = {}) {
+export async function saveDexorCandidates(userId, { urls = '', fileName = '', targetCategory = '', targetKeyword = '' } = {}) {
   const parsed = parseCandidateRows(urls, fileName);
   const normalizedTargetCategory = normalizeDexorCategory(targetCategory) || '기타';
+  const normalizedTargetKeyword = normalizeDexorTargetKeyword(targetKeyword);
   const candidates = parsed.length > 0
     ? parsed
     : parseUrls(urls).map((url, index) => ({
@@ -5704,6 +5794,7 @@ export async function saveDexorCandidates(userId, { urls = '', fileName = '', ta
   return updateWorkspace(userId, 'dexor', {
     candidates,
     targetCategory: normalizedTargetCategory,
+    targetKeyword: normalizedTargetKeyword,
     fileName: String(fileName || '').trim(),
     analysisResults: []
   });
@@ -5712,6 +5803,7 @@ export async function saveDexorCandidates(userId, { urls = '', fileName = '', ta
 function buildDexorFallbackAnalysisResult(candidate, workspace = {}) {
     const hash = hashText(candidate.url);
     const targetCategory = normalizeDexorCategory(workspace.targetCategory) || '기타';
+    const targetKeyword = normalizeDexorTargetKeyword(workspace.targetKeyword);
     const candidateCategory = normalizeDexorCategory(candidate.candidateCategory) || '미입력';
     const recentTime = candidate.recentPostAt ? new Date(candidate.recentPostAt.replace(/[./]/g, '-')).getTime() : 0;
     const daysSinceRecent = recentTime ? Math.floor((Date.now() - recentTime) / (24 * 60 * 60 * 1000)) : null;
@@ -5756,6 +5848,7 @@ function buildDexorFallbackAnalysisResult(candidate, workspace = {}) {
     });
     const summaryReasons = [
       /blog\.naver\.com/i.test(candidate.url) ? '네이버' : '외부',
+      targetKeyword ? `키워드 ${targetKeyword}` : '',
       candidateCategory !== '미입력' && targetCategory !== '기타' ? (candidateCategory === targetCategory ? '카테고리 일치' : '카테고리 다름') : '',
       daysSinceRecent === null ? '' : daysSinceRecent <= 45 ? '최근 활동 양호' : '최근 활동 확인',
       candidate.visitEstimate ? `조회 ${candidate.visitEstimate}` : '',
@@ -5770,6 +5863,7 @@ function buildDexorFallbackAnalysisResult(candidate, workspace = {}) {
       url: candidate.url,
       blogName: candidate.blogName || deriveBlogNameFromUrl(candidate.url) || '미입력',
       targetCategory,
+      targetKeyword,
       candidateCategory,
       legacyIndex: strengthened.legacyIndex,
       score,
@@ -5800,6 +5894,7 @@ function buildDexorFallbackAnalysisResult(candidate, workspace = {}) {
 
 function buildDexorRssAnalysisResult(candidate, workspace = {}, exposureResult) {
   const targetCategory = normalizeDexorCategory(workspace.targetCategory) || '기타';
+  const targetKeyword = normalizeDexorTargetKeyword(workspace.targetKeyword);
   const candidateCategory = normalizeDexorCategory(candidate.candidateCategory) || '미입력';
   const breakdown = exposureResult.breakdown || {};
   const latestPostDays = Number.isFinite(Number(breakdown.latestPostDays)) ? Number(breakdown.latestPostDays) : null;
@@ -5822,8 +5917,11 @@ function buildDexorRssAnalysisResult(candidate, workspace = {}, exposureResult) 
   });
   const strengtheningCandidate = {
     ...candidate,
+    rssVerified: true,
     recentPostAt: candidate.recentPostAt || recentPostAt,
+    recentPostAtSource: candidate.recentPostAt ? candidate.recentPostAtSource : 'rss',
     visitEstimate: candidate.visitEstimate ?? breakdown.dailyVisitorSignal?.estimatedAverage ?? null,
+    visitEstimateSource: candidate.visitEstimate ? candidate.visitEstimateSource : (breakdown.dailyVisitorSignal?.estimatedAverage ? 'rss-estimated' : ''),
     searchRank: candidate.searchRank ?? searchSignal.rank ?? null,
     exposureKeywordCount: candidate.exposureKeywordCount || searchSignal.keywordCount || 0
   };
@@ -5841,6 +5939,7 @@ function buildDexorRssAnalysisResult(candidate, workspace = {}, exposureResult) 
   const searchLabel = searchValidation.label || searchSignal.label || '검색 확인 전';
   const reasonSummary = [
     exposureResult.category ? `${exposureResult.category} 기준` : '',
+    targetKeyword ? `키워드 ${targetKeyword}` : '',
     `주제 ${breakdown.topicFit ?? '-'}점`,
     searchLabel ? `검색 ${searchLabel}` : '',
     `최근 10개 중 ${recentKeywordCheck.matchedCount ?? 0}개 관련`,
@@ -5852,6 +5951,7 @@ function buildDexorRssAnalysisResult(candidate, workspace = {}, exposureResult) 
     url: candidate.url,
     blogName: candidate.blogName || deriveBlogNameFromUrl(candidate.url) || '미입력',
     targetCategory,
+    targetKeyword,
     candidateCategory,
     legacyIndex: strengthened.legacyIndex,
     score,
@@ -5896,13 +5996,15 @@ function buildDexorRssAnalysisResult(candidate, workspace = {}, exposureResult) 
 
 async function analyzeDexorCandidateWithRss(candidate, workspace = {}) {
   const targetCategory = normalizeDexorCategory(workspace.targetCategory) || '기타';
+  const targetKeyword = normalizeDexorTargetKeyword(workspace.targetKeyword);
   const candidateCategory = normalizeDexorCategory(candidate.candidateCategory) || '';
   const industry = targetCategory === '기타'
     ? dexorCategoryToIndustry(candidateCategory)
     : dexorCategoryToIndustry(targetCategory);
   const exposureResult = await dexorAnalyzeExposurePotential(candidate.url, 'quick', {
     industry,
-    keyword: ''
+    keyword: targetKeyword,
+    searchCache: workspace.searchCache || null
   });
   return buildDexorRssAnalysisResult(candidate, workspace, exposureResult);
 }
@@ -5916,9 +6018,10 @@ export async function analyzeDexorCandidates(userId) {
     throw error;
   }
   const analysisResults = [];
+  const searchCache = new Map();
   for (const candidate of candidates) {
     try {
-      analysisResults.push(await analyzeDexorCandidateWithRss(candidate, workspace));
+      analysisResults.push(await analyzeDexorCandidateWithRss(candidate, { ...workspace, searchCache }));
     } catch {
       analysisResults.push(buildDexorFallbackAnalysisResult(candidate, workspace));
     }
@@ -5931,6 +6034,7 @@ export async function resetDexorWorkspace(userId) {
   return updateWorkspace(userId, 'dexor', {
     candidates: [],
     targetCategory: '기타',
+    targetKeyword: '',
     fileName: '',
     analysisResults: []
   });

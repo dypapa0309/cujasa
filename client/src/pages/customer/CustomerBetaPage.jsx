@@ -4301,6 +4301,7 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
   const [urls, setUrls] = useState('');
   const [fileName, setFileName] = useState('');
   const [targetCategory, setTargetCategory] = useState('자동');
+  const [targetKeyword, setTargetKeyword] = useState('');
   const [saving, setSaving] = useState(false);
   const [workspace, setWorkspace] = useState(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -4332,6 +4333,7 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
         if (Array.isArray(data?.candidates)) setUrls(data.candidates.map((item) => item.url).join('\n'));
         if (data?.fileName) setFileName(data.fileName);
         if (data?.targetCategory) setTargetCategory(data.targetCategory);
+        if (data?.targetKeyword) setTargetKeyword(data.targetKeyword);
       })
       .catch((err) => toast(err.message || 'DEXOR 후보를 불러오지 못했어요.', 'error'))
       .finally(() => setWorkspaceLoaded(true));
@@ -4340,13 +4342,14 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
   useEffect(() => {
     if (assistantDraft?.actionKey !== 'dexor-upload' || !assistantDraft.values) return;
     if (assistantDraft.values.targetCategory) setTargetCategory(assistantDraft.values.targetCategory);
+    if (assistantDraft.values.targetKeyword) setTargetKeyword(String(assistantDraft.values.targetKeyword));
     if (assistantDraft.values.urls) setUrls(String(assistantDraft.values.urls));
   }, [assistantDraft]);
 
   const save = async () => {
     setSaving(true);
     try {
-      const next = await api.post('/api/product-workspace/dexor/candidates', { urls, fileName, targetCategory });
+      const next = await api.post('/api/product-workspace/dexor/candidates', { urls, fileName, targetCategory, targetKeyword });
       setWorkspace(next);
       setConfirmOpen(true);
     } catch (err) {
@@ -4364,6 +4367,7 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
       setUrls('');
       setFileName('');
       setTargetCategory('자동');
+      setTargetKeyword('');
       setConfirmOpen(false);
       toast('새 후보를 올릴 준비가 됐어요.', 'success');
     } catch (err) {
@@ -4388,6 +4392,15 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
           </select>
         </label>
         <label className={labelClass}>
+          목표 키워드
+          <input
+            className={inputClass}
+            value={targetKeyword}
+            onChange={(event) => setTargetKeyword(event.target.value)}
+            placeholder="예: 강남역 맛집, 성수동 피부관리, 유아 책상"
+          />
+        </label>
+        <label className={labelClass}>
           블로그 URL
           <textarea
             className={inputClass}
@@ -4398,7 +4411,7 @@ function DexorUploadPanel({ assistantDraft, onOpenGrade }) {
           />
         </label>
         <div className="mt-3 rounded-2xl bg-black/25 px-4 py-3 text-sm text-zinc-500">
-          현재 입력 후보 {urlCount}개 · {targetCategory === '자동' ? '파일/후보 정보 우선' : targetCategory} 기준으로 S/A/B/C/D 랭크를 분석해요.
+          현재 입력 후보 {urlCount}개 · {targetKeyword.trim() || (targetCategory === '자동' ? '파일/후보 정보 우선' : targetCategory)} 기준으로 S/A/B/C/D 랭크를 분석해요.
         </div>
         <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
         <DarkButton onClick={save} disabled={saving || (urlCount === 0 && !fileName)} loading={saving} loadingLabel="저장 중">
@@ -4641,6 +4654,8 @@ function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
             const strengthenedRank = item.strengthenedGrade || displayRank;
             const adjusted = strengthenedRank !== displayRank;
             const searchLabel = item.searchValidation?.label || item.exposureValidation?.label || '검색 확인 전';
+            const searchScore = item.searchValidation?.validationScore ? ` · ${item.searchValidation.validationScore}점` : '';
+            const searchSub = item.searchValidation?.matchedKeyword || item.searchValidation?.status || '상위노출 검증';
             const confidenceScore = item.dataConfidence?.score ? ` · ${item.dataConfidence.score}점` : '';
             const confidenceLabel = item.dataConfidence?.level ? `${item.dataConfidence.level}${confidenceScore}` : '신뢰도 미확인';
             const flags = Array.isArray(item.verificationFlags) ? item.verificationFlags.filter(Boolean) : [];
@@ -4659,9 +4674,11 @@ function DexorGradePanel({ reloadCurrentUser, onOpenUpload, onOpenBilling }) {
                   </div>
                 </div>
                 <div className="mt-2 text-xs font-bold text-zinc-300">{item.strengthenedDecision || item.scoreComment || dexorScoreComment(item.score)}</div>
-                <div className="mt-2 text-xs font-bold text-zinc-600">{item.candidateCategory || item.targetCategory || '카테고리 미입력'}</div>
+                <div className="mt-2 text-xs font-bold text-zinc-600">
+                  {[item.targetKeyword, item.candidateCategory || item.targetCategory || '카테고리 미입력'].filter(Boolean).join(' · ')}
+                </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                  <DexorSignal label="검색 실측" value={searchLabel} sub={item.searchValidation?.matchedKeyword || item.searchValidation?.status || '상위노출 검증'} />
+                  <DexorSignal label="검색 실측" value={`${searchLabel}${searchScore}`} sub={searchSub} />
                   <DexorSignal label="데이터 신뢰도" value={confidenceLabel} sub={item.dataConfidence?.sourceLabel || '계산 근거'} />
                   <DexorSignal label="판정 상태" value={item.gradeStatus || '유지'} sub={item.contentQualityScore ? `콘텐츠 ${item.contentQualityScore}점` : '품질 신호'} />
                 </div>
@@ -4711,11 +4728,12 @@ function DexorDownloadPanel({ onOpenUpload }) {
   }, [toast]);
 
   const downloadCsv = () => {
-    const header = ['url', 'blogName', 'targetCategory', 'candidateCategory', 'rank', 'score', 'finalRank', 'finalScore', 'materialStatus', 'searchStatus', 'comment', 'summary'];
+    const header = ['url', 'blogName', 'targetCategory', 'targetKeyword', 'candidateCategory', 'rank', 'score', 'finalRank', 'finalScore', 'materialStatus', 'searchStatus', 'searchScore', 'comment', 'summary'];
     const rows = results.map((item) => [
       item.url || '미입력',
       item.blogName || '미입력',
       item.targetCategory || workspace.targetCategory || '미입력',
+      item.targetKeyword || workspace.targetKeyword || '미입력',
       item.candidateCategory || '미입력',
       item.scoreLabel || item.grade || '미입력',
       item.score ?? '미입력',
@@ -4723,6 +4741,7 @@ function DexorDownloadPanel({ onOpenUpload }) {
       item.strengthenedScore ?? item.score ?? '미입력',
       item.dataConfidence?.level || '미입력',
       item.searchValidation?.label || '확인 전',
+      item.searchValidation?.validationScore ?? item.searchValidation?.score ?? '미입력',
       item.strengthenedDecision || item.scoreComment || dexorScoreComment(item.score),
       item.reasonSummary || item.reasons?.slice(0, 2).join(' | ') || '기본 지표 기준'
     ].map(csvEscape).join(','));
