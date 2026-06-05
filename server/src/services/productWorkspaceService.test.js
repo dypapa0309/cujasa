@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import AdmZip from 'adm-zip';
 import { randomUUID } from 'node:crypto';
-import { dbInsert } from './supabaseService.js';
+import { dbGet, dbInsert } from './supabaseService.js';
 import {
   ingestPolibotKnowledge,
   listPolibotKnowledgeReviewQueue
@@ -14,6 +14,7 @@ import {
   getProductWorkspace,
   getProductWorkspaceStatus,
   listSublogSubscriptions,
+  resetPolibotCustomerWorkspace,
   saveInfludexCandidates,
   savePolibotCustomer,
   savePolibotDraft,
@@ -626,6 +627,65 @@ test('POLIBOT saved customers keep contact and disclosure profile fields', async
   assert.equal(customer.existingMedicalPlan, '2세대 실손');
   assert.equal(customer.medicalHistory, '고혈압 약 복용');
   assert.equal(customer.disclosureDetails.diseaseEvents[0].kcdCode, 'I10');
+});
+
+test('POLIBOT reset clears current analysis while preserving saved customers and knowledge', async () => {
+  const userId = '11111111-2026-4110-8110-202020202049';
+  await dbInsert('users', {
+    id: userId,
+    email: 'polibot-reset-workspace-test@example.com',
+    password_hash: 'test',
+    name: 'POLIBOT Reset',
+    role: 'customer'
+  });
+  await dbInsert('user_products', {
+    user_id: userId,
+    product_id: 'polibot',
+    status: 'active',
+    role: 'customer',
+    settings: {
+      usage: { polibot: { limit: 5, used: 2 } },
+      workspace: {
+        knowledgeSources: [{ id: 'reset-source-1', fileName: '2026-05-상품자료.pdf' }],
+        qualityReport: { sourceCount: 1, recommendableProducts: 1, companies: ['삼성화재'] },
+        catalog: { companies: ['삼성화재'], productGroups: ['암'], months: ['2026-05'] },
+        customers: [{ id: 'saved-customer-1', name: '저장 고객' }],
+        customerProfile: { name: '이전 고객', age: '45', needs: ['암'] },
+        consultationDraft: { headline: '이전 분석' },
+        consultationSummary: { title: '이전 요약' },
+        recommendations: [{ id: 'rec-1', name: '이전 추천' }],
+        excludedCandidates: [{ id: 'excluded-1' }],
+        managerCodes: [{ code: 'UW-TEST' }],
+        actualCodes: [{ code: 'I10' }],
+        matchedCoverageCodes: [{ code: '3.0.5' }],
+        exceptionDiseaseMatches: [{ kcdCode: 'I10' }],
+        designManagerReview: { status: 'review_requested' },
+        recommendationNotice: '이전 안내',
+        knowledgeSnapshot: { latestKnowledgeMonth: '2026-05' },
+        feedbackSummary: { total: 1, needsReview: 1 }
+      }
+    }
+  });
+
+  const workspace = await resetPolibotCustomerWorkspace(userId);
+  const storedGrant = await dbGet('user_products', { user_id: userId, product_id: 'polibot' });
+  const storedWorkspace = storedGrant.settings.workspace;
+
+  assert.equal(workspace.customerProfile, null);
+  assert.equal(workspace.consultationDraft, null);
+  assert.equal(workspace.consultationSummary, null);
+  assert.deepEqual(workspace.recommendations, []);
+  assert.deepEqual(workspace.actualCodes, []);
+  assert.deepEqual(workspace.managerCodes, []);
+  assert.deepEqual(workspace.matchedCoverageCodes, []);
+  assert.deepEqual(workspace.exceptionDiseaseMatches, []);
+  assert.equal(workspace.designManagerReview, null);
+  assert.equal(workspace.recommendationNotice, '');
+  assert.equal(workspace.usage.used, 2);
+  assert.equal(workspace.usage.remaining, 3);
+  assert.equal(workspace.customers[0].name, '저장 고객');
+  assert.equal(storedWorkspace.knowledgeSources[0].fileName, '2026-05-상품자료.pdf');
+  assert.equal(storedWorkspace.feedbackSummary.needsReview, 1);
 });
 
 test('POLIBOT coverage analysis parses mixed 억 and 만 amounts precisely', async () => {

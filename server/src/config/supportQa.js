@@ -35,7 +35,7 @@ export const supportQaTree = {
       body: '실제 쿠팡 API에서 가져온 상품만 링크 글에 연결합니다. 검색 실패 임시상품이나 검색 URL은 수익화 링크로 사용하지 않습니다.',
       options: [
         { label: '상품 검색/연결 상담', action: 'inquiry', topic: 'cujasa_links' },
-        { label: 'JASAIN 워크스페이스 열기', action: 'link', href: 'https://app.jasain.kr/?mode=register&product=cujasa#tab=beta' }
+        { label: 'JASAIN 워크스페이스 열기', action: 'link', href: 'https://jasain.kr/?mode=register&product=cujasa#tab=beta' }
       ]
     },
     'cujasa-threads': {
@@ -69,7 +69,7 @@ export const supportQaTree = {
         { label: '블로그 분석 자동화', next: 'dexor-analysis' },
         { label: '크레딧/충전 안내', next: 'dexor-credit' },
         { label: '키워드/콘텐츠 선정', next: 'dexor-keywords' },
-        { label: 'DEXOR 시작하기', action: 'link', href: 'https://app.jasain.kr/?mode=register&product=dexor#tab=beta' },
+        { label: 'DEXOR 시작하기', action: 'link', href: 'https://jasain.kr/?mode=register&product=dexor#tab=beta' },
         { label: '상담 신청하기', action: 'inquiry', topic: 'dexor' }
       ]
     },
@@ -77,7 +77,7 @@ export const supportQaTree = {
       title: 'SPREAD 문의',
       body: 'SPREAD는 추천 캠페인, 신청자 선정, 제출물 검수를 한 흐름으로 운영하는 자동화 서비스입니다.',
       options: [
-        { label: 'SPREAD 시작하기', action: 'link', href: 'https://app.jasain.kr/?mode=register&product=spread#tab=beta' },
+        { label: 'SPREAD 시작하기', action: 'link', href: 'https://jasain.kr/?mode=register&product=spread#tab=beta' },
         { label: '상담 신청하기', action: 'inquiry', topic: 'spread' }
       ]
     },
@@ -93,7 +93,7 @@ export const supportQaTree = {
       title: 'DEXOR 크레딧/충전 안내',
       body: 'DEXOR는 체험 이후 크레딧을 충전해 사용합니다. 충전은 가상계좌 전용이며 5천원 10회, 1만원 25회, 5만원 150회, 10만원 350회 기준입니다. 입금 확인 후 서버에서 크레딧이 반영됩니다.',
       options: [
-        { label: 'DEXOR 시작하기', action: 'link', href: 'https://app.jasain.kr/?mode=register&product=dexor#tab=beta' },
+        { label: 'DEXOR 시작하기', action: 'link', href: 'https://jasain.kr/?mode=register&product=dexor#tab=beta' },
         { label: '문의 남기기', action: 'inquiry', topic: 'dexor_credit' }
       ]
     },

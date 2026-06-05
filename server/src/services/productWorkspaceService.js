@@ -5453,6 +5453,31 @@ export async function getPolibotCustomerWorkspace(userId) {
   return compactPolibotSavedWorkspace(withUsage(workspace, { ...settings, unlimitedUsage: grant.unlimitedUsage }, 'polibot'));
 }
 
+export async function resetPolibotCustomerWorkspace(userId) {
+  const currentWorkspace = await getPolibotCustomerWorkspace(userId);
+  const nextWorkspace = await updateWorkspace(userId, 'polibot', {
+    customerProfile: null,
+    consultationDraft: null,
+    consultationSummary: null,
+    recommendations: [],
+    excludedCandidates: [],
+    managerCodes: [],
+    actualCodes: [],
+    matchedCoverageCodes: [],
+    exceptionDiseaseMatches: [],
+    designManagerReview: null,
+    recommendationNotice: '',
+    knowledgeSnapshot: null,
+    draftSavedAt: '',
+    resetAt: now()
+  });
+  return compactPolibotSavedWorkspace({
+    ...nextWorkspace,
+    customers: currentWorkspace.customers,
+    feedbackSummary: currentWorkspace.feedbackSummary
+  });
+}
+
 function createPolibotTimingLogger(label = 'polibot_timing') {
   const startedAt = Date.now();
   let previousAt = startedAt;

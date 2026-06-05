@@ -8,6 +8,7 @@ import {
   getProductWorkspace,
   resetDexorWorkspace,
   resetInfludexWorkspace,
+  resetPolibotCustomerWorkspace,
   reviewSpreadSubmission,
   searchPolibotCoverageCodes,
   searchPolibotDiseaseCodes,
@@ -122,6 +123,17 @@ router.get('/polibot/customer-workspace', async (req, res, next) => {
     const user = requireUser(req, res);
     if (!user) return;
     res.json(await getPolibotCustomerWorkspace(user.userId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/polibot/customer-workspace/reset', async (req, res, next) => {
+  try {
+    if (!requireWorkspaceServiceOpen(req, res, 'polibot')) return;
+    const user = requireUser(req, res);
+    if (!user) return;
+    res.json(await resetPolibotCustomerWorkspace(user.userId));
   } catch (error) {
     next(error);
   }
