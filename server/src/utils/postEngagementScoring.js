@@ -1,4 +1,5 @@
 import { inspectGeneratedPostText, sanitizeContentTitle } from './contentText.js';
+import { hasRepetitiveContentPattern } from './repetitiveContentRules.js';
 
 function firstSentenceOf(body = '') {
   return String(body || '').split(/\n|[.!?。！？]/).map((line) => line.trim()).filter(Boolean)[0] || '';
@@ -40,14 +41,36 @@ function jaccard(a = [], b = []) {
   return intersection / (setA.size + setB.size - intersection);
 }
 
+function tokenOverlap(a = [], b = []) {
+  const setA = new Set(a);
+  const setB = new Set(b);
+  if (!setA.size || !setB.size) return 0;
+  let intersection = 0;
+  for (const item of setA) {
+    if (setB.has(item)) intersection += 1;
+  }
+  return intersection / Math.max(setA.size, setB.size);
+}
+
 export function scorePostSimilarity(body = '', others = []) {
   const words = contentWords(body);
-  const maxSimilarity = others.reduce((max, other) => Math.max(max, jaccard(words, contentWords(other))), 0);
-  const duplicateRisk = maxSimilarity >= 0.58;
+  const compared = others.map((other) => {
+    const otherWords = contentWords(other);
+    return {
+      similarity: jaccard(words, otherWords),
+      tokenOverlap: tokenOverlap(words, otherWords)
+    };
+  });
+  const maxSimilarity = compared.reduce((max, item) => Math.max(max, item.similarity), 0);
+  const maxTokenOverlap = compared.reduce((max, item) => Math.max(max, item.tokenOverlap), 0);
+  const duplicateSignal = Math.max(maxSimilarity, maxTokenOverlap);
+  const duplicateRisk = maxSimilarity >= 0.58 || maxTokenOverlap >= 0.66;
   return {
     maxSimilarity,
+    maxTokenOverlap,
+    duplicateSignal,
     duplicateRisk,
-    penalty: duplicateRisk ? Math.round((maxSimilarity - 0.5) * 120) : 0
+    penalty: duplicateRisk ? Math.round((duplicateSignal - 0.5) * 120) : 0
   };
 }
 
@@ -360,7 +383,7 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
   const sensoryDetailMatches = countMatches(text, /(손이\s*(덜|잘|자주)|손에\s*묻|손\s*닿는\s*곳|바로\s*(집|꺼내|닿|두|나눠)|한\s*번\s*덜|덜\s*어지|덜\s*젖|물\s*빠|먼지|냄새|미끄|좁아|쌓이|굴러다니|말릴|걸리지|깔리|흔들리|젖|털어낼|식혀둘)/g);
   const shallowChecklist = /(자주\s*쓰는지|보관이\s*쉬운지|관리(가|는)?\s*부담\s*없|실용성|사용감|가격을\s*보세요|관리하기\s*쉬운지)/.test(text)
     && microDetailMatches < 2;
-  const repetitiveFallback = /많이\s*사는\s*것보다\s*["“]?어디에\s*둘지["”]?부터|막상\s*살아보면\s*큰\s*기능보다|꺼내고\s*다시\s*두는\s*순간|예쁜\s*쪽보다\s*매일\s*쓰는\s*순간|성능보다\s*놓는\s*자리|보이는\s*깔끔함이랑\s*꺼내기\s*편한\s*쪽|오래\s*쓰는\s*기준은\s*기능보다\s*자리/.test(text);
+  const repetitiveFallback = hasRepetitiveContentPattern(text);
   const ctaLeak = /댓글\s*(참고|확인|봐|달|남겨|공유|알려|부탁)|쿠팡|파트너스|제휴|링크\s*(확인|참고|보기)?/.test(text);
   const topicTitleEcho = /정리\s*쉽게\s*하는\s*법,\s*평소에는\s*별거\s*아닌데|,\s*평소에는\s*별거\s*아닌데\s*막상\s*필요할\s*때마다/.test(text);
   const awkwardPhrase = AWKWARD_PHRASE_PATTERN.test(text);
@@ -629,11 +652,11 @@ export function buildHumanStyleFallback(topic = {}, account = {}, products = [],
   const experienceQuestionTemplates = banmal
     ? [
       `${hook}\n\n${detail.first}, ${detail.second} 이 두 개 맞으면 오래 가는데 ${detail.third} 애매하면 생각보다 빨리 방치됨.\n\n${question}`,
-      `${itemTopic} 첫 주에 불편하면 거의 계속 불편함.\n\n${detail.first}랑 ${detail.second} 여기서 이미 답 나오는 경우 많더라.\n\n${question}`
+      `${itemTopic} 며칠 써보면 계속 손 갈지 바로 보임.\n\n${detail.first}랑 ${detail.second} 둘 중 하나만 안 맞아도 금방 방치되더라.\n\n${question}`
     ]
     : [
       `${hook}\n\n${detail.first}, ${detail.second} 이 두 개 맞으면 오래 가는데 ${detail.third} 애매하면 생각보다 빨리 방치돼요.\n\n${question}`,
-      `${itemTopic} 첫 주에 불편하면 거의 계속 불편하더라고요.\n\n${detail.first}랑 ${detail.second} 여기서 이미 답 나오는 경우 많아요.\n\n${question}`
+      `${itemTopic} 며칠 써보면 계속 손이 갈지 바로 보여요.\n\n${detail.first}랑 ${detail.second} 둘 중 하나만 안 맞아도 금방 방치되더라고요.\n\n${question}`
     ];
 
   const hotTakeTemplates = banmal

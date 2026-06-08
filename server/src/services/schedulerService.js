@@ -18,6 +18,7 @@ import { maybeGenerateBlogPostForQueue } from './blogService.js';
 import { canUseSponsoredComment, getSponsorCommentText, sponsoredCommentAlreadyQueuedToday } from './sponsorService.js';
 import { evaluateProductTopicMatch } from '../utils/productMatching.js';
 import { contentLengthBucket, resolveContentStrategyMetadata } from '../utils/contentFormatStrategy.js';
+import { assessContentPatternQuality } from '../utils/contentPatternQuality.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
@@ -29,6 +30,14 @@ const QUEUE_PROCESS_BATCH_LIMIT = Math.max(1, Number(process.env.QUEUE_PROCESS_B
 const QUEUE_PROCESS_MAX_RUN_MS = Math.max(10_000, Number(process.env.QUEUE_PROCESS_MAX_RUN_MS || 60_000));
 const REPLY_REPAIR_BATCH_LIMIT = Math.max(1, Number(process.env.REPLY_REPAIR_BATCH_LIMIT || 20));
 const REPLY_REPAIR_LOOKUP_LIMIT = Math.max(50, Number(process.env.REPLY_REPAIR_LOOKUP_LIMIT || 300));
+
+function envNumber(key, fallback) {
+  const value = Number(process.env[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+const DEFAULT_RECENT_QUEUE_HISTORY_DAYS = Math.max(7, envNumber('RECENT_QUEUE_HISTORY_DAYS', 30));
+const HISTORICAL_QUEUE_SIMILARITY_THRESHOLD = Math.min(0.95, Math.max(0.5, envNumber('HISTORICAL_QUEUE_SIMILARITY_THRESHOLD', 0.68)));
 
 function kstDayRange(date = new Date()) {
   const kst = new Date(date.getTime() + 9 * 60 * 60 * 1000);
@@ -121,6 +130,8 @@ function queueQualityIssue(post = {}) {
   ];
   const matched = blockedPatterns.find((pattern) => pattern.test(body));
   if (matched) return '고객 노출 전 다듬어야 하는 표현이 포함되어 있습니다.';
+  const patternQuality = assessContentPatternQuality(body);
+  if (!patternQuality.allowed) return '반복 템플릿 문장 구조가 포함되어 있습니다.';
   return null;
 }
 
@@ -404,7 +415,7 @@ function historicalQueueIssue(post = {}, history = []) {
     if (body && historicalBody && normalizeBodyForComparison(body) === normalizeBodyForComparison(historicalBody)) {
       return { reason: 'body_already_queued_recently', queueId: item.queue.id };
     }
-    if (body && historicalBody && bodySimilarity(body, historicalBody) >= 0.88) {
+    if (body && historicalBody && bodySimilarity(body, historicalBody) >= HISTORICAL_QUEUE_SIMILARITY_THRESHOLD) {
       return { reason: 'body_too_similar_to_recent_queue', queueId: item.queue.id };
     }
   }
@@ -915,7 +926,9 @@ export async function createDailyQueue(accountId, options = {}) {
   };
   const total = times.length;
   const repairOutcomes = [];
-  const recentHistory = await recentAccountQueueHistory(accountId, { days: Number(options.historyDays || 7) });
+  const recentHistory = await recentAccountQueueHistory(accountId, {
+    days: Number(options.historyDays ?? DEFAULT_RECENT_QUEUE_HISTORY_DAYS)
+  });
   const recentFormatCounts = formatCountsFromHistory(recentHistory);
   const recentDiversityCounts = buildDiversityCounts(recentHistory);
   const historyRejected = [];

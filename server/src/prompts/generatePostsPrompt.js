@@ -1,5 +1,6 @@
 import { getContentGuardrailContext } from '../utils/contentGuardrails.js';
 import { getAccountStyleProfile } from '../utils/accountStyle.js';
+import { buildRepetitiveContentPromptRule } from '../utils/repetitiveContentRules.js';
 
 export function generatePostsPrompt(topic, products, account) {
   const contentContext = getContentGuardrailContext();
@@ -105,6 +106,7 @@ export function generatePostsPrompt(topic, products, account) {
             : 'Speech register hard rule: polite conversational Korean only. Never mix banmal endings into a polite account.',
           'Do not mix 반말 and 존댓말 in the same post. If unsure, use polite conversational 해요체 unless speechRegister.mode is banmal.',
           'Avoid template openings such as "이건 은근 기준이 갈리는 선택", "사람마다 다르더라고요", "작은 기준 하나만 정해도", and generic "실용성 vs 사용감" questions.',
+          buildRepetitiveContentPromptRule(),
           'Every candidate needs at least one concrete daily detail: where it happens, what is annoying, when it gets noticed, or what changes after choosing.',
           'Strong candidates include small physical details: 현관에서 바로 집는 물건, 설거지 후 둘 자리, 욕실 물기, 빨래 전 바구니, 침대 옆 충전기, 분리수거 봉투처럼 a real spot or chore.',
           'Weak candidates only say broad criteria like "자주 쓰는지, 보관이 쉬운지, 관리가 부담 없는지"; do not submit those unless each criterion has a concrete scene.',

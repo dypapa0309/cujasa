@@ -669,6 +669,204 @@ test('createDailyQueue rejects drafts similar to recently queued account posts',
   }
 });
 
+test('createDailyQueue uses 30-day history by default to avoid resurfacing older duplicates', async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'longhistory' })
+  });
+
+  try {
+    const project = await dbInsert('projects', {
+      name: 'long history project',
+      type: 'coupang',
+      status: 'active'
+    });
+    const account = await dbInsert('accounts', {
+      project_id: project.id,
+      name: 'long history account',
+      platform: 'threads',
+      account_handle: 'longhistory',
+      target_audience: '살림 관심 고객',
+      content_scope: '생활용품',
+      forbidden_topics: [],
+      forbidden_words: [],
+      daily_post_max: 1,
+      active_time_windows: [{ start: '09:00', end: '23:00' }],
+      min_interval_minutes: 90,
+      link_post_ratio: 0,
+      no_link_post_ratio: 1,
+      status: 'active',
+      automation_status: 'running',
+      threads_access_token: 'token',
+      threads_link_delivery_mode: 'reply',
+      coupang_access_key: 'access',
+      coupang_secret_key: 'secret',
+      coupang_partner_id: 'partner',
+      coupang_search_status: 'ok'
+    });
+    const oldTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '오래 전 자취템 기준',
+      angle: '놓는 자리'
+    });
+    const repeatedBody = '자취템은 사기 전에 어디에 둘지 먼저 떠올리면 덜 후회돼요. 현관에서 바로 집는 물건 자리와 빨래 바구니 자리를 같이 보면 오래 쓰게 됩니다.';
+    const oldPost = await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: oldTopic.id,
+      content_type: '공감형',
+      body: repeatedBody,
+      risk_level: 'low',
+      status: 'posted'
+    });
+    const twelveDaysAgo = new Date(Date.now() - 12 * 24 * 60 * 60 * 1000).toISOString();
+    await dbInsert('post_queue', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: oldTopic.id,
+      post_id: oldPost.id,
+      platform: 'threads',
+      scheduled_at: twelveDaysAgo,
+      posted_at: twelveDaysAgo,
+      status: 'posted',
+      post_mode: 'no_link'
+    });
+
+    const repeatTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '다시 나온 자취템 기준',
+      angle: '놓는 자리'
+    });
+    await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: repeatTopic.id,
+      content_type: '공감형',
+      body: repeatedBody,
+      risk_level: 'low',
+      status: 'draft'
+    });
+    const freshTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '장마철 방 습기 기준',
+      angle: '환기와 보관'
+    });
+    const freshPost = await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: freshTopic.id,
+      content_type: '체크리스트형',
+      body: '방 안 빨래는 향보다 바람 지나갈 길이 먼저예요. 젖은 수건을 따로 둘 자리와 창문 앞 동선이 맞으면 냄새가 덜 남아요.',
+      risk_level: 'low',
+      status: 'draft'
+    });
+
+    const queued = await createDailyQueue(account.id, { skipPreflight: true });
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].post_id, freshPost.id);
+    assert.equal(queued.diagnostics.historyRejectedCount, 1);
+    assert.equal(queued.diagnostics.historyRejected[0].reason, 'body_already_queued_recently');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test('createDailyQueue skips drafts with repeated CUJASA tail phrases', async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    text: async () => JSON.stringify({ id: 'threads-user', username: 'tailfilter' })
+  });
+
+  try {
+    const project = await dbInsert('projects', {
+      name: 'tail filter project',
+      type: 'coupang',
+      status: 'active'
+    });
+    const account = await dbInsert('accounts', {
+      project_id: project.id,
+      name: 'tail filter account',
+      platform: 'threads',
+      account_handle: 'tailfilter',
+      target_audience: '살림 관심 고객',
+      content_scope: '생활용품',
+      forbidden_topics: [],
+      forbidden_words: [],
+      daily_post_max: 1,
+      active_time_windows: [{ start: '09:00', end: '23:00' }],
+      min_interval_minutes: 90,
+      link_post_ratio: 0,
+      no_link_post_ratio: 1,
+      status: 'active',
+      automation_status: 'running',
+      threads_access_token: 'token',
+      threads_link_delivery_mode: 'reply',
+      coupang_access_key: 'access',
+      coupang_secret_key: 'secret',
+      coupang_partner_id: 'partner',
+      coupang_search_status: 'ok'
+    });
+    const repeatedTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '반복 후렴 후보',
+      angle: '케이블 정리'
+    });
+    await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: repeatedTopic.id,
+      content_type: '공감형',
+      body: '여름철 냉방기기 주변 케이블 엉킴, 멀티탭 정리함으로 깔끔하게 정리했어요, 이거 은근 나만 불편한 줄 알았는데 생각보다 많이 겪는 상황이에요.',
+      risk_level: 'low',
+      status: 'draft'
+    });
+    const templateTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '구형 템플릿 후보',
+      angle: '주방 정리'
+    });
+    await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: templateTopic.id,
+      content_type: '공감형',
+      body: '주방 정리템 고를 때 처음엔 예쁜 것부터 보이는데, 살아보면 귀찮은 순간이 기준을 바꾸더라고요. 다시 넣을 때 손이 덜 가는 구조처럼 잠깐 둘 곳이 있으면 바닥에 쌓이는 일이 확 줄어요.',
+      risk_level: 'low',
+      status: 'draft'
+    });
+    const freshTopic = await dbInsert('topics', {
+      project_id: project.id,
+      account_id: account.id,
+      title: '새 수납 기준',
+      angle: '저장형'
+    });
+    const freshPost = await dbInsert('posts', {
+      project_id: project.id,
+      account_id: account.id,
+      topic_id: freshTopic.id,
+      content_type: '체크리스트형',
+      body: '수납함은 사기 전에 넣을 물건보다 꺼낼 위치를 먼저 정해두면 실패가 줄어요. 선반 위면 가벼운 재질, 바닥이면 손잡이부터 보는 식입니다.',
+      risk_level: 'low',
+      status: 'draft'
+    });
+
+    const queued = await createDailyQueue(account.id, { skipPreflight: true });
+    assert.equal(queued.length, 1);
+    assert.equal(queued[0].post_id, freshPost.id);
+    assert.equal(queued.diagnostics.qualityRejectedCount, 2);
+    assert.equal(queued.diagnostics.qualityRejected[0].reason, 'quality_issue');
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test('createDailyQueue prefers underused content formats when questions are overused', async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => ({

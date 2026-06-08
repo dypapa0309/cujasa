@@ -292,16 +292,16 @@ export function strengthenPostHook(body = '', topic = {}, account = {}) {
   const angle = clean(topic?.angle, '고를 때 놓치기 쉬운 기준');
   const mode = profile.strategy.effectiveMode;
   const hooks = wantsBanmal(account) ? {
-    auto: `${title}, 이건 상황마다 기준이 은근 갈리는 포인트야.`,
-    empathy: `${title}, 이거 은근 나만 불편한 줄 알았는데 생각보다 많이 겪는 상황이야.`,
+    auto: `${title}, 같은 물건이어도 쓰는 습관에 따라 선택이 달라져.`,
+    empathy: `${title}, 막상 써보면 생각보다 자주 거슬리는 순간이 있어.`,
     daily: `${title}, 평소에는 별거 아닌데 막상 필요할 때마다 은근 신경 쓰여.`,
     problem_solution: `${title}, 사고 나서 후회하는 포인트는 보통 ${angle}에서 갈려.`,
     checklist: `${title}, 고르기 전에 ${angle} 하나만 놓쳐도 다시 찾게 돼.`,
     question: `${title}, 너는 ${angle} 쪽을 먼저 봐, 아니면 편하게 쓰는 쪽을 먼저 봐?`,
     safe_debate: `${title}, 이건 취향보다 사용 습관에 따라 꽤 갈리는 선택이야.`
   } : {
-    auto: `${title}, 이건 상황마다 기준이 은근 갈리는 포인트예요.`,
-    empathy: `${title}, 이거 은근 나만 불편한 줄 알았는데 생각보다 많이 겪는 상황이에요.`,
+    auto: `${title}, 같은 물건이어도 쓰는 습관에 따라 선택이 달라져요.`,
+    empathy: `${title}, 막상 써보면 생각보다 자주 거슬리는 순간이 있어요.`,
     daily: `${title}, 평소에는 별거 아닌데 막상 필요할 때마다 은근 신경 쓰이죠.`,
     problem_solution: `${title}, 사고 나서 후회하는 포인트는 보통 ${angle}에서 갈립니다.`,
     checklist: `${title}, 고르기 전에 ${angle} 하나만 놓쳐도 다시 찾게 되는 경우가 많아요.`,

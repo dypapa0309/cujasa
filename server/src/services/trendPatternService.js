@@ -341,12 +341,12 @@ function trendFallbackPosts({ query = '', contentScope = '', targetAudience = ''
     {
       contentType: '질문형',
       patternSourceId: pattern.sourceId || '',
-      body: `${topic}, 많이 사는 것보다 먼저 둘 자리를 정하는 게 덜 후회되더라고요.\n\n${audience} 기준이면 ${livingDetails[0]}처럼 매일 손 가는 곳부터 티가 나요.\n\n처음 살림 맞출 때 제일 먼저 챙기고 싶은 자리는 어디예요?`
+      body: `${topic}, 처음부터 둘 자리를 정해두면 덜 후회되더라고요.\n\n${audience} 기준이면 ${livingDetails[0]}처럼 매일 손 가는 곳부터 티가 나요.\n\n처음 살림 맞출 때 제일 먼저 챙기고 싶은 자리는 어디예요?`
     },
     {
       contentType: '공감형',
       patternSourceId: pattern.sourceId || '',
-      body: `${topic} 고를 때 처음엔 예쁜 것부터 보이는데, 살아보면 귀찮은 순간이 기준을 바꾸더라고요.\n\n${livingDetails[1]}처럼 잠깐 둘 곳이 있으면 바닥에 쌓이는 일이 확 줄어요.\n\n다들 집기 살 때 예쁜 쪽이 먼저예요, 아니면 치우기 쉬운 쪽이 먼저예요?`
+      body: `${topic}은 사진보다 집에서 움직이는 장면이 먼저 떠올라야 하더라고요.\n\n${livingDetails[1]}처럼 잠깐 둘 곳이 있으면 치우는 흐름이 훨씬 덜 막혀요.\n\n다들 집기 살 때 예쁜 쪽이 먼저예요, 아니면 치우기 쉬운 쪽이 먼저예요?`
     },
     {
       contentType: '체크리스트형',

@@ -81,6 +81,17 @@ test('penalizes formal AI-like explanatory tone', () => {
   assert.ok(score.engagementScore < 60);
 });
 
+test('penalizes repeated CUJASA tail skeletons from posted queues', () => {
+  const repeatedTail = scorePostEngagement('장마철 가전 주변기기 습기와 케이블 엉킴, 멀티탭 정리함으로 해결해요, 이거 은근 나만 불편한 줄 알았는데 생각보다 많이 겪는 상황이에요.');
+  const repeatedPoint = scorePostEngagement('책상 수납함 고르기 전 꼭 피해야 할 5가지 특징, 이건 상황마다 기준이 은근 갈리는 포인트야.');
+  const repeatedFirstWeek = scorePostEngagement('주방용품은 첫 주에 불편하면 거의 계속 불편하더라고요. 조리대 위에 올려도 손이 안 좁아지는지랑 싱크대 옆에 잠깐 둘 자리가 있는지 여기서 이미 답 나오는 경우 많아요. 다들 이럴 때 뭐 먼저 보세요?');
+
+  assert.equal(repeatedTail.checks.repetitiveFallback, true);
+  assert.equal(repeatedPoint.checks.repetitiveFallback, true);
+  assert.equal(repeatedFirstWeek.checks.repetitiveFallback, true);
+  assert.ok(repeatedTail.rubric.repetitiveFallbackPenalty < 0);
+});
+
 test('does not treat product model numbers as account id leaks', () => {
   const body = '주방 수납장은 막상 들이면 깊이감이 제일 먼저 보이더라고요.\n\nLPM 1200 같은 모델명보다 우리 집 조리대 옆 폭이 먼저예요.\n\n여러분은 넉넉한 수납 쪽을 보세요, 딱 맞는 크기 쪽을 보세요?';
   const score = scorePostEngagement(body);
@@ -299,4 +310,14 @@ test('detects near-duplicate recent post structure', () => {
 
   assert.equal(scorePostSimilarity(body, [similar]).duplicateRisk, true);
   assert.equal(scorePostSimilarity(body, [different]).duplicateRisk, false);
+});
+
+test('detects repeated tail skeletons even when topic words differ', () => {
+  const body = '장마철 가전 주변기기 습기와 케이블 엉킴, 멀티탭 정리함으로 해결해요, 이거 은근 나만 불편한 줄 알았는데 생각보다 많이 겪는 상황이에요.';
+  const recent = '여름철 냉방기기 주변 케이블 엉킴, 멀티탭 정리함으로 깔끔하게 정리했어요, 이거 은근 나만 불편한 줄 알았는데 생각보다 많이 겪는 상황이에요.';
+  const score = scorePostSimilarity(body, [recent]);
+
+  assert.equal(score.duplicateRisk, true);
+  assert.ok(score.maxTokenOverlap >= 0.66);
+  assert.ok(score.penalty > 0);
 });
