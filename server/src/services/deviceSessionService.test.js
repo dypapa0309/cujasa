@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createUser, loginUser } from './authService.js';
 import { dbGet, dbUpdate } from './supabaseService.js';
+import { assertActiveRequestDevice } from './deviceSessionService.js';
 
 function reqFor(userAgent = 'Mozilla/5.0') {
   return {
@@ -44,4 +45,44 @@ test('annual users can register one desktop and one mobile device', async () => 
 
   const stored = await dbGet('user_login_devices', { user_id: user.id, device_id: 'desktop-1' });
   assert.equal(stored.status, 'active');
+});
+
+test('annual user device fingerprint changes do not block the same stored device', async () => {
+  const email = `device-fingerprint-${Date.now()}-${Math.random().toString(16).slice(2)}@example.com`;
+  const user = await createUser(email, 'password123', 2, '기기지문');
+  await dbUpdate('users', { id: user.id }, {
+    plan: 'onetime',
+    billing_status: 'active',
+    paid_until: '2027-05-29T00:00:00.000Z'
+  });
+
+  await loginUser(email, 'password123', {
+    req: reqFor('Mozilla/5.0 Chrome/120'),
+    device: { deviceId: 'desktop-stable', deviceType: 'desktop', fingerprintHash: 'desktop-fp-v1' }
+  });
+
+  const second = await loginUser(email, 'password123', {
+    req: reqFor('Mozilla/5.0 Chrome/121'),
+    device: { deviceId: 'desktop-stable', deviceType: 'desktop', fingerprintHash: 'desktop-fp-v2' }
+  });
+  assert.equal(second.device.type, 'desktop');
+
+  const stored = await dbGet('user_login_devices', { user_id: user.id, device_id: 'desktop-stable' });
+  assert.equal(stored.status, 'active');
+  assert.notEqual(stored.fingerprint_hash, null);
+
+  await assert.doesNotReject(() => assertActiveRequestDevice({
+    user: { ...user, plan: 'onetime', billing_status: 'active', paid_until: '2027-05-29T00:00:00.000Z' },
+    tokenPayload: { deviceId: 'desktop-stable' },
+    req: {
+      headers: {
+        'user-agent': 'Mozilla/5.0 Chrome/122',
+        'x-forwarded-for': '127.0.0.1',
+        'x-cujasa-device-id': 'desktop-stable',
+        'x-cujasa-device-type': 'desktop',
+        'x-cujasa-device-fingerprint': 'desktop-fp-v3'
+      },
+      socket: {}
+    }
+  }));
 });

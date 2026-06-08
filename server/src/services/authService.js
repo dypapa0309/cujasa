@@ -8,6 +8,7 @@ import { throwIfProductServiceClosed } from '../utils/productAvailability.js';
 import { authorizeLoginDevice } from './deviceSessionService.js';
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
+const AUTH_PRODUCTS_TIMEOUT_MS = Number(process.env.AUTH_PRODUCTS_TIMEOUT_MS || 1500);
 const REGISTER_USERNAME_RE = /^[a-zA-Z0-9._-]{3,30}$/;
 const REGISTER_PHONE_RE = /^\+?[0-9]{8,20}$/;
 const REGISTER_PRODUCT_IDS = new Set(PRODUCTS.filter((product) => product.status !== 'inactive').map((product) => product.id));
@@ -101,7 +102,7 @@ async function findUserByLogin(login = '') {
 }
 
 async function sessionForUser(user, options = {}) {
-  const products = await listUserProducts(user.id);
+  const products = await listUserProductsForSession(user.id);
   const device = options.device || null;
   const token = makeToken({
     sub: user.email,
@@ -123,6 +124,24 @@ async function sessionForUser(user, options = {}) {
     products,
     ...(device ? { device: { id: device.id, type: device.device_type || device.deviceType } } : {})
   };
+}
+
+async function listUserProductsForSession(userId) {
+  const fallback = [defaultProductGrant()];
+  let timer = null;
+  try {
+    return await Promise.race([
+      listUserProducts(userId),
+      new Promise((resolve) => {
+        timer = setTimeout(() => {
+          console.warn(`[auth] products lookup timed out after ${AUTH_PRODUCTS_TIMEOUT_MS}ms`);
+          resolve(fallback);
+        }, AUTH_PRODUCTS_TIMEOUT_MS);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export function verifyToken(token = '') {

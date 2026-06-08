@@ -8,7 +8,7 @@ import { refreshUserEntitlement } from '../services/billingEntitlementService.js
 import { productMaintenancePayload, productServiceClosedInProduction } from '../utils/productAvailability.js';
 
 const loginRateLimit = createRateLimit({ scope: 'login', windowMs: 10 * 60 * 1000, maxRequests: 10 });
-const AUTH_DETAIL_TIMEOUT_MS = Number(process.env.AUTH_DETAIL_TIMEOUT_MS || 5000);
+const AUTH_DETAIL_TIMEOUT_MS = Number(process.env.AUTH_DETAIL_TIMEOUT_MS || 1500);
 
 const router = Router();
 

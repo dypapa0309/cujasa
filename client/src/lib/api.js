@@ -73,7 +73,6 @@ export function getDeviceContext() {
   const ua = navigator.userAgent || '';
   const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
   const fingerprintSource = [
-    ua,
     navigator.platform || '',
     navigator.language || '',
     Intl.DateTimeFormat().resolvedOptions().timeZone || ''
@@ -106,8 +105,8 @@ export function postEvent(path, body = {}) {
 }
 
 async function request(path, options = {}) {
-  beginRequest();
-  const { timeoutMs = defaultTimeoutMs, ...requestOptions } = options;
+  const { timeoutMs = defaultTimeoutMs, silent = false, ...requestOptions } = options;
+  if (!silent) beginRequest();
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timer = controller && timeoutMs > 0
     ? globalThis.setTimeout(() => controller.abort(), timeoutMs)
@@ -177,7 +176,7 @@ async function request(path, options = {}) {
     return res.json();
   } finally {
     if (timer) globalThis.clearTimeout(timer);
-    endRequest();
+    if (!silent) endRequest();
   }
 }
 

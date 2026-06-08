@@ -232,8 +232,9 @@ export default function LoginPage({ onLogin }) {
   const coreDegraded = coreHealthStatus && coreHealthStatus.status !== 'ok';
 
   useEffect(() => {
+    if (mode !== 'register') return undefined;
     let cancelled = false;
-    api.get('/api/core/health')
+    api.get('/api/core/health', { timeoutMs: 1500, silent: true })
       .then((health) => {
         if (!cancelled) setCoreHealthStatus(health);
       })
@@ -241,7 +242,7 @@ export default function LoginPage({ onLogin }) {
         if (!cancelled) setCoreHealthStatus({ status: 'degraded', message: '현재 데이터베이스 연결이 지연되고 있습니다.' });
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [mode]);
 
   const submit = async (event) => {
     event.preventDefault();
