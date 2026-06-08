@@ -223,7 +223,7 @@ test('runDailyPipelineOnce keeps recoverable accounts pending when no future que
   assert.equal(result.summary.pending.some((row) => row.accountId === account.id), true);
 });
 
-test('dailyPipelineStatus enriches legacy completed runs with live future queue coverage', async () => {
+test('dailyPipelineStatus marks legacy completed runs with missing queue coverage as partial', async () => {
   const project = await dbInsert('projects', {
     name: 'legacy coverage status test',
     type: 'coupang',
@@ -252,8 +252,10 @@ test('dailyPipelineStatus enriches legacy completed runs with live future queue 
 
   const status = await dailyPipelineStatus(new Date('2099-02-09T00:30:00.000Z'));
 
-  assert.equal(status.status, 'completed');
+  assert.equal(status.status, 'partial');
+  assert.equal(status.pendingCount > 0, true);
   assert.equal(status.run.summary.futureQueueCoverage.missingFutureQueueCount > 0, true);
+  assert.equal(status.run.summary.futureQueueCoverage.recoverableMissingFutureQueueCount > 0, true);
 });
 
 test('dailyPipelineStatus treats posted run-date queues as coverage', async () => {

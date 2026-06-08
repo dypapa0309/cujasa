@@ -146,6 +146,9 @@ function missingFutureQueueReason(row = {}) {
   if (/threads_reconnect|reply_permission|token|oauth/i.test(code) || /Threads.*토큰|재연결|댓글 권한/i.test(message)) {
     return { code: 'THREADS_RECONNECT_REQUIRED', recoverable: false };
   }
+  if (code === 'NO_FUTURE_QUEUE') {
+    return { code, recoverable: true };
+  }
   if (['deferred_coupang_throttle', 'DEFERRED_COUPANG_THROTTLE', 'deferred_time_budget', 'PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED', 'COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE', 'already_running'].includes(code)) {
     return { code, recoverable: true };
   }
@@ -269,7 +272,7 @@ function schedulerPublicStatus(run, date = now()) {
 async function startSchedulerRun({ jobName, runDateKst, triggeredBy, allowPartialResume = false }) {
   const existing = await dbGet('scheduler_runs', { job_name: jobName, run_date_kst: runDateKst }).catch(() => null);
   if (existing) {
-    const existingSummary = schedulerRunSummary(existing);
+    let existingSummary = schedulerRunSummary(existing);
     if (isStaleSchedulerRun(existing)) {
       const [run] = await dbUpdate('scheduler_runs', { id: existing.id }, {
         status: 'running',
@@ -288,6 +291,19 @@ async function startSchedulerRun({ jobName, runDateKst, triggeredBy, allowPartia
         error_message: null
       });
       return { run, acquired: true, recoveredStale: true };
+    }
+    if (allowPartialResume && ['partial', 'completed'].includes(existing.status) && (existingSummary.pending || []).length === 0) {
+      const coverage = await buildFutureQueueCoverage({ results: existingSummary.results || [] }, { runDateKst }).catch(() => null);
+      const pending = mergePendingWithRecoverableMissing([], coverage?.recoverableMissingFutureQueue || []);
+      if (pending.length > 0) {
+        existingSummary = {
+          ...existingSummary,
+          pending,
+          pendingCount: pending.length,
+          futureQueueCoverage: coverage,
+          pendingRecoveredAt: now().toISOString()
+        };
+      }
     }
     if (allowPartialResume && ['partial', 'completed'].includes(existing.status) && (existingSummary.pending || []).length > 0) {
       const [run] = await dbUpdate('scheduler_runs', { id: existing.id }, {
