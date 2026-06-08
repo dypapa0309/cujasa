@@ -103,6 +103,8 @@ services:
         value: "true"
       - key: ENABLE_INTERNAL_DAILY_PIPELINE_CRON
         value: "false"
+      - key: ENABLE_REPETITION_GUARD_CRON
+        value: "true"
       - key: ENABLE_STARTUP_DAILY_CATCH_UP
         value: "false"
       - key: INFLUDEX_SERVICE_OPEN
@@ -122,22 +124,6 @@ services:
       - key: SUPPORT_PHONE_TEL
         sync: false
       - key: SLACK_WEBHOOK_URL
-        sync: false
-
-  - type: cron
-    name: cujasa-repetition-guard
-    env: node
-    plan: starter
-    rootDir: .
-    buildCommand: npm install --prefix server
-    startCommand: npm run scheduler:repetition-guard --prefix server
-    schedule: "15 * * * *"
-    envVars:
-      - key: NODE_ENV
-        value: production
-      - key: SCHEDULER_API_BASE_URL
-        sync: false
-      - key: SCHEDULER_SECRET
         sync: false
 
   - type: cron

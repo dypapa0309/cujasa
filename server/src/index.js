@@ -52,6 +52,7 @@ const port = process.env.PORT || 3000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const runningCronJobs = new Set();
 const enableInternalCron = process.env.ENABLE_INTERNAL_CRON !== 'false';
+const enableRepetitionGuardCron = process.env.ENABLE_REPETITION_GUARD_CRON !== 'false';
 const enableStartupDailyCatchUp = process.env.ENABLE_STARTUP_DAILY_CATCH_UP !== 'false';
 const allowedOrigins = new Set([
   ...(process.env.CLIENT_BASE_URL || '').split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean),
@@ -466,6 +467,9 @@ if (enableInternalCron) {
     await runCronJob('daily-ops-healthcheck', async () => runDailyOpsHealthCheck());
   }, { timezone: 'Asia/Seoul' });
 
+}
+
+if (enableRepetitionGuardCron) {
   // 매시간: 반복 의심 예약/초안을 발행 전 수동 검토로 전환
   cron.schedule('15 * * * *', async () => {
     await runCronJob('repetition-guard', async () => runRepetitionGuard({ triggeredBy: 'node_cron_repetition_guard' }));
