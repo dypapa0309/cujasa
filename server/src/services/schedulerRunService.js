@@ -149,7 +149,7 @@ function missingFutureQueueReason(row = {}) {
   if (['deferred_coupang_throttle', 'DEFERRED_COUPANG_THROTTLE', 'deferred_time_budget', 'PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED', 'COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE', 'already_running'].includes(code)) {
     return { code, recoverable: true };
   }
-  if (['NO_DRAFT_POSTS', 'QUALITY_FILTER_REJECTED_DRAFTS', 'NO_REAL_COUPANG_LINKS', 'NO_REAL_PRODUCTS', 'NO_QUEUEABLE_DRAFTS', 'preflight_failed', 'coupang_settings'].includes(code)) {
+  if (['BILLING_EXPIRED', 'BILLING_REQUIRED', 'billing_expired', 'billing_required', 'NO_DRAFT_POSTS', 'QUALITY_FILTER_REJECTED_DRAFTS', 'NO_REAL_COUPANG_LINKS', 'NO_REAL_PRODUCTS', 'NO_QUEUEABLE_DRAFTS', 'preflight_failed', 'coupang_settings'].includes(code)) {
     return { code, recoverable: false };
   }
   return { code, recoverable: false };

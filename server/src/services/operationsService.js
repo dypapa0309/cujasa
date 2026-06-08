@@ -24,6 +24,7 @@ const OPERATION_QUEUE_LIMIT = Math.max(100, Number(process.env.OPERATION_QUEUE_L
 const OPERATION_PRODUCT_LIMIT = Math.max(100, Number(process.env.OPERATION_PRODUCT_LIMIT || 2000));
 const OPERATION_PIPELINE_RUN_LIMIT = Math.max(100, Number(process.env.OPERATION_PIPELINE_RUN_LIMIT || 300));
 const OPERATION_DASHBOARD_CACHE_TTL_MS = Math.max(0, Number(process.env.OPERATION_DASHBOARD_CACHE_TTL_MS || 30000));
+const PAID_PLANS = new Set(['monthly', 'onetime']);
 let operationDashboardCache = null;
 
 export function clearOperationDashboardCache() {
@@ -133,6 +134,55 @@ function sortEventsByTime(events, { ascending = false } = {}) {
   });
 }
 
+function isBillingExpiredUser(user = {}, date = new Date()) {
+  if (!user || user.status === 'suspended') return false;
+  if (!PAID_PLANS.has(user.plan)) return false;
+  if (user.billing_status === 'past_due') return true;
+  const paidUntil = user.paid_until ? new Date(user.paid_until).getTime() : NaN;
+  return Number.isFinite(paidUntil) && paidUntil < date.getTime();
+}
+
+function buildGrantStatusByUser(userProducts = []) {
+  const map = new Map();
+  for (const grant of userProducts) {
+    if (!grant.user_id || grant.product_id !== 'cujasa') continue;
+    map.set(grant.user_id, grant);
+  }
+  return map;
+}
+
+function buildBillingExpiredAccounts({ accounts = [], userAccounts = [], users = [], userProducts = [], date = new Date() } = {}) {
+  const activeAccountsById = new Map(accounts.filter((account) => account.status === 'active').map((account) => [account.id, account]));
+  const usersById = new Map(users.map((user) => [user.id, user]));
+  const grantByUserId = buildGrantStatusByUser(userProducts);
+  const rows = [];
+  const seen = new Set();
+  for (const link of userAccounts) {
+    const account = activeAccountsById.get(link.account_id);
+    const user = usersById.get(link.user_id);
+    if (!account || !isBillingExpiredUser(user, date)) continue;
+    const key = `${account.id}:${user.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const grant = grantByUserId.get(user.id);
+    rows.push({
+      accountId: account.id,
+      accountName: account.name,
+      accountHandle: account.account_handle || '',
+      automationStatus: account.automation_status || '',
+      userId: user.id,
+      customer: user.buyer_name || user.username || user.email || '',
+      username: user.username || '',
+      email: user.email || '',
+      plan: user.plan || '',
+      billingStatus: user.billing_status || '',
+      paidUntil: user.paid_until || null,
+      productStatus: grant?.status || null
+    });
+  }
+  return rows.sort((a, b) => new Date(a.paidUntil || 0) - new Date(b.paidUntil || 0));
+}
+
 function queueProblemBreakdown(categorizedProblems) {
   return {
     fatal: categorizedProblems.filter((row) => !NON_FATAL_QUEUE_CATEGORIES.has(row.category)).length,
@@ -175,6 +225,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
     userAccounts = [],
     usersById = new Map(),
     cujasaSettingsByAccountId = new Map(),
+    billingExpiredByAccountId = new Map(),
     pipelineRunsByAccountId = null,
     start,
     end
@@ -203,6 +254,8 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   const threads = tokenState(account);
   const coupang = await coupangState(account, { productSettings: cujasaSettingsByAccountId.get(account.id) || null });
   const customer = await customerLabelFor(account.id, userAccounts, usersById);
+  const billing = billingExpiredByAccountId.get(account.id) || null;
+  const billingExpired = Boolean(billing);
   const problems = [];
   const currentThreadsOk = threads.status !== 'error';
   const issueRows = [...problemQueue, ...postedReplyAttentionQueue]
@@ -241,7 +294,9 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
 
   const runBlockers = problems.filter((problem) => problem.severity === 'error');
   const hasStalePipeline = problems.some((problem) => problem.type === STALE_RUNNING_CATEGORY);
-  const runCategory = hasStalePipeline
+  const runCategory = billingExpired
+    ? 'billing_expired'
+    : hasStalePipeline
     ? STALE_RUNNING_CATEGORY
     : runBlockers.length === 0
       ? 'ready'
@@ -249,7 +304,9 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
         : runBlockers.some((problem) => problem.type === 'coupang') ? 'coupang_settings'
           : runBlockers.some((problem) => problem.type === 'queue_failed') ? 'queue_cleanup'
             : 'blocked';
-  const blockingCategory = runCategory === 'threads_reconnect'
+  const blockingCategory = runCategory === 'billing_expired'
+    ? 'billing_expired'
+    : runCategory === 'threads_reconnect'
     ? 'customer_action_required'
     : runCategory === 'queue_cleanup' || runCategory === STALE_RUNNING_CATEGORY
       ? 'admin_cleanup_required'
@@ -266,10 +323,17 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
     customer,
     accountStatus: account.status,
     automationStatus: account.automation_status,
-    health: pipeline.status === 'running' ? 'running' : runBlockers.length ? 'error' : problems.length ? 'warn' : 'ok',
+    health: billingExpired ? 'warn' : pipeline.status === 'running' ? 'running' : runBlockers.length ? 'error' : problems.length ? 'warn' : 'ok',
     runCategory,
     blockingCategory,
-    canRunNow: runCategory === 'ready' || runCategory === STALE_RUNNING_CATEGORY,
+    canRunNow: !billingExpired && (runCategory === 'ready' || runCategory === STALE_RUNNING_CATEGORY),
+    billing: billing ? {
+      expired: true,
+      plan: billing.plan,
+      status: billing.billingStatus,
+      paidUntil: billing.paidUntil,
+      productStatus: billing.productStatus
+    } : { expired: false },
     threads,
     coupang,
     todayScheduled,
@@ -379,7 +443,7 @@ async function loadOperationContext() {
     safeDbList('activity_logs', {}, { order: 'created_at', ascending: false, limit: 300 }, [], loadErrors),
     safeDbList('users', {}, { limit: 1000 }, [], loadErrors),
     safeDbList('user_accounts', {}, { limit: 2000 }, [], loadErrors),
-    safeDbList('user_products', {}, { select: 'user_id,product_id,settings', limit: 5000 }, [], loadErrors),
+    safeDbList('user_products', {}, { select: 'user_id,product_id,status,settings', limit: 5000 }, [], loadErrors),
     safeDbList('pipeline_runs', {}, { order: 'started_at', ascending: false, limit: OPERATION_PIPELINE_RUN_LIMIT }, [], loadErrors)
   ]);
   return { ...range, accounts, queue, products, activityLogs, users, userAccounts, userProducts, pipelineRuns, loadErrors };
@@ -389,6 +453,8 @@ async function buildOperationAccountRows(context) {
   const { accounts, queue, products, activityLogs, users, userAccounts, userProducts, pipelineRuns, start, end } = context;
   const usersById = new Map(users.map((user) => [user.id, user]));
   const cujasaSettingsByAccountId = buildCujasaSettingsByAccount(userAccounts, userProducts);
+  const billingExpiredAccounts = buildBillingExpiredAccounts({ accounts, userAccounts, users, userProducts });
+  const billingExpiredByAccountId = new Map(billingExpiredAccounts.map((row) => [row.accountId, row]));
   const pipelineRunsByAccountId = latestPipelineRunsByAccount(pipelineRuns);
   const activeAccounts = accounts.filter((account) => account.status === 'active');
 
@@ -402,6 +468,7 @@ async function buildOperationAccountRows(context) {
         usersById,
         userAccounts,
         cujasaSettingsByAccountId,
+        billingExpiredByAccountId,
         pipelineRunsByAccountId,
         start,
         end
@@ -467,6 +534,20 @@ async function buildOperationSummary({ accounts = [], queue = [], rows = [], sta
     const rank = { error: 0, warn: 1, ok: 2 };
     return rank[a.severity] - rank[b.severity];
   });
+  const billingExpiredAccounts = rows
+    .filter((row) => row.billing?.expired)
+    .map((row) => ({
+      accountId: row.accountId,
+      accountName: row.accountName,
+      accountHandle: row.accountHandle,
+      customer: row.customer,
+      automationStatus: row.automationStatus,
+      plan: row.billing.plan,
+      billingStatus: row.billing.status,
+      paidUntil: row.billing.paidUntil,
+      productStatus: row.billing.productStatus
+    }))
+    .sort((a, b) => new Date(a.paidUntil || 0) - new Date(b.paidUntil || 0));
 
   const dailyPipeline = await dailyPipelineStatus().catch((error) => {
     console.warn('[operations] daily pipeline status failed', error?.message || error);
@@ -490,9 +571,11 @@ async function buildOperationSummary({ accounts = [], queue = [], rows = [], sta
         return !NON_FATAL_QUEUE_CATEGORIES.has(category);
       }).length,
       mockUploads: activeQueue.filter((row) => String(row.post_url || '').includes('/mock/threads/')).length,
-      threadsProblems: rows.filter((row) => row.threads.status !== 'ok').length
+      threadsProblems: rows.filter((row) => row.threads.status !== 'ok').length,
+      billingExpired: billingExpiredAccounts.length
     },
     issueBreakdown: {
+      billingExpired: billingExpiredAccounts.length,
       threadsReconnect: rows.filter((row) => row.runCategory === 'threads_reconnect').length,
       coupangSettings: rows.filter((row) => row.runCategory === 'coupang_settings').length,
       queueCleanup: rows.filter((row) => row.runCategory === 'queue_cleanup').length,
@@ -506,8 +589,10 @@ async function buildOperationSummary({ accounts = [], queue = [], rows = [], sta
       threadsReconnect: rows.filter((row) => row.runCategory === 'threads_reconnect').length,
       coupangSettings: rows.filter((row) => row.runCategory === 'coupang_settings').length,
       queueCleanup: rows.filter((row) => row.runCategory === 'queue_cleanup').length,
-      pipelineStuck: rows.filter((row) => row.problems?.some((problem) => problem.type === STALE_RUNNING_CATEGORY)).length
+      pipelineStuck: rows.filter((row) => row.problems?.some((problem) => problem.type === STALE_RUNNING_CATEGORY)).length,
+      billingExpired: billingExpiredAccounts.length
     },
+    billingExpiredAccounts,
     problemAccounts,
     dailyPipeline
   };
@@ -668,6 +753,21 @@ export async function operationEvents({ type = 'queue_problems', limit = 200 } =
       ...baseEvent(row.accountId)
     })));
     events = sortEventsByTime(events);
+  } else if (type === 'billing_expired') {
+    events = rows
+      .filter((row) => row.billing?.expired)
+      .map((row) => ({
+        id: `${row.accountId}:billing_expired`,
+        kind: 'billing',
+        severity: 'warn',
+        status: 'billing_expired',
+        title: '이용 기간 만료',
+        message: row.billing?.paidUntil ? `유효기간 ${row.billing.paidUntil} 이후 자동 실행에서 제외됩니다.` : '이용기간 연장이 필요합니다.',
+        time: row.billing?.paidUntil || null,
+        actionTarget: 'users',
+        ...baseEvent(row.accountId)
+      }));
+    events = sortEventsByTime(events, { ascending: true });
   } else {
     const threadsOkByAccountId = new Map(rows.map((row) => [row.accountId, row.threads.status !== 'error']));
     const queueEvents = visibleQueue
@@ -718,6 +818,7 @@ export async function operationEvents({ type = 'queue_problems', limit = 200 } =
 function runCategoryLabelForEvent(category) {
   return ({
     ready: '실행 가능',
+    billing_expired: '이용 기간 만료',
     threads_reconnect: 'Threads 재연결 필요',
     coupang_settings: '쿠팡 API 설정 필요',
     queue_cleanup: '실패 큐 확인 필요',

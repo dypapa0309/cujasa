@@ -325,7 +325,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
         issueBreakdown={summary?.issueBreakdown}
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <OpsCard label="계정" value={`${summary?.cards?.accountsActive ?? 0}/${summary?.cards?.accountsTotal ?? 0}`} hint="활성 / 전체" tone="ok" onClick={() => setStatusFilter('all')} />
         <OpsCard
           label="2시 자동 실행"
@@ -334,10 +334,23 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
           tone={dailyPipelineTone(summary?.dailyPipeline)}
           onClick={(summary?.dailyPipeline?.missing || summary?.dailyPipeline?.stale || summary?.dailyPipeline?.status === 'partial') ? catchUpDailyPipeline : undefined}
         />
+        <OpsCard
+          label="만료 계정"
+          value={summary?.cards?.billingExpired ?? 0}
+          hint={(summary?.cards?.billingExpired ?? 0) > 0 ? '자동 실행 제외 대상' : '이용기간 정상'}
+          tone={(summary?.cards?.billingExpired ?? 0) > 0 ? 'warn' : 'ok'}
+          onClick={() => setStatusFilter('billing_expired')}
+        />
         <OpsCard label="오늘 예약" value={summary?.cards?.scheduledToday ?? 0} hint={`오늘 업로드 완료 ${summary?.cards?.postedToday ?? 0}개`} tone="ok" onClick={() => openEvents('scheduled_today', '오늘 예약/업로드')} />
         <OpsCard label="실패/검토" value={summary?.cards?.queueProblems ?? 0} hint={`큐 정리 ${summary?.issueBreakdown?.queueCleanup ?? 0}개 · 확인 ${summary?.issueBreakdown?.pipelineStuck ?? 0}개`} tone={(summary?.cards?.queueProblems ?? 0) > 0 || (summary?.issueBreakdown?.pipelineStuck ?? 0) > 0 ? 'error' : 'ok'} onClick={() => openEvents('queue_problems', '실패/검토 항목')} />
         <OpsCard label="연결 문제" value={summary?.cards?.threadsProblems ?? 0} hint={`재연결 ${summary?.issueBreakdown?.threadsReconnect ?? 0}개 · 테스트 ${summary?.cards?.mockUploads ?? 0}개`} tone={(summary?.cards?.threadsProblems ?? 0) > 0 ? 'warn' : 'ok'} onClick={() => openEvents('connection_problems', '연결 문제')} />
       </div>
+
+      <BillingExpiredPanel
+        accounts={summary?.billingExpiredAccounts || []}
+        onOpenUsers={() => setPage?.('admin-users')}
+        onOpenEvents={() => openEvents('billing_expired', '만료 계정')}
+      />
 
       <section className="rounded border border-line bg-white">
         <div className="flex items-center justify-between border-b border-line px-5 py-4">
@@ -544,6 +557,7 @@ function buildAccountFilterCounts(rows) {
     warn: rows.filter((row) => row.health === 'warn').length,
     error: rows.filter((row) => row.health === 'error').length,
     running: rows.filter((row) => row.health === 'running' || isPipelineRunActive(row)).length,
+    billing_expired: rows.filter((row) => row.billing?.expired).length,
     threads_reconnect: rows.filter((row) => row.runCategory === 'threads_reconnect' || row.threads?.status === 'error').length,
     coupang_settings: rows.filter((row) => row.runCategory === 'coupang_settings' || row.coupang?.status === 'error').length,
     no_schedule: rows.filter(hasNoScheduledQueue).length,
@@ -570,6 +584,7 @@ function buildAccountFilters(counts) {
     { key: 'warn', label: '주의', count: counts.warn || 0 },
     { key: 'error', label: '오류', count: counts.error || 0 },
     { key: 'running', label: '실행 중', count: counts.running || 0 },
+    { key: 'billing_expired', label: '만료 계정', count: counts.billing_expired || 0 },
     { key: 'threads_reconnect', label: 'Threads 재연결', count: counts.threads_reconnect || 0 },
     { key: 'coupang_settings', label: '쿠팡 설정', count: counts.coupang_settings || 0 },
     { key: 'no_schedule', label: '예약 없음', count: counts.no_schedule || 0 },
@@ -584,6 +599,7 @@ function matchesAccountFilter(row, filter) {
   if (filter === 'warn') return row.health === 'warn';
   if (filter === 'error') return row.health === 'error';
   if (filter === 'running') return row.health === 'running' || isPipelineRunActive(row);
+  if (filter === 'billing_expired') return row.billing?.expired;
   if (filter === 'threads_reconnect') return row.runCategory === 'threads_reconnect' || row.threads?.status === 'error';
   if (filter === 'coupang_settings') return row.runCategory === 'coupang_settings' || row.coupang?.status === 'error';
   if (filter === 'no_schedule') return hasNoScheduledQueue;
@@ -647,11 +663,56 @@ function RiskPanel({ conflicts, misassignments, onOpenUsers }) {
   );
 }
 
+function BillingExpiredPanel({ accounts = [], onOpenUsers, onOpenEvents }) {
+  if (!accounts.length) return null;
+  return (
+    <section className="rounded border border-amber-200 bg-amber-50">
+      <div className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 text-sm font-black text-amber-900">
+            <AlertTriangle size={16} />
+            이용 기간 만료 계정
+          </div>
+          <div className="mt-1 text-xs text-amber-700">
+            {accounts.length}개 계정은 새벽 2시 자동 실행에서 제외됩니다.
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button onClick={onOpenEvents} className="rounded border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-amber-800">
+            만료 상세
+          </button>
+          <button onClick={onOpenUsers} className="rounded bg-amber-700 px-3 py-2 text-xs font-bold text-white">
+            고객/권한 관리
+          </button>
+        </div>
+      </div>
+      <div className="grid divide-y divide-amber-100 border-t border-amber-100 bg-white/60">
+        {accounts.slice(0, 6).map((row) => (
+          <div key={`${row.accountId}-${row.userId || row.customer}`} className="grid gap-2 px-5 py-3 text-xs text-amber-900 sm:grid-cols-[1.1fr_1fr_auto] sm:items-center">
+            <div className="min-w-0">
+              <div className="truncate font-black">{row.accountName}</div>
+              <div className="mt-0.5 truncate text-amber-700">{row.accountHandle || '핸들 없음'}</div>
+            </div>
+            <div className="min-w-0">
+              <div className="truncate font-bold">{row.customer || '고객 미확인'}</div>
+              <div className="mt-0.5 text-amber-700">{row.billingStatus || 'past_due'} · {row.productStatus || '권한 상태 미확인'}</div>
+            </div>
+            <div className="text-amber-700">
+              만료 {row.paidUntil ? dateTime(row.paidUntil) : '일자 없음'}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ReadinessPanel({ readiness, issueBreakdown }) {
   if (!readiness) return null;
   const ready = readiness.ready || 0;
   const skipped = readiness.skipped || 0;
   const blockers = [
+    { label: '이용 만료', value: readiness.billingExpired || 0 },
     { label: 'Threads 재연결', value: readiness.threadsReconnect || 0 },
     { label: '쿠팡 설정', value: readiness.coupangSettings || 0 },
     { label: '큐 정리', value: readiness.queueCleanup || 0 },
@@ -669,7 +730,7 @@ function ReadinessPanel({ readiness, issueBreakdown }) {
             실행 가능 {ready}개 · 스킵 예정 {skipped}개 · 과거 테스트 업로드 {issueBreakdown?.mockUploads || 0}개
           </div>
         </div>
-        <div className="grid gap-2 sm:grid-cols-4">
+        <div className="grid gap-2 sm:grid-cols-5">
           {blockers.map((item) => (
             <div key={item.label} className={`rounded border px-3 py-2 ${item.value > 0 ? 'border-amber-200 bg-amber-50' : 'border-line bg-panel'}`}>
               <div className="text-[11px] font-bold text-slate-400">{item.label}</div>
@@ -888,6 +949,7 @@ function healthLabel(status) {
 
 function dailyPipelineLabel(dailyPipeline) {
   if (!dailyPipeline) return '-';
+  if (isBillingExpiredDailyPipeline(dailyPipeline)) return '만료 계정 있음';
   if (dailyPipeline.missing) return '누락';
   if (dailyPipeline.stale || dailyPipeline.status === 'stale') return '멈춤';
   if (dailyPipeline.status === 'completed' && (dailyPipeline.run?.summary?.futureQueueCoverage?.missingFutureQueueCount || 0) > 0) return '확인 필요';
@@ -900,6 +962,7 @@ function dailyPipelineLabel(dailyPipeline) {
 
 function dailyPipelineTone(dailyPipeline) {
   if (!dailyPipeline) return 'warn';
+  if (isBillingExpiredDailyPipeline(dailyPipeline)) return 'warn';
   if (dailyPipeline.missing || dailyPipeline.stale || dailyPipeline.status === 'stale' || dailyPipeline.status === 'failed') return 'error';
   if (dailyPipeline.status === 'running' || dailyPipeline.status === 'pending' || dailyPipeline.status === 'partial') return 'warn';
   if (dailyPipeline.status === 'completed' && (dailyPipeline.run?.summary?.futureQueueCoverage?.missingFutureQueueCount || 0) > 0) return 'warn';
@@ -908,6 +971,7 @@ function dailyPipelineTone(dailyPipeline) {
 
 function dailyPipelineHint(dailyPipeline) {
   if (!dailyPipeline) return '오늘 2시 실행 기록 확인 중';
+  if (isBillingExpiredDailyPipeline(dailyPipeline)) return '만료 계정은 별도 목록으로 분리했습니다. 나머지 계정은 계속 처리됩니다.';
   if (dailyPipeline.missing) return '오늘 02:00 실행 기록 없음';
   if (dailyPipeline.stale || dailyPipeline.status === 'stale') return '02:00 실행이 오래 멈춤, 재시작 필요';
   const summary = dailyPipeline.run?.summary || {};
@@ -930,8 +994,23 @@ function dailyPipelineHint(dailyPipeline) {
   return 'KST 02:00 대기';
 }
 
+function isBillingExpiredDailyPipeline(dailyPipeline) {
+  const run = dailyPipeline?.run || {};
+  const summary = run.summary || {};
+  const text = [
+    dailyPipeline?.status,
+    run.errorMessage,
+    summary.code,
+    summary.message,
+    ...(Array.isArray(summary.results) ? summary.results.map((row) => [row.code, row.reason, row.message].filter(Boolean).join(' ')) : [])
+  ].filter(Boolean).join(' ');
+  return /BILLING_EXPIRED|billing_expired|이용 기간 만료|이용 기간이 만료/.test(text);
+}
+
 function dailyResultLabel(result) {
   if (!result) return '';
+  if (result.code === 'BILLING_EXPIRED' || result.reason === 'billing_expired') return '이용 만료 제외';
+  if (result.code === 'BILLING_REQUIRED' || result.reason === 'billing_required') return '권한 없음 제외';
   if (result.status === 'no_link_candidates' || result.reason === 'pipeline_skipped_no_link_candidates') return '상품 후보 없음';
   if (result.status === 'ok') return '성공';
   if (/reply_permission_required|threads_reconnect|Threads|댓글 권한|재연결|access token|OAuth|permission/i.test(result.error || result.reason || result.message || result.code || '')) return '재연결 필요';
@@ -943,6 +1022,7 @@ function dailyResultLabel(result) {
 function runCategoryLabel(category) {
   return ({
     ready: '수동 실행 가능',
+    billing_expired: '이용 기간 만료',
     threads_reconnect: 'Threads 재연결 필요',
     coupang_settings: '쿠팡 설정 필요',
     queue_cleanup: '큐 정리 필요',

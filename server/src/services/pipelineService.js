@@ -15,6 +15,21 @@ import { sendOpsAlert } from './notificationService.js';
 const PIPELINE_COUPANG_SEARCH_WAIT_BUDGET_MS = Math.max(0, Number(process.env.COUPANG_PIPELINE_SEARCH_WAIT_BUDGET_MS || 10 * 60 * 1000));
 const DEFERRED_COUPANG_THROTTLE = 'DEFERRED_COUPANG_THROTTLE';
 const PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED = 'PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED';
+const BILLING_SKIP_CODES = new Set(['BILLING_EXPIRED', 'BILLING_REQUIRED']);
+
+function billingSkipResult(account, err) {
+  return {
+    accountId: account.id,
+    accountName: account.name,
+    status: 'skipped',
+    code: err.code,
+    reason: err.code === 'BILLING_EXPIRED' ? 'billing_expired' : 'billing_required',
+    message: err.code === 'BILLING_EXPIRED'
+      ? '이용 기간 만료 계정이라 이번 자동 실행에서 제외했습니다.'
+      : '이용 권한이 없어 이번 자동 실행에서 제외했습니다.',
+    entitlement: err.entitlement || null
+  };
+}
 
 export function hasLinkProductsForContentGeneration(selectedProducts) {
   return Array.isArray(selectedProducts) && selectedProducts.length > 0;
@@ -425,6 +440,24 @@ export async function runFullPipeline(options = {}) {
       continue;
     }
     try {
+      try {
+        await assertAccountOwnerCanOperate(account.id);
+      } catch (err) {
+        if (!BILLING_SKIP_CODES.has(err.code)) throw err;
+        const row = billingSkipResult(account, err);
+        results.push(row);
+        skipped.push(row);
+        processed.push(account.id);
+        await logActivity({
+          account_id: account.id,
+          project_id: account.project_id,
+          action: row.reason,
+          level: 'warn',
+          message: row.message,
+          payload: row.entitlement || {}
+        }).catch(() => {});
+        continue;
+      }
       if (options.skipFutureScheduled && await hasFutureScheduledQueue(account.id)) {
         const row = {
           accountId: account.id,
@@ -488,6 +521,21 @@ export async function runFullPipeline(options = {}) {
         results.push(row);
         skipped.push(row);
         processed.push(account.id);
+        continue;
+      }
+      if (BILLING_SKIP_CODES.has(err.code)) {
+        const row = billingSkipResult(account, err);
+        results.push(row);
+        skipped.push(row);
+        processed.push(account.id);
+        await logActivity({
+          account_id: account.id,
+          project_id: account.project_id,
+          action: row.reason,
+          level: 'warn',
+          message: row.message,
+          payload: row.entitlement || {}
+        }).catch(() => {});
         continue;
       }
       throw err;

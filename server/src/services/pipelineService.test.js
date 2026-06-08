@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { hasLinkProductsForContentGeneration } from './pipelineService.js';
+import { hasLinkProductsForContentGeneration, runFullPipeline } from './pipelineService.js';
 import { generatePostsPrompt } from '../prompts/generatePostsPrompt.js';
 import { dbGet, dbInsert } from './supabaseService.js';
 import { expireStalePipelineRuns, getRunningPipeline, pipelineStaleReason } from './pipelineRunService.js';
@@ -12,6 +12,59 @@ test('skips content generation when no link product was selected', () => {
 
 test('allows content generation when at least one link product was selected', () => {
   assert.equal(hasLinkProductsForContentGeneration([{ id: 'selected-product' }]), true);
+});
+
+test('full pipeline skips billing-expired accounts without failing scheduler run', async () => {
+  const user = await dbInsert('users', {
+    email: `billing-expired-${Date.now()}@example.com`,
+    username: `billing-expired-${Date.now()}`,
+    buyer_name: '만료 테스트',
+    status: 'active',
+    plan: 'monthly',
+    billing_status: 'past_due',
+    paid_until: '2026-06-01T00:00:00.000Z',
+    max_accounts: 1
+  });
+  const project = await dbInsert('projects', {
+    name: 'billing expired pipeline test',
+    type: 'coupang',
+    status: 'active'
+  });
+  const account = await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'billing expired account',
+    platform: 'threads',
+    account_handle: '@billing-expired',
+    automation_status: 'running',
+    status: 'active',
+    threads_access_token: 'token',
+    threads_user_id: 'threads-user',
+    threads_token_status: 'valid',
+    coupang_access_key: 'access',
+    coupang_secret_key: 'secret',
+    coupang_partner_id: 'partner',
+    coupang_tracking_code: 'tracking'
+  });
+  await dbInsert('user_accounts', { user_id: user.id, account_id: account.id });
+  await dbInsert('user_products', {
+    user_id: user.id,
+    product_id: 'cujasa',
+    status: 'expired',
+    role: 'customer',
+    settings: {}
+  });
+
+  const result = await runFullPipeline({
+    accountIds: [account.id],
+    requestedBy: 'billing-expired-test',
+    skipFutureScheduled: false
+  });
+
+  assert.equal(result.status, 'completed');
+  assert.equal(result.results.length, 1);
+  assert.equal(result.results[0].status, 'skipped');
+  assert.equal(result.results[0].code, 'BILLING_EXPIRED');
+  assert.equal(result.skipped.length, 1);
 });
 
 test('post generation prompt includes strong but safe hook guidance', () => {
