@@ -332,7 +332,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
           value={dailyPipelineLabel(summary?.dailyPipeline)}
           hint={dailyPipelineHint(summary?.dailyPipeline)}
           tone={dailyPipelineTone(summary?.dailyPipeline)}
-          onClick={(summary?.dailyPipeline?.missing || summary?.dailyPipeline?.stale || summary?.dailyPipeline?.status === 'partial') ? catchUpDailyPipeline : undefined}
+          onClick={dailyPipelineCanCatchUp(summary?.dailyPipeline) ? catchUpDailyPipeline : undefined}
         />
         <OpsCard
           label="만료 계정"
@@ -952,7 +952,9 @@ function dailyPipelineLabel(dailyPipeline) {
   if (isBillingExpiredDailyPipeline(dailyPipeline)) return '만료 계정 있음';
   if (dailyPipeline.missing) return '누락';
   if (dailyPipeline.stale || dailyPipeline.status === 'stale') return '멈춤';
-  if (dailyPipeline.status === 'completed' && (dailyPipeline.run?.summary?.futureQueueCoverage?.missingFutureQueueCount || 0) > 0) return '확인 필요';
+  if (dailyPipeline.status === 'completed' && (dailyPipeline.run?.summary?.futureQueueCoverage?.missingFutureQueueCount || 0) > 0) {
+    return (dailyPipeline.run?.summary?.futureQueueCoverage?.recoverableMissingFutureQueueCount || 0) > 0 ? '이어 실행 필요' : '차단 계정 있음';
+  }
   if (dailyPipeline.status === 'completed') return '성공';
   if (dailyPipeline.status === 'partial') return '부분 완료';
   if (dailyPipeline.status === 'running') return '실행중';
@@ -979,11 +981,21 @@ function dailyPipelineHint(dailyPipeline) {
     return `처리 ${summary.processed || 0} · 남은 계정 ${dailyPipeline.pendingCount || summary.pendingCount || 0} · 이어 실행 대기`;
   }
   if (dailyPipeline.status === 'completed') {
+    const coverage = summary.futureQueueCoverage || {};
+    const missingFuture = coverage.missingFutureQueueCount || 0;
+    if (missingFuture > 0) {
+      const active = coverage.activeRunningCount || summary.total || 0;
+      const covered = Math.max(0, active - missingFuture);
+      const blocked = coverage.blockedMissingFutureQueueCount || 0;
+      const recoverable = coverage.recoverableMissingFutureQueueCount || 0;
+      const reconnect = summary.reconnectRequired || 0;
+      const queueBlocked = Math.max(0, (summary.error || 0) - reconnect);
+      const recoverableText = recoverable > 0 ? ` · 이어 실행 ${recoverable}` : '';
+      return `예약 확인 ${covered}/${active} · 차단 ${blocked}${recoverableText} · 재연결 ${reconnect} · 초안/큐 확인 ${queueBlocked}`;
+    }
     const reconnect = summary.reconnectRequired || 0;
     const skippedOther = summary.skippedOther ?? Math.max(0, (summary.skipped || 0) - reconnect);
-    const missingFuture = summary.futureQueueCoverage?.missingFutureQueueCount || 0;
-    const missingText = missingFuture > 0 ? ` · 당일 예약 없음 ${missingFuture}` : '';
-    return `대상 ${summary.total || 0} · 예약 성공 ${summary.ok || 0} · 재연결 필요 ${reconnect} · 기타 스킵 ${skippedOther} · 시스템 오류 ${summary.error || 0}${missingText}`;
+    return `대상 ${summary.total || 0} · 예약 성공 ${summary.ok || 0} · 재연결 필요 ${reconnect} · 기타 스킵 ${skippedOther} · 시스템 오류 ${summary.error || 0}`;
   }
   if (dailyPipeline.status === 'running') {
     const progress = dailyPipeline.progress || summary.progress || {};
@@ -992,6 +1004,12 @@ function dailyPipelineHint(dailyPipeline) {
   }
   if (dailyPipeline.status === 'failed') return dailyPipeline.run?.errorMessage || '자동 실행 실패';
   return 'KST 02:00 대기';
+}
+
+function dailyPipelineCanCatchUp(dailyPipeline) {
+  if (!dailyPipeline) return false;
+  if (dailyPipeline.missing || dailyPipeline.stale || dailyPipeline.status === 'stale' || dailyPipeline.status === 'partial') return true;
+  return (dailyPipeline.run?.summary?.futureQueueCoverage?.recoverableMissingFutureQueueCount || 0) > 0;
 }
 
 function isBillingExpiredDailyPipeline(dailyPipeline) {
