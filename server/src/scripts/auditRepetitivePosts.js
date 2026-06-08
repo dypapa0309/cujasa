@@ -19,6 +19,7 @@ const summaryOnly = args.has('--summary-only');
 const includeCrossAccount = !args.has('--no-cross-account');
 const apply = args.has('--apply');
 const markDraftsManual = args.has('--mark-drafts-manual') || args.has('--archive-drafts');
+const markQueuesManual = args.has('--mark-queues-manual') || args.has('--block-queues');
 const hidePosted = args.has('--hide-posted');
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const cutoffMs = days ? Date.now() - days * MS_PER_DAY : 0;
@@ -106,6 +107,7 @@ async function queueRecords() {
       postedAt: row.posted_at || null,
       createdAt: row.created_at || post?.created_at || null,
       updatedAt: row.updated_at || post?.updated_at || null,
+      retryCount: Number(row.retry_count || 0),
       customerHidden: Boolean(row.customer_hidden_at),
       issues: []
     };
@@ -261,11 +263,28 @@ function compareGlobalExactDuplicates(records = []) {
 
 function recommendedAction(record) {
   if (!record.issues.length) return null;
-  if (record.source === 'queue' && ['scheduled', 'retry'].includes(record.status)) return 'regenerate_queue';
+  if (record.source === 'queue' && ['scheduled', 'retry'].includes(record.status)) {
+    return markQueuesManual ? 'mark_queue_manual_required' : 'regenerate_queue';
+  }
   if (record.source === 'post' && ['draft', 'queued'].includes(record.status)) return 'mark_post_manual_required';
   if (record.status === 'posted') return 'review_hide_or_delete_posted';
   if (record.status === 'manual_required') return 'manual_review_before_requeue';
   return 'manual_review';
+}
+
+function issueAuditPayload(target) {
+  return {
+    flaggedAt: new Date().toISOString(),
+    source: 'auditRepetitivePosts',
+    previousStatus: target.status,
+    issues: target.issues.map((issue) => ({
+      type: issue.type,
+      severity: issue.severity,
+      ruleIds: issue.ruleIds || undefined,
+      matchedPostId: issue.matchedPostId || undefined,
+      matchedQueueId: issue.matchedQueueId || undefined
+    }))
+  };
 }
 
 function draftCleanupTargets(records = []) {
@@ -273,6 +292,15 @@ function draftCleanupTargets(records = []) {
     record.source === 'post'
     && ['draft', 'queued'].includes(record.status)
     && record.postId
+    && record.issues.some((issue) => issue.type !== 'missing_body')
+  ));
+}
+
+function queueManualTargets(records = []) {
+  return records.filter((record) => (
+    record.source === 'queue'
+    && ['scheduled', 'retry'].includes(record.status)
+    && record.queueId
     && record.issues.some((issue) => issue.type !== 'missing_body')
   ));
 }
@@ -302,17 +330,7 @@ async function applyDraftCleanup(issueRecords = []) {
     const post = await getPost(target.postId);
     const metadata = {
       ...(post?.metadata || {}),
-      repetitionAudit: {
-        flaggedAt: new Date().toISOString(),
-        source: 'auditRepetitivePosts',
-        previousStatus: target.status,
-        issues: target.issues.map((issue) => ({
-          type: issue.type,
-          severity: issue.severity,
-          ruleIds: issue.ruleIds || undefined,
-          matchedPostId: issue.matchedPostId || undefined
-        }))
-      }
+      repetitionAudit: issueAuditPayload(target)
     };
     const [updated] = await dbUpdate('posts', { id: target.postId, status: target.status }, {
       status: 'manual_required',
@@ -324,6 +342,61 @@ async function applyDraftCleanup(issueRecords = []) {
     } else {
       base.skippedCount += 1;
     }
+  }
+  return base;
+}
+
+async function applyQueueManualCleanup(issueRecords = []) {
+  const targets = queueManualTargets(issueRecords);
+  const base = {
+    enabled: markQueuesManual,
+    apply,
+    targetCount: targets.length,
+    updatedCount: 0,
+    skippedCount: 0,
+    updatedQueueIds: []
+  };
+  if (!markQueuesManual || !apply) return base;
+  const byAccount = new Map();
+  for (const target of targets) {
+    const message = 'REPETITIVE_CONTENT_GUARD: 반복/유사 콘텐츠 점검에서 발행 차단됨.';
+    const [updated] = await dbUpdate('post_queue', { id: target.queueId, status: target.status }, {
+      status: 'manual_required',
+      error_category: 'repetitive_content_guard',
+      error_message: message,
+      retry_count: Math.max(Number(target.retryCount || 0), 1)
+    });
+    if (!updated) {
+      base.skippedCount += 1;
+      continue;
+    }
+    base.updatedCount += 1;
+    base.updatedQueueIds.push(target.queueId);
+    if (target.postId) {
+      const post = await getPost(target.postId);
+      await dbUpdate('posts', { id: target.postId }, {
+        status: 'manual_required',
+        metadata: {
+          ...(post?.metadata || {}),
+          repetitionAudit: issueAuditPayload(target)
+        }
+      }).catch(() => null);
+    }
+    if (!byAccount.has(target.accountId)) byAccount.set(target.accountId, { accountName: target.accountName, rows: [] });
+    byAccount.get(target.accountId).rows.push(updated);
+  }
+  for (const [targetAccountId, item] of byAccount.entries()) {
+    await logActivity({
+      account_id: targetAccountId,
+      action: 'repetitive_queue_blocked',
+      level: 'warn',
+      message: `${item.rows.length}개의 반복 의심 예약/재시도 큐를 수동 검토로 전환했습니다.`,
+      payload: {
+        accountName: item.accountName,
+        count: item.rows.length,
+        reason: 'repetitive_content_guard'
+      }
+    }).catch(() => null);
   }
   return base;
 }
@@ -459,6 +532,7 @@ async function main() {
     .sort((a, b) => recordTimeMs(b) - recordTimeMs(a));
   const cleanup = {
     drafts: await applyDraftCleanup(issueRecords),
+    queues: await applyQueueManualCleanup(issueRecords),
     posted: await applyPostedHide(issueRecords)
   };
   const output = {

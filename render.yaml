@@ -125,6 +125,22 @@ services:
         sync: false
 
   - type: cron
+    name: cujasa-repetition-guard
+    env: node
+    plan: starter
+    rootDir: .
+    buildCommand: npm install --prefix server
+    startCommand: npm run scheduler:repetition-guard --prefix server
+    schedule: "15 * * * *"
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SCHEDULER_API_BASE_URL
+        sync: false
+      - key: SCHEDULER_SECRET
+        sync: false
+
+  - type: cron
     name: cujasa-daily-pipeline
     env: node
     plan: starter

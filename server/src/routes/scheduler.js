@@ -4,6 +4,7 @@ import { generateBlogPost } from '../services/blogService.js';
 import { requireAdmin } from '../middleware/rateLimit.js';
 import { runDailyPipelineOnce } from '../services/schedulerRunService.js';
 import { processCoreDueQueue } from '../services/cujasaCoreService.js';
+import { runRepetitionGuard } from '../services/repetitionGuardService.js';
 
 const router = Router();
 let manualFullPipelineRunning = false;
@@ -25,6 +26,17 @@ router.post('/daily-pipeline', requireSchedulerSecret, async (req, res, next) =>
     res.json(await runDailyPipelineOnce({
       triggeredBy: req.body?.triggeredBy || 'external_scheduler',
       mode: req.body?.mode || 'scheduled'
+    }));
+  } catch (e) { next(e); }
+});
+
+router.post('/repetition-guard', requireSchedulerSecret, async (req, res, next) => {
+  try {
+    res.json(await runRepetitionGuard({
+      triggeredBy: req.body?.triggeredBy || 'external_scheduler',
+      statuses: req.body?.statuses || 'scheduled,retry,draft',
+      days: req.body?.days || 30,
+      limit: req.body?.limit || 3000
     }));
   } catch (e) { next(e); }
 });

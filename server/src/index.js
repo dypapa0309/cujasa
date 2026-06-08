@@ -41,6 +41,7 @@ import { sendOpsAlert } from './services/notificationService.js';
 import { runDailyOpsHealthCheck } from './services/opsHealthService.js';
 import { redactSensitivePayload } from './services/redactionService.js';
 import { dailyPipelineStatus, runDailyPipelineOnce } from './services/schedulerRunService.js';
+import { runRepetitionGuard } from './services/repetitionGuardService.js';
 import { replyLinkModeStatus } from './utils/replyLinkMode.js';
 import { getPublicLeadForm } from './services/automationStudioService.js';
 import { loadSystemSettingsIntoEnv } from './services/systemSettingsService.js';
@@ -463,6 +464,11 @@ if (enableInternalCron) {
   // 매일 오전 8시(KST): 운영 위험 상태 요약 알림
   cron.schedule('0 8 * * *', async () => {
     await runCronJob('daily-ops-healthcheck', async () => runDailyOpsHealthCheck());
+  }, { timezone: 'Asia/Seoul' });
+
+  // 매시간: 반복 의심 예약/초안을 발행 전 수동 검토로 전환
+  cron.schedule('15 * * * *', async () => {
+    await runCronJob('repetition-guard', async () => runRepetitionGuard({ triggeredBy: 'node_cron_repetition_guard' }));
   }, { timezone: 'Asia/Seoul' });
 }
 
