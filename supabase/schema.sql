@@ -796,6 +796,9 @@ create index if not exists idx_billing_agreements_user on billing_agreements(use
 create index if not exists idx_user_login_devices_user_type
   on user_login_devices(user_id, device_type, status);
 
+alter table public.user_login_devices enable row level security;
+revoke all on table public.user_login_devices from anon, authenticated;
+
 create table if not exists setup_tasks (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users(id) on delete cascade,

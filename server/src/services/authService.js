@@ -9,6 +9,7 @@ import { authorizeLoginDevice } from './deviceSessionService.js';
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 12;
 const AUTH_PRODUCTS_TIMEOUT_MS = Number(process.env.AUTH_PRODUCTS_TIMEOUT_MS || 1500);
+const AUTH_DEVICE_TIMEOUT_MS = Number(process.env.AUTH_DEVICE_TIMEOUT_MS || 3000);
 const REGISTER_USERNAME_RE = /^[a-zA-Z0-9._-]{3,30}$/;
 const REGISTER_PHONE_RE = /^\+?[0-9]{8,20}$/;
 const REGISTER_PRODUCT_IDS = new Set(PRODUCTS.filter((product) => product.status !== 'inactive').map((product) => product.id));
@@ -137,6 +138,25 @@ async function listUserProductsForSession(userId) {
           console.warn(`[auth] products lookup timed out after ${AUTH_PRODUCTS_TIMEOUT_MS}ms`);
           resolve(fallback);
         }, AUTH_PRODUCTS_TIMEOUT_MS);
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function authorizeLoginDeviceWithTimeout(options) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      authorizeLoginDevice(options),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error('기기 인증 서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해주세요.');
+          error.status = 503;
+          error.code = 'AUTH_DEVICE_TIMEOUT';
+          reject(error);
+        }, AUTH_DEVICE_TIMEOUT_MS);
       })
     ]);
   } finally {
@@ -371,7 +391,7 @@ export async function loginUser(email, password, options = {}) {
     error.status = 401;
     throw error;
   }
-  const device = await authorizeLoginDevice({ user, device: options.device || {}, req: options.req });
+  const device = await authorizeLoginDeviceWithTimeout({ user, device: options.device || {}, req: options.req });
   return sessionForUser(user, { device });
 }
 

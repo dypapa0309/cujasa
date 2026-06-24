@@ -8,6 +8,7 @@ export const supabase = hasSupabase
   : null;
 
 const DB_CIRCUIT_BREAKER_MS = Math.max(0, Number(process.env.DB_CIRCUIT_BREAKER_MS || 60_000));
+const DB_REQUEST_TIMEOUT_MS = Math.max(1000, Number(process.env.DB_REQUEST_TIMEOUT_MS || 5000));
 let dbCircuitOpenUntil = 0;
 let dbCircuitReason = '';
 
@@ -505,7 +506,7 @@ function stampUpdate(table, patch) {
 
 function isTransientSupabaseFailure(error = {}) {
   const message = String(error.message || error || '');
-  return /522: Connection timed out|Connection timed out|Cloudflare|fetch failed|network timeout|timeout/i.test(message);
+  return /522: Connection timed out|Connection timed out|Cloudflare|fetch failed|network timeout|timeout|aborted|aborterror/i.test(message);
 }
 
 function unavailableDbError(reason = '') {
@@ -537,6 +538,29 @@ function normalizeDbError(error) {
   return error;
 }
 
+async function executeSupabaseQuery(query) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DB_REQUEST_TIMEOUT_MS);
+  try {
+    const request = typeof query.abortSignal === 'function' ? query.abortSignal(controller.signal) : query;
+    const result = await request;
+    if (controller.signal.aborted) {
+      throw unavailableDbError(`Supabase request timed out after ${DB_REQUEST_TIMEOUT_MS}ms`);
+    }
+    return result;
+  } catch (error) {
+    if (controller.signal.aborted || error?.name === 'AbortError') {
+      const timeoutError = unavailableDbError(`Supabase request timed out after ${DB_REQUEST_TIMEOUT_MS}ms`);
+      timeoutError.cause = error;
+      markDbCircuit(new Error(`Supabase request timeout after ${DB_REQUEST_TIMEOUT_MS}ms`));
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function dbList(table, filters = {}, options = {}) {
   if (supabase) {
     assertDbCircuitClosed();
@@ -553,7 +577,7 @@ export async function dbList(table, filters = {}, options = {}) {
     if (options.or) q = q.or(options.or);
     if (options.order) q = q.order(options.order, { ascending: options.ascending ?? false });
     if (options.limit) q = q.limit(options.limit);
-    const { data, error } = await q;
+    const { data, error } = await executeSupabaseQuery(q);
     if (error) throw normalizeDbError(error);
     return data;
   }
@@ -575,7 +599,7 @@ export async function dbInsert(table, payload) {
   const stamped = rows.map((row) => ({ id: row.id || randomUUID(), created_at: row.created_at || now(), ...row }));
   if (supabase) {
     assertDbCircuitClosed();
-    const { data, error } = await supabase.from(table).insert(stamped).select();
+    const { data, error } = await executeSupabaseQuery(supabase.from(table).insert(stamped).select());
     if (error) throw normalizeDbError(error);
     return Array.isArray(payload) ? data : data[0];
   }
@@ -587,7 +611,7 @@ export async function dbUpdate(table, filters, patch) {
   const stamped = stampUpdate(table, patch);
   if (supabase) {
     assertDbCircuitClosed();
-    const { data, error } = await supabase.from(table).update(stamped).match(filters).select();
+    const { data, error } = await executeSupabaseQuery(supabase.from(table).update(stamped).match(filters).select());
     if (error) throw normalizeDbError(error);
     return data;
   }
@@ -605,7 +629,7 @@ export async function dbUpdate(table, filters, patch) {
 export async function dbDelete(table, filters) {
   if (supabase) {
     assertDbCircuitClosed();
-    const { error } = await supabase.from(table).delete().match(filters);
+    const { error } = await executeSupabaseQuery(supabase.from(table).delete().match(filters));
     if (error) throw normalizeDbError(error);
     return true;
   }

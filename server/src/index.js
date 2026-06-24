@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import cron from 'node-cron';
+import { fork } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import authRouter from './routes/auth.js';
@@ -32,16 +32,8 @@ import productWorkspaceRouter from './routes/productWorkspace.js';
 import workspaceAssistantRouter from './routes/workspaceAssistant.js';
 import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
-import { processCoreDueQueue } from './services/cujasaCoreService.js';
-import { runDueMetricJobs } from './services/metricsJobService.js';
 import { listAccountBlogPosts, listBlogPosts } from './services/blogService.js';
-import { refreshExpiringThreadsTokens } from './services/threadsOAuthService.js';
-import { expireDueEntitlements } from './services/billingEntitlementService.js';
-import { sendOpsAlert } from './services/notificationService.js';
-import { runDailyOpsHealthCheck } from './services/opsHealthService.js';
 import { redactSensitivePayload } from './services/redactionService.js';
-import { dailyPipelineStatus, runDailyPipelineOnce } from './services/schedulerRunService.js';
-import { runRepetitionGuard } from './services/repetitionGuardService.js';
 import { replyLinkModeStatus } from './utils/replyLinkMode.js';
 import { getPublicLeadForm } from './services/automationStudioService.js';
 import { loadSystemSettingsIntoEnv } from './services/systemSettingsService.js';
@@ -50,10 +42,7 @@ import { dbList } from './services/supabaseService.js';
 const app = express();
 const port = process.env.PORT || 3000;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const runningCronJobs = new Set();
 const enableInternalCron = process.env.ENABLE_INTERNAL_CRON !== 'false';
-const enableRepetitionGuardCron = process.env.ENABLE_REPETITION_GUARD_CRON !== 'false';
-const enableStartupDailyCatchUp = process.env.ENABLE_STARTUP_DAILY_CATCH_UP !== 'false';
 const allowedOrigins = new Set([
   ...(process.env.CLIENT_BASE_URL || '').split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean),
   'https://jasain.kr',
@@ -104,40 +93,6 @@ function isAllowedOrigin(origin = '') {
     && (/^http:\/\/localhost:\d+$/i.test(normalized) || /^http:\/\/127\.0\.0\.1:\d+$/i.test(normalized))
   ) return true;
   return false;
-}
-
-async function runCronJob(name, fn) {
-  if (runningCronJobs.has(name)) {
-    console.warn(`[Cron:${name}] skipped because previous run is still active`);
-    await sendOpsAlert('cron_skipped', {
-      title: 'cron 중복 실행 스킵',
-      code: 'CRON_ALREADY_RUNNING',
-      message: `${name} 작업의 이전 실행이 아직 끝나지 않아 이번 실행을 건너뛰었습니다.`,
-      hint: '반복 발생하면 해당 작업 처리 시간과 외부 API 지연을 확인하세요.',
-      payload: { cronName: name }
-    });
-    return null;
-  }
-  runningCronJobs.add(name);
-  const startedAt = Date.now();
-  console.log(`[Cron:${name}] started`);
-  try {
-    const result = await fn();
-    console.log(`[Cron:${name}] completed`, JSON.stringify({ durationMs: Date.now() - startedAt, result }));
-    return result;
-  } catch (error) {
-    console.error(`[Cron:${name}] failed`, error);
-    await sendOpsAlert('cron_failed', {
-      title: 'cron 작업 실패',
-      code: 'CRON_FAILED',
-      message: `${name}: ${error.message}`,
-      hint: '서버 로그와 activity_logs를 확인하세요.',
-      payload: { cronName: name }
-    });
-    return null;
-  } finally {
-    runningCronJobs.delete(name);
-  }
 }
 
 const corsOptions = {
@@ -417,73 +372,17 @@ app.use((error, req, res, next) => {
   });
 });
 
-if (enableInternalCron) {
-  // 매분: 예약된 포스팅 업로드 + 성과 측정
-  cron.schedule('* * * * *', async () => {
-    await runCronJob('queue-and-metrics', async () => {
-      const processedQueue = await processCoreDueQueue();
-      const metricJobs = await runDueMetricJobs();
-      return { processedQueue, metricJobs };
-    });
+let schedulerWorker = null;
+
+function startSchedulerWorker() {
+  if (!enableInternalCron || schedulerWorker) return;
+  const workerPath = fileURLToPath(new URL('./scripts/runInternalSchedulerWorker.js', import.meta.url));
+  schedulerWorker = fork(workerPath, [], { stdio: 'inherit', env: process.env });
+  schedulerWorker.once('exit', (code, signal) => {
+    console.error(`[Worker] internal scheduler exited code=${code} signal=${signal || 'none'}`);
+    schedulerWorker = null;
+    setTimeout(startSchedulerWorker, 5000);
   });
-
-  // 매일 새벽 2시: 전체 파이프라인 자동 실행 (주제→상품→콘텐츠→큐 등록)
-  cron.schedule('0 2 * * *', async () => {
-    await runCronJob('daily-pipeline', async () => {
-      return runDailyPipelineOnce({ triggeredBy: 'node_cron', mode: 'scheduled' });
-    });
-  }, { timezone: 'Asia/Seoul' });
-
-  // 새벽 2:30~5:30: 2시 실행이 시간 예산으로 partial 종료된 경우 남은 계정을 이어 처리
-  cron.schedule('30 2-5 * * *', async () => {
-    await runCronJob('daily-pipeline-continuation', async () => {
-      const status = await dailyPipelineStatus();
-      if (!['partial', 'stale'].includes(status.status)) {
-        return { skipped: true, status: status.status, pendingCount: status.pendingCount || 0 };
-      }
-      return runDailyPipelineOnce({
-        triggeredBy: 'node_cron_continuation',
-        mode: 'continuation',
-        runDateKst: status.runDateKst
-      });
-    });
-  }, { timezone: 'Asia/Seoul' });
-
-  // 매일 새벽 3시: Threads long-lived token 만료 전 갱신
-  cron.schedule('0 3 * * *', async () => {
-    await runCronJob('threads-token-refresh', async () => refreshExpiringThreadsTokens());
-  });
-
-  // 매시간: 월결제 만료 고객 자동 차단
-  cron.schedule('17 * * * *', async () => {
-    await runCronJob('billing-expire', async () => {
-      const expired = await expireDueEntitlements();
-      return { expiredCount: expired.length };
-    });
-  });
-
-  // 매일 오전 8시(KST): 운영 위험 상태 요약 알림
-  cron.schedule('0 8 * * *', async () => {
-    await runCronJob('daily-ops-healthcheck', async () => runDailyOpsHealthCheck());
-  }, { timezone: 'Asia/Seoul' });
-
-}
-
-if (enableRepetitionGuardCron) {
-  // 매시간: 반복 의심 예약/초안을 발행 전 수동 검토로 전환
-  cron.schedule('15 * * * *', async () => {
-    await runCronJob('repetition-guard', async () => runRepetitionGuard({ triggeredBy: 'node_cron_repetition_guard' }));
-  }, { timezone: 'Asia/Seoul' });
-}
-
-async function runStartupDailyPipelineCatchUp() {
-  const status = await dailyPipelineStatus();
-  if (!status.missing && !['partial', 'stale'].includes(status.status)) return null;
-  return runCronJob('daily-pipeline-startup-catch-up', async () => runDailyPipelineOnce({
-    triggeredBy: 'startup_catch_up',
-    runDateKst: status.runDateKst,
-    mode: status.missing ? 'scheduled' : 'continuation'
-  }));
 }
 
 await loadSystemSettingsIntoEnv().catch((error) => {
@@ -493,11 +392,5 @@ await loadSystemSettingsIntoEnv().catch((error) => {
 app.listen(port, () => {
   console.log(`JASAIN API running on http://localhost:${port}`);
   console.log('[threads reply link mode]', JSON.stringify(replyLinkModeStatus()));
-  if (enableStartupDailyCatchUp) {
-    setTimeout(() => {
-      runStartupDailyPipelineCatchUp().catch((error) => {
-        console.error('[startup daily-pipeline catch-up] failed', error);
-      });
-    }, 3000);
-  }
+  startSchedulerWorker();
 });

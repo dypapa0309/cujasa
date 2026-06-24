@@ -18,3 +18,6 @@ create table if not exists user_login_devices (
 
 create index if not exists idx_user_login_devices_user_type
   on user_login_devices(user_id, device_type, status);
+
+alter table public.user_login_devices enable row level security;
+revoke all on table public.user_login_devices from anon, authenticated;
