@@ -16,6 +16,7 @@ const THREADS_OAUTH_SCOPE = [
 const STATE_TTL_MS = 10 * 60 * 1000;
 const REFRESH_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const usedStateSignatures = new Map();
+const AUTO_START_AFTER_OAUTH_MARKER = '[auto_start_after_oauth]';
 
 function normalizeThreadsHandle(value) {
   return String(value || '').trim().replace(/^@/, '').toLowerCase();
@@ -329,15 +330,31 @@ export async function completeThreadsOAuth({ code, state }) {
   };
   if (me.username) patch.account_handle = `@${String(me.username).replace(/^@/, '')}`;
 
-  const [account] = await dbUpdate('accounts', { id: accountId }, patch);
-  await markThreadsConnectionRequestConnected(accountId).catch(() => null);
+  let [account] = await dbUpdate('accounts', { id: accountId }, patch);
+  const connectionRequest = await markThreadsConnectionRequestConnected(accountId).catch(() => null);
   const retryableQueueCount = await markPastTokenFailuresRetryable(accountId).catch(() => 0);
+  const shouldAutoStart = account?.status === 'active'
+    && String(connectionRequest?.admin_memo || '').includes(AUTO_START_AFTER_OAUTH_MARKER);
+  if (shouldAutoStart) {
+    [account] = await dbUpdate('accounts', { id: accountId }, {
+      automation_status: 'running',
+      automation_started_at: new Date().toISOString(),
+      automation_stopped_at: null
+    });
+    const { runPipelineForAccountInBackground } = await import('./pipelineBackgroundService.js');
+    runPipelineForAccountInBackground(accountId, {
+      requestedBy: 'threads_oauth_auto_start',
+      mode: 'start',
+      allowInitialLinkDiscovery: true,
+      failureAction: 'oauth_auto_start_failed_kept_running'
+    });
+  }
   await logActivity({
     account_id: accountId,
     project_id: account?.project_id,
     action: 'threads_oauth_connected',
     message: me.username || me.id,
-    payload: { threadsUserId: me.id, expiresAt, retryableQueueCount }
+    payload: { threadsUserId: me.id, expiresAt, retryableQueueCount, autoStarted: shouldAutoStart }
   });
   return account;
 }
