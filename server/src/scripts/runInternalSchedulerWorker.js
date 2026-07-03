@@ -11,9 +11,9 @@ import { runRepetitionGuard } from '../services/repetitionGuardService.js';
 import { loadSystemSettingsIntoEnv } from '../services/systemSettingsService.js';
 
 const runningJobs = new Set();
-const enableDailyPipeline = process.env.ENABLE_INTERNAL_DAILY_PIPELINE_CRON !== 'false';
+const enableDailyPipeline = process.env.ENABLE_INTERNAL_DAILY_PIPELINE_CRON === 'true';
 const enableRepetitionGuard = process.env.ENABLE_REPETITION_GUARD_CRON !== 'false';
-const enableStartupDailyCatchUp = process.env.ENABLE_STARTUP_DAILY_CATCH_UP !== 'false';
+const enableStartupDailyCatchUp = process.env.ENABLE_STARTUP_DAILY_CATCH_UP === 'true';
 
 async function runJob(name, fn) {
   if (runningJobs.has(name)) return null;

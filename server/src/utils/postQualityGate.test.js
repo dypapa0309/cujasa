@@ -43,3 +43,23 @@ test('fails awkward phrases and category detail mismatches', () => {
   assert.ok(mismatchGate.reasons.some((reason) => /카테고리/.test(reason)));
   assert.ok(mismatchGate.rewriteInstructions.some((item) => /선물 글/.test(item)));
 });
+
+test('fails pet account posts that drift into mukbang food content', () => {
+  const body = '오늘은 편의점 쿠키 먹방처럼 나눠 먹기 좋은 간식 기준을 봐요.\n\n손에 덜 묻고 포장 뜯기 쉬운지가 은근 중요하더라고요.\n\n여러분은 뭐부터 보세요?';
+  const engagement = scorePostEngagement(body, {
+    account: {
+      name: '동물채널',
+      content_scope: '반려동물 용품과 산책 루틴',
+      target_audience: '강아지 고양이 집사'
+    },
+    topic: {
+      title: '강아지 산책 준비',
+      angle: '집사가 바로 챙기는 기준'
+    }
+  });
+  const gate = evaluatePostQualityGate(engagement);
+
+  assert.equal(engagement.checks.categoryMismatch, true);
+  assert.equal(gate.passed, false);
+  assert.ok(gate.reasons.some((reason) => /카테고리/.test(reason)));
+});

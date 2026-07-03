@@ -144,7 +144,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: SCHEDULER_API_BASE_URL
-        sync: false
+        value: https://api.jasain.kr
       - key: SCHEDULER_SECRET
         sync: false
 
@@ -160,7 +160,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: SCHEDULER_API_BASE_URL
-        sync: false
+        value: https://api.jasain.kr
       - key: SCHEDULER_SECRET
         sync: false
       - key: SCHEDULER_MODE

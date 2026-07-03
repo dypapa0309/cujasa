@@ -259,7 +259,7 @@ async function tryRewriteCandidateForQuality({
   const { risk: rewriteRisk, prepared: rewritePrepared } = preparePostBodyCandidate(rewrite.body, account);
   const rewriteGuardrail = validatePostCandidate(rewritePrepared.body, account, topic);
   const rewriteStyleFit = validatePostStyleFit(rewritePrepared.body, account);
-  const rewriteEngagement = scorePostEngagement(rewritePrepared.body, { products });
+  const rewriteEngagement = scorePostEngagement(rewritePrepared.body, { products, account, topic });
   const rewriteQualityGate = evaluatePostQualityGate(rewriteEngagement);
   const rewriteRejectedReasons = [
     rewriteRisk.riskLevel === 'high' || rewrite.riskLevel === 'high' ? 'high_risk' : '',
@@ -427,7 +427,7 @@ export async function generatePosts(topicId) {
       });
       rejectedCandidates.push({
         contentType: contentTypeToSave,
-        engagement: scorePostEngagement(prepared.body, { products: selected }),
+        engagement: scorePostEngagement(prepared.body, { products: selected, account, topic }),
         rejected: true,
         rejectionReasons
       });
@@ -474,7 +474,7 @@ export async function generatePosts(topicId) {
         rejectionReasons.push('style_blocked');
         rejectedCandidates.push({
           contentType: contentTypeToSave,
-          engagement: scorePostEngagement(originalBody, { products: selected }),
+          engagement: scorePostEngagement(originalBody, { products: selected, account, topic }),
           rejected: true,
           rejectionReasons
         });
@@ -489,7 +489,7 @@ export async function generatePosts(topicId) {
       rejectionReasons.push('high_risk');
       rejectedCandidates.push({
         contentType: contentTypeToSave,
-        engagement: scorePostEngagement(prepared.body, { products: selected }),
+        engagement: scorePostEngagement(prepared.body, { products: selected, account, topic }),
         rejected: true,
         rejectionReasons
       });
@@ -504,7 +504,7 @@ export async function generatePosts(topicId) {
       });
       continue;
     }
-    const engagement = scorePostEngagement(prepared.body, { products: selected });
+    const engagement = scorePostEngagement(prepared.body, { products: selected, account, topic });
     const patternQuality = assessContentPatternQuality(prepared.body, recentBodies);
     if (!patternQuality.allowed) {
       rejectionReasons.push(...patternQuality.reasons);
@@ -566,7 +566,7 @@ export async function generatePosts(topicId) {
     const fallbackGuardrail = validatePostCandidate(fallbackPrepared.body, account, topic);
     const fallbackStyleFit = validatePostStyleFit(fallbackPrepared.body, account);
     if (fallbackGuardrail.allowed && fallbackStyleFit.allowed && fallbackRisk.riskLevel !== 'high') {
-      const fallbackEngagement = scorePostEngagement(fallbackPrepared.body, { products: selected });
+      const fallbackEngagement = scorePostEngagement(fallbackPrepared.body, { products: selected, account, topic });
       const fallbackCandidate = {
         item: { contentType: getFallbackContentType(account), riskLevel: fallbackRisk.riskLevel },
         body: fallbackPrepared.body,

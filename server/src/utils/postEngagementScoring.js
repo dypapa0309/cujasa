@@ -1,5 +1,6 @@
 import { inspectGeneratedPostText, sanitizeContentTitle } from './contentText.js';
 import { hasRepetitiveContentPattern } from './repetitiveContentRules.js';
+import { validateAccountDomainFit } from './contentGuardrails.js';
 
 function firstSentenceOf(body = '') {
   return String(body || '').split(/\n|[.!?。！？]/).map((line) => line.trim()).filter(Boolean)[0] || '';
@@ -352,7 +353,7 @@ function inferItemLabel(topic = {}, account = {}, products = []) {
   return text.replace(/[?？!！.,]/g, '').slice(0, 18) || '생활용품';
 }
 
-export function detectCategoryMismatch(body = '') {
+export function detectCategoryMismatch(body = '', { products = [], account = {}, topic = {} } = {}) {
   const text = String(body || '');
   const hasChildcareDetail = /(아이\s*손|아이에게|아기|기저귀|물티슈|장난감|유모차|낮은\s*자리)/.test(text);
   const hasKitchenChoreDetail = /(조리대|싱크대|설거지|수세미|물\s*빠짐|냄비|프라이팬|컵|수저)/.test(text);
@@ -363,13 +364,19 @@ export function detectCategoryMismatch(body = '') {
   const cleaningContext = /청소용품|청소|먼지|청소포/.test(text);
   const foodContext = /먹거리|음식|푸드|간식|냉장고/.test(text);
 
-  return (giftContext && (hasChildcareDetail || hasKitchenChoreDetail || hasCleaningDetail))
+  const accountBodyFit = validateAccountDomainFit({ account, topic, text });
+  const productFits = (Array.isArray(products) ? products : [])
+    .map((product) => validateAccountDomainFit({ account, product, topic }));
+
+  return !accountBodyFit.allowed
+    || productFits.some((fit) => !fit.allowed)
+    || (giftContext && (hasChildcareDetail || hasKitchenChoreDetail || hasCleaningDetail))
     || (kitchenContext && (hasChildcareDetail || hasSelfLivingChoreDetail))
     || (cleaningContext && hasChildcareDetail)
     || (foodContext && (hasChildcareDetail || hasKitchenChoreDetail || hasCleaningDetail));
 }
 
-export function scorePostEngagement(body = '', { products = [] } = {}) {
+export function scorePostEngagement(body = '', { products = [], account = {}, topic = {} } = {}) {
   const text = String(body || '').trim();
   const first = firstSentenceOf(text);
   const inspection = inspectGeneratedPostText(text);
@@ -388,7 +395,7 @@ export function scorePostEngagement(body = '', { products = [] } = {}) {
   const topicTitleEcho = /정리\s*쉽게\s*하는\s*법,\s*평소에는\s*별거\s*아닌데|,\s*평소에는\s*별거\s*아닌데\s*막상\s*필요할\s*때마다/.test(text);
   const awkwardPhrase = AWKWARD_PHRASE_PATTERN.test(text);
   const awkwardMetaphor = AWKWARD_METAPHOR_PATTERN.test(text);
-  const categoryMismatch = detectCategoryMismatch(text);
+  const categoryMismatch = detectCategoryMismatch(text, { products, account, topic });
   const abstractSetup = /생활\s*속에서|고려해야|중요한\s*게\s*사실|정말\s*중요/.test(first) || awkwardPhrase;
   const ambiguousCompressedSetup = /(청소는\s*꺼내는\s*시간|수납하려고\s*샀는데\s*방이\s*더\s*좁|정리하려고\s*샀는데\s*더\s*좁|꺼내는\s*시간이\s*길면\s*시작도\s*안)/.test(first);
   const compactRelatable = text.length >= 18

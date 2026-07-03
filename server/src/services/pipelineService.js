@@ -46,6 +46,37 @@ function createPipelineControlError(code, message, status = 429) {
   return error;
 }
 
+function createAccountTimeBudgetError() {
+  return createPipelineControlError(
+    PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED,
+    '계정별 자동 실행 시간 예산을 초과해 다음 continuation으로 넘깁니다.',
+    202
+  );
+}
+
+function remainingDeadlineMs(deadlineAt) {
+  if (!deadlineAt) return 0;
+  return Math.max(0, deadlineAt - Date.now());
+}
+
+async function withAccountDeadline(fn, deadlineAt) {
+  if (!deadlineAt) return fn();
+  const remaining = remainingDeadlineMs(deadlineAt);
+  if (remaining <= 0) throw createAccountTimeBudgetError();
+  let timer = null;
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(createAccountTimeBudgetError()), remaining);
+        timer.unref?.();
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function hasFutureScheduledQueue(accountId) {
   const rows = await dbList('post_queue', { account_id: accountId });
   const now = Date.now();
@@ -111,11 +142,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
   const deferOnCoupangThrottle = Boolean(options.deferOnCoupangThrottle);
   const checkAccountBudget = () => {
     if (!accountDeadlineAt || Date.now() < accountDeadlineAt) return;
-    throw createPipelineControlError(
-      PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED,
-      '계정별 자동 실행 시간 예산을 초과해 다음 continuation으로 넘깁니다.',
-      202
-    );
+    throw createAccountTimeBudgetError();
   };
   const preflightWarnings = (preflight.checks || [])
     .filter((check) => check.status === 'warn')
@@ -159,7 +186,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
     await progress({ percent: 7, stage: 'preflight', label: '계정 연결 상태를 점검하고 있습니다' });
 
     await progress({ percent: 10, stage: 'topics', label: '주제를 생성하고 있습니다' });
-    const topics = await generateTopics(account.id);
+    const topics = await withAccountDeadline(() => generateTopics(account.id), accountDeadlineAt);
     result.steps.topics = topics.length;
     await progress({ percent: 20, stage: 'topics_done', label: `${topics.length}개 주제를 생성했습니다`, topicsTotal: topics.length, topicsDone: 0 });
     await logActivity({ account_id: account.id, project_id: account.project_id, action: 'pipeline_topics_generated', message: `${topics.length}개 주제 생성` });
@@ -180,10 +207,10 @@ export async function runPipelineForAccount(accountId, options = {}) {
           topicsDone: index,
           postsCreated: totalPosts
         });
-        const searchedProducts = await searchProductsForTopic(topic.id, {
+        const searchedProducts = await withAccountDeadline(() => searchProductsForTopic(topic.id, {
           waitForThrottle: true,
           throttleWaitBudgetMs: remainingCoupangWaitBudget()
-        });
+        }), accountDeadlineAt);
         if (deferOnCoupangThrottle && hasCoupangThrottle(searchedProducts)) {
           throw createPipelineControlError(
             DEFERRED_COUPANG_THROTTLE,
@@ -208,13 +235,13 @@ export async function runPipelineForAccount(accountId, options = {}) {
           topicsDone: index,
           postsCreated: totalPosts
         });
-        let selectedProducts = await selectProducts(topic.id);
+        let selectedProducts = await withAccountDeadline(() => selectProducts(topic.id), accountDeadlineAt);
         if (!hasLinkProductsForContentGeneration(selectedProducts)) {
-          const repair = await repairProductsForTopic(topic.id, {
+          const repair = await withAccountDeadline(() => repairProductsForTopic(topic.id, {
             account,
             waitForThrottle: true,
             throttleWaitBudgetMs: remainingCoupangWaitBudget()
-          });
+          }), accountDeadlineAt);
           if (deferOnCoupangThrottle && repair.reasonCode === 'COUPANG_SEARCH_THROTTLED') {
             throw createPipelineControlError(
               DEFERRED_COUPANG_THROTTLE,
@@ -260,7 +287,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
           topicsDone: index,
           postsCreated: totalPosts
         });
-        const posts = await generatePosts(topic.id);
+        const posts = await withAccountDeadline(() => generatePosts(topic.id), accountDeadlineAt);
         totalPosts += posts.length;
         await progress({
           percent: Math.min(80, basePercent + 18),
@@ -280,7 +307,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
 
     await progress({ percent: 90, stage: 'queue', label: '예약 큐에 등록하고 있습니다', topicsTotal: topics.length, topicsDone: topics.length, postsCreated: totalPosts });
     checkAccountBudget();
-    const queued = await createDailyQueue(account.id, { skipPreflight: allowInitialLinkDiscovery });
+    const queued = await withAccountDeadline(() => createDailyQueue(account.id, { skipPreflight: allowInitialLinkDiscovery }), accountDeadlineAt);
     result.steps.queued = queued.length;
     result.topicsCount = topics.length;
     result.postsCount = totalPosts;
