@@ -17,6 +17,7 @@ const DEFAULT_DAILY_PIPELINE_MAX_RUN_MS = 45 * 60 * 1000;
 const DEFAULT_DAILY_PIPELINE_CONTINUATION_MAX_RUN_MS = 25 * 60 * 1000;
 const DEFAULT_DAILY_PIPELINE_PER_ACCOUNT_MAX_MS = 12 * 60 * 1000;
 const DEFAULT_DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS = 3 * 60 * 1000;
+const DEFAULT_DAILY_PIPELINE_MAINTENANCE_STEP_MAX_MS = 45 * 1000;
 
 function positiveNumber(value, fallback) {
   const parsed = Number(value);
@@ -43,9 +44,45 @@ const DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS = positiveNumber(
   process.env.DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS,
   DEFAULT_DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS
 );
+const DAILY_PIPELINE_MAINTENANCE_STEP_MAX_MS = positiveNumber(
+  process.env.DAILY_PIPELINE_MAINTENANCE_STEP_MAX_MS,
+  DEFAULT_DAILY_PIPELINE_MAINTENANCE_STEP_MAX_MS
+);
 
 function now() {
   return new Date();
+}
+
+async function withTimeout(fn, timeoutMs, label) {
+  let timer = null;
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(`${label} timed out after ${timeoutMs}ms`);
+          error.code = 'MAINTENANCE_STEP_TIMEOUT';
+          reject(error);
+        }, timeoutMs);
+        timer.unref?.();
+      })
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function runMaintenanceStep(label, fn, fallback) {
+  try {
+    return await withTimeout(fn, DAILY_PIPELINE_MAINTENANCE_STEP_MAX_MS, label);
+  } catch (error) {
+    const payload = {
+      skipped: true,
+      code: error.code || 'MAINTENANCE_STEP_FAILED',
+      error: error.message || `${label} failed`
+    };
+    return Array.isArray(fallback) ? fallback : { ...fallback, ...payload };
+  }
 }
 
 export function kstDateString(date = now()) {
@@ -534,16 +571,28 @@ export async function runDailyPipelineOnce({
       skipped: 0,
       total: null
     }).catch(() => {});
-    const expiredPipelines = await expireStalePipelineRuns();
-    const dailyQueueLimits = await enforceDailyQueueLimits();
-    const replyRepair = await repairReplyLinkFailures({ dryRun: true, limit: 50 });
+    const expiredPipelines = await runMaintenanceStep(
+      'expireStalePipelineRuns',
+      () => expireStalePipelineRuns(),
+      []
+    );
+    const dailyQueueLimits = await runMaintenanceStep(
+      'enforceDailyQueueLimits',
+      () => enforceDailyQueueLimits(),
+      { skipped: true }
+    );
+    const replyRepair = await runMaintenanceStep(
+      'repairReplyLinkFailures',
+      () => repairReplyLinkFailures({ dryRun: true, limit: 50 }),
+      { skipped: true }
+    );
     const trendRefresh = process.env.TREND_SOURCE_AUTO_REFRESH === 'false'
       ? { skipped: true, reason: 'TREND_SOURCE_AUTO_REFRESH=false' }
-      : await refreshAnonymousTrendPatternAssets().catch((error) => ({
-        skipped: true,
-        error: error.message,
-        code: error.code || null
-      }));
+      : await runMaintenanceStep(
+        'refreshAnonymousTrendPatternAssets',
+        () => refreshAnonymousTrendPatternAssets(),
+        { skipped: true }
+      );
     const pipeline = await runFullPipeline({
       requestedBy: triggeredBy,
       accountIds: Array.isArray(accountIds) && accountIds.length ? accountIds : resumedAccountIds,
