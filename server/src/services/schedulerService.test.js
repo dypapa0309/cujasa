@@ -1797,6 +1797,7 @@ test('uploadQueueItem allows Automation Studio custom link replies when only old
 });
 
 test('recoverStalePostingQueue syncs Automation Studio queue link status', async () => {
+  const staleUpdatedAt = new Date(Date.now() - 20 * 60 * 1000).toISOString();
   const project = await dbInsert('projects', {
     name: 'automation studio stale posting',
     type: 'ads',
@@ -1859,7 +1860,7 @@ test('recoverStalePostingQueue syncs Automation Studio queue link status', async
     status: 'posting',
     post_mode: 'no_link',
     retry_count: 0,
-    updated_at: '2026-05-09T00:00:00.000Z'
+    updated_at: staleUpdatedAt
   });
   await dbInsert('automation_studio_queue_links', {
     campaign_id: campaign.id,

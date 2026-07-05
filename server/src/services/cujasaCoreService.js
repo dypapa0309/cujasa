@@ -4,6 +4,7 @@ import {
   createDailyQueue,
   processDueQueue,
   recoverReplyLinkModeRequiredQueues,
+  recoverStalePostingQueue,
   repairReplyLinkFailures,
   uploadQueueItem
 } from './schedulerService.js';
@@ -140,8 +141,8 @@ export async function processCoreDueQueue(options = {}) {
   return processDueQueue({
     limit: options.limit,
     maxRunMs: options.maxRunMs,
-    recoverMaintenance: false,
-    repairReplies: false
+    recoverMaintenance: options.recoverMaintenance !== false,
+    repairReplies: options.repairReplies === true
   });
 }
 
@@ -170,7 +171,9 @@ export async function recoverCore({
   const dryRun = mode !== 'apply';
   const cappedLimit = Math.max(1, Math.min(Number(limit) || 20, 100));
   const [stalePosting, replyMode, replyLinks] = await Promise.all([
-    dryRun ? listStalePostingCandidates({ accountId, limit: cappedLimit }) : Promise.resolve([]),
+    dryRun
+      ? listStalePostingCandidates({ accountId, limit: cappedLimit })
+      : recoverStalePostingQueue({ accountId, limit: cappedLimit }),
     recoverReplyLinkModeRequiredQueues({ accountId, limit: cappedLimit, dryRun }),
     repairReplyLinkFailures({ accountId, limit: cappedLimit, dryRun })
   ]);
@@ -180,8 +183,9 @@ export async function recoverCore({
     mode: dryRun ? 'dry-run' : 'apply',
     accountId,
     stalePosting: {
-      candidateCount: stalePosting.length,
-      candidates: stalePosting.map((row) => ({
+      candidateCount: Array.isArray(stalePosting) ? stalePosting.length : Number(stalePosting || 0),
+      recoveredCount: dryRun ? 0 : Number(stalePosting || 0),
+      candidates: (Array.isArray(stalePosting) ? stalePosting : []).map((row) => ({
         queueId: row.id,
         accountId: row.account_id,
         status: row.status,

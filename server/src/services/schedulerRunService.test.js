@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { dailyPipelineStatus, hasDailyPipelineWindowPassed, kstDateString, runDailyPipelineOnce } from './schedulerRunService.js';
-import { dbInsert } from './supabaseService.js';
+import { dailyPipelineStatus, expireStaleSchedulerRuns, hasDailyPipelineWindowPassed, kstDateString, runDailyPipelineOnce, runDailyPipelineWatchdog } from './schedulerRunService.js';
+import { dbGet, dbInsert } from './supabaseService.js';
 
 test('kstDateString resolves dates in Korea time', () => {
   assert.equal(kstDateString(new Date('2026-05-08T16:59:00.000Z')), '2026-05-09');
@@ -99,6 +99,47 @@ test('runDailyPipelineOnce restarts stale running records for the same KST day',
   assert.equal(result.status, 'completed');
   assert.equal(result.run.run_date_kst, runDateKst);
   assert.equal(result.run.triggered_by, 'test_recovery');
+});
+
+test('expireStaleSchedulerRuns closes stale historical running records', async () => {
+  const stale = await dbInsert('scheduler_runs', {
+    job_name: 'daily-pipeline',
+    run_date_kst: '2099-03-06',
+    status: 'running',
+    triggered_by: 'test_historical_stale',
+    started_at: '2099-03-05T17:00:00.000Z',
+    summary: {
+      progress: {
+        updatedAt: '2099-03-05T17:05:00.000Z',
+        stage: 'products'
+      }
+    }
+  });
+  const currentDay = await dbInsert('scheduler_runs', {
+    job_name: 'daily-pipeline',
+    run_date_kst: '2099-03-07',
+    status: 'running',
+    triggered_by: 'test_current_stale',
+    started_at: '2099-03-06T17:00:00.000Z',
+    summary: {
+      progress: {
+        updatedAt: '2099-03-06T17:05:00.000Z',
+        stage: 'products'
+      }
+    }
+  });
+
+  const expired = await expireStaleSchedulerRuns({
+    beforeRunDateKst: '2099-03-07',
+    date: new Date('2099-03-07T00:00:00.000Z')
+  });
+  const staleSaved = await dbGet('scheduler_runs', { id: stale.id });
+  const currentSaved = await dbGet('scheduler_runs', { id: currentDay.id });
+
+  assert.equal(expired.some((row) => row.id === stale.id), true);
+  assert.equal(staleSaved.status, 'failed');
+  assert.equal(staleSaved.summary.code, 'SCHEDULER_RUN_STALE');
+  assert.equal(currentSaved.status, 'running');
 });
 
 test('runDailyPipelineOnce closes as partial when account budget leaves pending accounts', async () => {
@@ -223,7 +264,7 @@ test('runDailyPipelineOnce keeps recoverable accounts pending when no future que
   assert.equal(result.summary.pending.some((row) => row.accountId === account.id), true);
 });
 
-test('dailyPipelineStatus marks legacy completed runs with missing queue coverage as partial', async () => {
+test('dailyPipelineStatus enriches legacy completed runs with live future queue coverage', async () => {
   const project = await dbInsert('projects', {
     name: 'legacy coverage status test',
     type: 'coupang',
@@ -253,7 +294,6 @@ test('dailyPipelineStatus marks legacy completed runs with missing queue coverag
   const status = await dailyPipelineStatus(new Date('2099-02-09T00:30:00.000Z'));
 
   assert.equal(status.status, 'partial');
-  assert.equal(status.pendingCount > 0, true);
   assert.equal(status.run.summary.futureQueueCoverage.missingFutureQueueCount > 0, true);
   assert.equal(status.run.summary.futureQueueCoverage.recoverableMissingFutureQueueCount > 0, true);
 });
@@ -296,4 +336,85 @@ test('dailyPipelineStatus treats posted run-date queues as coverage', async () =
   const missingIds = status.run.summary.futureQueueCoverage.missingFutureQueue.map((row) => row.accountId);
 
   assert.equal(missingIds.includes(account.id), false);
+});
+
+test('runDailyPipelineWatchdog resumes completed runs with recoverable missing queue coverage', async () => {
+  const project = await dbInsert('projects', {
+    name: 'watchdog recovery test',
+    type: 'coupang',
+    status: 'active'
+  });
+  const account = await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'watchdog missing account',
+    platform: 'threads',
+    account_handle: '@watchdog-missing',
+    automation_status: 'running',
+    status: 'active'
+  });
+  const runDateKst = '2099-02-11';
+  await dbInsert('scheduler_runs', {
+    job_name: 'daily-pipeline',
+    run_date_kst: runDateKst,
+    status: 'completed',
+    triggered_by: 'watchdog_legacy_test',
+    started_at: '2099-02-10T17:00:00.000Z',
+    finished_at: '2099-02-10T17:05:00.000Z',
+    summary: {
+      results: [],
+      pendingCount: 0
+    }
+  });
+
+  const result = await runDailyPipelineWatchdog({
+    triggeredBy: 'test_watchdog',
+    date: new Date('2099-02-11T00:30:00.000Z')
+  });
+
+  assert.equal(result.duplicate, false);
+  assert.equal(result.watchdog.recovered, true);
+  assert.equal(result.watchdog.pendingAccountIds.includes(account.id), true);
+  const saved = await dbGet('scheduler_runs', { job_name: 'daily-pipeline', run_date_kst: runDateKst });
+  assert.equal(saved.triggered_by, 'test_watchdog');
+  assert.equal(saved.summary.results.some((row) => row.accountId === account.id), true);
+});
+
+test('runDailyPipelineWatchdog does not interrupt fresh running records with live pending coverage', async () => {
+  const project = await dbInsert('projects', {
+    name: 'watchdog fresh running test',
+    type: 'coupang',
+    status: 'active'
+  });
+  await dbInsert('accounts', {
+    project_id: project.id,
+    name: 'watchdog fresh running account',
+    platform: 'threads',
+    account_handle: '@watchdog-fresh-running',
+    automation_status: 'running',
+    status: 'active'
+  });
+  const runDateKst = '2099-02-12';
+  await dbInsert('scheduler_runs', {
+    job_name: 'daily-pipeline',
+    run_date_kst: runDateKst,
+    status: 'running',
+    triggered_by: 'watchdog_fresh_test',
+    started_at: '2099-02-11T17:00:00.000Z',
+    summary: {
+      progress: {
+        updatedAt: '2099-02-12T00:20:00.000Z',
+        stage: 'products'
+      }
+    }
+  });
+
+  const result = await runDailyPipelineWatchdog({
+    triggeredBy: 'test_watchdog_should_skip',
+    date: new Date('2099-02-12T00:30:00.000Z')
+  });
+
+  assert.equal(result.skipped, true);
+  assert.equal(result.status, 'running');
+  const saved = await dbGet('scheduler_runs', { job_name: 'daily-pipeline', run_date_kst: runDateKst });
+  assert.equal(saved.triggered_by, 'watchdog_fresh_test');
 });

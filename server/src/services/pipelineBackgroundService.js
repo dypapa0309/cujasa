@@ -1,6 +1,5 @@
 import { runCorePipeline } from './cujasaCoreService.js';
 import { safeLogActivity } from './supabaseService.js';
-import { AUTOMATION_PAUSED, setAutomationStatus } from './accountAutomationService.js';
 
 export function isPipelineFailureResult(result) {
   const queuedCount = result?.queuedCount ?? result?.steps?.queued ?? null;
@@ -8,15 +7,15 @@ export function isPipelineFailureResult(result) {
   return result?.ok === false || result?.status === 'error' || queuedCount === 0;
 }
 
-async function pauseAfterPipelineFailure(accountId, { action, requestedBy, result = null, error = null }) {
-  await setAutomationStatus(accountId, AUTOMATION_PAUSED).catch(() => null);
+async function recordPipelineFailure(accountId, { action, requestedBy, result = null, error = null }) {
   await safeLogActivity({
     account_id: accountId,
     level: error ? 'error' : 'warn',
     action,
-    message: error?.message || result?.message || result?.error || '예약 생성 실패로 자동화를 일시중지했습니다.',
+    message: error?.message || result?.message || result?.error || '예약 생성에 실패했습니다. 자동화는 계속 켜둔 상태로 다음 실행에서 재시도합니다.',
     payload: {
       requestedBy,
+      automationKeptRunning: true,
       ...(result ? { pipelineResult: result } : {}),
       ...(error ? { code: error.code || null, status: error.status || null } : {})
     }
@@ -25,7 +24,7 @@ async function pauseAfterPipelineFailure(accountId, { action, requestedBy, resul
 
 export function runPipelineForAccountInBackground(accountId, options = {}) {
   const requestedBy = options.requestedBy || 'manual';
-  const failureAction = options.failureAction || 'pipeline_failed_paused';
+  const failureAction = options.failureAction || 'pipeline_failed_kept_running';
   const pipelineOptions = {
     requestedBy,
     mode: options.mode || 'start',
@@ -36,7 +35,7 @@ export function runPipelineForAccountInBackground(accountId, options = {}) {
     runCorePipeline(accountId, pipelineOptions)
       .then(async (result) => {
         if (isPipelineFailureResult(result)) {
-          await pauseAfterPipelineFailure(accountId, {
+          await recordPipelineFailure(accountId, {
             action: failureAction,
             requestedBy,
             result
@@ -54,7 +53,7 @@ export function runPipelineForAccountInBackground(accountId, options = {}) {
           });
           return;
         }
-        await pauseAfterPipelineFailure(accountId, {
+        await recordPipelineFailure(accountId, {
           action: failureAction,
           requestedBy,
           error

@@ -6,17 +6,18 @@ import { refreshExpiringThreadsTokens } from '../services/threadsOAuthService.js
 import { expireDueEntitlements } from '../services/billingEntitlementService.js';
 import { sendOpsAlert } from '../services/notificationService.js';
 import { runDailyOpsHealthCheck } from '../services/opsHealthService.js';
-import { dailyPipelineStatus, runDailyPipelineOnce } from '../services/schedulerRunService.js';
-import { runRepetitionGuard } from '../services/repetitionGuardService.js';
+import { dailyPipelineStatus, expireStaleSchedulerRuns, runDailyPipelineOnce, runDailyPipelineWatchdog } from '../services/schedulerRunService.js';
 import { loadSystemSettingsIntoEnv } from '../services/systemSettingsService.js';
 
 const runningJobs = new Set();
-const enableDailyPipeline = process.env.ENABLE_INTERNAL_DAILY_PIPELINE_CRON === 'true';
-const enableRepetitionGuard = process.env.ENABLE_REPETITION_GUARD_CRON !== 'false';
-const enableStartupDailyCatchUp = enableDailyPipeline && process.env.ENABLE_STARTUP_DAILY_CATCH_UP === 'true';
+const enableDailyPipelineCron = process.env.ENABLE_INTERNAL_DAILY_PIPELINE_CRON === 'true';
+const enableStartupDailyCatchUp = process.env.ENABLE_STARTUP_DAILY_CATCH_UP === 'true';
 
 async function runJob(name, fn) {
-  if (runningJobs.has(name)) return null;
+  if (runningJobs.has(name)) {
+    console.warn(`[Worker:${name}] skipped because previous run is still active`);
+    return null;
+  }
   runningJobs.add(name);
   const startedAt = Date.now();
   try {
@@ -46,11 +47,13 @@ cron.schedule('* * * * *', () => runJob('queue-and-metrics', async () => ({
   processedQueue: await processCoreDueQueue(),
   metricJobs: await runDueMetricJobs()
 })));
-if (enableDailyPipeline) {
+
+if (enableDailyPipelineCron) {
   cron.schedule('0 2 * * *', () => runJob('daily-pipeline', () => runDailyPipelineOnce({
     triggeredBy: 'node_worker',
     mode: 'scheduled'
   })), { timezone: 'Asia/Seoul' });
+
   cron.schedule('30 2-5 * * *', () => runJob('daily-pipeline-continuation', async () => {
     const status = await dailyPipelineStatus();
     if (!['partial', 'stale'].includes(status.status)) return { skipped: true, status: status.status };
@@ -60,7 +63,15 @@ if (enableDailyPipeline) {
       runDateKst: status.runDateKst
     });
   }), { timezone: 'Asia/Seoul' });
+
+  cron.schedule('0,30 6-23 * * *', () => runJob('daily-pipeline-watchdog', async () => {
+    const status = await dailyPipelineStatus();
+    const expiredSchedulerRuns = await expireStaleSchedulerRuns({ beforeRunDateKst: status.runDateKst });
+    const result = await runDailyPipelineWatchdog({ triggeredBy: 'node_worker_watchdog' });
+    return { ...result, expiredSchedulerRuns: expiredSchedulerRuns.length };
+  }), { timezone: 'Asia/Seoul' });
 }
+
 cron.schedule('0 3 * * *', () => runJob('threads-token-refresh', refreshExpiringThreadsTokens));
 cron.schedule('17 * * * *', () => runJob('billing-expire', async () => ({
   expiredCount: (await expireDueEntitlements()).length
@@ -69,22 +80,16 @@ cron.schedule('0 8 * * *', () => runJob('daily-ops-healthcheck', runDailyOpsHeal
   timezone: 'Asia/Seoul'
 });
 
-if (enableRepetitionGuard) {
-  cron.schedule('15 * * * *', () => runJob('repetition-guard', () => (
-    runRepetitionGuard({ triggeredBy: 'node_worker_repetition_guard' })
-  )), { timezone: 'Asia/Seoul' });
-}
-
 if (enableStartupDailyCatchUp) {
   setTimeout(() => {
     runJob('daily-pipeline-startup-catch-up', async () => {
       const status = await dailyPipelineStatus();
-      if (!status.missing && !['partial', 'stale'].includes(status.status)) return { skipped: true, status: status.status };
-      return runDailyPipelineOnce({
-        triggeredBy: 'worker_startup_catch_up',
-        runDateKst: status.runDateKst,
-        mode: status.missing ? 'scheduled' : 'continuation'
-      });
+      const expiredSchedulerRuns = await expireStaleSchedulerRuns({ beforeRunDateKst: status.runDateKst });
+      if (!status.missing && !['partial', 'stale'].includes(status.status)) {
+        return { skipped: true, status: status.status, expiredSchedulerRuns: expiredSchedulerRuns.length };
+      }
+      const result = await runDailyPipelineWatchdog({ triggeredBy: 'worker_startup_catch_up' });
+      return { ...result, expiredSchedulerRuns: expiredSchedulerRuns.length };
     });
   }, 3000);
 }

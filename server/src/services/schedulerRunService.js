@@ -17,7 +17,6 @@ const DEFAULT_DAILY_PIPELINE_MAX_RUN_MS = 45 * 60 * 1000;
 const DEFAULT_DAILY_PIPELINE_CONTINUATION_MAX_RUN_MS = 25 * 60 * 1000;
 const DEFAULT_DAILY_PIPELINE_PER_ACCOUNT_MAX_MS = 12 * 60 * 1000;
 const DEFAULT_DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS = 3 * 60 * 1000;
-const DEFAULT_DAILY_PIPELINE_MAINTENANCE_STEP_MAX_MS = 45 * 1000;
 
 function positiveNumber(value, fallback) {
   const parsed = Number(value);
@@ -44,45 +43,9 @@ const DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS = positiveNumber(
   process.env.DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS,
   DEFAULT_DAILY_PIPELINE_COUPANG_WAIT_BUDGET_MS
 );
-const DAILY_PIPELINE_MAINTENANCE_STEP_MAX_MS = positiveNumber(
-  process.env.DAILY_PIPELINE_MAINTENANCE_STEP_MAX_MS,
-  DEFAULT_DAILY_PIPELINE_MAINTENANCE_STEP_MAX_MS
-);
 
 function now() {
   return new Date();
-}
-
-async function withTimeout(fn, timeoutMs, label) {
-  let timer = null;
-  try {
-    return await Promise.race([
-      fn(),
-      new Promise((_, reject) => {
-        timer = setTimeout(() => {
-          const error = new Error(`${label} timed out after ${timeoutMs}ms`);
-          error.code = 'MAINTENANCE_STEP_TIMEOUT';
-          reject(error);
-        }, timeoutMs);
-        timer.unref?.();
-      })
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
-async function runMaintenanceStep(label, fn, fallback) {
-  try {
-    return await withTimeout(fn, DAILY_PIPELINE_MAINTENANCE_STEP_MAX_MS, label);
-  } catch (error) {
-    const payload = {
-      skipped: true,
-      code: error.code || 'MAINTENANCE_STEP_FAILED',
-      error: error.message || `${label} failed`
-    };
-    return Array.isArray(fallback) ? fallback : { ...fallback, ...payload };
-  }
 }
 
 export function kstDateString(date = now()) {
@@ -183,16 +146,13 @@ function missingFutureQueueReason(row = {}) {
   if (/threads_reconnect|reply_permission|token|oauth/i.test(code) || /Threads.*토큰|재연결|댓글 권한/i.test(message)) {
     return { code: 'THREADS_RECONNECT_REQUIRED', recoverable: false };
   }
-  if (code === 'NO_FUTURE_QUEUE') {
-    return { code, recoverable: true };
-  }
   if (['deferred_coupang_throttle', 'DEFERRED_COUPANG_THROTTLE', 'deferred_time_budget', 'PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED', 'COUPANG_RATE_LIMIT', 'COUPANG_LOCK_UNAVAILABLE', 'already_running'].includes(code)) {
     return { code, recoverable: true };
   }
   if (['BILLING_EXPIRED', 'BILLING_REQUIRED', 'billing_expired', 'billing_required', 'NO_DRAFT_POSTS', 'QUALITY_FILTER_REJECTED_DRAFTS', 'NO_REAL_COUPANG_LINKS', 'NO_REAL_PRODUCTS', 'NO_QUEUEABLE_DRAFTS', 'preflight_failed', 'coupang_settings'].includes(code)) {
     return { code, recoverable: false };
   }
-  return { code, recoverable: false };
+  return { code, recoverable: true };
 }
 
 async function buildFutureQueueCoverage(pipeline = [], { runDateKst = kstDateString() } = {}) {
@@ -306,10 +266,11 @@ function schedulerPublicStatus(run, date = now()) {
   return run.status;
 }
 
-async function startSchedulerRun({ jobName, runDateKst, triggeredBy, allowPartialResume = false }) {
+async function startSchedulerRun({ jobName, runDateKst, triggeredBy, allowPartialResume = false, forceResume = false }) {
   const existing = await dbGet('scheduler_runs', { job_name: jobName, run_date_kst: runDateKst }).catch(() => null);
   if (existing) {
-    let existingSummary = schedulerRunSummary(existing);
+    const existingSummary = schedulerRunSummary(existing);
+    const resumePending = Array.isArray(existingSummary.pending) ? existingSummary.pending : [];
     if (isStaleSchedulerRun(existing)) {
       const [run] = await dbUpdate('scheduler_runs', { id: existing.id }, {
         status: 'running',
@@ -329,20 +290,7 @@ async function startSchedulerRun({ jobName, runDateKst, triggeredBy, allowPartia
       });
       return { run, acquired: true, recoveredStale: true };
     }
-    if (allowPartialResume && ['partial', 'completed'].includes(existing.status) && (existingSummary.pending || []).length === 0) {
-      const coverage = await buildFutureQueueCoverage({ results: existingSummary.results || [] }, { runDateKst }).catch(() => null);
-      const pending = mergePendingWithRecoverableMissing([], coverage?.recoverableMissingFutureQueue || []);
-      if (pending.length > 0) {
-        existingSummary = {
-          ...existingSummary,
-          pending,
-          pendingCount: pending.length,
-          futureQueueCoverage: coverage,
-          pendingRecoveredAt: now().toISOString()
-        };
-      }
-    }
-    if (allowPartialResume && ['partial', 'completed'].includes(existing.status) && (existingSummary.pending || []).length > 0) {
+    if (allowPartialResume && ['partial', 'completed'].includes(existing.status) && (forceResume || resumePending.length > 0)) {
       const [run] = await dbUpdate('scheduler_runs', { id: existing.id }, {
         status: 'running',
         triggered_by: triggeredBy,
@@ -425,6 +373,44 @@ export async function getSchedulerRun(jobName, runDateKst = kstDateString()) {
 export async function latestSchedulerRun(jobName = DAILY_PIPELINE_JOB) {
   const rows = await dbList('scheduler_runs', { job_name: jobName }, { order: 'started_at', ascending: false, limit: 1 });
   return rows[0] || null;
+}
+
+export async function expireStaleSchedulerRuns({
+  jobName = DAILY_PIPELINE_JOB,
+  date = now(),
+  beforeRunDateKst = null,
+  excludeRunId = null,
+  limit = 100
+} = {}) {
+  const rows = await dbList('scheduler_runs', { job_name: jobName, status: 'running' }, {
+    order: 'started_at',
+    ascending: true,
+    limit: Math.max(1, Math.min(Number(limit) || 100, 500))
+  });
+  const expired = [];
+  for (const run of rows) {
+    if (excludeRunId && run.id === excludeRunId) continue;
+    if (beforeRunDateKst && String(run.run_date_kst) >= String(beforeRunDateKst)) continue;
+    if (!isStaleSchedulerRun(run, date)) continue;
+    const summary = schedulerRunSummary(run);
+    const progress = schedulerProgress(run);
+    const expiredAt = date.toISOString();
+    const [updated] = await dbUpdate('scheduler_runs', { id: run.id }, {
+      status: 'failed',
+      finished_at: expiredAt,
+      error_message: 'daily-pipeline 실행 기록이 오래 갱신되지 않아 만료 처리했습니다.',
+      summary: {
+        ...summary,
+        failedAt: expiredAt,
+        code: 'SCHEDULER_RUN_STALE',
+        message: 'daily-pipeline 실행 기록이 오래 갱신되지 않아 만료 처리했습니다.',
+        staleStage: progress.stage || null,
+        lastHeartbeatAt: progress.updatedAt || summary.heartbeatAt || run.started_at || null
+      }
+    });
+    if (updated) expired.push(updated);
+  }
+  return expired;
 }
 
 export async function dailyPipelineStatus(date = now()) {
@@ -519,14 +505,16 @@ export async function runDailyPipelineOnce({
   coupangWaitBudgetMs,
   accountIds,
   skipFutureScheduled,
-  deferOnCoupangThrottle
+  deferOnCoupangThrottle,
+  forceResume = false
 } = {}) {
   const allowPartialResume = ['continuation', 'admin_recovery'].includes(mode);
   const { run, acquired, recoveredStale = false, resumedPartial = false } = await startSchedulerRun({
     jobName: DAILY_PIPELINE_JOB,
     runDateKst,
     triggeredBy,
-    allowPartialResume
+    allowPartialResume,
+    forceResume
   });
   if (!acquired) {
     const status = schedulerPublicStatus(run);
@@ -571,28 +559,20 @@ export async function runDailyPipelineOnce({
       skipped: 0,
       total: null
     }).catch(() => {});
-    const expiredPipelines = await runMaintenanceStep(
-      'expireStalePipelineRuns',
-      () => expireStalePipelineRuns(),
-      []
-    );
-    const dailyQueueLimits = await runMaintenanceStep(
-      'enforceDailyQueueLimits',
-      () => enforceDailyQueueLimits(),
-      { skipped: true }
-    );
-    const replyRepair = await runMaintenanceStep(
-      'repairReplyLinkFailures',
-      () => repairReplyLinkFailures({ dryRun: true, limit: 50 }),
-      { skipped: true }
-    );
+    const expiredPipelines = await expireStalePipelineRuns();
+    const expiredSchedulerRuns = await expireStaleSchedulerRuns({
+      beforeRunDateKst: runDateKst,
+      excludeRunId: run.id
+    });
+    const dailyQueueLimits = await enforceDailyQueueLimits();
+    const replyRepair = await repairReplyLinkFailures({ dryRun: true, limit: 50 });
     const trendRefresh = process.env.TREND_SOURCE_AUTO_REFRESH === 'false'
       ? { skipped: true, reason: 'TREND_SOURCE_AUTO_REFRESH=false' }
-      : await runMaintenanceStep(
-        'refreshAnonymousTrendPatternAssets',
-        () => refreshAnonymousTrendPatternAssets(),
-        { skipped: true }
-      );
+      : await refreshAnonymousTrendPatternAssets().catch((error) => ({
+        skipped: true,
+        error: error.message,
+        code: error.code || null
+      }));
     const pipeline = await runFullPipeline({
       requestedBy: triggeredBy,
       accountIds: Array.isArray(accountIds) && accountIds.length ? accountIds : resumedAccountIds,
@@ -649,6 +629,7 @@ export async function runDailyPipelineOnce({
       mode,
       options: effectiveOptions,
       expiredPipelines: expiredPipelines.length,
+      expiredSchedulerRuns: expiredSchedulerRuns.length,
       dailyQueueLimits,
       replyRepair,
       trendRefresh,
@@ -702,4 +683,62 @@ export async function runDailyPipelineOnce({
     }).catch(() => {});
     return { ok: false, duplicate: false, recoveredStale, status: 'failed', run: updated, summary, error: error.message };
   }
+}
+
+function pendingAccountIdsFromStatus(status = {}) {
+  const summary = status.run?.summary || {};
+  const pending = Array.isArray(summary.pending) ? summary.pending : [];
+  const recoverableMissing = Array.isArray(summary.futureQueueCoverage?.recoverableMissingFutureQueue)
+    ? summary.futureQueueCoverage.recoverableMissingFutureQueue
+    : [];
+  return [...new Set(
+    [...pending, ...recoverableMissing]
+      .map((row) => row.accountId)
+      .filter(Boolean)
+  )];
+}
+
+export async function runDailyPipelineWatchdog({
+  triggeredBy = 'daily_pipeline_watchdog',
+  date = now(),
+  maxRunMs,
+  maxAccounts,
+  perAccountMaxMs,
+  coupangWaitBudgetMs
+} = {}) {
+  const status = await dailyPipelineStatus(date);
+  const pendingAccountIds = pendingAccountIdsFromStatus(status);
+  const shouldRecover = status.missing
+    || status.stale
+    || ['partial', 'stale', 'missing'].includes(status.status);
+  if (!shouldRecover) {
+    return {
+      ok: true,
+      skipped: true,
+      status: status.status,
+      runDateKst: status.runDateKst,
+      pendingCount: status.pendingCount || 0,
+      message: 'daily-pipeline watchdog skipped; no recoverable gap detected.'
+    };
+  }
+  const result = await runDailyPipelineOnce({
+    triggeredBy,
+    runDateKst: status.runDateKst,
+    mode: status.missing ? 'scheduled' : 'admin_recovery',
+    accountIds: pendingAccountIds.length ? pendingAccountIds : undefined,
+    forceResume: !status.missing,
+    maxRunMs,
+    maxAccounts,
+    perAccountMaxMs,
+    coupangWaitBudgetMs
+  });
+  return {
+    ...result,
+    watchdog: {
+      recovered: true,
+      previousStatus: status.status,
+      pendingAccountIds,
+      runDateKst: status.runDateKst
+    }
+  };
 }

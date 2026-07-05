@@ -16,6 +16,13 @@ const PIPELINE_COUPANG_SEARCH_WAIT_BUDGET_MS = Math.max(0, Number(process.env.CO
 const DEFERRED_COUPANG_THROTTLE = 'DEFERRED_COUPANG_THROTTLE';
 const PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED = 'PIPELINE_ACCOUNT_TIME_BUDGET_EXCEEDED';
 const BILLING_SKIP_CODES = new Set(['BILLING_EXPIRED', 'BILLING_REQUIRED']);
+const EMPTY_QUEUE_RETRY_REASONS = new Set([
+  'NO_DRAFT_POSTS',
+  'QUALITY_FILTER_REJECTED_DRAFTS',
+  'NO_QUEUEABLE_DRAFTS',
+  'RECENT_DUPLICATE_DRAFTS_REJECTED'
+]);
+const EMPTY_QUEUE_RETRY_TOPIC_LIMIT = Math.max(1, Math.min(Number(process.env.EMPTY_QUEUE_RETRY_TOPIC_LIMIT || 3), 10));
 
 function billingSkipResult(account, err) {
   return {
@@ -59,21 +66,21 @@ function remainingDeadlineMs(deadlineAt) {
   return Math.max(0, deadlineAt - Date.now());
 }
 
-async function withAccountDeadline(fn, deadlineAt) {
-  if (!deadlineAt) return fn();
-  const remaining = remainingDeadlineMs(deadlineAt);
-  if (remaining <= 0) throw createAccountTimeBudgetError();
-  let timer = null;
+async function withAccountDeadline(promise, deadlineAt) {
+  if (!deadlineAt) return promise;
+  const remainingMs = remainingDeadlineMs(deadlineAt);
+  if (remainingMs <= 0) throw createAccountTimeBudgetError();
+  let timeout = null;
   try {
     return await Promise.race([
-      fn(),
+      promise,
       new Promise((_, reject) => {
-        timer = setTimeout(() => reject(createAccountTimeBudgetError()), remaining);
-        timer.unref?.();
+        timeout = setTimeout(() => reject(createAccountTimeBudgetError()), remainingMs);
+        timeout.unref?.();
       })
     ]);
   } finally {
-    if (timer) clearTimeout(timer);
+    if (timeout) clearTimeout(timeout);
   }
 }
 
@@ -123,6 +130,64 @@ function createNoQueueMessage(diagnostics = {}) {
     return '쿠팡 요청 제한 보호 중이라 예약을 만들지 않았습니다. 쿨다운 해제 후 다시 시도해주세요.';
   }
   return '예약 큐가 0개로 생성되어 자동화 실행을 완료하지 않았습니다. 설정과 생성 결과를 확인해주세요.';
+}
+
+function shouldRetryEmptyQueue(diagnostics = {}, options = {}) {
+  if (options.disableEmptyQueueRetry === true) return false;
+  return EMPTY_QUEUE_RETRY_REASONS.has(diagnostics?.reasonCode);
+}
+
+async function generateSupplementalQueueCandidates({ account, topics = [], diagnostics = {}, progress, checkAccountBudget, result }) {
+  const retryTopics = topics.slice(0, EMPTY_QUEUE_RETRY_TOPIC_LIMIT);
+  let postsCreated = 0;
+  await logActivity({
+    account_id: account.id,
+    project_id: account.project_id,
+    action: 'pipeline_queue_empty_retry_started',
+    level: 'info',
+    message: `예약 큐 0개 사유(${diagnostics.reasonCode || 'unknown'})로 후보 생성을 1회 추가 시도합니다.`,
+    payload: {
+      reasonCode: diagnostics.reasonCode || null,
+      retryTopicLimit: retryTopics.length,
+      availableDraftPosts: diagnostics.availableDraftPosts ?? null,
+      qualityRejectedCount: diagnostics.qualityRejectedCount ?? null
+    }
+  }).catch(() => {});
+  for (const [index, topic] of retryTopics.entries()) {
+    checkAccountBudget();
+    await progress({
+      percent: Math.min(94, 90 + index),
+      stage: 'queue_retry',
+      label: `예약 후보를 보강하고 있습니다 (${index + 1}/${retryTopics.length})`,
+      topicsTotal: topics.length,
+      topicsDone: topics.length,
+      postsCreated: (result.postsCreated || 0) + postsCreated,
+      queueDiagnostics: diagnostics
+    });
+    try {
+      const posts = await generatePosts(topic.id);
+      postsCreated += posts.length;
+    } catch (error) {
+      await logActivity({
+        account_id: account.id,
+        project_id: account.project_id,
+        topic_id: topic.id,
+        action: 'pipeline_queue_empty_retry_topic_failed',
+        level: 'warn',
+        message: error.message,
+        payload: { reasonCode: diagnostics.reasonCode || null }
+      }).catch(() => {});
+    }
+  }
+  await logActivity({
+    account_id: account.id,
+    project_id: account.project_id,
+    action: 'pipeline_queue_empty_retry_completed',
+    level: postsCreated > 0 ? 'info' : 'warn',
+    message: `예약 후보 보강으로 콘텐츠 ${postsCreated}개를 추가 생성했습니다.`,
+    payload: { reasonCode: diagnostics.reasonCode || null, postsCreated }
+  }).catch(() => {});
+  return postsCreated;
 }
 
 export async function runPipelineForAccount(accountId, options = {}) {
@@ -186,7 +251,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
     await progress({ percent: 7, stage: 'preflight', label: '계정 연결 상태를 점검하고 있습니다' });
 
     await progress({ percent: 10, stage: 'topics', label: '주제를 생성하고 있습니다' });
-    const topics = await withAccountDeadline(() => generateTopics(account.id), accountDeadlineAt);
+    const topics = await withAccountDeadline(generateTopics(account.id), accountDeadlineAt);
     result.steps.topics = topics.length;
     await progress({ percent: 20, stage: 'topics_done', label: `${topics.length}개 주제를 생성했습니다`, topicsTotal: topics.length, topicsDone: 0 });
     await logActivity({ account_id: account.id, project_id: account.project_id, action: 'pipeline_topics_generated', message: `${topics.length}개 주제 생성` });
@@ -207,7 +272,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
           topicsDone: index,
           postsCreated: totalPosts
         });
-        const searchedProducts = await withAccountDeadline(() => searchProductsForTopic(topic.id, {
+        const searchedProducts = await withAccountDeadline(searchProductsForTopic(topic.id, {
           waitForThrottle: true,
           throttleWaitBudgetMs: remainingCoupangWaitBudget()
         }), accountDeadlineAt);
@@ -235,9 +300,9 @@ export async function runPipelineForAccount(accountId, options = {}) {
           topicsDone: index,
           postsCreated: totalPosts
         });
-        let selectedProducts = await withAccountDeadline(() => selectProducts(topic.id), accountDeadlineAt);
+        let selectedProducts = await withAccountDeadline(selectProducts(topic.id), accountDeadlineAt);
         if (!hasLinkProductsForContentGeneration(selectedProducts)) {
-          const repair = await withAccountDeadline(() => repairProductsForTopic(topic.id, {
+          const repair = await withAccountDeadline(repairProductsForTopic(topic.id, {
             account,
             waitForThrottle: true,
             throttleWaitBudgetMs: remainingCoupangWaitBudget()
@@ -287,7 +352,7 @@ export async function runPipelineForAccount(accountId, options = {}) {
           topicsDone: index,
           postsCreated: totalPosts
         });
-        const posts = await withAccountDeadline(() => generatePosts(topic.id), accountDeadlineAt);
+        const posts = await withAccountDeadline(generatePosts(topic.id), accountDeadlineAt);
         totalPosts += posts.length;
         await progress({
           percent: Math.min(80, basePercent + 18),
@@ -307,7 +372,36 @@ export async function runPipelineForAccount(accountId, options = {}) {
 
     await progress({ percent: 90, stage: 'queue', label: '예약 큐에 등록하고 있습니다', topicsTotal: topics.length, topicsDone: topics.length, postsCreated: totalPosts });
     checkAccountBudget();
-    const queued = await withAccountDeadline(() => createDailyQueue(account.id, { skipPreflight: allowInitialLinkDiscovery }), accountDeadlineAt);
+    let queued = await withAccountDeadline(createDailyQueue(account.id, { skipPreflight: allowInitialLinkDiscovery }), accountDeadlineAt);
+    if (queued.length === 0 && shouldRetryEmptyQueue(queued.diagnostics, options)) {
+      const retryPosts = await withAccountDeadline(generateSupplementalQueueCandidates({
+        account,
+        topics,
+        diagnostics: queued.diagnostics || {},
+        progress,
+        checkAccountBudget,
+        result
+      }), accountDeadlineAt);
+      totalPosts += retryPosts;
+      result.steps.retryPosts = retryPosts;
+      result.queueRetry = {
+        attempted: true,
+        postsCreated: retryPosts,
+        originalReasonCode: queued.diagnostics?.reasonCode || null
+      };
+      if (retryPosts > 0) {
+        await progress({
+          percent: 95,
+          stage: 'queue_retry_done',
+          label: `${retryPosts}개 후보를 보강했습니다`,
+          topicsTotal: topics.length,
+          topicsDone: topics.length,
+          postsCreated: totalPosts,
+          queueDiagnostics: queued.diagnostics
+        });
+        queued = await withAccountDeadline(createDailyQueue(account.id, { skipPreflight: allowInitialLinkDiscovery }), accountDeadlineAt);
+      }
+    }
     result.steps.queued = queued.length;
     result.topicsCount = topics.length;
     result.postsCount = totalPosts;

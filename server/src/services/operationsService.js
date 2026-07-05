@@ -112,6 +112,21 @@ function displayActivityCode(value) {
   return ({
     pipeline_background_already_running: '이미 예약 작업을 확인 중입니다',
     queue_empty: '오늘 예약 가능한 링크 글이 없습니다',
+    NO_DRAFT_POSTS: '예약 가능한 초안 없음',
+    QUALITY_FILTER_REJECTED_DRAFTS: '품질 필터 통과 후보 없음',
+    NO_REAL_COUPANG_LINKS: '실상품 링크 후보 부족',
+    NO_REAL_PRODUCTS: '실상품 후보 없음',
+    NO_LINK_CANDIDATES: '링크 글 후보 없음',
+    NO_QUEUEABLE_DRAFTS: '예약 가능 후보 없음',
+    RECENT_DUPLICATE_DRAFTS_REJECTED: '최근 중복 후보 제외',
+    PARTIAL_LINK_CANDIDATES: '실상품 링크 후보 일부 부족',
+    PARTIAL_NO_LINK_CANDIDATES: '링크 없는 후보 일부 부족',
+    NO_SCHEDULE_TIMES: '예약 가능 시간 없음',
+    DAILY_LIMIT_REACHED: '오늘 업로드 상한 도달',
+    COUPANG_RATE_LIMIT: '쿠팡 검색 제한 중',
+    COUPANG_LOCK_UNAVAILABLE: '쿠팡 검색 보호 락 오류',
+    REPLY_LINK_BLOCKED: '댓글 링크 상태 확인 필요',
+    LINK_POSTS_BLOCKED_REPLY_REVIEW_NEEDED: '댓글 링크 수동 확인 필요',
     threads_reconnect: 'Threads 재연결 필요',
     threads_reconnect_required: 'Threads 재연결 필요',
     operations_safety_pause: '운영 안전 점검으로 일시정지',
@@ -198,7 +213,30 @@ function queueProblemBreakdown(categorizedProblems) {
   };
 }
 
+function pipelineQueueReason(pipelineRun = {}) {
+  const result = pipelineRun?.result && typeof pipelineRun.result === 'object' ? pipelineRun.result : {};
+  const diagnostics = result.queueDiagnostics && typeof result.queueDiagnostics === 'object'
+    ? result.queueDiagnostics
+    : null;
+  const reasonCode = diagnostics?.reasonCode || result.code || null;
+  const reasonLabel = reasonCode ? displayActivityCode(reasonCode) : null;
+  const reasonDetail = [
+    reasonLabel,
+    diagnostics?.availableDraftPosts != null ? `초안 ${diagnostics.availableDraftPosts}개` : '',
+    diagnostics?.availableLinkPosts != null ? `링크 가능 ${diagnostics.availableLinkPosts}개` : '',
+    diagnostics?.qualityRejectedCount ? `품질 제외 ${diagnostics.qualityRejectedCount}개` : '',
+    diagnostics?.linkShortage ? `링크 부족 ${diagnostics.linkShortage}개` : ''
+  ].filter(Boolean).join(' · ');
+  return {
+    reasonCode,
+    reasonLabel,
+    reasonDetail,
+    diagnostics
+  };
+}
+
 function pipelineState(pipelineRun) {
+  const reason = pipelineQueueReason(pipelineRun);
   const stale = pipelineStaleReason(pipelineRun);
   if (stale) {
     return {
@@ -213,8 +251,28 @@ function pipelineState(pipelineRun) {
   }
   if (pipelineRun?.status === 'running') return { status: 'running', stale: false, label: '자동화 실행 중' };
   if (pipelineRun?.status === 'expired') return { status: 'expired', stale: false, label: '최근 예약 작업 만료' };
-  if (pipelineRun?.status === 'failed') return { status: 'failed', stale: false, label: '최근 파이프라인 실패' };
-  return { status: pipelineRun?.status || null, stale: false, label: null };
+  if (pipelineRun?.status === 'failed') {
+    return {
+      status: 'failed',
+      stale: false,
+      label: reason.reasonLabel || '최근 파이프라인 실패',
+      message: reason.reasonDetail || pipelineRun.error_message || null,
+      reasonCode: reason.reasonCode,
+      reasonLabel: reason.reasonLabel,
+      reasonDetail: reason.reasonDetail,
+      diagnostics: reason.diagnostics
+    };
+  }
+  return {
+    status: pipelineRun?.status || null,
+    stale: false,
+    label: reason.reasonLabel || null,
+    message: reason.reasonDetail || null,
+    reasonCode: reason.reasonCode,
+    reasonLabel: reason.reasonLabel,
+    reasonDetail: reason.reasonDetail,
+    diagnostics: reason.diagnostics
+  };
 }
 
 export async function diagnoseAccountReadOnly(account, context = {}) {
@@ -269,7 +327,7 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   if (coupang.searchStatus === 'rate_limited') pushProblem(problems, account, 'warn', 'coupang_rate_limit', '쿠팡 검색 제한 중', coupang.cooldownUntil || '');
   if (coupang.searchStatus === 'api_error') pushProblem(problems, account, 'warn', 'coupang_api_error', '쿠팡 API 오류');
   if (account.status === 'active' && todayScheduled === 0 && upcomingScheduled === 0) {
-    pushProblem(problems, account, 'warn', 'no_schedule', '예약 없음');
+    pushProblem(problems, account, 'warn', 'no_schedule', pipeline.reasonLabel || '예약 없음', pipeline.reasonDetail || pipeline.message || '');
   }
   if (queueBreakdown.fatal > 0) {
     pushProblem(problems, account, 'error', 'queue_failed', queueBreakdown.replyPermissionRequired
@@ -285,7 +343,9 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
   if (mockCount > 0) pushProblem(problems, account, 'warn', 'mock_upload', `테스트 업로드 흔적 ${mockCount}건`);
   if (fallbackRatio >= 0.5 && accountProducts.length >= 5) pushProblem(problems, account, 'warn', 'fallback_products', `fallback 상품 ${Math.round(fallbackRatio * 100)}%`);
   if (pipeline.status === 'stuck') pushProblem(problems, account, 'warn', STALE_RUNNING_CATEGORY, pipeline.label, pipeline.message || pipeline.staleCode);
-  else if ((lastActivity?.action === 'pipeline_failed' || pipeline.status === 'failed') && problems.some((p) => p.severity === 'error')) {
+  else if (pipeline.status === 'failed') {
+    pushProblem(problems, account, 'warn', 'pipeline_failed', pipeline.label || '최근 파이프라인 실패', pipeline.message || pipelineRun?.error_message || lastActivity?.message || '');
+  } else if (lastActivity?.action === 'pipeline_failed' && problems.some((p) => p.severity === 'error')) {
     pushProblem(problems, account, 'error', 'pipeline_failed', '최근 파이프라인 실패', pipelineRun?.error_message || lastActivity?.message || '');
   }
   if (pipeline.status === 'expired') {
@@ -365,14 +425,17 @@ export async function diagnoseAccountReadOnly(account, context = {}) {
       staleCode: pipeline.staleCode,
       label: pipeline.label,
       message: pipeline.message || null,
-      stage: pipeline.stage || pipelineRun.result?.stage || null,
-      percent: pipelineRun.result?.percent ?? null,
-      lastProgressAt: pipeline.lastProgressAt || pipelineRun.result?.updatedAt || pipelineRun.updated_at || null,
-      startedAt: pipelineRun.started_at,
-      finishedAt: pipelineRun.finished_at,
-      expiresAt: pipelineRun.expires_at,
-      errorMessage: pipelineRun.error_message
-    } : null,
+	      stage: pipeline.stage || pipelineRun.result?.stage || null,
+	      percent: pipelineRun.result?.percent ?? null,
+	      lastProgressAt: pipeline.lastProgressAt || pipelineRun.result?.updatedAt || pipelineRun.updated_at || null,
+	      startedAt: pipelineRun.started_at,
+	      finishedAt: pipelineRun.finished_at,
+	      expiresAt: pipelineRun.expires_at,
+	      errorMessage: pipelineRun.error_message,
+	      reasonCode: pipeline.reasonCode || null,
+	      reasonLabel: pipeline.reasonLabel || null,
+	      reasonDetail: pipeline.reasonDetail || null
+	    } : null,
     problems
   };
 }
@@ -749,7 +812,7 @@ export async function operationEvents({ type = 'queue_problems', limit = 200 } =
       title: displayActivityCode(problem.label),
       message: displayActivityCode(problem.detail) || runCategoryLabelForEvent(row.runCategory),
       time: row.lastActivity?.createdAt || row.pipelineRun?.startedAt || null,
-      actionTarget: problem.type === 'no_schedule' || problem.type === 'queue_failed' ? 'queue' : 'settings',
+	      actionTarget: ['no_schedule', 'queue_failed', 'pipeline_failed'].includes(problem.type) ? 'queue' : 'settings',
       ...baseEvent(row.accountId)
     })));
     events = sortEventsByTime(events);

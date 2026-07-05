@@ -22,6 +22,11 @@ import { assessContentPatternQuality } from '../utils/contentPatternQuality.js';
 
 const QUEUE_POSTING_STALE_MINUTES = Math.max(1, Number(process.env.QUEUE_POSTING_STALE_MINUTES || 15));
 const QUEUE_POSTING_STALE_MS = QUEUE_POSTING_STALE_MINUTES * 60 * 1000;
+const QUEUE_POSTING_ABANDONED_MINUTES = Math.max(
+  QUEUE_POSTING_STALE_MINUTES,
+  Number(process.env.QUEUE_POSTING_ABANDONED_MINUTES || 24 * 60)
+);
+const QUEUE_POSTING_ABANDONED_MS = QUEUE_POSTING_ABANDONED_MINUTES * 60 * 1000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 const REPLY_REPAIR_MAX_ATTEMPTS = 3;
 const REPLY_LINK_FAILURE_BLOCK_WINDOW_MS = Math.max(60 * 1000, Number(process.env.REPLY_LINK_FAILURE_BLOCK_WINDOW_MS || 6 * 60 * 60 * 1000));
@@ -1088,11 +1093,12 @@ export async function createDailyQueue(accountId, options = {}) {
   return attachQueueDiagnostics(queued, diagnostics);
 }
 
-export async function recoverStalePostingQueue() {
-  const posting = await dbList('post_queue', { status: 'posting' }, {
+export async function recoverStalePostingQueue({ accountId = null, limit = 100 } = {}) {
+  const filters = accountId ? { status: 'posting', account_id: accountId } : { status: 'posting' };
+  const posting = await dbList('post_queue', filters, {
     order: 'updated_at',
     ascending: true,
-    limit: 100
+    limit: Math.max(1, Math.min(Number(limit) || 100, 500))
   });
   const cutoff = Date.now() - QUEUE_POSTING_STALE_MS;
   let recovered = 0;
@@ -1100,9 +1106,13 @@ export async function recoverStalePostingQueue() {
     const updatedAt = new Date(row.updated_at || row.created_at || 0).getTime();
     if (!updatedAt || updatedAt > cutoff) continue;
 
+    const ageMs = Date.now() - updatedAt;
+    const abandoned = ageMs >= QUEUE_POSTING_ABANDONED_MS;
     const retry = (row.retry_count || 0) + 1;
-    const status = retry >= 3 ? 'manual_required' : 'retry';
-    const message = `posting 상태가 ${QUEUE_POSTING_STALE_MINUTES}분 이상 지속되어 ${status}로 복구했습니다.`;
+    const status = abandoned || retry >= 3 ? 'manual_required' : 'retry';
+    const message = abandoned
+      ? `posting 상태가 ${QUEUE_POSTING_ABANDONED_MINUTES}분 이상 방치되어 수동 확인으로 전환했습니다.`
+      : `posting 상태가 ${QUEUE_POSTING_STALE_MINUTES}분 이상 지속되어 ${status}로 복구했습니다.`;
     const classified = classifyQueueError(message);
     const [updated] = await dbUpdate('post_queue', { id: row.id, status: 'posting' }, {
       status,
@@ -1122,7 +1132,13 @@ export async function recoverStalePostingQueue() {
       action: 'queue_posting_stale_recovered',
       level: 'warn',
       message,
-      payload: { retryCount: retry, nextStatus: status, staleMinutes: QUEUE_POSTING_STALE_MINUTES }
+      payload: {
+        retryCount: retry,
+        nextStatus: status,
+        staleMinutes: QUEUE_POSTING_STALE_MINUTES,
+        abandoned,
+        abandonedMinutes: QUEUE_POSTING_ABANDONED_MINUTES
+      }
     });
   }
   return recovered;
