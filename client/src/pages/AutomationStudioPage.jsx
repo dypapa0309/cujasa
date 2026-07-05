@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.js';
 import { BarChart3, CalendarDays, CheckCircle2, ClipboardPen, Clock3, Edit3, Eye, Filter, Image, MousePointerClick, PauseCircle, PlayCircle, Plus, RefreshCw, Search, Send, SquareStack, Target, Trash2, TrendingUp, Upload, Users, XCircle } from 'lucide-react';
+import { removeById, replaceById, upsertById } from '../lib/collection.js';
 
 const inputClass = 'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-slate-900';
 const labelClass = 'grid gap-1.5 text-xs font-bold text-slate-600';
@@ -274,9 +275,7 @@ export default function AutomationStudioPage({ accounts = [] }) {
     api.get(`/api/admin/automation-studio/campaigns/${selectedId}`)
       .then((detail) => {
         if (cancelled) return;
-        setCampaigns((rows) => rows.some((row) => row.id === detail.id)
-          ? rows.map((row) => row.id === detail.id ? detail : row)
-          : [detail, ...rows]);
+        setCampaigns((rows) => upsertById(rows, detail));
       })
       .catch(console.error);
     return () => { cancelled = true; };
@@ -367,7 +366,7 @@ export default function AutomationStudioPage({ accounts = [] }) {
 
   const runCampaign = async (campaignId) => {
     const next = await api.post(`/api/admin/automation-studio/campaigns/${campaignId}/run`, {});
-    setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
+    setCampaigns((rows) => replaceById(rows, next));
     setSelectedId(next.id);
     loadAnalytics(next.id).catch(console.error);
     navigateWorkspace({ view: 'detail', campaignId: next.id });
@@ -377,7 +376,7 @@ export default function AutomationStudioPage({ accounts = [] }) {
     setUpdatingId(`${campaignId}:regenerate`);
     try {
       const next = await api.post(`/api/admin/automation-studio/campaigns/${campaignId}/regenerate-assets`, {});
-      setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
+      setCampaigns((rows) => replaceById(rows, next));
       setSelectedId(next.id);
       loadAnalytics(next.id).catch(console.error);
       navigateWorkspace({ view: 'detail', campaignId: next.id });
@@ -388,7 +387,7 @@ export default function AutomationStudioPage({ accounts = [] }) {
 
   const stopCampaign = async (campaignId) => {
     const next = await api.post(`/api/admin/automation-studio/campaigns/${campaignId}/stop`, {});
-    setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
+    setCampaigns((rows) => replaceById(rows, next));
     setSelectedId(next.id);
     loadAnalytics(next.id).catch(console.error);
   };
@@ -397,7 +396,7 @@ export default function AutomationStudioPage({ accounts = [] }) {
     setUpdatingId(assetId);
     try {
       const next = await api.patch(`/api/admin/automation-studio/campaigns/${campaignId}/assets/${assetId}`, patch);
-      setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
+      setCampaigns((rows) => replaceById(rows, next));
       setSelectedId(next.id);
     } finally {
       setUpdatingId('');
@@ -408,7 +407,7 @@ export default function AutomationStudioPage({ accounts = [] }) {
     setUpdatingId(`rewrite:${assetId}`);
     try {
       const next = await api.post(`/api/admin/automation-studio/campaigns/${campaignId}/assets/${assetId}/rewrite`, {});
-      setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
+      setCampaigns((rows) => replaceById(rows, next));
       setSelectedId(next.id);
       loadAnalytics(next.id).catch(console.error);
     } finally {
@@ -420,7 +419,7 @@ export default function AutomationStudioPage({ accounts = [] }) {
     setUpdatingId(`expand:${assetId}`);
     try {
       const created = await api.post(`/api/admin/automation-studio/campaigns/${campaignId}/assets/${assetId}/expand`, {});
-      setCampaigns((rows) => [created, ...rows.filter((row) => row.id !== created.id)]);
+      setCampaigns((rows) => upsertById(rows, created));
       setSelectedId(created.id);
       navigateWorkspace({ view: 'detail', campaignId: created.id, platform: 'all' });
       loadAnalytics(created.id).catch(console.error);
@@ -439,7 +438,7 @@ export default function AutomationStudioPage({ accounts = [] }) {
         nextCampaign = await api.patch(`/api/admin/automation-studio/campaigns/${campaignId}/assets/${asset.id}`, { status: 'approved' });
       }
       if (nextCampaign) {
-        setCampaigns((rows) => rows.map((row) => row.id === nextCampaign.id ? nextCampaign : row));
+        setCampaigns((rows) => replaceById(rows, nextCampaign));
         setSelectedId(nextCampaign.id);
       }
     } finally {
@@ -451,7 +450,7 @@ export default function AutomationStudioPage({ accounts = [] }) {
     setUpdatingId(campaignId);
     try {
       const next = await api.patch(`/api/admin/automation-studio/campaigns/${campaignId}`, { nextActionNote });
-      setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
+      setCampaigns((rows) => replaceById(rows, next));
       setSelectedId(next.id);
     } finally {
       setUpdatingId('');
@@ -462,7 +461,7 @@ export default function AutomationStudioPage({ accounts = [] }) {
     setUpdatingId(`${campaignId}:image`);
     try {
       const next = await api.patch(`/api/admin/automation-studio/campaigns/${campaignId}`, { productImageUrl });
-      setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
+      setCampaigns((rows) => replaceById(rows, next));
       setSelectedId(next.id);
     } finally {
       setUpdatingId('');
@@ -472,20 +471,20 @@ export default function AutomationStudioPage({ accounts = [] }) {
   const deleteCampaign = async (campaignId) => {
     if (!window.confirm('캠페인을 삭제할까요?')) return;
     await api.delete(`/api/admin/automation-studio/campaigns/${campaignId}`);
-    setCampaigns((rows) => rows.filter((row) => row.id !== campaignId));
+    setCampaigns((rows) => removeById(rows, campaignId));
     if (selectedId === campaignId) setSelectedId(campaigns.find((row) => row.id !== campaignId)?.id || '');
   };
 
   const deleteSet = async (campaignId, platform) => {
     if (!window.confirm(`${platformLabel(platform)} 세트를 삭제할까요?`)) return;
     const next = await api.delete(`/api/admin/automation-studio/campaigns/${campaignId}/sets/${platform}`);
-    setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
+    setCampaigns((rows) => replaceById(rows, next));
   };
 
   const deleteAsset = async (campaignId, assetId) => {
     if (!window.confirm('소재를 삭제할까요?')) return;
     const next = await api.delete(`/api/admin/automation-studio/campaigns/${campaignId}/assets/${assetId}`);
-    setCampaigns((rows) => rows.map((row) => row.id === next.id ? next : row));
+    setCampaigns((rows) => replaceById(rows, next));
   };
 
   return (

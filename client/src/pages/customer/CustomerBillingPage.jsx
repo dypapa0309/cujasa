@@ -260,7 +260,7 @@ export default function CustomerBillingPage({ currentUser }) {
         <PlanCard
           icon={CreditCard}
           title={billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액'}
-          priceText="129,000원 / 월"
+          priceText="99,000원 / 월"
           caption={activeSubscription ? `활성 · 다음 결제 ${formatDate(activeSubscription.nextBillingAt)}` : '가상계좌 결제'}
           product={productsById.monthly_59000 || null}
           busy={busy === 'monthly'}

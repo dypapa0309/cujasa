@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
+import { patchById, removeById } from '../lib/collection.js';
 
 const emptyForm = {
   title: '',
@@ -91,23 +92,29 @@ export default function AdminAnnouncementsPage() {
   };
 
   const setStatus = async (announcement, status) => {
+    const previous = announcements;
+    setAnnouncements((current) => patchById(current, announcement.id, { status }));
     try {
       await api.patch(`/api/admin/announcements/${announcement.id}`, { status });
-      await load();
+      load().catch(console.error);
       toast('공지 상태가 변경되었습니다.', 'success');
     } catch (err) {
+      setAnnouncements(previous);
       toast(err.message || '상태 변경에 실패했습니다.', 'error');
     }
   };
 
   const remove = async (announcement) => {
     if (!confirm('공지사항을 삭제하시겠습니까?')) return;
+    const previous = announcements;
+    setAnnouncements((current) => removeById(current, announcement.id));
+    if (editingId === announcement.id) resetForm();
     try {
       await api.delete(`/api/admin/announcements/${announcement.id}`);
-      await load();
-      if (editingId === announcement.id) resetForm();
+      load().catch(console.error);
       toast('공지사항이 삭제되었습니다.', 'success');
     } catch {
+      setAnnouncements(previous);
       toast('삭제에 실패했습니다.', 'error');
     }
   };

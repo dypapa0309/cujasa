@@ -1,25 +1,30 @@
-import { Component, useEffect, useState } from 'react';
+import { Component, Suspense, lazy, useEffect, useState } from 'react';
 import { ToastProvider } from './lib/toast.jsx';
 import { LayoutDashboard, Settings, Users, Wand2, Boxes, ListChecks, BarChart3, ShieldCheck, Megaphone, ClipboardCheck, DatabaseZap, Sparkles, Bot } from 'lucide-react';
-import DashboardPage from './pages/DashboardPage.jsx';
-import AccountListPage from './pages/AccountListPage.jsx';
-import AccountSettingsPage from './pages/AccountSettingsPage.jsx';
-import GeneratePage from './pages/GeneratePage.jsx';
-import ProductResultPage from './pages/ProductResultPage.jsx';
-import QueuePage from './pages/QueuePage.jsx';
-import AnalyticsPage from './pages/AnalyticsPage.jsx';
-import SettingsPage from './pages/SettingsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
-import AdminUsersPage from './pages/AdminUsersPage.jsx';
-import AdminAnnouncementsPage from './pages/AdminAnnouncementsPage.jsx';
-import AdminSetupPage from './pages/AdminSetupPage.jsx';
-import AdminPolibotKnowledgePage from './pages/AdminPolibotKnowledgePage.jsx';
-import AdminTrendReferencePage from './pages/AdminTrendReferencePage.jsx';
-import AutomationStudioPage from './pages/AutomationStudioPage.jsx';
-import CustomerApp from './pages/customer/CustomerApp.jsx';
-import { ProductPurchasePage, PublicTestPage2 } from './pages/PublicTestPages.jsx';
 import { api, getAuthToken, setAuthToken } from './lib/api.js';
 import { CURRENT_PRODUCT, JASAIN_BRAND } from './config/products.js';
+
+function lazyNamed(importer, exportName) {
+  return lazy(() => importer().then((module) => ({ default: module[exportName] })));
+}
+
+const DashboardPage = lazy(() => import('./pages/DashboardPage.jsx'));
+const AccountListPage = lazy(() => import('./pages/AccountListPage.jsx'));
+const GeneratePage = lazy(() => import('./pages/GeneratePage.jsx'));
+const ProductResultPage = lazy(() => import('./pages/ProductResultPage.jsx'));
+const QueuePage = lazy(() => import('./pages/QueuePage.jsx'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage.jsx'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage.jsx'));
+const AdminUsersPage = lazy(() => import('./pages/AdminUsersPage.jsx'));
+const AdminAnnouncementsPage = lazy(() => import('./pages/AdminAnnouncementsPage.jsx'));
+const AdminSetupPage = lazy(() => import('./pages/AdminSetupPage.jsx'));
+const AdminPolibotKnowledgePage = lazy(() => import('./pages/AdminPolibotKnowledgePage.jsx'));
+const AdminTrendReferencePage = lazy(() => import('./pages/AdminTrendReferencePage.jsx'));
+const AutomationStudioPage = lazy(() => import('./pages/AutomationStudioPage.jsx'));
+const CustomerApp = lazy(() => import('./pages/customer/CustomerApp.jsx'));
+const ProductPurchasePage = lazyNamed(() => import('./pages/PublicTestPages.jsx'), 'ProductPurchasePage');
+const PublicTestPage2 = lazyNamed(() => import('./pages/PublicTestPages.jsx'), 'PublicTestPage2');
 
 const adminTabs = [
   ['dashboard', '대시보드', LayoutDashboard],
@@ -63,9 +68,43 @@ const pages = {
   'admin-announcements': AdminAnnouncementsPage,
 };
 const accountScopedPages = new Set(['accounts', 'generate', 'products', 'queue', 'analytics', 'settings']);
+const polibotShortcutPaths = new Set(['/polibot-code', '/polibot-recommend']);
+
+function publicRouteForLocation(pathname = '', hostname = '') {
+  const isStoreHost = ['store.jasain.kr', 'store1.jasain.kr'].includes(hostname);
+  const storeProductId = pathname.startsWith('/store/') ? pathname.split('/').filter(Boolean)[1] : '';
+  if (pathname === '/test-page-2' || (isStoreHost && pathname === '/')) {
+    return { Component: PublicTestPage2, productId: storeProductId };
+  }
+  if (storeProductId) {
+    return { Component: ProductPurchasePage, productId: storeProductId };
+  }
+  return null;
+}
 
 function normalizeProducts(products) {
   return Array.isArray(products) ? products : [];
+}
+
+function userStateFromAuthResult(result = {}) {
+  if (result.type === 'admin') {
+    return { type: 'admin', email: result.admin?.email || result.email };
+  }
+  if (result.type === 'user') {
+    const user = result.user || result;
+    return {
+      type: 'user',
+      email: user.email,
+      username: user.username,
+      maxAccounts: user.maxAccounts,
+      products: normalizeProducts(user.products),
+      billing: user.billing || null
+    };
+  }
+  if (result.devBypass === true) {
+    return { type: 'admin', email: 'dev-local' };
+  }
+  return null;
 }
 
 export class AppErrorBoundary extends Component {
@@ -104,13 +143,7 @@ export class AppErrorBoundary extends Component {
 export default function App() {
   const publicPath = typeof window !== 'undefined' ? window.location.pathname : '';
   const publicHost = typeof window !== 'undefined' ? window.location.hostname : '';
-  const isStoreHost = publicHost === 'store.jasain.kr';
-  const storeProductId = publicPath.startsWith('/store/') ? publicPath.split('/').filter(Boolean)[1] : '';
-  const PublicPage = (publicPath === '/test-page-2' || (isStoreHost && publicPath === '/'))
-      ? PublicTestPage2
-      : storeProductId
-        ? ProductPurchasePage
-      : null;
+  const publicRoute = publicRouteForLocation(publicPath, publicHost);
   const [page, setPage] = useState('dashboard');
   const [accounts, setAccounts] = useState([]);
   const [selectedAccountId, setSelectedAccountId] = useState('');
@@ -121,6 +154,14 @@ export default function App() {
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId) || accounts[0];
   const isAdmin = currentUser?.type === 'admin';
   const tabs = isAdmin ? adminTabs : userTabs;
+
+  const clearAuthState = () => {
+    setAuthToken('');
+    setCurrentUser(null);
+    setAccounts([]);
+    setSelectedAccountId('');
+    setAuthMaintenance(null);
+  };
 
   const loadAccounts = async () => {
     const rows = await api.get('/api/accounts');
@@ -149,30 +190,13 @@ export default function App() {
   });
 
   const applyAuthResult = (result) => {
-        if (result.type === 'admin') {
-          setCurrentUser({ type: 'admin', email: result.admin?.email });
-          return loadAccountsOrHold();
-        }
-        if (result.type === 'user') {
-          setCurrentUser({
-            type: 'user',
-            email: result.user?.email,
-            username: result.user?.username,
-            maxAccounts: result.user?.maxAccounts,
-            products: normalizeProducts(result.user?.products),
-            billing: result.user?.billing || null
-          });
-          return loadAccountsOrHold();
-        }
-        if (result.devBypass === true) {
-          setCurrentUser({ type: 'admin', email: 'dev-local' });
-          return loadAccountsOrHold();
-        }
-        setAuthToken('');
-        setCurrentUser(null);
-        setAccounts([]);
-        setSelectedAccountId('');
-        return null;
+    const nextUser = userStateFromAuthResult(result);
+    if (!nextUser) {
+      clearAuthState();
+      return null;
+    }
+    setCurrentUser(nextUser);
+    return loadAccountsOrHold();
   };
 
   const reloadCurrentUser = async () => {
@@ -180,8 +204,17 @@ export default function App() {
     return applyAuthResult(result);
   };
 
+  const handleLogin = (info) => {
+    setCurrentUser(userStateFromAuthResult(info));
+    loadAccountsOrHold().catch(console.error);
+  };
+
   useEffect(() => {
-    if (PublicPage) {
+    if (publicRoute) {
+      setCheckingAuth(false);
+      return;
+    }
+    if (!getAuthToken()) {
       setCheckingAuth(false);
       return;
     }
@@ -201,27 +234,24 @@ export default function App() {
           holdMaintenanceState(error);
           return;
         }
-        setAuthToken('');
-        setCurrentUser(null);
-        setAccounts([]);
-        setSelectedAccountId('');
+        clearAuthState();
       })
       .finally(() => setCheckingAuth(false));
   }, []);
 
   useEffect(() => {
-    const handleAuthExpired = () => {
-      setCurrentUser(null);
-      setAccounts([]);
-      setSelectedAccountId('');
-      setAuthMaintenance(null);
-    };
+    const handleAuthExpired = () => clearAuthState();
     window.addEventListener('jasain-auth-expired', handleAuthExpired);
     return () => window.removeEventListener('jasain-auth-expired', handleAuthExpired);
   }, []);
 
-  if (PublicPage) {
-    return <PublicPage productId={storeProductId} />;
+  if (publicRoute) {
+    const PublicPage = publicRoute.Component;
+    return (
+      <Suspense fallback={<PageLoading label="페이지를 불러오는 중" />}>
+        <PublicPage productId={publicRoute.productId} />
+      </Suspense>
+    );
   }
 
   if (checkingAuth) {
@@ -230,8 +260,7 @@ export default function App() {
 
   if (authMaintenance && (!currentUser || accounts.length === 0)) {
     return (
-      <ToastProvider>
-        <GlobalApiLoadingBar />
+      <AppFrame>
         <CoreMaintenanceScreen
           message={authMaintenance.message}
           currentUser={currentUser}
@@ -239,31 +268,23 @@ export default function App() {
             setCheckingAuth(true);
             reloadCurrentUser().finally(() => setCheckingAuth(false));
           }}
-          onLogout={() => {
-            setAuthToken('');
-            setCurrentUser(null);
-            setAuthMaintenance(null);
-          }}
+          onLogout={clearAuthState}
         />
-      </ToastProvider>
+      </AppFrame>
     );
   }
 
   if (!currentUser && !getAuthToken()) {
     return (
-      <ToastProvider>
-        <GlobalApiLoadingBar />
-        <LoginPage onLogin={(info) => {
-          setCurrentUser({ type: info.type, email: info.email, username: info.username, maxAccounts: info.maxAccounts, products: normalizeProducts(info.products), billing: info.billing || null });
-          loadAccounts().catch(console.error);
-        }} />
-      </ToastProvider>
+      <AppFrame>
+        <LoginPage onLogin={handleLogin} />
+      </AppFrame>
     );
   }
 
   // 고객(user)이면 솔루션 허브가 포함된 별도 고객 앱 렌더링
   if (currentUser?.type === 'user') {
-    if (typeof window !== 'undefined' && ['/polibot-code', '/polibot-recommend'].includes(window.location.pathname)) {
+    if (typeof window !== 'undefined' && polibotShortcutPaths.has(window.location.pathname)) {
       window.history.replaceState(
         { jasainProduct: 'polibot', tab: 'beta', action: 'polibot-recommend' },
         '',
@@ -271,16 +292,17 @@ export default function App() {
       );
     }
     return (
-      <ToastProvider>
-        <GlobalApiLoadingBar />
-        <CustomerApp
-          accounts={accounts}
-          currentUser={{ ...currentUser, products: normalizeProducts(currentUser.products) }}
-          reloadAccounts={loadAccounts}
-          reloadCurrentUser={reloadCurrentUser}
-          onLogout={() => { setAuthToken(''); setCurrentUser(null); }}
-        />
-      </ToastProvider>
+      <AppFrame>
+        <Suspense fallback={<PageLoading label="워크스페이스를 불러오는 중" />}>
+          <CustomerApp
+            accounts={accounts}
+            currentUser={{ ...currentUser, products: normalizeProducts(currentUser.products) }}
+            reloadAccounts={loadAccounts}
+            reloadCurrentUser={reloadCurrentUser}
+            onLogout={clearAuthState}
+          />
+        </Suspense>
+      </AppFrame>
     );
   }
 
@@ -297,8 +319,7 @@ export default function App() {
   const showAccountSelector = accountScopedPages.has(page);
 
   return (
-    <ToastProvider>
-      <GlobalApiLoadingBar />
+    <AppFrame>
       <div className="min-h-screen bg-slate-50 text-slate-900">
         <aside className="fixed inset-y-0 left-0 hidden w-64 border-r border-slate-200 bg-white p-4 md:block">
           <div className="px-2">
@@ -342,28 +363,39 @@ export default function App() {
                   onChange={setSelectedAccountId}
                 />
               )}
-              <button onClick={() => { setAuthToken(''); setCurrentUser(null); }} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-950">로그아웃</button>
+              <button onClick={clearAuthState} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-950">로그아웃</button>
             </div>
             <div className="mt-3 flex gap-2 overflow-x-auto md:hidden">
               {tabs.map(([key, label]) => <button key={key} onClick={() => setPage(key)} className={`shrink-0 rounded-full border px-3 py-2 text-sm font-bold ${page === key ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 text-slate-500'}`}>{label}</button>)}
             </div>
           </header>
           <section className="p-5">
-            <Page
-              accounts={accounts}
-              selectedAccount={selectedAccount}
-              reloadAccounts={loadAccounts}
-              setSelectedAccountId={setSelectedAccountId}
-              currentUser={currentUser}
-              setPage={setPage}
-              openAccountSettings={openAccountSettings}
-              openAccountQueue={openAccountQueue}
-              accountSettingsOpenId={accountSettingsOpenId}
-              onAccountSettingsOpened={() => setAccountSettingsOpenId('')}
-            />
+            <Suspense fallback={<PageLoading label="화면을 불러오는 중" />}>
+              <Page
+                accounts={accounts}
+                selectedAccount={selectedAccount}
+                reloadAccounts={loadAccounts}
+                setSelectedAccountId={setSelectedAccountId}
+                currentUser={currentUser}
+                setPage={setPage}
+                openAccountSettings={openAccountSettings}
+                openAccountQueue={openAccountQueue}
+                accountSettingsOpenId={accountSettingsOpenId}
+                onAccountSettingsOpened={() => setAccountSettingsOpenId('')}
+              />
+            </Suspense>
           </section>
         </main>
       </div>
+    </AppFrame>
+  );
+}
+
+function AppFrame({ children }) {
+  return (
+    <ToastProvider>
+      <GlobalApiLoadingBar />
+      {children}
     </ToastProvider>
   );
 }
@@ -407,6 +439,14 @@ function GlobalApiLoadingBar() {
   return (
     <div className={`fixed inset-x-0 top-0 z-[9999] h-1 overflow-hidden bg-transparent transition-opacity duration-200 ${loading ? 'opacity-100' : 'pointer-events-none opacity-0'}`}>
       <div className="h-full w-full bg-gradient-to-r from-zinc-950 via-zinc-300 to-zinc-950 shadow-[0_0_18px_rgba(255,255,255,0.35)]" />
+    </div>
+  );
+}
+
+function PageLoading({ label = '불러오는 중' }) {
+  return (
+    <div className="grid min-h-[240px] place-items-center rounded-2xl border border-slate-200 bg-white p-6 text-sm font-bold text-slate-500">
+      {label}
     </div>
   );
 }

@@ -73,6 +73,7 @@ export function getDeviceContext() {
   const ua = navigator.userAgent || '';
   const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
   const fingerprintSource = [
+    ua,
     navigator.platform || '',
     navigator.language || '',
     Intl.DateTimeFormat().resolvedOptions().timeZone || ''

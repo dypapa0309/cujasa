@@ -170,7 +170,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   };
 
   const changePlan = async (user, plan) => {
-    const labels = { free: '무료회원', onetime: '영구구매', monthly: '월회원', suspended: '정지' };
+    const labels = { free: '무료회원', onetime: '1년 이용', monthly: '월회원', suspended: '정지' };
     if (plan === 'suspended' && !confirm(`${user.buyer_name || user.buyerName || user.username || user.email} 고객을 정지할까요?`)) return;
     setPlanBusyUserId(user.id);
     try {
@@ -364,7 +364,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const segmentDefinitions = [
     { key: 'all', label: '전체', description: '모든 회원' },
     { key: 'free', label: '무료회원', description: '무료 플랜' },
-    { key: 'onetime', label: '영구구매', description: '일시불 고객' },
+    { key: 'onetime', label: '1년 이용', description: '일시불 고객' },
     { key: 'monthly', label: '월회원', description: '월결제 고객' },
     { key: 'attention', label: '정지/연체', description: '확인 필요' },
     { key: 'signup_only', label: '회원가입만', description: '권한/계정/셋업 없음' }
@@ -831,7 +831,7 @@ function formatDateTime(value) {
 
 function planLabel(user) {
   if (user.status === 'suspended') return '정지';
-  if (user.plan === 'onetime') return '영구구매';
+  if (user.plan === 'onetime') return '1년 이용';
   if (user.plan === 'monthly') return user.billing_status === 'past_due' ? '월회원 연체' : '월회원';
   return '무료회원';
 }
@@ -850,7 +850,7 @@ function productBillingPlan(billing = {}, productStatus = 'active') {
 function productBillingLabel(billing = {}, productStatus = 'active') {
   const plan = productBillingPlan(billing, productStatus);
   if (plan === 'suspended') return '정지';
-  if (plan === 'onetime') return '영구구매';
+  if (plan === 'onetime') return '1년 이용';
   if (plan === 'monthly') return billing.status === 'past_due' ? '월회원 연체' : '월회원';
   return '무료';
 }
@@ -1043,7 +1043,7 @@ function ProductGrantCard({ userId, product, onRevoke, onSaveSettings, onSavePol
       <div className="mt-3 flex flex-wrap gap-2 rounded border border-line bg-gray-50 p-3">
         {[
           ['free', '무료'],
-          ['onetime', '영구구매'],
+          ['onetime', '1년 이용'],
           ['monthly', '월회원'],
           ['suspended', '정지']
         ].map(([plan, label]) => {

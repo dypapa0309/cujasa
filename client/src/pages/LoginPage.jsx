@@ -37,7 +37,7 @@ const productDetailContent = {
       { icon: BarChart3, title: '성과 확인', body: '클릭과 포스팅 성과를 계정별로 확인합니다.' }
     ],
     plans: [
-      { title: '베이직 월정액', price: '129,000원 / 월', badge: '추천', featured: true, features: ['Threads 계정 2개', '광고 없는 운영', '셋업·재연결 지원'] },
+      { title: '베이직 월정액', price: '99,000원 / 월', badge: '추천', featured: true, features: ['Threads 계정 2개', '광고 없는 운영', '셋업·재연결 지원'] },
       { title: '프로 1년 이용', price: '590,000원', originalPrice: '990,000원', discount: '40% 할인', badge: '1년 이용', features: ['Threads 계정 4개', '일시불 이용', '1년 운영 셋업'] }
     ]
   },
@@ -112,7 +112,7 @@ const productDetailContent = {
       { icon: CheckCircle2, title: '상품 추천', body: '추천 방향과 근거를 상담자가 확인할 수 있게 정리합니다.' }
     ],
     plans: [
-      { title: '베이직', price: '79,000원 / 월', badge: '추천', featured: true, features: ['월 보장분석 50회', '고객별 히스토리', '추천 근거 정리'] },
+      { title: '베이직', price: '8,900원 / 월', badge: '추천', featured: true, features: ['월 보장분석 50회', '고객별 히스토리', '추천 근거 정리'] },
       { title: '프로 1년 이용', price: '590,000원', originalPrice: '990,000원', discount: '40% 할인', badge: '1년 이용', features: ['상담/추천 1년 이용', '팀 단위 운영', '우선 지원'] }
     ]
   },

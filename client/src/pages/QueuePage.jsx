@@ -3,6 +3,7 @@ import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { dateTime } from '../lib/format.js';
+import { patchById } from '../lib/collection.js';
 
 const ATTENTION_STATUSES = new Set(['failed', 'retry', 'manual_required']);
 const FILTERS = [
@@ -64,13 +65,21 @@ export default function QueuePage({ selectedAccount }) {
 
   const cancel = async (row) => {
     if (!confirm('이 포스팅을 취소하시겠습니까?')) return;
+    const previousRows = rows;
+    const canceledAt = new Date().toISOString();
     setCancellingId(row.id);
+    setRows((current) => patchById(current, row.id, {
+      status: 'canceled',
+      updated_at: canceledAt,
+      friendly_title: row.friendly_title || '취소됨'
+    }));
+    if (detail?.queue?.id === row.id) setDetail(null);
     try {
       await api.post(`/api/queue/cancel/${row.id}`, {});
-      await load();
-      if (detail?.queue?.id === row.id) setDetail(null);
+      load().catch(console.error);
       toast('포스팅이 취소됐습니다.', 'info');
     } catch {
+      setRows(previousRows);
       toast('취소에 실패했습니다.', 'error');
     } finally {
       setCancellingId(null);
@@ -78,13 +87,25 @@ export default function QueuePage({ selectedAccount }) {
   };
 
   const run = async (row) => {
+    const previousRows = rows;
+    const startedAt = new Date().toISOString();
     setRunningId(row.id);
+    setRows((current) => patchById(current, row.id, {
+      status: 'posting',
+      updated_at: startedAt,
+      error_message: null,
+      friendly_title: null
+    }));
     try {
       const updated = await api.post(`/api/queue/${row.id}/upload-now`, {});
-      await load();
+      if (updated?.id) {
+        setRows((current) => patchById(current, updated.id, updated));
+      }
+      load().catch(console.error);
       if (detail?.queue?.id === row.id) await openDetail(updated || row);
       toast(updated?.status === 'posted' ? '업로드가 완료됐습니다.' : '처리 결과를 확인해주세요.', updated?.status === 'posted' ? 'success' : 'info');
     } catch (error) {
+      setRows(previousRows);
       await load();
       toast(error.message || '업로드 실행에 실패했습니다.', 'error');
     } finally {
@@ -119,8 +140,25 @@ export default function QueuePage({ selectedAccount }) {
           ))}
         </div>
         <div className="flex gap-2">
-        <button onClick={async () => { await api.post(`/api/accounts/${selectedAccount.id}/create-daily-queue`, {}); await load(); toast('일일 큐가 생성됐습니다.', 'success'); }} className="rounded border border-line bg-white px-4 py-2 text-sm">일일 큐 생성</button>
-        <button onClick={async () => { await api.post('/api/scheduler/run', {}); await load(); }} className="rounded bg-coupang px-4 py-2 text-sm font-medium text-white">스케줄러 실행</button>
+          <button
+            onClick={async () => {
+              await api.post(`/api/accounts/${selectedAccount.id}/create-daily-queue`, {});
+              await load();
+              toast('일일 큐가 생성됐습니다.', 'success');
+            }}
+            className="rounded border border-line bg-white px-4 py-2 text-sm"
+          >
+            일일 큐 생성
+          </button>
+          <button
+            onClick={async () => {
+              await api.post('/api/scheduler/run', {});
+              await load();
+            }}
+            className="rounded bg-coupang px-4 py-2 text-sm font-medium text-white"
+          >
+            스케줄러 실행
+          </button>
         </div>
       </div>
 

@@ -332,7 +332,7 @@ export default function DashboardPage({ openAccountSettings, openAccountQueue, s
           value={dailyPipelineLabel(summary?.dailyPipeline)}
           hint={dailyPipelineHint(summary?.dailyPipeline)}
           tone={dailyPipelineTone(summary?.dailyPipeline)}
-          onClick={dailyPipelineCanCatchUp(summary?.dailyPipeline) ? catchUpDailyPipeline : undefined}
+          onClick={(summary?.dailyPipeline?.missing || summary?.dailyPipeline?.stale || summary?.dailyPipeline?.status === 'partial') ? catchUpDailyPipeline : undefined}
         />
         <OpsCard
           label="만료 계정"
@@ -952,9 +952,7 @@ function dailyPipelineLabel(dailyPipeline) {
   if (isBillingExpiredDailyPipeline(dailyPipeline)) return '만료 계정 있음';
   if (dailyPipeline.missing) return '누락';
   if (dailyPipeline.stale || dailyPipeline.status === 'stale') return '멈춤';
-  if (dailyPipeline.status === 'completed' && (dailyPipeline.run?.summary?.futureQueueCoverage?.missingFutureQueueCount || 0) > 0) {
-    return (dailyPipeline.run?.summary?.futureQueueCoverage?.recoverableMissingFutureQueueCount || 0) > 0 ? '이어 실행 필요' : '차단 계정 있음';
-  }
+  if (dailyPipeline.status === 'completed' && (dailyPipeline.run?.summary?.futureQueueCoverage?.missingFutureQueueCount || 0) > 0) return '확인 필요';
   if (dailyPipeline.status === 'completed') return '성공';
   if (dailyPipeline.status === 'partial') return '부분 완료';
   if (dailyPipeline.status === 'running') return '실행중';
@@ -981,21 +979,11 @@ function dailyPipelineHint(dailyPipeline) {
     return `처리 ${summary.processed || 0} · 남은 계정 ${dailyPipeline.pendingCount || summary.pendingCount || 0} · 이어 실행 대기`;
   }
   if (dailyPipeline.status === 'completed') {
-    const coverage = summary.futureQueueCoverage || {};
-    const missingFuture = coverage.missingFutureQueueCount || 0;
-    if (missingFuture > 0) {
-      const active = coverage.activeRunningCount || summary.total || 0;
-      const covered = Math.max(0, active - missingFuture);
-      const blocked = coverage.blockedMissingFutureQueueCount || 0;
-      const recoverable = coverage.recoverableMissingFutureQueueCount || 0;
-      const reconnect = summary.reconnectRequired || 0;
-      const queueBlocked = Math.max(0, (summary.error || 0) - reconnect);
-      const recoverableText = recoverable > 0 ? ` · 이어 실행 ${recoverable}` : '';
-      return `예약 확인 ${covered}/${active} · 차단 ${blocked}${recoverableText} · 재연결 ${reconnect} · 초안/큐 확인 ${queueBlocked}`;
-    }
     const reconnect = summary.reconnectRequired || 0;
     const skippedOther = summary.skippedOther ?? Math.max(0, (summary.skipped || 0) - reconnect);
-    return `대상 ${summary.total || 0} · 예약 성공 ${summary.ok || 0} · 재연결 필요 ${reconnect} · 기타 스킵 ${skippedOther} · 시스템 오류 ${summary.error || 0}`;
+    const missingFuture = summary.futureQueueCoverage?.missingFutureQueueCount || 0;
+    const missingText = missingFuture > 0 ? ` · 당일 예약 없음 ${missingFuture}` : '';
+    return `대상 ${summary.total || 0} · 예약 성공 ${summary.ok || 0} · 재연결 필요 ${reconnect} · 기타 스킵 ${skippedOther} · 시스템 오류 ${summary.error || 0}${missingText}`;
   }
   if (dailyPipeline.status === 'running') {
     const progress = dailyPipeline.progress || summary.progress || {};
@@ -1004,12 +992,6 @@ function dailyPipelineHint(dailyPipeline) {
   }
   if (dailyPipeline.status === 'failed') return dailyPipeline.run?.errorMessage || '자동 실행 실패';
   return 'KST 02:00 대기';
-}
-
-function dailyPipelineCanCatchUp(dailyPipeline) {
-  if (!dailyPipeline) return false;
-  if (dailyPipeline.missing || dailyPipeline.stale || dailyPipeline.status === 'stale' || dailyPipeline.status === 'partial') return true;
-  return (dailyPipeline.run?.summary?.futureQueueCoverage?.recoverableMissingFutureQueueCount || 0) > 0;
 }
 
 function isBillingExpiredDailyPipeline(dailyPipeline) {
@@ -1057,6 +1039,9 @@ function activityLabel(action) {
     pipeline_background_already_running: '이미 예약 작업 확인 중',
     pipeline_failed_paused: '예약 생성 실패로 자동화 일시중지',
     automation_start_failed_paused: '자동화 시작 점검 필요',
+    pipeline_failed_kept_running: '예약 생성 실패, 자동화 유지',
+    automation_start_failed_kept_running: '자동화 시작 점검 필요',
+    manual_pipeline_failed_kept_running: '예약 생성 실패, 자동화 유지',
     post_style_blocked: '콘텐츠 후보 제외',
     queue_guardrail_skipped: '콘텐츠 후보 제외',
     upload_reply_failed: '댓글/링크 답글 실패',
@@ -1095,6 +1080,9 @@ function friendlyOpsText(value) {
     reply_permission_required: 'Threads 댓글 권한 재연결 필요',
     pipeline_stuck: '예약 작업 확인 필요',
     operations_safety_pause: '운영 안전 점검으로 일시정지',
+    pipeline_failed_kept_running: '예약 생성 실패, 자동화 유지',
+    automation_start_failed_kept_running: '자동화는 켜져 있고 예약 생성 점검 필요',
+    manual_pipeline_failed_kept_running: '예약 생성 실패, 자동화 유지',
     operations_link_setup_hold: '상품 링크 설정 확인 필요',
     DB: '서버 저장소',
     preflight: '실행 전 점검',

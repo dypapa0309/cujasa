@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, Clapperboard, ClipboardCheck, CreditCard, DatabaseZap, Download, ExternalLink, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, Plus, RefreshCw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, Wand2, X } from 'lucide-react';
+import { AlertTriangle, BarChart3, Bot, CheckCircle2, ChevronDown, ChevronRight, Clapperboard, ClipboardCheck, CreditCard, DatabaseZap, Download, ExternalLink, FileText, Landmark, Link2, LogOut, PauseCircle, PlayCircle, Plus, RefreshCw, RotateCcw, RotateCw, Search, Settings, ShieldCheck, Sparkles, Upload, Users, UserCircle, Wand2, X } from 'lucide-react';
 import { api, postEvent } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
 import { useToast } from '../../lib/toast.jsx';
@@ -59,13 +59,13 @@ const cujasaActions = [
   { key: 'home', label: '성과 보기', icon: BarChart3, hint: '예약 수와 클릭 성과를 요약해요.' }
 ];
 
+const HIDDEN_WORKSPACE_PRODUCT_IDS = new Set(['spread', 'auvibot', 'auvivot']);
+
 const productPreviewActions = [
   { key: 'dexor', label: 'DEXOR', icon: Search, hint: '캠페인에 맞는 블로그 후보를 고르는 솔루션이에요.' },
-  { key: 'spread', label: 'SPREAD', icon: Sparkles, hint: '캠페인 운영과 제출물 확인을 줄이는 솔루션이에요.' },
   { key: 'polibot', label: 'POLIBOT', icon: ShieldCheck, hint: '보험 보장분석과 상품 추천을 정리하는 솔루션이에요.' },
   { key: 'infludex', label: 'INFLUDEX', icon: BarChart3, hint: '인스타그램 인플루언서를 카테고리와 등급으로 분석해요.' },
-  { key: 'sublog', label: 'SUBLOG', icon: CreditCard, hint: '매달 결제되는 구독 비용을 한눈에 정리해요.' },
-  { key: 'auvibot', label: 'AUVIBOT', icon: Clapperboard, hint: '상품 영상 소싱부터 쇼츠 편집안까지 준비해요.' }
+  { key: 'sublog', label: 'SUBLOG', icon: CreditCard, hint: '매달 결제되는 구독 비용을 한눈에 정리해요.' }
 ];
 
 const dexorActions = [
@@ -244,6 +244,29 @@ const createPolibotDisclosureState = () => ({
   ...Object.fromEntries(polibotDisclosureFields.map((field) => [field.key, ''])),
   recent3Months: createPolibotRecent3MonthState(),
   diseaseEvents: []
+});
+const createPolibotInitialForm = () => ({
+  name: '',
+  phone: '',
+  birthdate: '',
+  age: '',
+  gender: '',
+  needs: '',
+  budget: '',
+  company: '전체 보험사',
+  existingPolicies: '',
+  existingPolicyDetails: createPolibotPolicyRows(),
+  currentCoverage: createPolibotCoverageState(),
+  existingMedicalPlan: '',
+  existingPremium: '',
+  medicalHistory: '',
+  disclosureDetails: createPolibotDisclosureState(),
+  underwritingAssessment: { ...polibotUnderwritingTemplate },
+  analysisResult: { ...polibotAnalysisResultTemplate },
+  familyHistory: '',
+  driving: '',
+  renewalPreference: '',
+  purpose: ''
 });
 const mergePolibotTextLines = (...values) => [...new Set(values.flatMap((value) => String(value || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean)))].join('\n');
 const polibotPolicyKey = (policy = {}) => [
@@ -833,12 +856,8 @@ export default function CustomerBetaPage({
   const activeProducts = useMemo(() => {
     const products = userProducts
       .filter((grant) => grant?.status !== 'suspended')
-      .map((grant) => productById(grant?.productId) || {
-        id: grant?.productId,
-        name: grant?.name || grant?.productId,
-        description: grant?.description || ''
-      })
-      .filter((product) => product?.id);
+      .map((grant) => productById(grant?.productId))
+      .filter((product) => product?.id && !HIDDEN_WORKSPACE_PRODUCT_IDS.has(product.id));
     const sublog = productById('sublog');
     if (isTestAssistantUser && sublog && !products.some((product) => product.id === 'sublog')) {
       products.push(sublog);
@@ -848,7 +867,7 @@ export default function CustomerBetaPage({
   const grantedProductIds = new Set(activeProducts.map((product) => product.id));
   const fallbackProduct = CURRENT_PRODUCT || PRODUCTS.find(Boolean) || { id: 'cujasa', name: 'CUJASA', description: '쿠팡 파트너스 자동화 콘솔' };
   const visibleProducts = activeProducts.length ? activeProducts : [fallbackProduct];
-  const otherProducts = PRODUCTS.filter((product) => product?.id && !grantedProductIds.has(product.id));
+  const otherProducts = PRODUCTS.filter((product) => product?.id && !grantedProductIds.has(product.id) && !HIDDEN_WORKSPACE_PRODUCT_IDS.has(product.id));
   const selectedProduct = visibleProducts.find((product) => product?.id === selectedProductId)
     || (activeActionKey === selectedProductId ? otherProducts.find((product) => product?.id === selectedProductId) : null)
     || visibleProducts[0]
@@ -877,6 +896,10 @@ export default function CustomerBetaPage({
       initialUrlProductHandledRef.current = true;
       return;
     }
+    if (HIDDEN_WORKSPACE_PRODUCT_IDS.has(urlProductId)) {
+      initialUrlProductHandledRef.current = true;
+      return;
+    }
     setSelectedProductId(urlProductId);
     if (!grantedProductIds.has(urlProductId) && urlProductId !== CURRENT_PRODUCT.id) {
       setShowOtherProducts(true);
@@ -901,6 +924,7 @@ export default function CustomerBetaPage({
 
     const previewProductIds = ['dexor', 'spread', 'polibot', 'infludex', 'sublog', 'auvibot'];
     const productId = action.productId || (previewProductIds.includes(action.key) ? action.key : '');
+    if (productId && HIDDEN_WORKSPACE_PRODUCT_IDS.has(productId)) return;
     const actionProduct = productById(productId);
     if (isProductInMaintenance(actionProduct)) {
       setSelectedProductId(productId);
@@ -1974,9 +1998,14 @@ function BetaRunPanel({
   const [actioning, setActioning] = useState(false);
   const [lastCheck, setLastCheck] = useState(null);
   const [runError, setRunError] = useState('');
+  const [optimisticAutomationStatus, setOptimisticAutomationStatus] = useState(null);
 
-  const automationRunning = account?.automation_status === 'running';
+  const automationRunning = (optimisticAutomationStatus || account?.automation_status) === 'running';
   const trialBlocked = trialStatus?.plan === 'free' && trialStatus.blocked;
+
+  useEffect(() => {
+    setOptimisticAutomationStatus(null);
+  }, [account?.id, account?.automation_status]);
 
   const runPreflight = async ({ mode = null } = {}) => {
     if (!account?.id) return null;
@@ -2003,6 +2032,7 @@ function BetaRunPanel({
 
   const setAutomation = async (nextStatus) => {
     if (!account?.id || actionRef.current) return;
+    const rollbackAutomationStatus = () => setOptimisticAutomationStatus(account?.automation_status === 'running' ? 'running' : 'paused');
     if (nextStatus === 'running' && trialBlocked) {
       toast('무료 사용이 종료되었어요. 결제 후 계속 이용할 수 있어요.', 'error');
       onOpenAction?.('billing');
@@ -2018,6 +2048,7 @@ function BetaRunPanel({
         onPipelineRunningChange?.(true, { percent: 0, stage: 'starting', label: '예약 작업을 준비하고 있어요' });
       }
 
+      setOptimisticAutomationStatus(nextStatus);
       const result = await api.patch(`/api/accounts/${account.id}/automation`, {
         automationStatus: nextStatus,
         runNow: nextStatus === 'running'
@@ -2043,6 +2074,7 @@ function BetaRunPanel({
       const queuedCount = pipelineResult?.queuedCount ?? pipelineResult?.steps?.queued ?? null;
       if (pipelineResult?.ok === false || pipelineResult?.status === 'error' || queuedCount === 0) {
         const message = pipelineResult?.message || pipelineResult?.error || '예약 작업을 완료하지 못했어요.';
+        rollbackAutomationStatus();
         setRunError(message);
         toast(message, 'error');
         onPipelineRunningChange?.(false);
@@ -2060,6 +2092,7 @@ function BetaRunPanel({
       }
       if (err.preflight) setLastCheck(err.preflight);
       const message = err.message || '자동화 실행에 실패했어요.';
+      rollbackAutomationStatus();
       setRunError(message);
       toast(message, 'error');
       onPipelineRunningChange?.(false);
@@ -3216,8 +3249,9 @@ function BetaAccountSettingsPanel({ currentUser, account, accounts, onLogout, on
     .filter((grant) => grant.status !== 'suspended')
     .map((grant) => ({
       ...grant,
-      product: productById(grant.productId) || { id: grant.productId, name: grant.productId }
-    }));
+      product: productById(grant.productId)
+    }))
+    .filter((grant) => grant.product?.id && !HIDDEN_WORKSPACE_PRODUCT_IDS.has(grant.product.id));
 
   return (
     <>
@@ -3529,7 +3563,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
       id: 'monthly_59000',
       product: productsById.monthly_59000 || null,
       title: billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액',
-      priceText: '129,000원 / 월',
+      priceText: '99,000원 / 월',
       caption: activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '광고 없이 안정적으로 운영',
       badge: '추천',
       buttonLabel: billing?.status === 'past_due' ? '연장하기' : '월정액 시작',
@@ -3626,7 +3660,7 @@ function BetaBillingPanel({ currentUser, reloadCurrentUser, onRequestBillingAgre
         <LegacyBetaPlanCard
           icon={CreditCard}
           title={billing?.status === 'past_due' ? '월결제 연장하기' : '베이직 월정액'}
-          priceText="129,000원 / 월"
+          priceText="99,000원 / 월"
           caption={activeSubscription ? `활성 · 다음 결제 ${formatBillingDate(activeSubscription.nextBillingAt)}` : '가상계좌 결제'}
           product={productsById.monthly_59000 || null}
           busy={busy === 'monthly_59000'}
@@ -3670,7 +3704,7 @@ function pricingPlan(productsById, id, fallback, details = {}) {
   return {
     id,
     product,
-    priceText: price(fallback.amount) + (fallback.billing_cycle === 'monthly' ? ' / 월' : ''),
+    priceText: price(product.amount) + (product.billing_cycle === 'monthly' ? ' / 월' : ''),
     testOnly: !productsById[id],
     ...details
   };
@@ -3786,13 +3820,13 @@ function buildWorkspacePricingCatalog({ productsById, cujasaPlans, currentUser }
       modeLabel: '운영형 3단계 요금제',
       description: '고객 상담 맥락, 보장분석 자료, 상품 추천 근거를 정리하는 상담 운영 상품입니다.',
       plans: [
-        pricingPlan(productsById, 'polibot_starter_monthly_39000', { name: 'POLIBOT 스타터 월정액', app_product_id: 'polibot', amount: 29000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
+        pricingPlan(productsById, 'polibot_starter_monthly_39000', { name: 'POLIBOT 스타터 월정액', app_product_id: 'polibot', amount: 8900, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
           title: '스타터',
           caption: '가볍게 상담 추천 시작',
           buttonLabel: '스타터 시작',
           features: ['상담/추천 50회', '지식 업로드 기본', '가상계좌 월 단위 이용']
         }),
-        pricingPlan(productsById, 'polibot_basic_monthly_99000', { name: 'POLIBOT 베이직 월정액', app_product_id: 'polibot', amount: 79000, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
+        pricingPlan(productsById, 'polibot_basic_monthly_99000', { name: 'POLIBOT 베이직 월정액', app_product_id: 'polibot', amount: 8900, billing_cycle: 'monthly', plan: 'monthly', max_accounts: 0 }, {
           title: '베이직',
           caption: '고객별 추천 히스토리',
           badge: '추천',
@@ -5365,29 +5399,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const toast = useToast();
   const useStepperRecommendationFlow = true;
   const localStatus = useMemo(() => buildLocalPolibotStatus(currentUser), [currentUser]);
-  const [form, setForm] = useState({
-    name: '',
-    phone: '',
-    birthdate: '',
-    age: '',
-    gender: '',
-    needs: '',
-    budget: '',
-    company: '전체 보험사',
-    existingPolicies: '',
-    existingPolicyDetails: createPolibotPolicyRows(),
-    currentCoverage: createPolibotCoverageState(),
-    existingMedicalPlan: '',
-    existingPremium: '',
-    medicalHistory: '',
-    disclosureDetails: createPolibotDisclosureState(),
-    underwritingAssessment: { ...polibotUnderwritingTemplate },
-    analysisResult: { ...polibotAnalysisResultTemplate },
-    familyHistory: '',
-    driving: '',
-    renewalPreference: '',
-    purpose: ''
-  });
+  const [form, setForm] = useState(() => createPolibotInitialForm());
   const [workspace, setWorkspace] = useState(() => ({
     usage: localStatus?.usage || null,
     status: localStatus?.health || '',
@@ -5408,6 +5420,8 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
   const [hiraPassword, setHiraPassword] = useState('');
   const [hiraParsing, setHiraParsing] = useState(false);
   const [draftSaveState, setDraftSaveState] = useState({ status: '', savedAt: '' });
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const draftSaveTimerRef = useRef(null);
   const lastDraftPayloadRef = useRef('');
   const workspaceLoading = !workspaceLoaded;
@@ -5470,6 +5484,50 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
     const payload = buildDraftPayload();
     saveDraftPayload(payload);
   }, [buildDraftPayload, saveDraftPayload, saving, workspaceLoaded]);
+  const resetCustomerWorkspace = useCallback(async () => {
+    if (resetting) return;
+    if (draftSaveState.status === 'saving') {
+      toast('입력값 자동저장이 끝난 뒤 다시 초기화해 주세요.', 'info');
+      return;
+    }
+    setResetting(true);
+    if (draftSaveTimerRef.current) window.clearTimeout(draftSaveTimerRef.current);
+    try {
+      const next = await api.post('/api/product-workspace/polibot/customer-workspace/reset', {}, { timeoutMs: 10000 });
+      setForm(createPolibotInitialForm());
+      setWorkspace((prev) => ({
+        ...prev,
+        ...(next || {}),
+        status: prev.status,
+        summary: prev.summary,
+        catalog: next?.catalog || prev.catalog,
+        qualityReport: next?.qualityReport?.recommendableProducts || next?.qualityReport?.sourceCount || next?.qualityReport?.companies?.length
+          ? next.qualityReport
+          : prev.qualityReport,
+        knowledgeDbSummary: next?.knowledgeDbSummary || prev.knowledgeDbSummary,
+        usage: next?.usage || prev.usage
+      }));
+      setSelectedRecommendation(null);
+      setSaveMemo('');
+      setDetailsOpen(false);
+      setTestStep(1);
+      setSubmitAttempted(false);
+      setCoverageDocumentFileName('');
+      setCoverageDocumentFiles([]);
+      setHiraFileName('');
+      setHiraFiles([]);
+      setHiraPassword('');
+      setDraftSaveState({ status: '', savedAt: '' });
+      lastDraftPayloadRef.current = '';
+      setWorkspaceLoaded(true);
+      setResetConfirmOpen(false);
+      toast('새 고객 상담을 시작할 수 있게 초기화했어요.', 'success');
+    } catch (err) {
+      toast(err.message || '초기화에 실패했어요.', 'error');
+    } finally {
+      setResetting(false);
+    }
+  }, [draftSaveState.status, resetting, toast]);
 
   useEffect(() => {
     if (!localStatus) return;
@@ -5812,9 +5870,44 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
     }
   };
 
+  const resetActionBar = (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+      <div className="min-w-0">
+        <div className="text-xs font-black text-zinc-600">현재 상담</div>
+        <div className="mt-0.5 truncate text-sm font-black text-zinc-200">{form.name || workspace.customerProfile?.name || '이름 미입력'}</div>
+      </div>
+      <DarkButton
+        variant="ghost"
+        size="sm"
+        onClick={() => setResetConfirmOpen(true)}
+        disabled={!workspaceLoaded || saving || resetting || draftSaveState.status === 'saving'}
+        loading={resetting}
+        loadingLabel="초기화 중"
+        className="shrink-0"
+      >
+        <RotateCcw size={14} />
+        새 고객 시작
+      </DarkButton>
+    </div>
+  );
+
+  const resetConfirmModal = resetConfirmOpen && (
+    <DarkConfirmModal
+      title="현재 상담 초기화"
+      description="입력값, 보장분석 반영값, 추천 초안만 비우고 상품 자료와 저장된 고객목록은 유지합니다."
+      primaryLabel={resetting ? '초기화 중' : '초기화'}
+      secondaryLabel="취소"
+      onPrimary={resetCustomerWorkspace}
+      onSecondary={() => !resetting && setResetConfirmOpen(false)}
+      primaryDisabled={draftSaveState.status === 'saving'}
+      primaryLoading={resetting}
+    />
+  );
+
   if (useStepperRecommendationFlow) {
     return (
       <div className="grid gap-4">
+        {resetActionBar}
         {workspaceLoading && <PolibotLoadingBanner label="자료 목록은 백그라운드에서 확인 중" />}
         {draftSaveState.status && !workspaceLoading && (
           <div className={`flex flex-wrap items-center justify-between gap-2 rounded-2xl border px-3 py-2 text-xs font-black ${draftSaveState.status === 'error' ? 'border-red-400/25 bg-red-950/10 text-red-200' : 'border-white/10 bg-black/20 text-zinc-500'}`}>
@@ -5882,12 +5975,14 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
             onFeedback={saveFeedback}
           />
         )}
+        {resetConfirmModal}
       </div>
     );
   }
 
   return (
     <div className="grid gap-4">
+      {resetActionBar}
       {workspaceLoading && <PolibotLoadingBanner label="자료 목록은 백그라운드에서 확인 중" />}
       <PolibotProgressHeader activeStep={legacyProgressStep} usage={usage} />
       <div className="grid min-w-0 gap-4 xl:grid-cols-[minmax(360px,0.85fr)_minmax(0,1.15fr)] xl:items-start">
@@ -6010,6 +6105,7 @@ function PolibotRecommendPanel({ assistantDraft, reloadCurrentUser, onOpenAction
             onFeedback={saveFeedback}
           />
       )}
+      {resetConfirmModal}
     </div>
   );
 }
@@ -10666,15 +10762,15 @@ function ProductUsageStrip({ usage }) {
   );
 }
 
-function DarkConfirmModal({ title, description, primaryLabel, secondaryLabel, onPrimary, onSecondary }) {
+function DarkConfirmModal({ title, description, primaryLabel, secondaryLabel, onPrimary, onSecondary, primaryLoading = false, primaryDisabled = false }) {
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-4">
       <div className="w-full max-w-sm rounded-[28px] border border-white/10 bg-[#191919] p-5 shadow-2xl shadow-black/60">
         <div className="text-lg font-black text-zinc-100">{title}</div>
         <p className="mt-2 text-sm leading-relaxed text-zinc-500">{description}</p>
         <div className="mt-5 grid gap-2">
-          <DarkButton onClick={onPrimary}>{primaryLabel}</DarkButton>
-          <DarkButton variant="ghost" onClick={onSecondary}>{secondaryLabel}</DarkButton>
+          <DarkButton onClick={onPrimary} loading={primaryLoading} disabled={primaryDisabled}>{primaryLabel}</DarkButton>
+          <DarkButton variant="ghost" onClick={onSecondary} disabled={primaryLoading}>{secondaryLabel}</DarkButton>
         </div>
       </div>
     </div>

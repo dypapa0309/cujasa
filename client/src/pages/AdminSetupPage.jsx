@@ -4,6 +4,7 @@ import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import { dateTime } from '../lib/format.js';
 import SearchableSelect from '../components/SearchableSelect.jsx';
+import { patchById } from '../lib/collection.js';
 
 const statusLabels = {
   pending: '대기',
@@ -111,12 +112,15 @@ export default function AdminSetupPage() {
   })), [products]);
 
   const updateStatus = async (task, status) => {
+    const previous = tasks;
     setSavingId(task.id);
+    setTasks((current) => patchById(current, task.id, { status }));
     try {
       await api.patch(`/api/admin/setup-tasks/${task.id}`, { status });
       toast(`셋업 상태를 ${statusLabels[status]}로 변경했습니다.`, 'success');
-      await load();
+      load().catch(console.error);
     } catch (err) {
+      setTasks(previous);
       toast(err.message || '셋업 상태 변경에 실패했습니다.', 'error');
     } finally {
       setSavingId('');
@@ -124,12 +128,15 @@ export default function AdminSetupPage() {
   };
 
   const updateThreadsRequest = async (request, status) => {
+    const previous = threadsRequests;
     setSavingId(request.id);
+    setThreadsRequests((current) => patchById(current, request.id, { status }));
     try {
       await api.patch(`/api/admin/threads-connection-requests/${request.id}`, { status });
       toast(`Threads 요청을 ${threadsStatusLabels[status] || status} 상태로 변경했습니다.`, 'success');
-      await load();
+      load().catch(console.error);
     } catch (err) {
+      setThreadsRequests(previous);
       toast(err.message || 'Threads 요청 상태 변경에 실패했습니다.', 'error');
     } finally {
       setSavingId('');
@@ -139,12 +146,15 @@ export default function AdminSetupPage() {
   const deleteTask = async (task) => {
     const customerLabel = task.buyer_name || task.email || '이 고객';
     if (!window.confirm(`${customerLabel} 셋업 요청을 삭제 처리할까요?\n기본 대기 목록에서는 숨겨지고, 삭제됨 필터에서 다시 확인할 수 있습니다.`)) return;
+    const previous = tasks;
     setSavingId(task.id);
+    setTasks((current) => patchById(current, task.id, { status: 'canceled' }));
     try {
       await api.patch(`/api/admin/setup-tasks/${task.id}`, { status: 'canceled' });
       toast('셋업 요청을 삭제 처리했습니다.', 'success');
-      await load();
+      load().catch(console.error);
     } catch (err) {
+      setTasks(previous);
       toast(err.message || '셋업 요청 삭제에 실패했습니다.', 'error');
     } finally {
       setSavingId('');

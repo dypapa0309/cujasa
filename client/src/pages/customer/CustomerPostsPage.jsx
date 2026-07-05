@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api.js';
 import { dateTime } from '../../lib/format.js';
+import { removeById } from '../../lib/collection.js';
 import TrialStatusCard from './TrialStatusCard.jsx';
 import ErrorReportButton from '../../components/ErrorReportButton.jsx';
 
@@ -136,17 +137,23 @@ export default function CustomerPostsPage({ account, currentUser, pipelineResult
 
   const dismissQueue = async (queueId) => {
     if (dismissingId) return;
+    const previousQueue = queue;
+    const previousDetail = detail;
+    const previousExpandedId = expandedId;
     setDismissingId(queueId);
+    setQueue((rows) => removeById(rows, queueId));
+    setDetail((prev) => {
+      const next = { ...prev };
+      delete next[queueId];
+      return next;
+    });
+    if (expandedId === queueId) setExpandedId(null);
     try {
       await api.post(`/api/queue/${queueId}/dismiss`, { reason: 'customer_confirmed' });
-      setQueue((rows) => rows.filter((row) => row.id !== queueId));
-      setDetail((prev) => {
-        const next = { ...prev };
-        delete next[queueId];
-        return next;
-      });
-      if (expandedId === queueId) setExpandedId(null);
     } catch (error) {
+      setQueue(previousQueue);
+      setDetail(previousDetail);
+      setExpandedId(previousExpandedId);
       console.error(error);
     } finally {
       setDismissingId(null);

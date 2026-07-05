@@ -11,7 +11,7 @@ export const PRODUCTS = [
     name: 'CUJASA',
     description: '쿠팡 파트너스 자동화 콘솔',
     supportLabel: '쿠팡 파트너스 자동화',
-    appUrl: 'https://app.jasain.kr',
+    appUrl: 'https://jasain.kr',
     legacyAppUrl: 'https://cujasa.jasain.kr',
     landingUrl: 'https://store.jasain.kr/store/cujasa'
   },
@@ -20,7 +20,7 @@ export const PRODUCTS = [
     name: 'DEXOR',
     description: '블로그 분석 및 선정 자동화',
     supportLabel: '블로그 선정 자동화',
-    appUrl: 'https://app.jasain.kr',
+    appUrl: 'https://jasain.kr',
     landingUrl: 'https://store.jasain.kr/store/dexor'
   },
   {
@@ -28,7 +28,7 @@ export const PRODUCTS = [
     name: 'SPREAD',
     description: '추천 캠페인 운영 자동화',
     supportLabel: '캠페인 운영 자동화',
-    appUrl: 'https://app.jasain.kr',
+    appUrl: 'https://jasain.kr',
     landingUrl: 'https://store.jasain.kr/store/spread'
   },
   {
@@ -36,7 +36,7 @@ export const PRODUCTS = [
     name: 'POLIBOT',
     description: '보험 보장분석 및 상품 추천 자동화',
     supportLabel: '보험 분석 자동화',
-    appUrl: 'https://app.jasain.kr',
+    appUrl: 'https://jasain.kr',
     landingUrl: 'https://store.jasain.kr/store/polibot'
   },
   {
@@ -44,7 +44,7 @@ export const PRODUCTS = [
     name: 'INFLUDEX',
     description: '인스타그램 인플루언서 등급 분석',
     supportLabel: '인스타그램 분석 자동화',
-    appUrl: 'https://app.jasain.kr',
+    appUrl: 'https://jasain.kr',
     landingUrl: 'https://store.jasain.kr/store/infludex',
     status: 'active'
   },
@@ -53,7 +53,7 @@ export const PRODUCTS = [
     name: 'SUBLOG',
     description: '구독 비용 관리',
     supportLabel: '구독 비용 관리',
-    appUrl: 'https://app.jasain.kr',
+    appUrl: 'https://jasain.kr',
     landingUrl: 'https://store.jasain.kr/store/sublog',
     status: 'active'
   },
@@ -62,7 +62,7 @@ export const PRODUCTS = [
     name: 'AUVIBOT',
     description: '상품 쇼츠 생산 자동화',
     supportLabel: '상품 영상 자동화',
-    appUrl: 'https://app.jasain.kr',
+    appUrl: 'https://jasain.kr',
     landingUrl: 'https://store.jasain.kr/store/auvibot',
     status: 'active'
   }

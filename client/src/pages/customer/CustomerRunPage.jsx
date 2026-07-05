@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ClipboardCheck, PauseCircle, PlayCircle, RotateCw } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
@@ -23,11 +23,16 @@ export default function CustomerRunPage({
   const [preflight, setPreflight] = useState(null);
   const [lastCheck, setLastCheck] = useState(null);
   const [runError, setRunError] = useState(null);
+  const [optimisticAutomationStatus, setOptimisticAutomationStatus] = useState(null);
 
   const trialBlocked = trialStatus?.plan === 'free' && trialStatus.blocked;
-  const automationStatus = account?.automation_status === 'running' ? 'running' : 'paused';
+  const automationStatus = optimisticAutomationStatus || (account?.automation_status === 'running' ? 'running' : 'paused');
   const automationRunning = automationStatus === 'running';
   const scheduleText = formatSchedule(account);
+
+  useEffect(() => {
+    setOptimisticAutomationStatus(null);
+  }, [account?.id, account?.automation_status]);
 
   const runPreflight = async ({ showModal = true, mode = null } = {}) => {
     if (!account?.id) return null;
@@ -57,6 +62,7 @@ export default function CustomerRunPage({
 
   const setAutomation = async (nextStatus) => {
     if (!account?.id || actionRef.current) return;
+    const rollbackAutomationStatus = () => setOptimisticAutomationStatus(account?.automation_status === 'running' ? 'running' : 'paused');
     if (nextStatus === 'running' && trialBlocked) {
       toast('무료 사용이 종료되었습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
       setTab?.('billing');
@@ -82,6 +88,7 @@ export default function CustomerRunPage({
         });
       }
 
+      setOptimisticAutomationStatus(nextStatus);
       const result = await api.patch(`/api/accounts/${account.id}/automation`, {
         automationStatus: nextStatus,
         runNow: nextStatus === 'running'
@@ -136,6 +143,7 @@ export default function CustomerRunPage({
       onPipelineDone?.(pipelineResult);
     } catch (err) {
       if (err.code === 'FREE_TRIAL_LIMIT_REACHED' || err.upgradeRequired) {
+        rollbackAutomationStatus();
         toast('무료 사용이 종료되었습니다. 결제 후 계속 이용할 수 있습니다.', 'error');
         setTab?.('billing');
         onPipelineRunningChange?.(false);
@@ -151,12 +159,14 @@ export default function CustomerRunPage({
         return;
       }
       if (err.preflight) {
+        rollbackAutomationStatus();
         setPreflight(err.preflight);
         toast('자동화 실행 전에 조치할 항목이 있습니다.', 'error');
         onPipelineRunningChange?.(false);
         return;
       }
       const normalized = normalizeRunError(err);
+      rollbackAutomationStatus();
       setRunError(normalized);
       toast(normalized.message, 'error');
       onPipelineRunningChange?.(false);

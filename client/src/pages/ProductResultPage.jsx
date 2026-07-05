@@ -3,6 +3,7 @@ import { api } from '../lib/api.js';
 import { useToast } from '../lib/toast.jsx';
 import ProductCard from '../components/ProductCard.jsx';
 import SearchableSelect from '../components/SearchableSelect.jsx';
+import { patchById } from '../lib/collection.js';
 
 export default function ProductResultPage({ selectedAccount }) {
   const toast = useToast();
@@ -33,13 +34,15 @@ export default function ProductResultPage({ selectedAccount }) {
     loadSummary().catch(console.error);
   }, [selectedAccount?.id]);
 
-  const loadProducts = () => {
+  const loadProducts = ({ silent = false } = {}) => {
     if (!topicId) return Promise.resolve();
-    setLoading(true);
+    if (!silent) setLoading(true);
     return api.get(`/api/topics/${topicId}/products`)
       .then(setProducts)
       .catch(console.error)
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   };
 
   useEffect(() => {
@@ -106,15 +109,25 @@ export default function ProductResultPage({ selectedAccount }) {
     }
   };
 
+  const refreshProductSelection = () => {
+    loadProducts({ silent: true }).catch(console.error);
+    loadSummary().catch(console.error);
+  };
+
   const manuallySelect = async (product) => {
     if (!topicId || selectingId) return;
+    const previousProducts = products;
+    const previousSummary = summary;
     setSelectingId(product.id);
+    setProducts((current) => patchById(current, product.id, { selected: true, selected_invalid: false }));
+    setSummary((current) => current.map((row) => row.topicId === topicId ? { ...row, status: 'connected' } : row));
     try {
       await api.post(`/api/topics/${topicId}/manual-product-selection`, { productId: product.id });
-      await loadProducts();
-      await loadSummary();
+      refreshProductSelection();
       toast('실상품을 주제에 연결했습니다.', 'success');
     } catch (error) {
+      setProducts(previousProducts);
+      setSummary(previousSummary);
       toast(error.message || '상품 연결에 실패했습니다.', 'error');
     } finally {
       setSelectingId('');
@@ -123,13 +136,22 @@ export default function ProductResultPage({ selectedAccount }) {
 
   const manuallyUnselect = async (product) => {
     if (!topicId || selectingId) return;
+    const previousProducts = products;
+    const previousSummary = summary;
     setSelectingId(product.id);
+    const nextSelectedCount = products.filter((item) => item.id !== product.id && item.selected && item.is_real_product !== false).length;
+    setProducts((current) => patchById(current, product.id, { selected: false }));
+    setSummary((current) => current.map((row) => row.topicId === topicId
+      ? { ...row, status: nextSelectedCount > 0 ? 'connected' : 'needs_selection' }
+      : row
+    ));
     try {
       await api.delete(`/api/topics/${topicId}/product-selection/${product.id}`);
-      await loadProducts();
-      await loadSummary();
+      refreshProductSelection();
       toast('상품 연결을 해제했습니다.', 'success');
     } catch (error) {
+      setProducts(previousProducts);
+      setSummary(previousSummary);
       toast(error.message || '상품 연결 해제에 실패했습니다.', 'error');
     } finally {
       setSelectingId('');

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import { useToast } from '../lib/toast.jsx';
+import { patchById } from '../lib/collection.js';
 
 export default function SettingsPage() {
   const toast = useToast();
@@ -62,12 +63,16 @@ export default function SettingsPage() {
   };
 
   const saveProduct = async (product) => {
+    const previousProducts = products;
+    const draft = productDrafts[product.id] || {};
     setSavingProductId(product.id);
+    setProducts((current) => patchById(current, product.id, draft));
     try {
-      await api.patch(`/api/admin/products/${product.id}`, productDrafts[product.id] || {});
-      await load();
+      await api.patch(`/api/admin/products/${product.id}`, draft);
+      load().catch(console.error);
       toast('제품 설정을 저장했습니다.', 'success');
     } catch (error) {
+      setProducts(previousProducts);
       toast(error.message || '제품 설정 저장에 실패했습니다.', 'error');
     } finally {
       setSavingProductId('');
