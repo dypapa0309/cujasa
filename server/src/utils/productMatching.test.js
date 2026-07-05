@@ -50,40 +50,32 @@ test('blocks weak broad gift matches', () => {
   assert.ok(match.riskReasons.includes('선물 맥락 약함'));
 });
 
-test('blocks general food products on pet accounts', () => {
+test('blocks human food products on pet accounts', () => {
   const product = {
     ...baseProduct,
-    product_name: '달콤한 초코 쿠키 세트',
-    category_name: '식품 간식',
-    keyword: '쿠키 디저트'
+    product_name: '먹마왕 미니 약과 쿠키 선물세트',
+    keyword: '먹방 간식 쿠키',
+    category_name: '식품'
   };
-  const match = evaluateProductTopicMatch(product, {
-    title: '강아지 산책 간식 파우치',
-    angle: '산책 가방에서 바로 찾는 기준'
-  }, {
-    name: '동물채널',
-    content_scope: '반려동물 용품과 산책 루틴',
-    target_audience: '강아지 고양이 집사'
+  const match = evaluateProductTopicMatch(product, { title: '산책 가방에서 매번 찾게 되는 작은 물건' }, {
+    content_scope: '반려동물 용품',
+    target_audience: '강아지 고양이를 키우는 집사'
   });
 
   assert.equal(match.linkable, false);
-  assert.ok(match.riskReasons.some((reason) => /도메인 불일치|먹방|음식/.test(reason)));
+  assert.ok(match.riskReasons.some((reason) => reason.includes('계정 카테고리 불일치')));
 });
 
-test('keeps pet-specific snack pouches linkable for pet accounts', () => {
+test('keeps pet snack-adjacent products linkable on pet accounts', () => {
   const product = {
     ...baseProduct,
-    product_name: '강아지 산책 간식 파우치',
-    category_name: '반려동물 용품',
-    keyword: '강아지 간식 보관'
+    product_name: '댕냥 산책 간식 파우치 강아지 고양이 휴대용',
+    keyword: '산책 간식 파우치',
+    category_name: '반려동물용품'
   };
-  const match = evaluateProductTopicMatch(product, {
-    title: '강아지 산책 간식 파우치',
-    angle: '나가기 직전 바로 집히는지 확인'
-  }, {
-    name: '동물채널',
-    content_scope: '반려동물 용품과 산책 루틴',
-    target_audience: '강아지 고양이 집사'
+  const match = evaluateProductTopicMatch(product, { title: '산책 가방에서 매번 찾게 되는 작은 물건' }, {
+    content_scope: '반려동물 용품',
+    target_audience: '강아지 고양이를 키우는 집사'
   });
 
   assert.equal(match.linkable, true);

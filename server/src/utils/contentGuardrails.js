@@ -27,68 +27,73 @@ const sensitiveTerms = [
 
 const hardClaimTerms = ['100%', '무조건', '완벽', '보장', '치료', '예방'];
 
-const domainRules = {
-  pet: {
-    label: '반려동물/동물',
-    accountPattern: /반려|강아지|고양이|펫|동물|집사|댕댕|냥|애견|애묘|반려견|반려묘/i,
-    candidatePattern: /반려|강아지|고양이|펫|동물|집사|댕댕|냥|애견|애묘|반려견|반려묘|배변|사료|하네스|목줄|산책|리드줄|펫타월|모래삽/i
+const accountDomainRules = [
+  {
+    key: 'pet',
+    label: '반려동물',
+    pattern: /반려|강아지|고양이|펫|집사|배변|산책|리드줄|하네스|물그릇|털|모래|댕댕|냥이/i,
+    conflicts: [
+      {
+        label: '먹방/먹거리',
+        pattern: /먹방|먹마왕|먹거리|음식|푸드|식품|냉장고|소포장|나눠\s*먹|손에\s*묻|쿠키|과자|초콜릿|견과|약과|커피|컵과일|과일\s*선물|간식\s*(세트|추천|고르|먹)/i,
+        allow: /반려|강아지|고양이|펫|사료|츄르|배변|산책|리드줄|하네스|물그릇|털|모래|댕댕|냥이|고양이\s*간식|강아지\s*간식|펫\s*간식|간식\s*파우치/i
+      },
+      {
+        label: '주방 살림',
+        pattern: /조리대|싱크대|설거지|수세미|냄비|프라이팬|식기|양념통|접이식\s*도마/i
+      },
+      {
+        label: '육아',
+        pattern: /육아|아기|기저귀|물티슈|유모차|장난감\s*수납|아이\s*손/i
+      }
+    ]
   },
-  food: {
-    label: '일반 음식/먹방',
-    accountPattern: /먹방|맛집|음식|요리|레시피|식품|푸드|먹거리|간식|디저트|카페|과자|쿠키|빵/i,
-    candidatePattern: /먹방|맛집|음식|요리|레시피|식품|푸드|먹거리|간식|디저트|카페|과자|쿠키|초콜릿|젤리|빵|라면|떡볶이|냉장고/i
+  {
+    key: 'food',
+    label: '먹거리',
+    pattern: /먹방|먹마왕|먹거리|음식|푸드|식품|간식|냉장고|소포장|쿠키|과자|초콜릿|견과|약과|커피|컵과일/i,
+    conflicts: [
+      {
+        label: '반려동물',
+        pattern: /반려|강아지|고양이|펫|집사|배변|산책|리드줄|하네스|물그릇|털|모래|댕댕|냥이/i
+      },
+      {
+        label: '육아',
+        pattern: /육아|아기|기저귀|물티슈|유모차|아이\s*손/i
+      }
+    ]
   },
-  childcare: {
+  {
+    key: 'childcare',
     label: '육아',
-    accountPattern: /육아|아이(?!템)|아기|유아|어린이|키즈|자녀|아동|기저귀|물티슈|장난감|유모차/i,
-    candidatePattern: /육아|아이(?!템)|아기|유아|어린이|키즈|자녀|아동|기저귀|물티슈|장난감|유모차|빨대컵/i
+    pattern: /육아|아기|유아|아이(?!템)|어린이|키즈|기저귀|물티슈|유모차|장난감/i,
+    conflicts: [
+      {
+        label: '반려동물',
+        pattern: /반려|강아지|고양이|펫|집사|배변|산책|리드줄|하네스|물그릇|털|모래|댕댕|냥이/i
+      },
+      {
+        label: '먹방/먹거리',
+        pattern: /먹방|먹마왕|먹거리|음식|푸드|식품|냉장고|소포장|나눠\s*먹|손에\s*묻|쿠키|과자|초콜릿|견과|약과|커피|컵과일/i
+      }
+    ]
   },
-  kitchen: {
+  {
+    key: 'kitchen',
     label: '주방',
-    accountPattern: /주방|조리|식기|요리도구|싱크|설거지|수세미|냄비|프라이팬|도마/i,
-    candidatePattern: /주방|조리|식기|요리도구|싱크|설거지|수세미|냄비|프라이팬|도마|조리대|양념통/i
-  },
-  cleaning: {
-    label: '청소',
-    accountPattern: /청소|먼지|돌돌이|물걸레|청소포|탈취|냄새|욕실\s*물기/i,
-    candidatePattern: /청소|먼지|돌돌이|물걸레|청소포|탈취|냄새|욕실\s*물기|브러시/i
-  },
-  beauty: {
-    label: '뷰티',
-    accountPattern: /뷰티|화장|스킨|헤어|파우치|고데기|드라이기|립|브러쉬/i,
-    candidatePattern: /뷰티|화장|스킨|헤어|파우치|고데기|드라이기|립|브러쉬|화장대/i
-  },
-  car: {
-    label: '차량',
-    accountPattern: /차량|자동차|운전|차박|트렁크|콘솔|컵홀더/i,
-    candidatePattern: /차량|자동차|운전|차박|트렁크|콘솔|컵홀더|시트/i
-  },
-  activity: {
-    label: '운동/아웃도어',
-    accountPattern: /운동|헬스|홈트|러닝|캠핑|등산|요가/i,
-    candidatePattern: /운동|헬스|홈트|러닝|캠핑|등산|요가|폼롤러|랜턴|요가매트/i
-  },
-  self_living: {
-    label: '생활/자취',
-    accountPattern: /자취|원룸|살림|생활|수납|정리|집기/i,
-    candidatePattern: /자취|원룸|살림|생활|수납|정리|집기|현관|빨래|신발장|서랍/i
+    pattern: /주방|조리|식기|싱크|조리대|설거지|수세미|냄비|프라이팬|도마|양념통/i,
+    conflicts: [
+      {
+        label: '반려동물',
+        pattern: /반려|강아지|고양이|펫|집사|배변|산책|리드줄|하네스|물그릇|털|모래|댕댕|냥이/i
+      },
+      {
+        label: '육아',
+        pattern: /육아|아기|기저귀|물티슈|유모차|아이\s*손/i
+      }
+    ]
   }
-};
-
-const accountDomainPriority = ['pet', 'childcare', 'food', 'kitchen', 'cleaning', 'beauty', 'car', 'activity', 'self_living'];
-const incompatibleDomains = {
-  pet: new Set(['food', 'childcare', 'kitchen', 'beauty', 'car']),
-  food: new Set(['pet', 'childcare', 'cleaning', 'beauty', 'car']),
-  childcare: new Set(['pet', 'food', 'beauty', 'car']),
-  kitchen: new Set(['pet', 'childcare', 'beauty', 'car']),
-  cleaning: new Set(['pet', 'childcare', 'food', 'beauty', 'car']),
-  beauty: new Set(['pet', 'childcare', 'food', 'kitchen', 'cleaning', 'car']),
-  car: new Set(['pet', 'childcare', 'food', 'kitchen', 'beauty']),
-  activity: new Set(['childcare', 'food', 'kitchen', 'beauty']),
-  self_living: new Set()
-};
-const petAccountHardFoodPattern = /먹방|맛집|레시피|떡볶이|라면|디저트|카페|쿠키|초콜릿|젤리|빵/i;
-const petSpecificFoodPattern = /(강아지|고양이|반려|펫|애견|애묘|사료).{0,12}(간식|쿠키|트릿|사료|푸드)|(간식|쿠키|트릿|사료|푸드).{0,12}(강아지|고양이|반려|펫|애견|애묘|사료)/i;
+];
 
 function getKstDate(date = new Date()) {
   return new Date(date.getTime() + KST_OFFSET_MINUTES * 60 * 1000);
@@ -98,96 +103,36 @@ function includesAny(text, terms) {
   return terms.filter((term) => text.includes(term));
 }
 
-function normalizeDomainText(value = '') {
-  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
-}
-
-function objectText(source = {}, fields = []) {
-  return fields.map((field) => source?.[field]).filter(Boolean).join(' ');
-}
-
-function productDomainText(product = {}) {
-  return objectText(product, ['product_name', 'name', 'category_name', 'category', 'keyword', 'product_group']);
-}
-
-function topicDomainText(topic = {}) {
-  return [
-    objectText(topic, ['title', 'angle', 'targetUser', 'target_user', 'reason', 'keyword', 'search_keyword']),
-    ...(Array.isArray(topic?.searchKeywords) ? topic.searchKeywords : []),
-    ...(Array.isArray(topic?.search_keywords) ? topic.search_keywords : [])
-  ].filter(Boolean).join(' ');
-}
-
-function accountDomainText(account = {}) {
-  return objectText(account, [
-    'name',
-    'account_handle',
-    'content_scope',
-    'target_audience',
-    'description',
-    'bio',
-    'persona',
-    'tone',
-    'niche'
-  ]);
-}
-
-function detectCandidateDomains(text = '') {
-  const value = normalizeDomainText(text);
-  if (!value) return [];
-  return Object.entries(domainRules)
-    .filter(([, rule]) => rule.candidatePattern.test(value))
-    .map(([domain]) => domain);
-}
-
-function domainLabels(domains = []) {
-  return domains.map((domain) => domainRules[domain]?.label || domain).join(', ');
+function normalizeText(value = '') {
+  return String(value || '').replace(/\s+/g, ' ').trim();
 }
 
 export function inferAccountContentDomain(account = {}) {
-  const value = normalizeDomainText(accountDomainText(account));
-  if (!value) return null;
-  return accountDomainPriority.find((domain) => domainRules[domain]?.accountPattern.test(value)) || null;
+  const text = normalizeText([
+    account?.content_scope,
+    account?.target_audience,
+    account?.tone,
+    account?.name,
+    account?.account_handle
+  ].filter(Boolean).join(' '));
+  return accountDomainRules.find((rule) => rule.pattern.test(text)) || null;
 }
 
-export function validateAccountDomainFit({ account = null, product = null, topic = null, text = '' } = {}) {
-  const accountDomain = inferAccountContentDomain(account);
-  const signals = [];
-  if (!accountDomain) {
-    return { allowed: true, accountDomain: null, reasons: [], signals };
-  }
+export function validateAccountDomainFit(value, account = {}) {
+  const expected = inferAccountContentDomain(account);
+  if (!expected) return { allowed: true, expectedDomain: null, conflicts: [] };
 
-  const checks = [
-    ['상품', productDomainText(product)],
-    ['주제', topicDomainText(topic)],
-    ['본문', text]
-  ].filter(([, value]) => normalizeDomainText(value));
-  const incompatible = incompatibleDomains[accountDomain] || new Set();
-  const reasons = [];
-
-  for (const [label, value] of checks) {
-    const domains = detectCandidateDomains(value);
-    if (!domains.length) continue;
-    signals.push({ label, domains });
-    const hasAccountDomain = domains.includes(accountDomain);
-    const offDomains = domains.filter((domain) => domain !== accountDomain && incompatible.has(domain));
-    const hardPetFoodMismatch = accountDomain === 'pet'
-      && petAccountHardFoodPattern.test(value)
-      && !petSpecificFoodPattern.test(value);
-    if (hardPetFoodMismatch) {
-      reasons.push(`계정 도메인 불일치(${label}): ${domainRules.pet.label} 계정에 일반 먹방/음식 표현 감지`);
-      continue;
-    }
-    if (offDomains.length && !hasAccountDomain) {
-      reasons.push(`계정 도메인 불일치(${label}): ${domainRules[accountDomain].label} 계정에 ${domainLabels(offDomains)} 후보 감지`);
-    }
-  }
+  const text = normalizeText(value);
+  const conflicts = expected.conflicts
+    .filter((rule) => rule.pattern.test(text) && !(rule.allow && rule.allow.test(text)))
+    .map((rule) => ({ expected: expected.label, conflict: rule.label }));
 
   return {
-    allowed: reasons.length === 0,
-    accountDomain,
-    reasons,
-    signals
+    allowed: conflicts.length === 0,
+    expectedDomain: expected.key,
+    expectedLabel: expected.label,
+    conflicts,
+    reasons: conflicts.map((row) => `계정 카테고리 불일치: ${row.expected} 계정에 ${row.conflict} 소재가 섞임`)
   };
 }
 
@@ -232,11 +177,6 @@ export function validateGeneratedContent(text, account = null, options = {}) {
   const value = String(text || '');
   const reasons = [];
   const context = getContentGuardrailContext(options.date);
-  const domainFit = validateAccountDomainFit({
-    account,
-    ...(options.domainParts || { text: value })
-  });
-  if (!domainFit.allowed) reasons.push(...domainFit.reasons);
 
   const seasonalHits = includesAny(value, context.blockedSeasonTerms);
   if (seasonalHits.length) reasons.push(`계절 부정합: ${[...new Set(seasonalHits)].join(', ')}`);
@@ -254,13 +194,16 @@ export function validateGeneratedContent(text, account = null, options = {}) {
   const accountHits = includesAny(value, accountForbidden);
   if (accountHits.length) reasons.push(`계정 금지어: ${[...new Set(accountHits)].join(', ')}`);
 
+  const domainFit = validateAccountDomainFit(value, account);
+  if (!domainFit.allowed) reasons.push(...domainFit.reasons);
+
   return {
     allowed: reasons.length === 0,
     reasons,
     context: {
       ...context,
-      accountDomain: domainFit.accountDomain,
-      domainSignals: domainFit.signals
+      accountDomain: domainFit.expectedDomain,
+      accountDomainConflicts: domainFit.conflicts
     }
   };
 }
@@ -271,9 +214,8 @@ export function validateTopicCandidate(topic, account) {
     topic?.angle,
     topic?.reason,
     topic?.targetUser,
-    ...(topic?.searchKeywords || []),
-    ...(topic?.search_keywords || [])
-  ].filter(Boolean).join(' '), account, { domainParts: { topic } });
+    ...(topic?.searchKeywords || [])
+  ].filter(Boolean).join(' '), account);
 }
 
 export function validateProductCandidate(product, account) {
@@ -281,7 +223,7 @@ export function validateProductCandidate(product, account) {
     product?.product_name,
     product?.category_name,
     product?.keyword
-  ].filter(Boolean).join(' '), account, { domainParts: { product } });
+  ].filter(Boolean).join(' '), account);
 }
 
 export function validatePostCandidate(postBody, account, topic = null) {
@@ -289,5 +231,5 @@ export function validatePostCandidate(postBody, account, topic = null) {
     topic?.title,
     topic?.angle,
     postBody
-  ].filter(Boolean).join(' '), account, { domainParts: { topic, text: postBody } });
+  ].filter(Boolean).join(' '), account);
 }

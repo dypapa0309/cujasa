@@ -97,7 +97,7 @@ export async function buildCujasaContentPreview(accountId, input = {}) {
   });
   const peerBodies = posts.map((post) => post.body);
   const candidates = await Promise.all(posts.map(async (post, index) => {
-    const engagement = scorePostEngagement(post.body);
+    const engagement = scorePostEngagement(post.body, { account, topic });
     const qualityGate = evaluatePostQualityGate(engagement);
     const guardrail = validatePostCandidate(post.body, account, topic);
     const styleFit = validatePostStyleFit(post.body, account);

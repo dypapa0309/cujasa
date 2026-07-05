@@ -22,11 +22,13 @@ const BLOCKING_CHECKS = [
 ];
 
 export const QUALITY_GATE_SCORE = 82;
+const MAX_SOFT_REQUIRED_MISS_COUNT = 3;
 
 export function evaluatePostQualityGate(engagement = {}) {
   const checks = engagement.checks || {};
+  const score = Number(engagement.engagementScore || 0);
   const reasons = [];
-  if (Number(engagement.engagementScore || 0) < QUALITY_GATE_SCORE) {
+  if (score < QUALITY_GATE_SCORE) {
     reasons.push(`점수 ${engagement.engagementScore || 0}점으로 기준 ${QUALITY_GATE_SCORE}점 미달`);
   }
   const compactRelatablePassed = Boolean(checks.compactRelatable)
@@ -35,10 +37,14 @@ export function evaluatePostQualityGate(engagement = {}) {
     && checks.productNatural
     && checks.safe
     && checks.humanWarmth;
+  const requiredMisses = [];
   if (!compactRelatablePassed) {
     for (const [key, label] of REQUIRED_CHECKS) {
-      if (!checks[key]) reasons.push(label);
+      if (!checks[key]) requiredMisses.push(label);
     }
+  }
+  if (requiredMisses.length > MAX_SOFT_REQUIRED_MISS_COUNT || score < QUALITY_GATE_SCORE) {
+    reasons.push(...requiredMisses);
   }
   for (const [key, label] of BLOCKING_CHECKS) {
     if (checks[key]) reasons.push(label);
@@ -103,6 +109,7 @@ export function buildRewriteInstructions(reasons = []) {
     instructions.push('카피 문장처럼 꾸미지 말고 “방 좁은데 수납장까지 들어오니까 더 답답함 ㅋㅋ”처럼 실제로 말할 법한 상황문으로 바꾼다.');
   }
   if (reasons.some((reason) => /카테고리|불일치/.test(reason))) {
+    instructions.push('계정 카테고리와 맞는 생활 장면만 쓴다. 펫 글에는 털, 물그릇, 산책, 배변처럼 반려동물 디테일을 쓰고 주방 조리대/싱크대/설거지 디테일을 섞지 않는다.');
     instructions.push('선물 글에는 육아 동선이나 주방 동선을 넣지 말고, 받는 사람/취향/바로 쓸 수 있는지 기준으로 쓴다.');
   }
   if (reasons.some((reason) => /저장/.test(reason))) {

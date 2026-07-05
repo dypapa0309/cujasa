@@ -1,6 +1,6 @@
 import { inspectGeneratedPostText, sanitizeContentTitle } from './contentText.js';
 import { hasRepetitiveContentPattern } from './repetitiveContentRules.js';
-import { validateAccountDomainFit } from './contentGuardrails.js';
+import { inferAccountContentDomain } from './contentGuardrails.js';
 
 function firstSentenceOf(body = '') {
   return String(body || '').split(/\n|[.!?。！？]/).map((line) => line.trim()).filter(Boolean)[0] || '';
@@ -353,27 +353,64 @@ function inferItemLabel(topic = {}, account = {}, products = []) {
   return text.replace(/[?？!！.,]/g, '').slice(0, 18) || '생활용품';
 }
 
-export function detectCategoryMismatch(body = '', { products = [], account = {}, topic = {} } = {}) {
+function categoryMismatchContext({ body = '', account = {}, topic = {}, products = [] } = {}) {
+  const bodyText = String(body || '');
+  const accountText = normalizeText(`${account.content_scope || ''} ${account.target_audience || ''} ${account.name || ''} ${account.account_handle || ''}`);
+  const topicText = normalizeText(`${topic.title || ''} ${topic.angle || ''} ${topic.target_user || ''} ${topic.reason || ''}`);
+  const productText = normalizeText(products.map((product) => [
+    product.product_name || product.name,
+    product.category_name || product.category,
+    product.keyword
+  ].filter(Boolean).join(' ')).join(' '));
+  const contextText = normalizeText(`${accountText} ${topicText} ${productText}`);
+  const accountDomain = inferAccountContentDomain(account)?.key || null;
+  return { bodyText, contextText, accountDomain };
+}
+
+function contextHasDomain(contextText = '', domain) {
+  if (domain === 'pet') return /반려|강아지|고양이|펫|배변|산책/.test(contextText);
+  if (domain === 'childcare') return /육아|아이(?!템)|아기|기저귀|물티슈|장난감|유모차/.test(contextText);
+  if (domain === 'kitchen') return /주방|조리|식기|싱크|조리대|설거지|수세미|냄비|프라이팬|컵|수저/.test(contextText);
+  if (domain === 'food') return /먹거리|음식|푸드|식품|간식|냉장|먹방|먹마왕/.test(contextText);
+  if (domain === 'cleaning') return /청소|먼지|청소포|돌돌이|욕실\s*물기|물걸레|닦/.test(contextText);
+  if (domain === 'gift') return /선물|기념일|답례|축하|받는\s*사람|포장/.test(contextText);
+  if (domain === 'self_living') return /자취|원룸|집기|리빙|수납|정리/.test(contextText);
+  return false;
+}
+
+export function detectCategoryMismatch(body = '', context = {}) {
   const text = String(body || '');
   const hasChildcareDetail = /(아이\s*손|아이에게|아기|기저귀|물티슈|장난감|유모차|낮은\s*자리)/.test(text);
   const hasKitchenChoreDetail = /(조리대|싱크대|설거지|수세미|물\s*빠짐|냄비|프라이팬|컵|수저)/.test(text);
   const hasCleaningDetail = /(청소포|먼지|욕실\s*물기|물걸레|닦기|청소할\s*때)/.test(text);
   const hasSelfLivingChoreDetail = /(빨래|현관|신발장|분리수거|침대\s*옆|우산|열쇠)/.test(text);
+  const hasPetDetail = /(털|물그릇|산책|배변|강아지|고양이|반려|펫)/.test(text);
+  const hasFoodDetail = /(먹방|먹마왕|먹거리|음식|푸드|식품|간식|냉장고|손에\s*묻|나눠\s*먹|다시\s*묶|소포장|쿠키|과자|초콜릿|견과|약과|커피|컵과일)/.test(text);
   const giftContext = /선물|기념일|답례|축하|받는\s*사람|포장/.test(text);
   const kitchenContext = /주방용품|주방|조리|식기/.test(text);
   const cleaningContext = /청소용품|청소|먼지|청소포/.test(text);
   const foodContext = /먹거리|음식|푸드|간식|냉장고/.test(text);
+  const petContext = /반려|강아지|고양이|펫|집사/.test(text);
 
-  const accountBodyFit = validateAccountDomainFit({ account, topic, text });
-  const productFits = (Array.isArray(products) ? products : [])
-    .map((product) => validateAccountDomainFit({ account, product, topic }));
+  const { contextText, accountDomain } = categoryMismatchContext({ body, ...context });
+  const expectedPet = accountDomain === 'pet' || contextHasDomain(contextText, 'pet');
+  const expectedChildcare = accountDomain === 'childcare' || contextHasDomain(contextText, 'childcare');
+  const expectedKitchen = accountDomain === 'kitchen' || contextHasDomain(contextText, 'kitchen');
+  const expectedFood = accountDomain === 'food' || contextHasDomain(contextText, 'food');
+  const expectedCleaning = contextHasDomain(contextText, 'cleaning');
+  const expectedGift = contextHasDomain(contextText, 'gift');
 
-  return !accountBodyFit.allowed
-    || productFits.some((fit) => !fit.allowed)
-    || (giftContext && (hasChildcareDetail || hasKitchenChoreDetail || hasCleaningDetail))
+  return (giftContext && (hasChildcareDetail || hasKitchenChoreDetail || hasCleaningDetail))
     || (kitchenContext && (hasChildcareDetail || hasSelfLivingChoreDetail))
     || (cleaningContext && hasChildcareDetail)
-    || (foodContext && (hasChildcareDetail || hasKitchenChoreDetail || hasCleaningDetail));
+    || (foodContext && (hasChildcareDetail || hasKitchenChoreDetail || hasCleaningDetail))
+    || (petContext && (hasKitchenChoreDetail || hasChildcareDetail || hasFoodDetail))
+    || (expectedPet && (hasKitchenChoreDetail || hasChildcareDetail || hasFoodDetail))
+    || (expectedChildcare && (hasKitchenChoreDetail || hasPetDetail || hasFoodDetail))
+    || (expectedKitchen && (hasChildcareDetail || hasPetDetail || hasSelfLivingChoreDetail))
+    || (expectedFood && (hasChildcareDetail || hasKitchenChoreDetail || hasCleaningDetail || hasPetDetail))
+    || (expectedCleaning && (hasChildcareDetail || hasPetDetail || hasFoodDetail))
+    || (expectedGift && (hasChildcareDetail || hasKitchenChoreDetail || hasCleaningDetail || hasPetDetail));
 }
 
 export function scorePostEngagement(body = '', { products = [], account = {}, topic = {} } = {}) {
@@ -395,7 +432,7 @@ export function scorePostEngagement(body = '', { products = [], account = {}, to
   const topicTitleEcho = /정리\s*쉽게\s*하는\s*법,\s*평소에는\s*별거\s*아닌데|,\s*평소에는\s*별거\s*아닌데\s*막상\s*필요할\s*때마다/.test(text);
   const awkwardPhrase = AWKWARD_PHRASE_PATTERN.test(text);
   const awkwardMetaphor = AWKWARD_METAPHOR_PATTERN.test(text);
-  const categoryMismatch = detectCategoryMismatch(text, { products, account, topic });
+  const categoryMismatch = detectCategoryMismatch(text, { account, topic, products });
   const abstractSetup = /생활\s*속에서|고려해야|중요한\s*게\s*사실|정말\s*중요/.test(first) || awkwardPhrase;
   const ambiguousCompressedSetup = /(청소는\s*꺼내는\s*시간|수납하려고\s*샀는데\s*방이\s*더\s*좁|정리하려고\s*샀는데\s*더\s*좁|꺼내는\s*시간이\s*길면\s*시작도\s*안)/.test(first);
   const compactRelatable = text.length >= 18

@@ -60,17 +60,23 @@ export function evaluateProductTopicMatch(product = {}, topic = {}, account = {}
     search_keyword: tokens.join(' ')
   }, account);
   const qualityIssues = realProductIssues(product);
-  const domainFit = validateAccountDomainFit({ account, product, topic, text: options.body || '' });
+  const domainFit = validateAccountDomainFit([
+    product.product_name,
+    product.category_name,
+    product.keyword,
+    product.product_group,
+    getProductGroup(product)
+  ].filter(Boolean).join(' '), account);
   const riskReasons = [...qualityIssues];
   let score = Math.max(0, relevance.score) + matched.length * 8;
 
   if (matched.length === 0) riskReasons.push('주제 핵심어 매칭 없음');
-  if (qualityIssues.length === 0) score += 20;
-  else score -= 40;
   if (!domainFit.allowed) {
     score -= 55;
     riskReasons.push(...domainFit.reasons);
   }
+  if (qualityIssues.length === 0) score += 20;
+  else score -= 40;
 
   const sourceText = normalize(contextText);
   if (sourceText.includes('아이') && FALSE_CHILD_PARTIALS.test(text) && !CHILD_CONTEXT.test(text.replace(FALSE_CHILD_PARTIALS, ''))) {
@@ -88,7 +94,7 @@ export function evaluateProductTopicMatch(product = {}, topic = {}, account = {}
 
   const finalScore = Math.max(0, Math.min(100, Math.round(score)));
   const minScore = Number(options.minScore || 35);
-  const linkable = isRealCoupangProduct(product) && finalScore >= minScore && !riskReasons.some((reason) => /오매칭|선물 맥락 약함|주제 핵심어 매칭 없음|도메인 불일치/.test(reason));
+  const linkable = isRealCoupangProduct(product) && finalScore >= minScore && !riskReasons.some((reason) => /오매칭|선물 맥락 약함|주제 핵심어 매칭 없음|계정 카테고리 불일치/.test(reason));
 
   return {
     score: finalScore,
