@@ -8,6 +8,8 @@ client/.env
 supabase/.temp
 .DS_Store
 npm-debug.log*
-marketing/**/chrome-profile/
-marketing/**/tmp/
+marketing/
+backups/
+polidoc/
+server/public/uploads/
 .vercel
