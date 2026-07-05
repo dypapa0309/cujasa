@@ -866,3 +866,116 @@ create table if not exists sublog_subscriptions (
 
 create index if not exists idx_sublog_subscriptions_user_created
   on sublog_subscriptions(user_id, created_at desc);
+
+-- ============================================================
+-- Row Level Security: deny all by default for anon/authenticated.
+-- Server uses service_role_key which bypasses RLS.
+-- ============================================================
+
+alter table public.projects enable row level security;
+revoke all on table public.projects from anon, authenticated;
+
+alter table public.accounts enable row level security;
+revoke all on table public.accounts from anon, authenticated;
+
+alter table public.topics enable row level security;
+revoke all on table public.topics from anon, authenticated;
+
+alter table public.coupang_products enable row level security;
+revoke all on table public.coupang_products from anon, authenticated;
+
+alter table public.coupang_search_locks enable row level security;
+revoke all on table public.coupang_search_locks from anon, authenticated;
+
+alter table public.posts enable row level security;
+revoke all on table public.posts from anon, authenticated;
+
+alter table public.post_products enable row level security;
+revoke all on table public.post_products from anon, authenticated;
+
+alter table public.cta_variants enable row level security;
+revoke all on table public.cta_variants from anon, authenticated;
+
+alter table public.tracking_links enable row level security;
+revoke all on table public.tracking_links from anon, authenticated;
+
+alter table public.click_events enable row level security;
+revoke all on table public.click_events from anon, authenticated;
+
+alter table public.post_queue enable row level security;
+revoke all on table public.post_queue from anon, authenticated;
+
+alter table public.trend_reference_patterns enable row level security;
+revoke all on table public.trend_reference_patterns from anon, authenticated;
+
+alter table public.pipeline_runs enable row level security;
+revoke all on table public.pipeline_runs from anon, authenticated;
+
+alter table public.post_metrics_jobs enable row level security;
+revoke all on table public.post_metrics_jobs from anon, authenticated;
+
+alter table public.post_metrics enable row level security;
+revoke all on table public.post_metrics from anon, authenticated;
+
+alter table public.activity_logs enable row level security;
+revoke all on table public.activity_logs from anon, authenticated;
+
+alter table public.notifications enable row level security;
+revoke all on table public.notifications from anon, authenticated;
+
+alter table public.users enable row level security;
+revoke all on table public.users from anon, authenticated;
+
+alter table public.user_accounts enable row level security;
+revoke all on table public.user_accounts from anon, authenticated;
+
+alter table public.user_products enable row level security;
+revoke all on table public.user_products from anon, authenticated;
+
+alter table public.jasain_products enable row level security;
+revoke all on table public.jasain_products from anon, authenticated;
+
+alter table public.billing_products enable row level security;
+revoke all on table public.billing_products from anon, authenticated;
+
+alter table public.billing_payments enable row level security;
+revoke all on table public.billing_payments from anon, authenticated;
+
+alter table public.billing_subscriptions enable row level security;
+revoke all on table public.billing_subscriptions from anon, authenticated;
+
+alter table public.billing_agreements enable row level security;
+revoke all on table public.billing_agreements from anon, authenticated;
+
+alter table public.setup_tasks enable row level security;
+revoke all on table public.setup_tasks from anon, authenticated;
+
+alter table public.purchase_inquiries enable row level security;
+revoke all on table public.purchase_inquiries from anon, authenticated;
+
+alter table public.announcements enable row level security;
+revoke all on table public.announcements from anon, authenticated;
+
+alter table public.sponsor_campaigns enable row level security;
+revoke all on table public.sponsor_campaigns from anon, authenticated;
+
+alter table public.threads_connection_requests enable row level security;
+revoke all on table public.threads_connection_requests from anon, authenticated;
+
+alter table public.automation_studio_campaigns enable row level security;
+revoke all on table public.automation_studio_campaigns from anon, authenticated;
+
+alter table public.automation_studio_assets enable row level security;
+revoke all on table public.automation_studio_assets from anon, authenticated;
+
+alter table public.automation_studio_queue_links enable row level security;
+revoke all on table public.automation_studio_queue_links from anon, authenticated;
+
+alter table public.automation_studio_lead_forms enable row level security;
+revoke all on table public.automation_studio_lead_forms from anon, authenticated;
+
+alter table public.automation_studio_lead_submissions enable row level security;
+revoke all on table public.automation_studio_lead_submissions from anon, authenticated;
+
+alter table public.sublog_subscriptions enable row level security;
+revoke all on table public.sublog_subscriptions from anon, authenticated;

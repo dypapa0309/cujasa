@@ -11,11 +11,11 @@
 - [x] API 보호 미들웨어 추가
   - [x] `/api/health`, `/api/auth/login`, `/r/:code`를 제외한 API 인증 필수화
   - [x] 서버 환경변수 `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `JWT_SECRET` 추가
-- [ ] Supabase 보안 정리
-  - [ ] `SUPABASE_SERVICE_ROLE_KEY`는 서버에서만 사용
-  - [ ] 클라이언트에는 service role key 노출 금지
-  - [ ] RLS 정책 설계
-  - [ ] 운영 배포 전 RLS 활성화 여부 확인
+- [x] Supabase 보안 정리
+  - [x] `SUPABASE_SERVICE_ROLE_KEY`는 서버에서만 사용
+  - [x] 클라이언트에는 service role key 노출 금지
+  - [x] RLS 정책 설계
+  - [x] 운영 배포 전 RLS 활성화 여부 확인
 - [x] 클릭 추적 보호
   - [x] `/r/:code` rate limit 추가
   - [x] 잘못된 code 요청 로깅
