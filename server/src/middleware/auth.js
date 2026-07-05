@@ -23,7 +23,6 @@ const publicRoutes = [
   { method: 'POST', path: '/api/inquiries' },
   { method: 'POST', path: '/api/webhooks/toss' },
   { method: 'POST', path: '/api/scheduler/daily-pipeline' },
-  { method: 'POST', path: '/api/scheduler/repetition-guard' },
   { method: 'POST', path: '/api/public/checkout/virtual-account' },
   { method: 'POST', path: '/api/public/checkout/toss/success' }
 ];

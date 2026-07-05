@@ -4,7 +4,6 @@ import { fileURLToPath } from 'node:url';
 import { generateBlogPost } from '../services/blogService.js';
 import { requireAdmin } from '../middleware/rateLimit.js';
 import { processCoreDueQueue } from '../services/cujasaCoreService.js';
-import { runRepetitionGuard } from '../services/repetitionGuardService.js';
 
 const router = Router();
 function requireSchedulerSecret(req, res, next) {
@@ -31,17 +30,6 @@ router.post('/daily-pipeline', requireSchedulerSecret, async (req, res, next) =>
     });
     child.unref();
     res.status(202).json({ ok: true, status: 'accepted', mode, triggeredBy });
-  } catch (e) { next(e); }
-});
-
-router.post('/repetition-guard', requireSchedulerSecret, async (req, res, next) => {
-  try {
-    res.json(await runRepetitionGuard({
-      triggeredBy: req.body?.triggeredBy || 'external_scheduler',
-      statuses: req.body?.statuses || 'scheduled,retry,draft',
-      days: req.body?.days || 30,
-      limit: req.body?.limit || 3000
-    }));
   } catch (e) { next(e); }
 });
 

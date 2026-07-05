@@ -14,7 +14,7 @@ import {
 import { dbDelete, dbGet, dbInsert, dbList, dbUpdate } from '../services/supabaseService.js';
 import { hashPassword } from '../utils/password.js';
 import { cleanupQueueErrors, clearOperationDashboardCache, normalizeOperations, operationAccountRows, operationDashboard, operationEvents, operationSummary } from '../services/operationsService.js';
-import { runDailyPipelineOnce } from '../services/schedulerRunService.js';
+import { runDailyPipelineWatchdog } from '../services/schedulerRunService.js';
 import { buildOpsHealthSummary, runDailyOpsHealthCheck } from '../services/opsHealthService.js';
 import { cleanupUnusedPipelineArtifacts } from '../services/unusedArtifactCleanupService.js';
 import { cleanupOldQueueIssues, dismissPastQueueIssuesForAccount } from '../services/queueVisibilityService.js';
@@ -246,9 +246,8 @@ router.post('/operations/cleanup-queue-errors', async (req, res, next) => {
 
 router.post('/operations/daily-pipeline/catch-up', async (req, res, next) => {
   try {
-    const result = await runDailyPipelineOnce({
-      triggeredBy: req.user?.email || req.user?.type || 'admin_catch_up',
-      mode: 'admin_recovery'
+    const result = await runDailyPipelineWatchdog({
+      triggeredBy: req.user?.email || req.user?.type || 'admin_catch_up'
     });
     clearOperationDashboardCache();
     res.json(result);
@@ -809,10 +808,11 @@ router.post('/users/:id/plan', async (req, res, next) => {
     const now = new Date();
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
     const in365Days = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000).toISOString();
+    const currentMaxAccounts = Number(user.max_accounts || 0);
     const patchByPlan = {
       free: { status: 'active', plan: 'free', billing_status: 'none', paid_until: null },
-      onetime: { status: 'active', plan: 'onetime', billing_status: 'active', paid_until: in365Days },
-      monthly: { status: 'active', plan: 'monthly', billing_status: 'active', paid_until: in30Days },
+      onetime: { status: 'active', plan: 'onetime', billing_status: 'active', paid_until: in365Days, max_accounts: Math.max(currentMaxAccounts, 4) },
+      monthly: { status: 'active', plan: 'monthly', billing_status: 'active', paid_until: in30Days, max_accounts: Math.max(currentMaxAccounts, 2) },
       suspended: { status: 'suspended' }
     };
     const patch = patchByPlan[plan];

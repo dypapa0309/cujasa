@@ -427,7 +427,7 @@ router.patch('/:accountId/automation', async (req, res, next) => {
       requestedBy: req.user?.email || req.user?.type || 'manual',
       mode: 'start',
       allowInitialLinkDiscovery: true,
-      failureAction: 'automation_start_failed_paused'
+      failureAction: 'automation_start_failed_kept_running'
     });
 
     return res.status(202).json({
@@ -467,7 +467,7 @@ router.post('/:accountId/run-pipeline', async (req, res, next) => {
       requestedBy: req.user?.email || req.user?.type || 'manual',
       mode: 'start',
       allowInitialLinkDiscovery: true,
-      failureAction: 'manual_pipeline_failed_paused'
+      failureAction: 'manual_pipeline_failed_kept_running'
     });
     res.status(202).json({
       ok: true,

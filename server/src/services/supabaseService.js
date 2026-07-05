@@ -120,7 +120,7 @@ const tables = {
       id: 'cujasa',
       name: 'CUJASA',
       description: '쿠팡 파트너스 자동화 콘솔',
-      app_url: 'https://app.jasain.kr',
+      app_url: 'https://jasain.kr',
       landing_url: 'https://store.jasain.kr/store/cujasa',
       status: 'active',
       created_at: now(),
@@ -130,7 +130,7 @@ const tables = {
       id: 'dexor',
       name: 'DEXOR',
       description: '블로그 분석 및 선정 자동화',
-      app_url: 'https://app.jasain.kr',
+      app_url: 'https://jasain.kr',
       landing_url: 'https://store.jasain.kr/store/dexor',
       status: 'active',
       created_at: now(),
@@ -140,7 +140,7 @@ const tables = {
       id: 'spread',
       name: 'SPREAD',
       description: '추천 캠페인 운영 자동화',
-      app_url: 'https://app.jasain.kr',
+      app_url: 'https://jasain.kr',
       landing_url: 'https://store.jasain.kr/store/spread',
       status: 'active',
       created_at: now(),
@@ -150,7 +150,7 @@ const tables = {
       id: 'polibot',
       name: 'POLIBOT',
       description: '보험 보장분석 및 상품 추천 자동화',
-      app_url: 'https://app.jasain.kr',
+      app_url: 'https://jasain.kr',
       landing_url: 'https://store.jasain.kr/store/polibot',
       status: 'active',
       created_at: now(),
@@ -160,7 +160,7 @@ const tables = {
       id: 'infludex',
       name: 'INFLUDEX',
       description: '인스타그램 인플루언서 등급 분석',
-      app_url: 'https://app.jasain.kr',
+      app_url: 'https://jasain.kr',
       landing_url: 'https://store.jasain.kr/store/infludex',
       status: 'active',
       created_at: now(),
@@ -170,7 +170,7 @@ const tables = {
       id: 'sublog',
       name: 'SUBLOG',
       description: '구독 비용 관리',
-      app_url: 'https://app.jasain.kr',
+      app_url: 'https://jasain.kr',
       landing_url: 'https://store.jasain.kr/store/sublog',
       status: 'active',
       created_at: now(),
@@ -180,7 +180,7 @@ const tables = {
       id: 'auvibot',
       name: 'AUVIBOT',
       description: '상품 쇼츠 생산 자동화',
-      app_url: 'https://app.jasain.kr',
+      app_url: 'https://jasain.kr',
       landing_url: 'https://store.jasain.kr/store/auvibot',
       status: 'active',
       created_at: now(),
@@ -226,7 +226,7 @@ const tables = {
       app_product_id: 'cujasa',
       name: 'CUJASA 베이직 월정액',
       plan: 'monthly',
-      amount: 129000,
+      amount: 99000,
       billing_cycle: 'monthly',
       max_accounts: 2,
       active: true,
@@ -358,7 +358,7 @@ const tables = {
       app_product_id: 'polibot',
       name: 'POLIBOT 스타터 월정액',
       plan: 'monthly',
-      amount: 29000,
+      amount: 8900,
       billing_cycle: 'monthly',
       max_accounts: 0,
       active: false,
@@ -369,7 +369,7 @@ const tables = {
       app_product_id: 'polibot',
       name: 'POLIBOT 베이직 월정액 50회',
       plan: 'monthly',
-      amount: 79000,
+      amount: 8900,
       billing_cycle: 'monthly',
       max_accounts: 0,
       active: true,
@@ -380,7 +380,7 @@ const tables = {
       app_product_id: 'polibot',
       name: 'POLIBOT 프로 월정액',
       plan: 'monthly',
-      amount: 290000,
+      amount: 8900,
       billing_cycle: 'monthly',
       max_accounts: 0,
       active: false,
@@ -542,7 +542,9 @@ async function executeSupabaseQuery(query) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DB_REQUEST_TIMEOUT_MS);
   try {
-    const request = typeof query.abortSignal === 'function' ? query.abortSignal(controller.signal) : query;
+    const request = typeof query.abortSignal === 'function'
+      ? query.abortSignal(controller.signal)
+      : query;
     const result = await request;
     if (controller.signal.aborted) {
       throw unavailableDbError(`Supabase request timed out after ${DB_REQUEST_TIMEOUT_MS}ms`);

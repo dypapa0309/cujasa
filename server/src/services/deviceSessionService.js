@@ -51,13 +51,44 @@ export async function authorizeLoginDevice({ user, device, req }) {
   const now = new Date().toISOString();
   if (existing) {
     if (existing.status !== 'active') {
+      if (existing.status === 'revoked') {
+        const rows = await dbList('user_login_devices', {
+          user_id: user.id,
+          device_type: context.deviceType,
+          status: 'active'
+        });
+        const limit = DEVICE_LIMITS[context.deviceType] || 1;
+        if (rows.length >= limit) {
+          const error = new Error(context.deviceType === 'mobile'
+            ? '이미 등록된 모바일 기기가 있습니다. 다른 휴대폰에서 사용하려면 기기 초기화가 필요합니다.'
+            : '이미 등록된 PC 기기가 있습니다. 다른 PC에서 사용하려면 기기 초기화가 필요합니다.');
+          error.status = 403;
+          error.code = 'DEVICE_LIMIT_REACHED';
+          error.deviceType = context.deviceType;
+          throw error;
+        }
+        const [reactivated] = await dbUpdate('user_login_devices', { id: existing.id }, {
+          status: 'active',
+          fingerprint_hash: context.fingerprintHash,
+          label: context.label || existing.label || (context.deviceType === 'mobile' ? 'Mobile browser' : 'Desktop browser'),
+          user_agent: context.userAgent,
+          last_seen_at: now,
+          last_ip: context.ip
+        });
+        return reactivated || { ...existing, status: 'active', fingerprint_hash: context.fingerprintHash };
+      }
       const error = new Error('이 기기는 사용이 제한되어 있습니다. 관리자에게 기기 초기화를 요청해주세요.');
       error.status = 403;
       error.code = 'DEVICE_BLOCKED';
       throw error;
     }
+    if (existing.fingerprint_hash && existing.fingerprint_hash !== context.fingerprintHash) {
+      const error = new Error('등록된 기기 정보와 현재 브라우저 정보가 다릅니다. 관리자에게 기기 초기화를 요청해주세요.');
+      error.status = 403;
+      error.code = 'DEVICE_FINGERPRINT_MISMATCH';
+      throw error;
+    }
     const [updated] = await dbUpdate('user_login_devices', { id: existing.id }, {
-      fingerprint_hash: context.fingerprintHash,
       last_seen_at: now,
       last_ip: context.ip,
       user_agent: context.userAgent
@@ -116,8 +147,13 @@ export async function assertActiveRequestDevice({ user, tokenPayload = {}, req }
     error.code = 'DEVICE_SESSION_REVOKED';
     throw error;
   }
+  if (device.fingerprint_hash && device.fingerprint_hash !== context.fingerprintHash) {
+    const error = new Error('기기 정보가 변경되어 세션을 유지할 수 없습니다. 다시 로그인해주세요.');
+    error.status = 401;
+    error.code = 'DEVICE_FINGERPRINT_MISMATCH';
+    throw error;
+  }
   await dbUpdate('user_login_devices', { id: device.id }, {
-    fingerprint_hash: context.fingerprintHash,
     last_seen_at: new Date().toISOString(),
     last_ip: context.ip,
     user_agent: context.userAgent

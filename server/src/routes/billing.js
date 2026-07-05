@@ -149,7 +149,7 @@ export async function tossPost(path, body, secret = tossSecretKey()) {
 function normalizeBillingProduct(product) {
   if (!product) return product;
   if (product.id === 'sponsored_monthly_19000') return { ...product, active: false };
-  if (product.id === 'monthly_59000') return { ...product, amount: 129000 };
+  if (product.id === 'monthly_59000') return { ...product, amount: 99000 };
   return product;
 }
 
