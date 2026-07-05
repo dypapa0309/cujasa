@@ -109,8 +109,6 @@ services:
         value: "true"
       - key: ENABLE_INTERNAL_DAILY_PIPELINE_CRON
         value: "false"
-      - key: ENABLE_REPETITION_GUARD_CRON
-        value: "true"
       - key: ENABLE_STARTUP_DAILY_CATCH_UP
         value: "false"
       - key: INFLUDEX_SERVICE_OPEN

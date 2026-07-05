@@ -111,6 +111,11 @@ npm run test:coupang --prefix server -- "탈취제"
 
 초기 Threads adapter는 실제 업로드하지 않고 콘솔에 내용을 출력하며 mock `post_url`을 생성합니다.
 
+## 고객용 사용 매뉴얼
+
+- [CUJASA 고객용 간단 사용 매뉴얼](./docs/cujasa-customer-quick-start.md)
+- [HTML 고객 사용 매뉴얼](./docs/manual.html)
+
 ## Threads 연결 설정
 
 Meta Developers의 Threads 앱 설정에 OAuth 리디렉션 URI를 등록합니다.
