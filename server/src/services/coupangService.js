@@ -347,13 +347,15 @@ export async function searchKeyword(keyword, limit = 10, creds = {}) {
       });
       return [createSearchStatus(keyword, 'empty_result', 'NO_REAL_PRODUCTS')];
     }
+    const partnerId = creds.partnerId || process.env.COUPANG_PARTNER_ID;
+    const trackingCode = creds.trackingCode || process.env.COUPANG_TRACKING_CODE;
     const mapped = productData.map((item) => ({
       product_id: String(item.productId),
       product_name: item.productName,
       product_price: item.productPrice,
       product_image: item.productImage,
       product_url: item.productUrl,
-      partner_url: item.productUrl,
+      partner_url: buildCoupangPartnersLinkFromProductUrl(item.productUrl, { lptag: partnerId, subid: trackingCode }) || item.productUrl,
       category_name: item.categoryName,
       is_fallback: false,
       raw_data: item
@@ -452,6 +454,20 @@ export async function searchProductsForTopic(topicId, options = {}) {
   const existing = await dbList('coupang_products', { topic_id: topic.id });
   const seen = new Set(existing.map((p) => p.product_id));
   const existingByProductId = new Map(existing.map((product) => [product.product_id, product]));
+
+  // Cross-topic dedup: exclude products used by the same account in the last 7 days
+  const recentCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const recentAccountProducts = await dbList('coupang_products', {
+    account_id: account.id,
+    is_fallback: false
+  }, {
+    gte: { created_at: recentCutoff },
+    neq: { topic_id: topic.id },
+    select: 'product_id'
+  });
+  for (const p of recentAccountProducts) {
+    if (p.product_id) seen.add(p.product_id);
+  }
 
   const saved = [];
   if (isCoupangCooldownActive(account)) {

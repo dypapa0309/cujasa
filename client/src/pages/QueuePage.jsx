@@ -45,6 +45,7 @@ export default function QueuePage({ selectedAccount }) {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [cancellingId, setCancellingId] = useState(null);
   const [runningId, setRunningId] = useState(null);
+  const [editingTimeId, setEditingTimeId] = useState(null);
 
   const load = async () => {
     if (selectedAccount) setRows(await api.get(`/api/accounts/${selectedAccount.id}/queue`));
@@ -170,7 +171,14 @@ export default function QueuePage({ selectedAccount }) {
             <div key={label} className="grid gap-2">
               <div className="text-xs font-semibold text-slate-500 px-1">{label} ({items.length})</div>
               {items.map((row) => (
-                <QueueRow key={row.id} row={row} onDetail={openDetail} onCancel={cancel} onRun={run} cancelling={cancellingId === row.id} running={runningId === row.id} active={detail?.queue?.id === row.id} />
+                <QueueRow key={row.id} row={row} onDetail={openDetail} onCancel={cancel} onRun={run} cancelling={cancellingId === row.id} running={runningId === row.id} active={detail?.queue?.id === row.id} editingTime={editingTimeId === row.id} onEditTime={async (id, newTime) => {
+                  try {
+                    await api.patch(`/api/queue/${id}`, { scheduled_at: newTime });
+                    setEditingTimeId(null);
+                    await load();
+                    toast('예약 시간이 변경됐습니다.', 'success');
+                  } catch { toast('시간 변경에 실패했습니다.', 'error'); }
+                }} onToggleEditTime={(id) => setEditingTimeId(editingTimeId === id ? null : id)} />
               ))}
             </div>
           ))}
@@ -191,36 +199,61 @@ export default function QueuePage({ selectedAccount }) {
   );
 }
 
-function QueueRow({ row, onDetail, onCancel, onRun, cancelling, running, active }) {
+function QueueRow({ row, onDetail, onCancel, onRun, cancelling, running, active, editingTime, onEditTime, onToggleEditTime }) {
   const friendlyTitle = row.friendly_title || row.error_message;
   const canRun = ['scheduled', 'failed', 'retry', 'manual_required'].includes(row.status);
   return (
-    <div className={`rounded border bg-white p-4 flex flex-col sm:flex-row sm:items-center gap-3 cursor-pointer transition-colors ${active ? 'border-coupang bg-red-50/30' : 'border-line hover:border-slate-300'}`}
+    <div className={`rounded border bg-white p-4 flex flex-col gap-3 cursor-pointer transition-colors ${active ? 'border-coupang bg-red-50/30' : 'border-line hover:border-slate-300'}`}
       onClick={() => onDetail(row)}>
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        <StatusBadge status={row.status} />
-        <div className="min-w-0">
-          <div className="text-xs text-slate-400">{dateTime(row.scheduled_at)}</div>
-          {row.posted_at && <div className="text-xs text-slate-400">업로드: {dateTime(row.posted_at)}</div>}
-          {row.post_url && <a href={row.post_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs text-coupang truncate block hover:underline">{row.post_url}</a>}
-          {friendlyTitle && <div className="mt-1 truncate text-xs font-medium text-rose-500">{friendlyTitle}</div>}
-          {row.error_category && <div className="mt-0.5 text-[11px] text-slate-400">코드: {row.error_category}</div>}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <StatusBadge status={row.status} />
+          <div className="min-w-0">
+            <div className="text-xs text-slate-400">
+              {dateTime(row.scheduled_at)}
+              {row.status === 'scheduled' && (
+                <button onClick={(e) => { e.stopPropagation(); onToggleEditTime(row.id); }} className="ml-1.5 text-slate-400 hover:text-coupang">
+                  <svg className="inline h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                </button>
+              )}
+            </div>
+            {row.posted_at && <div className="text-xs text-slate-400">업로드: {dateTime(row.posted_at)}</div>}
+            {row.post_url && <a href={row.post_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-xs text-coupang truncate block hover:underline">{row.post_url}</a>}
+            {friendlyTitle && <div className="mt-1 truncate text-xs font-medium text-rose-500">{friendlyTitle}</div>}
+            {row.error_category && <div className="mt-0.5 text-[11px] text-slate-400">코드: {row.error_category}</div>}
+          </div>
         </div>
-      </div>
-      <div className="flex gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-        {canRun && (
-          <button onClick={() => onRun(row)} disabled={running} className={`${row.status === 'scheduled' ? 'rounded border border-line px-3 py-1.5 text-xs hover:bg-panel' : 'rounded bg-coupang px-3 py-1.5 text-xs text-white'} disabled:opacity-50`}>
-            {running ? '실행 중...' : row.status === 'scheduled' ? '지금 실행' : '재시도'}
-          </button>
-        )}
-        {row.status === 'scheduled' && (
-          <>
+        <div className="flex gap-2 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+          {canRun && (
+            <button onClick={() => onRun(row)} disabled={running} className={`${row.status === 'scheduled' ? 'rounded border border-line px-3 py-1.5 text-xs hover:bg-panel' : 'rounded bg-coupang px-3 py-1.5 text-xs text-white'} disabled:opacity-50`}>
+              {running ? '실행 중...' : row.status === 'scheduled' ? '지금 실행' : '재시도'}
+            </button>
+          )}
+          {row.status === 'scheduled' && (
             <button onClick={() => onCancel(row)} disabled={cancelling} className="rounded border border-red-200 text-red-500 px-3 py-1.5 text-xs hover:bg-red-50 disabled:opacity-50">
               {cancelling ? '취소 중...' : '취소'}
             </button>
-          </>
-        )}
+          )}
+        </div>
       </div>
+      {editingTime && (
+        <TimeEditor scheduledAt={row.scheduled_at} onSave={(newTime) => onEditTime(row.id, newTime)} onCancel={() => onToggleEditTime(row.id)} />
+      )}
+    </div>
+  );
+}
+
+function TimeEditor({ scheduledAt, onSave, onCancel }) {
+  const toLocalISOString = (dateStr) => {
+    const d = new Date(dateStr);
+    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+  };
+  const [value, setValue] = useState(toLocalISOString(scheduledAt));
+  return (
+    <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+      <input type="datetime-local" value={value} onChange={(e) => setValue(e.target.value)} className="rounded border border-line px-2 py-1 text-xs" />
+      <button onClick={() => onSave(new Date(value).toISOString())} className="rounded bg-coupang px-3 py-1 text-xs text-white">저장</button>
+      <button onClick={onCancel} className="rounded border border-line px-3 py-1 text-xs text-slate-500 hover:bg-panel">취소</button>
     </div>
   );
 }

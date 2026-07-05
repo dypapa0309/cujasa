@@ -52,10 +52,10 @@
   - [x] productImage
   - [x] productUrl
   - [x] categoryName
-- [ ] 파트너스 링크 생성 방식 검증
+- [x] 파트너스 링크 생성 방식 검증
 - [x] API 실패 사유별 activity log 저장
 - [x] fallback 검색 URL은 API 실패 시에만 사용되는지 검증
-- [ ] 상품 중복 제거 강화
+- [x] 상품 중복 제거 강화
 - [ ] 상품 가격 null 처리 UI 개선
 
 ## 4. OpenAI 품질 보강
@@ -71,8 +71,8 @@
 
 ## 5. 업로드 큐/스케줄러 안정화
 
-- [ ] 예약 시간 수동 수정 UI 추가
-- [ ] 큐 상태별 필터 추가
+- [x] 예약 시간 수동 수정 UI 추가
+- [x] 큐 상태별 필터 추가
 - [ ] failed/retry/manual_required 처리 UI 개선
 - [ ] retry 최대 3회 정책 검증
 - [ ] 서버 재시작 후 pending queue 처리 확인
