@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { buildAccountPerformanceSignals } from './analyticsService.js';
-import { dbInsert } from './supabaseService.js';
+import { buildAccountPerformanceSignals, dashboardSummary } from './analyticsService.js';
+import { dbInsert, dbCount } from './supabaseService.js';
 import { generateTopicsPrompt } from '../prompts/generateTopicsPrompt.js';
 import { selectProductsPrompt } from '../prompts/selectProductsPrompt.js';
 import { generatePostsPrompt } from '../prompts/generatePostsPrompt.js';
@@ -121,4 +121,100 @@ test('generation prompts include performance signals without removing guardrails
   assert.ok(postPayload.rules.some((rule) => rule.includes('performanceSignals.topPosts')));
   assert.ok(postPayload.rules.some((rule) => rule.includes('performanceSignals.topContentFormats')));
   assert.ok(postPayload.rules.some((rule) => rule.includes('Never write phrases like')));
+});
+
+test('content format breakdown counts clicked posts beyond the top 5', async () => {
+  const projectId = randomUUID();
+  const accountId = randomUUID();
+  const topicId = randomUUID();
+  await dbInsert('projects', { id: projectId, name: '포맷 집계 테스트', type: 'coupang', status: 'active' });
+  await dbInsert('accounts', {
+    id: accountId,
+    project_id: projectId,
+    name: '포맷 집계 계정',
+    forbidden_topics: [],
+    forbidden_words: [],
+    status: 'active'
+  });
+  await dbInsert('topics', { id: topicId, account_id: accountId, project_id: projectId, title: '정리 수납' });
+
+  const addPostWithClicks = async (contentFormat, contentGoal, clicks) => {
+    const postId = randomUUID();
+    await dbInsert('posts', {
+      id: postId,
+      account_id: accountId,
+      project_id: projectId,
+      topic_id: topicId,
+      content_type: '질문형',
+      body: `${contentFormat} 본문`,
+      risk_level: 'low',
+      status: 'posted',
+      metadata: { contentFormat, contentGoal, lengthBucket: 'short' }
+    });
+    for (let i = 0; i < clicks; i += 1) {
+      await dbInsert('click_events', {
+        tracking_link_id: randomUUID(),
+        project_id: projectId,
+        account_id: accountId,
+        topic_id: topicId,
+        post_id: postId
+      });
+    }
+  };
+
+  // Five heavily-clicked posts occupy every top-5 topPosts slot...
+  for (let i = 0; i < 5; i += 1) await addPostWithClicks('mini_poll', 'reply', 10);
+  // ...and a sixth, lower-clicked post uses a distinct format that must still be counted.
+  await addPostWithClicks('send_to_friend', 'share', 3);
+
+  const signals = await buildAccountPerformanceSignals(accountId);
+  const formatMap = new Map(signals.topContentFormats.map((f) => [f.name, f.clicks]));
+  assert.equal(formatMap.get('mini_poll'), 50);
+  assert.equal(formatMap.get('send_to_friend'), 3, 'format from a post outside the top 5 must still be aggregated');
+});
+
+test('dbCount counts rows matching eq and range filters without loading rows', async () => {
+  const accountId = randomUUID();
+  const base = Date.parse('2026-03-01T00:00:00.000Z');
+  for (let i = 0; i < 5; i += 1) {
+    await dbInsert('click_events', {
+      account_id: accountId,
+      created_at: new Date(base + i * 86400000).toISOString()
+    });
+  }
+
+  assert.equal(await dbCount('click_events', { account_id: accountId }), 5);
+  assert.equal(await dbCount('click_events', { account_id: randomUUID() }), 0);
+
+  const rangeCount = await dbCount('click_events', { account_id: accountId }, {
+    gte: { created_at: '2026-03-01T00:00:00.000Z' },
+    lte: { created_at: '2026-03-03T00:00:00.000Z' }
+  });
+  assert.equal(rangeCount, 3);
+});
+
+test('dashboardSummary reports counts via count queries (delta-checked)', async () => {
+  const before = await dashboardSummary();
+  const accountId = randomUUID();
+  await dbInsert('accounts', {
+    id: accountId,
+    name: 'dash-count 계정',
+    platform: 'threads',
+    status: 'active'
+  });
+  await dbInsert('post_queue', [
+    { account_id: accountId, status: 'posted' },
+    { account_id: accountId, status: 'posted' },
+    { account_id: accountId, status: 'scheduled', scheduled_at: new Date().toISOString() },
+    { account_id: accountId, status: 'scheduled', scheduled_at: new Date(Date.now() + 3 * 86_400_000).toISOString() }
+  ]);
+  for (let i = 0; i < 3; i += 1) {
+    await dbInsert('click_events', { account_id: accountId });
+  }
+
+  const after = await dashboardSummary();
+  assert.equal(after.accounts - before.accounts, 1);
+  assert.equal(after.posted - before.posted, 2);
+  assert.equal(after.scheduledToday - before.scheduledToday, 1, 'only the scheduled row inside today\u2019s window counts');
+  assert.equal(after.clicks - before.clicks, 3);
 });

@@ -107,7 +107,7 @@ export default function AnalyticsPage({ selectedAccount }) {
               <div className="grid gap-1.5">
                 {topFormats.slice(0, 6).map((f, i) => (
                   <div key={i} className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600">{f.format || f.contentFormat || '기타'}</span>
+                    <span className="text-slate-600">{f.name || f.format || f.contentFormat || '기타'}</span>
                     <span className="font-semibold text-coupang">{f.clicks}클릭</span>
                   </div>
                 ))}
@@ -120,7 +120,7 @@ export default function AnalyticsPage({ selectedAccount }) {
               <div className="grid gap-1.5">
                 {topGoals.slice(0, 6).map((g, i) => (
                   <div key={i} className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600">{g.goal || g.contentGoal || '기타'}</span>
+                    <span className="text-slate-600">{g.name || g.goal || g.contentGoal || '기타'}</span>
                     <span className="font-semibold text-coupang">{g.clicks}클릭</span>
                   </div>
                 ))}

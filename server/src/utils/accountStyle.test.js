@@ -52,6 +52,21 @@ test('strengthens weak first sentence with a safer engagement hook', () => {
   assert.equal(scorePostHook(strengthened).strong, true);
 });
 
+test('strengthening replaces only the first sentence, preserving the remainder of the line', () => {
+  const body = '케이블 정리 고민되죠. 멀티탭 정리함 써보니 편했어요.\n\n여러분은 어떤 기준?';
+  const strengthened = strengthenPostHook(body, {
+    title: '멀티탭 정리 팁',
+    angle: '길이와 배치'
+  }, {
+    content_mode: 'empathy',
+    target_audience: '자취생',
+    content_scope: '자취 생활용품'
+  });
+
+  assert.match(strengthened, /멀티탭 정리함 써보니 편했어요/);
+  assert.equal(scorePostHook(strengthened).strong, true);
+});
+
 test('strengthened hooks do not expose account login ids', () => {
   const strengthened = strengthenPostHook('좋은 제품을 고르는 방법입니다.', {
     title: 'lovehyun45 냄새 줄이는 법',

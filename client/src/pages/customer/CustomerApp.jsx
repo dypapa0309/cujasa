@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { Beaker, CreditCard, Home, FileText, Settings, Plus, X, AlertCircle, CheckCircle2, PlayCircle, Search, Sparkles } from 'lucide-react';
 import { api } from '../../lib/api.js';
 import { useToast } from '../../lib/toast.jsx';
@@ -7,7 +7,7 @@ import CustomerPostsPage from './CustomerPostsPage.jsx';
 import CustomerSettingsPage from './CustomerSettingsPage.jsx';
 import CustomerBillingPage from './CustomerBillingPage.jsx';
 import CustomerRunPage from './CustomerRunPage.jsx';
-import CustomerBetaPage from './CustomerBetaPage.jsx';
+const CustomerBetaPage = lazy(() => import('./CustomerBetaPage.jsx'));
 import { CURRENT_PRODUCT, JASAIN_BRAND, productById, productIdFromPath } from '../../config/products.js';
 import SearchableSelect from '../../components/SearchableSelect.jsx';
 
@@ -534,6 +534,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
 
       <main className={isBetaTab ? 'mx-auto min-h-screen max-w-none p-0' : 'max-w-2xl mx-auto px-5 py-6 pb-28'}>
         {isBetaTab ? (
+          <Suspense fallback={<div className="min-h-screen bg-[#111111] flex items-center justify-center text-white/60 text-sm">불러오는 중…</div>}>
           <Page
             account={account}
             accounts={accounts}
@@ -566,6 +567,7 @@ export default function CustomerApp({ accounts, currentUser, reloadAccounts, rel
             onPipelineDone={(result) => { setPipelineResult(result); }}
             onPipelineRunningChange={handlePipelineRunningChange}
           />
+          </Suspense>
         ) : accounts.length === 0 ? (
           <>
             <WaitingScreen

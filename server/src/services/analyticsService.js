@@ -1,4 +1,4 @@
-import { dbList } from './supabaseService.js';
+import { dbList, dbCount } from './supabaseService.js';
 
 function groupCount(rows, key) {
   return rows.reduce((acc, row) => {
@@ -23,14 +23,16 @@ function textSnippet(value = '', max = 160) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
-export async function buildAccountPerformanceSignals(accountId, { limit = 5 } = {}) {
-  const [clicks, metrics, topics, posts, products] = await Promise.all([
-    dbList('click_events', { account_id: accountId }),
-    dbList('post_metrics', { account_id: accountId }),
-    dbList('topics', { account_id: accountId }),
-    dbList('posts', { account_id: accountId }),
-    dbList('coupang_products', { account_id: accountId }).catch(() => [])
-  ]);
+export async function buildAccountPerformanceSignals(accountId, { limit = 5, prefetched = null } = {}) {
+  const [clicks, metrics, topics, posts, products] = prefetched
+    ? [prefetched.clicks, prefetched.metrics, prefetched.topics, prefetched.posts, prefetched.products]
+    : await Promise.all([
+        dbList('click_events', { account_id: accountId }),
+        dbList('post_metrics', { account_id: accountId }),
+        dbList('topics', { account_id: accountId }),
+        dbList('posts', { account_id: accountId }),
+        dbList('coupang_products', { account_id: accountId }).catch(() => [])
+      ]);
   const sourceRows = clicks.length
     ? clicks.map((row) => ({ ...row, clicks: 1 }))
     : metrics.map((row) => ({ ...row, clicks: Number(row.clicks || 0) }));
@@ -50,6 +52,12 @@ export async function buildAccountPerformanceSignals(accountId, { limit = 5 } = 
   const topicById = new Map(topics.map((topic) => [topic.id, topic]));
   const postById = new Map(posts.map((post) => [post.id, post]));
   const productById = new Map(products.map((product) => [product.id, product]));
+  for (const [postId, count] of postClicks.entries()) {
+    const post = postById.get(postId) || {};
+    addCount(formatClicks, post.metadata?.contentFormat, count);
+    addCount(goalClicks, post.metadata?.contentGoal, count);
+    addCount(lengthBucketClicks, post.metadata?.lengthBucket, count);
+  }
   const topTopics = topEntries(topicClicks, limit).map(([topicId, count]) => {
     const topic = topicById.get(topicId) || {};
     return {
@@ -74,9 +82,6 @@ export async function buildAccountPerformanceSignals(accountId, { limit = 5 } = 
   const topPosts = topEntries(postClicks, limit).map(([postId, count]) => {
     const post = postById.get(postId) || {};
     const topic = topicById.get(post.topic_id) || {};
-    addCount(formatClicks, post.metadata?.contentFormat, count);
-    addCount(goalClicks, post.metadata?.contentGoal, count);
-    addCount(lengthBucketClicks, post.metadata?.lengthBucket, count);
     return {
       postId,
       topicTitle: topic.title || '',
@@ -113,10 +118,16 @@ export async function buildAccountPerformanceSignals(accountId, { limit = 5 } = 
 }
 
 export async function getAccountAnalytics(accountId) {
-  const metrics = await dbList('post_metrics', { account_id: accountId });
-  const clicks = await dbList('click_events', { account_id: accountId });
-  const topics = await dbList('topics', { account_id: accountId });
-  const learningSignals = await buildAccountPerformanceSignals(accountId);
+  const [clicks, metrics, topics, posts, products] = await Promise.all([
+    dbList('click_events', { account_id: accountId }),
+    dbList('post_metrics', { account_id: accountId }),
+    dbList('topics', { account_id: accountId }),
+    dbList('posts', { account_id: accountId }),
+    dbList('coupang_products', { account_id: accountId }).catch(() => [])
+  ]);
+  const learningSignals = await buildAccountPerformanceSignals(accountId, {
+    prefetched: { clicks, metrics, topics, posts, products }
+  });
   const totalClicks = clicks.length || metrics.reduce((sum, m) => sum + Number(m.clicks || 0), 0);
   const byTopic = clicks.reduce((acc, click) => {
     acc[click.topic_id] = (acc[click.topic_id] || 0) + 1;
@@ -143,18 +154,24 @@ export async function getAccountAnalytics(accountId) {
 }
 
 export async function dashboardSummary() {
-  const accounts = await dbList('accounts');
-  const queue = await dbList('post_queue');
-  const clicks = await dbList('click_events');
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date();
   todayEnd.setHours(23, 59, 59, 999);
+  const [accounts, scheduledToday, posted, clicks] = await Promise.all([
+    dbCount('accounts'),
+    dbCount('post_queue', { status: 'scheduled' }, {
+      gte: { scheduled_at: todayStart.toISOString() },
+      lte: { scheduled_at: todayEnd.toISOString() }
+    }),
+    dbCount('post_queue', { status: 'posted' }),
+    dbCount('click_events')
+  ]);
   return {
-    accounts: accounts.length,
-    scheduledToday: queue.filter((q) => q.status === 'scheduled' && new Date(q.scheduled_at) >= todayStart && new Date(q.scheduled_at) <= todayEnd).length,
-    posted: queue.filter((q) => q.status === 'posted').length,
-    clicks: clicks.length,
+    accounts,
+    scheduledToday,
+    posted,
+    clicks,
     bestTopics: []
   };
 }

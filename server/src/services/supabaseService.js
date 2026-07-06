@@ -563,37 +563,63 @@ async function executeSupabaseQuery(query) {
   }
 }
 
+function applySupabaseFilters(query, filters = {}, options = {}) {
+  let q = query;
+  Object.entries(filters).forEach(([key, value]) => {
+    q = value === null ? q.is(key, null) : q.eq(key, value);
+  });
+  Object.entries(options.gte || {}).forEach(([key, value]) => { q = q.gte(key, value); });
+  Object.entries(options.lte || {}).forEach(([key, value]) => { q = q.lte(key, value); });
+  Object.entries(options.gt || {}).forEach(([key, value]) => { q = q.gt(key, value); });
+  Object.entries(options.lt || {}).forEach(([key, value]) => { q = q.lt(key, value); });
+  Object.entries(options.neq || {}).forEach(([key, value]) => { q = q.neq(key, value); });
+  Object.entries(options.in || {}).forEach(([key, value]) => { q = q.in(key, Array.isArray(value) ? value : [value]); });
+  if (options.or) q = q.or(options.or);
+  return q;
+}
+
+function selectMockRows(table, filters = {}, options = {}) {
+  return (tables[table] || [])
+    .filter((row) => matches(row, filters))
+    .filter((row) => matchesAdvancedFilters(row, options));
+}
+
 export async function dbList(table, filters = {}, options = {}) {
   if (supabase) {
     assertDbCircuitClosed();
     let q = supabase.from(table).select(options.select || '*');
-    Object.entries(filters).forEach(([key, value]) => {
-      q = value === null ? q.is(key, null) : q.eq(key, value);
-    });
-    Object.entries(options.gte || {}).forEach(([key, value]) => { q = q.gte(key, value); });
-    Object.entries(options.lte || {}).forEach(([key, value]) => { q = q.lte(key, value); });
-    Object.entries(options.gt || {}).forEach(([key, value]) => { q = q.gt(key, value); });
-    Object.entries(options.lt || {}).forEach(([key, value]) => { q = q.lt(key, value); });
-    Object.entries(options.neq || {}).forEach(([key, value]) => { q = q.neq(key, value); });
-    Object.entries(options.in || {}).forEach(([key, value]) => { q = q.in(key, Array.isArray(value) ? value : [value]); });
-    if (options.or) q = q.or(options.or);
+    q = applySupabaseFilters(q, filters, options);
     if (options.order) q = q.order(options.order, { ascending: options.ascending ?? false });
     if (options.limit) q = q.limit(options.limit);
     const { data, error } = await executeSupabaseQuery(q);
     if (error) throw normalizeDbError(error);
     return data;
   }
-  let rows = (tables[table] || [])
-    .filter((row) => matches(row, filters))
-    .filter((row) => matchesAdvancedFilters(row, options));
+  let rows = selectMockRows(table, filters, options);
   if (options.order) rows = sortRows(rows, options.order, options.ascending ?? false);
   if (options.limit) rows = rows.slice(0, options.limit);
-  return rows;
+  // Snapshot each row into an independent shallow clone: a real Postgres/Supabase read never
+  // hands back a live mutable reference, and callers (e.g. concurrent scheduler-run CAS takeover
+  // attempts) rely on reading an isolated snapshot rather than observing another caller's
+  // in-flight dbUpdate() mutation through a shared object identity.
+  return rows.map((row) => ({ ...row }));
 }
 
 export async function dbGet(table, filters = {}) {
   const rows = await dbList(table, filters, { limit: 1 });
   return rows[0] || null;
+}
+
+export async function dbCount(table, filters = {}, options = {}) {
+  if (supabase) {
+    assertDbCircuitClosed();
+    let q = supabase.from(table).select(options.select || '*', { count: 'exact', head: true });
+    q = applySupabaseFilters(q, filters, options);
+    const { count, error } = await executeSupabaseQuery(q);
+    if (error) throw normalizeDbError(error);
+    return count || 0;
+  }
+  return selectMockRows(table, filters, options).length;
 }
 
 export async function dbInsert(table, payload) {

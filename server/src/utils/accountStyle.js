@@ -312,7 +312,10 @@ export function strengthenPostHook(body = '', topic = {}, account = {}) {
   const lines = original.split('\n');
   const firstLineIndex = lines.findIndex((line) => line.trim());
   if (firstLineIndex === -1) return hook;
-  lines[firstLineIndex] = hook;
+  const firstLine = lines[firstLineIndex];
+  const sentenceSplit = firstLine.match(/^([\s\S]*?[.!?…])(\s*)([\s\S]*)$/);
+  const remainder = sentenceSplit ? sentenceSplit[3].trim() : '';
+  lines[firstLineIndex] = remainder ? `${hook} ${remainder}` : hook;
   return lines.join('\n').trim();
 }
 

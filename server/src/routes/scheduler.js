@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { generateBlogPost } from '../services/blogService.js';
 import { requireAdmin } from '../middleware/rateLimit.js';
 import { processCoreDueQueue } from '../services/cujasaCoreService.js';
+import { runDailyPipelineOnce } from '../services/schedulerRunService.js';
 
 const router = Router();
 function requireSchedulerSecret(req, res, next) {
@@ -22,14 +23,8 @@ router.post('/daily-pipeline', requireSchedulerSecret, async (req, res, next) =>
   try {
     const mode = String(req.body?.mode || 'scheduled').replace(/[^a-z_-]/gi, '');
     const triggeredBy = String(req.body?.triggeredBy || 'external_scheduler').replace(/[^a-z0-9_-]/gi, '');
-    const taskPath = fileURLToPath(new URL('../scripts/runDailyPipelineTask.js', import.meta.url));
-    const child = fork(taskPath, [`--mode=${mode}`, `--triggered-by=${triggeredBy}`], {
-      detached: true,
-      stdio: 'inherit',
-      env: process.env
-    });
-    child.unref();
-    res.status(202).json({ ok: true, status: 'accepted', mode, triggeredBy });
+    const result = await runDailyPipelineOnce({ mode, triggeredBy });
+    res.status(result?.status === 'failed' ? 500 : 200).json(result);
   } catch (e) { next(e); }
 });
 

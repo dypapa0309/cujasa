@@ -137,6 +137,8 @@ export function generatePostsPrompt(topic, products, account) {
           'Do not use over-written metaphors or fake-deep punchlines such as "집이 좁은 게 아니라 내가 물건을 너무 믿었음", "청소는 인생 개조 프로젝트", "방이 나를 거부함", or "물건이 나를 이김". Korean internet tone should sound like a real quick complaint, not a copywriter line.',
           'Prefer action-based Korean such as "다시 두기 편한지", "손이 덜 가는지", "자주 꺼내기 쉬운지", "놔둘 자리가 있는지".',
           'Do not write balanced essay paragraphs. Use short lived-in observations, slightly uneven rhythm, and natural Korean phrasing.',
+          'Keep the whole post on ONE consistent scene/angle. Do not contradict yourself within the post (e.g., do not call the item annoying in one line and great in the next). Every sentence must follow naturally from the first — no bolted-on or disconnected opener.',
+          'Write the post about the PRIMARY product (the first item in selectedProducts, i.e. selectedProducts[0]), since that is the product whose link will be attached. Do not drift to a different product category or a product not in selectedProducts, so the body matches the linked product.',
           'Avoid topic-title echo sentences such as "홈인테리어,주방용품,소형 생활가전 정리 쉽게 하는 법, 평소에는 별거 아닌데..." because real users do not write keyword titles into posts.',
           'Product-first openings are optional, not mandatory. Often prefer situation-first openings that still remain clear: "좁은 방 정리하려고 수납장 샀는데 방이 더 좁아짐 ㅋㅋ" is clearer than "수납하려고 샀는데 방이 더 좁아지는 거 진짜 있음".',
           'Avoid unclear compressed sentences where the object is missing, such as "청소는 꺼내는 시간이 길면 시작도 안 하게 됨" or "수납하려고 샀는데 방이 더 좁아지는 거 진짜 있음". If the item is not named, the situation must still make the object obvious.',

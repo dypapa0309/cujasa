@@ -14,7 +14,7 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: OPENAI_MODEL
-        value: gpt-4o-mini
+        value: gpt-4.1-mini
       - key: NAVER_SEARCH_CLIENT_ID
         sync: false
       - key: NAVER_SEARCH_CLIENT_SECRET
@@ -141,9 +141,59 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: SCHEDULER_API_BASE_URL
-        value: https://api.jasain.kr
       - key: SCHEDULER_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: DB_REQUEST_TIMEOUT_MS
+        value: "5000"
+      - key: DB_CIRCUIT_BREAKER_MS
+        value: "60000"
+      - key: SUPABASE_STORAGE_BUCKET
+        value: auvibot-assets
+      - key: SUPABASE_PUBLIC_ASSET_URL
+        value: https://mkdvxofnnvyjuevqwfyb.supabase.co/storage/v1/object/public/auvibot-assets
+      - key: COUPANG_ACCESS_KEY
+        sync: false
+      - key: COUPANG_SECRET_KEY
+        sync: false
+      - key: COUPANG_PARTNER_ID
+        sync: false
+      - key: COUPANG_TRACKING_CODE
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TELEGRAM_CHAT_IDS
+        sync: false
+      - key: SLACK_WEBHOOK_URL
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      - key: CLIENT_BASE_URL
+        sync: false
+      - key: THREADS_APP_ID
+        sync: false
+      - key: THREADS_APP_SECRET
+        sync: false
+      - key: THREADS_REDIRECT_URI
+        sync: false
+      - key: THREADS_REPLY_LINK_MODE_ENABLED
+        value: "true"
+      - key: THREADS_COUPANG_LINK_MODE
+        value: direct
+      - key: MOCK_UPLOAD
+        value: "false"
+      - key: IP_HASH_SALT
+        sync: false
+      - key: JWT_SECRET
         sync: false
 
   - type: cron
@@ -157,9 +207,59 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      - key: SCHEDULER_API_BASE_URL
-        value: https://api.jasain.kr
       - key: SCHEDULER_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: DB_REQUEST_TIMEOUT_MS
+        value: "5000"
+      - key: DB_CIRCUIT_BREAKER_MS
+        value: "60000"
+      - key: SUPABASE_STORAGE_BUCKET
+        value: auvibot-assets
+      - key: SUPABASE_PUBLIC_ASSET_URL
+        value: https://mkdvxofnnvyjuevqwfyb.supabase.co/storage/v1/object/public/auvibot-assets
+      - key: COUPANG_ACCESS_KEY
+        sync: false
+      - key: COUPANG_SECRET_KEY
+        sync: false
+      - key: COUPANG_PARTNER_ID
+        sync: false
+      - key: COUPANG_TRACKING_CODE
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: TELEGRAM_CHAT_IDS
+        sync: false
+      - key: SLACK_WEBHOOK_URL
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      - key: CLIENT_BASE_URL
+        sync: false
+      - key: THREADS_APP_ID
+        sync: false
+      - key: THREADS_APP_SECRET
+        sync: false
+      - key: THREADS_REDIRECT_URI
+        sync: false
+      - key: THREADS_REPLY_LINK_MODE_ENABLED
+        value: "true"
+      - key: THREADS_COUPANG_LINK_MODE
+        value: direct
+      - key: MOCK_UPLOAD
+        value: "false"
+      - key: IP_HASH_SALT
+        sync: false
+      - key: JWT_SECRET
         sync: false
       - key: SCHEDULER_MODE
         value: continuation
