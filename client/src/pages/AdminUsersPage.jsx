@@ -24,6 +24,7 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
   const [archiveBusyUserId, setArchiveBusyUserId] = useState('');
   const [blogBusyAccountId, setBlogBusyAccountId] = useState('');
   const [accountCreateBusyUserId, setAccountCreateBusyUserId] = useState('');
+  const [deviceResetBusyUserId, setDeviceResetBusyUserId] = useState('');
 
   const load = async () => {
     const [nextUsers, nextProducts] = await Promise.all([
@@ -293,6 +294,20 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
       toast('정상 항목으로 표시했습니다.', 'success');
     } catch (err) {
       toast(err.message || '정상 표시 저장에 실패했습니다.', 'error');
+    }
+  };
+  const resetLoginDevices = async (user) => {
+    const label = user.buyer_name || user.buyerName || user.username || user.email;
+    if (!confirm(`${label} 고객의 등록된 Chrome/Safari 로그인 기기를 초기화할까요?\n\n고객은 현재 브라우저에서 다시 로그인해야 합니다.`)) return;
+    setDeviceResetBusyUserId(user.id);
+    try {
+      const result = await api.post(`/api/admin/users/${user.id}/devices/reset`, {});
+      await load();
+      toast(`로그인 기기 ${result.revoked || 0}개를 초기화했습니다.`, 'success');
+    } catch (err) {
+      toast(err.message || '로그인 기기 초기화에 실패했습니다.', 'error');
+    } finally {
+      setDeviceResetBusyUserId('');
     }
   };
 
@@ -577,6 +592,14 @@ export default function AdminUsersPage({ accounts, openAccountSettings }) {
                     />
                     <span className="ml-1">한도</span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => resetLoginDevices(user)}
+                    disabled={deviceResetBusyUserId === user.id}
+                    className="text-xs text-slate-500 hover:text-slate-800 border border-line rounded px-2 py-1 disabled:opacity-50"
+                  >
+                    {deviceResetBusyUserId === user.id ? '초기화 중...' : '기기 초기화'}
+                  </button>
                   <button onClick={() => toggleStatus(user)} className="ml-auto text-xs text-slate-500 hover:text-slate-800 border border-line rounded px-2 py-1">
                     {user.status === 'active' ? '정지' : '활성화'}
                   </button>
