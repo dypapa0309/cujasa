@@ -5,6 +5,7 @@ import { generateBlogPost } from '../services/blogService.js';
 import { requireAdmin } from '../middleware/rateLimit.js';
 import { processCoreDueQueue } from '../services/cujasaCoreService.js';
 import { runDailyPipelineOnce } from '../services/schedulerRunService.js';
+import { runIssuePipeline } from '../services/issueService.js';
 
 const router = Router();
 function requireSchedulerSecret(req, res, next) {
@@ -25,6 +26,13 @@ router.post('/daily-pipeline', requireSchedulerSecret, async (req, res, next) =>
     const triggeredBy = String(req.body?.triggeredBy || 'external_scheduler').replace(/[^a-z0-9_-]/gi, '');
     const result = await runDailyPipelineOnce({ mode, triggeredBy });
     res.status(result?.status === 'failed' ? 500 : 200).json(result);
+  } catch (e) { next(e); }
+});
+
+router.post('/issue-pipeline', requireSchedulerSecret, async (req, res, next) => {
+  try {
+    const summary = await runIssuePipeline();
+    res.status(200).json({ ok: true, ...summary });
   } catch (e) { next(e); }
 });
 

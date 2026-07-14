@@ -1,0 +1,33 @@
+name: Issue Pipeline
+
+# Free scheduler for the issue-commerce pipeline. Render cron jobs require a
+# paid workspace, so we trigger the secret-guarded HTTP endpoint on the live
+# service instead (same pattern as the daily pipeline).
+on:
+  schedule:
+    # Every 3 hours (UTC). ~06/09/12/15/18/21/00/03 KST.
+    - cron: '0 */3 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger issue pipeline
+        env:
+          SERVICE_URL: ${{ vars.CUJASA_SERVICE_URL }}
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+        run: |
+          set -euo pipefail
+          BASE="${SERVICE_URL:-https://cujasa.onrender.com}"
+          echo "POST $BASE/api/scheduler/issue-pipeline"
+          code=$(curl -sS -o response.json -w '%{http_code}' \
+            --max-time 600 \
+            -X POST "$BASE/api/scheduler/issue-pipeline" \
+            -H "Content-Type: application/json" \
+            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            -d '{}')
+          echo "HTTP $code"
+          cat response.json
+          echo
+          test "$code" = "200"
