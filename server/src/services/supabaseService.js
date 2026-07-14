@@ -427,7 +427,13 @@ const tables = {
   blog_posts: [],
   setup_tasks: [],
   purchase_inquiries: [],
-  system_settings: []
+  system_settings: [],
+  issues: [],
+  issue_sources: [],
+  issue_products: [],
+  issue_threads: [],
+  issue_thread_comments: [],
+  issue_clicks: []
 };
 
 const matches = (row, filters) => Object.entries(filters).every(([key, value]) => row[key] === value);
@@ -495,7 +501,8 @@ const updatedAtTables = new Set([
   'billing_subscriptions',
   'billing_agreements',
   'setup_tasks',
-  'system_settings'
+  'system_settings',
+  'issues'
 ]);
 
 function stampUpdate(table, patch) {

@@ -34,6 +34,9 @@ function isDbUnavailableError(error = {}) {
 function isPublicRoute(req) {
   if (req.method === 'GET' && /^\/api\/public\/lead-forms\/[^/]+$/.test(req.path)) return true;
   if (req.method === 'POST' && /^\/api\/public\/lead-forms\/[^/]+\/submissions$/.test(req.path)) return true;
+  if (req.method === 'GET' && req.path.startsWith('/api/public/issues')) return true;
+  if (req.method === 'POST' && /^\/api\/public\/issues\/products\/[^/]+\/click$/.test(req.path)) return true;
+  if (req.method === 'POST' && /^\/api\/public\/issues\/threads\/[^/]+\/comments$/.test(req.path)) return true;
   return publicRoutes.some((route) => route.method === req.method && route.path === req.path);
 }
 

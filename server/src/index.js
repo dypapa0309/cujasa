@@ -30,6 +30,8 @@ import supportWidgetRouter from './routes/supportWidget.js';
 import supportRouter from './routes/support.js';
 import productWorkspaceRouter from './routes/productWorkspace.js';
 import workspaceAssistantRouter from './routes/workspaceAssistant.js';
+import issuesPublicRouter from './routes/issuesPublic.js';
+import issueSiteRouter from './routes/issueSite.js';
 import { requireAuth } from './middleware/auth.js';
 import { securityHeaders } from './middleware/securityHeaders.js';
 import { listAccountBlogPosts, listBlogPosts } from './services/blogService.js';
@@ -170,6 +172,8 @@ app.use('/api/inquiries', inquiriesRouter);
 app.use('/api/billing', billingRouter);
 app.use('/api/public/checkout', publicCheckoutRouter);
 app.use('/api/public/lead-forms', leadFormsRouter);
+app.use('/api/public/issues', issuesPublicRouter);
+app.use('/site', issueSiteRouter);
 app.use('/api/support', supportRouter);
 app.post('/api/webhooks/toss', tossWebhook);
 
