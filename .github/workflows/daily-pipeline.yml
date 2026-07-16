@@ -1,0 +1,47 @@
+name: Daily Pipeline
+
+# Free scheduler for the account posting pipeline. Render cron jobs require a
+# paid workspace, so we trigger the secret-guarded HTTP endpoint on the live
+# service instead (same pattern as issue-pipeline.yml). Without this workflow
+# the daily pipeline only ran via the flaky in-process daytime-recovery path,
+# which repeatedly went stale (SCHEDULER_RUN_STALE) and left most accounts idle.
+on:
+  schedule:
+    # 02:00 KST (17:00 UTC) - the scheduled daily run.
+    - cron: '0 17 * * *'
+    # 02:30-06:30 KST (17:30-21:30 UTC) hourly - continuation reruns that pick
+    # up partial/stale runs from the 02:00 pass.
+    - cron: '30 17,18,19,20,21 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'runDailyPipelineOnce mode (scheduled | continuation)'
+        default: scheduled
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger daily pipeline
+        env:
+          SERVICE_URL: ${{ vars.CUJASA_SERVICE_URL }}
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
+          INPUT_MODE: ${{ github.event.inputs.mode }}
+        run: |
+          set -euo pipefail
+          BASE="${SERVICE_URL:-https://cujasa.onrender.com}"
+          MODE="scheduled"
+          if [ "${EVENT_SCHEDULE:-}" = "30 17,18,19,20,21 * * *" ]; then MODE="continuation"; fi
+          if [ -n "${INPUT_MODE:-}" ]; then MODE="$INPUT_MODE"; fi
+          echo "POST $BASE/api/scheduler/daily-pipeline (mode=$MODE)"
+          code=$(curl -sS -o response.json -w '%{http_code}' \
+            --max-time 900 \
+            -X POST "$BASE/api/scheduler/daily-pipeline" \
+            -H "Content-Type: application/json" \
+            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            -d "{\"mode\":\"$MODE\",\"triggeredBy\":\"github_actions\"}")
+          echo "HTTP $code"
+          cat response.json
+          echo
+          test "$code" = "200"

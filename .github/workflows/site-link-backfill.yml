@@ -1,0 +1,40 @@
+name: Site Link Backfill
+
+# Free scheduler for the site factory deeplink backfill/retry queue. Render
+# cron jobs require a paid workspace, so we trigger the secret-guarded HTTP
+# endpoint on the live service (same pattern as issue-pipeline.yml).
+#
+# NOTE: the /api/scheduler/site-link-backfill endpoint ships with the site
+# factory (Phase 2) server code. Until that code is deployed this workflow will
+# receive 404 and fail - that is expected and self-resolves once the site
+# factory is live. The free web plan spins down, so this external trigger is
+# more reliable than the in-process */10 worker job.
+on:
+  schedule:
+    # Every 2 hours, offset 20 min after the issue pipeline so fresh issue
+    # products exist before we convert their per-tenant deeplinks.
+    - cron: '20 */2 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger site link backfill
+        env:
+          SERVICE_URL: ${{ vars.CUJASA_SERVICE_URL }}
+          SCHEDULER_SECRET: ${{ secrets.SCHEDULER_SECRET }}
+        run: |
+          set -euo pipefail
+          BASE="${SERVICE_URL:-https://cujasa.onrender.com}"
+          echo "POST $BASE/api/scheduler/site-link-backfill"
+          code=$(curl -sS -o response.json -w '%{http_code}' \
+            --max-time 900 \
+            -X POST "$BASE/api/scheduler/site-link-backfill" \
+            -H "Content-Type: application/json" \
+            -H "x-scheduler-secret: $SCHEDULER_SECRET" \
+            -d '{}')
+          echo "HTTP $code"
+          cat response.json
+          echo
+          test "$code" = "200"
